@@ -33,6 +33,8 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.document_config import models as _dc  # noqa: F401
     from app.modules.approval_config import models as _ac  # noqa: F401
     from app.modules.system_admin import models as _sa  # noqa: F401
+    from app.modules.master_data.org import models as _org  # noqa: F401
+    from app.modules.master_data.reference import models as _ref  # noqa: F401
 
     from app.modules.auth.routes import bp as auth_bp
     from app.modules.main.routes import bp as main_bp
