@@ -30,11 +30,11 @@
       <td><span class="badge text-bg-{{ 'success' if d.status=='ACTIVE' else 'danger' }}">{{ d.status }}</span></td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info"
-           href="{{ url_for('master_data.driver_detail', id=d.id) }}">
+           href="{{ url_for('master_data.driver_detail', did=d.id) }}">
           <i class="bi bi-eye"></i></a>
         {% if current_user.has_permission('driver.update') %}
         <a class="btn btn-sm btn-outline-secondary"
-           href="{{ url_for('master_data.driver_edit', id=d.id) }}">
+           href="{{ url_for('master_data.driver_edit', did=d.id) }}">
           <i class="bi bi-pencil"></i></a>
         {% endif %}
       </td>

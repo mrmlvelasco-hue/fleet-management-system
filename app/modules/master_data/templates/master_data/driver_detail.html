@@ -8,7 +8,7 @@
 <div class="d-flex justify-content-between mb-3">
   <h1 class="h3">{{ driver.last_name }}, {{ driver.first_name }} {{ driver.middle_name or '' }}</h1>
   {% if current_user.has_permission('driver.update') %}
-  <a class="btn btn-outline-secondary" href="{{ url_for('master_data.driver_edit', id=driver.id) }}">
+  <a class="btn btn-outline-secondary" href="{{ url_for('master_data.driver_edit', did=driver.id) }}">
     <i class="bi bi-pencil me-1"></i>Edit</a>
   {% endif %}
 </div>

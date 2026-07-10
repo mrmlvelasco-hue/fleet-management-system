@@ -31,11 +31,11 @@
       <td>{{ "{:,.0f}".format(v.current_odometer) if v.current_odometer else '—' }} km</td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info"
-           href="{{ url_for('master_data.vehicle_detail', id=v.id) }}">
+           href="{{ url_for('master_data.vehicle_detail', vid=v.id) }}">
           <i class="bi bi-eye"></i></a>
         {% if current_user.has_permission('vehicle.update') %}
         <a class="btn btn-sm btn-outline-secondary"
-           href="{{ url_for('master_data.vehicle_edit', id=v.id) }}">
+           href="{{ url_for('master_data.vehicle_edit', vid=v.id) }}">
           <i class="bi bi-pencil"></i></a>
         {% endif %}
       </td>

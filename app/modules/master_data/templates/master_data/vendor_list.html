@@ -25,12 +25,12 @@
       <td class="text-end">
         {% if current_user.has_permission('vendor.update') %}
         <a class="btn btn-sm btn-outline-secondary"
-           href="{{ url_for('master_data.vendor_edit', id=item.id) }}">
+           href="{{ url_for('master_data.vendor_edit', vid=item.id) }}">
           <i class="bi bi-pencil"></i></a>
         {% endif %}
         {% if current_user.has_permission('vendor.delete') and item.is_active %}
         <form method="post" class="d-inline fms-confirm" data-confirm="Deactivate?"
-              action="{{ url_for('master_data.vendor_deactivate', id=item.id) }}">
+              action="{{ url_for('master_data.vendor_deactivate', vid=item.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>
         </form>
