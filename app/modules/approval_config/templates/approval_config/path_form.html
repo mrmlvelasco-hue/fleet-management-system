@@ -1,0 +1,99 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('approval_config.paths_list') }}">Approval Paths</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" novalidate>
+  {{ form.hidden_tag() }}
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}
+      {% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    <div class="col-md-8">{{ form.description.label(class="form-label") }}{{ form.description(class="form-control") }}</div>
+  </div>
+
+  <h2 class="h6 text-uppercase text-muted">Approval Levels (in order)</h2>
+  <div id="levelRows"></div>
+  <button type="button" class="btn btn-outline-primary btn-sm mb-3" id="addLevel">
+    <i class="bi bi-plus-lg me-1"></i>Add level</button>
+
+  <div>
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('approval_config.paths_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var roles = [{% for r in roles %}{id: {{ r.id }}, name: {{ r.name|tojson }}},{% endfor %}];
+  var users = [{% for u in users %}{id: {{ u.id }}, name: {{ u.username|tojson }}},{% endfor %}];
+  var existing = [
+    {% if path %}{% for l in path.levels %}
+    {type: {{ l.approver_type|tojson }}, roleId: {{ l.role_id or 'null' }}, userId: {{ l.user_id or 'null' }}},
+    {% endfor %}{% endif %}
+  ];
+  var container = document.getElementById("levelRows");
+
+  function options(list, selected) {
+    return list.map(function (o) {
+      return '<option value="' + o.id + '"' +
+        (o.id === selected ? ' selected' : '') + '>' + o.name + '</option>';
+    }).join("");
+  }
+
+  function renumber() {
+    container.querySelectorAll(".level-row").forEach(function (row, i) {
+      row.querySelector(".level-no").textContent = i + 1;
+    });
+  }
+
+  function addRow(data) {
+    data = data || {type: "ROLE", roleId: null, userId: null};
+    var row = document.createElement("div");
+    row.className = "level-row row g-2 align-items-center mb-2";
+    row.innerHTML =
+      '<div class="col-auto"><span class="badge text-bg-primary level-no"></span></div>' +
+      '<div class="col-md-3"><select name="level_approver_type" class="form-select lvl-type">' +
+      '<option value="ROLE"' + (data.type === "ROLE" ? " selected" : "") + '>Role</option>' +
+      '<option value="USER"' + (data.type === "USER" ? " selected" : "") + '>Specific user</option>' +
+      '</select></div>' +
+      '<div class="col-md-4 lvl-role"><select name="level_role_id" class="form-select">' +
+      options(roles, data.roleId) + '</select></div>' +
+      '<div class="col-md-4 lvl-user d-none"><select name="level_user_id" class="form-select">' +
+      options(users, data.userId) + '</select></div>' +
+      '<div class="col-auto"><button type="button" class="btn btn-outline-danger btn-sm lvl-remove">' +
+      '<i class="bi bi-trash"></i></button></div>';
+    container.appendChild(row);
+
+    function syncType() {
+      var isRole = row.querySelector(".lvl-type").value === "ROLE";
+      row.querySelector(".lvl-role").classList.toggle("d-none", !isRole);
+      row.querySelector(".lvl-user").classList.toggle("d-none", isRole);
+      // Both selects stay enabled so the posted parallel arrays
+      // (level_approver_type / level_role_id / level_user_id) keep equal
+      // lengths; the server ignores the one not matching approver_type.
+    }
+    row.querySelector(".lvl-type").addEventListener("change", syncType);
+    row.querySelector(".lvl-remove").addEventListener("click", function () {
+      row.remove();
+      renumber();
+    });
+    if (data.type === "USER") row.querySelector(".lvl-type").value = "USER";
+    syncType();
+    renumber();
+  }
+
+  document.getElementById("addLevel").addEventListener("click", function () {
+    addRow();
+  });
+
+  if (existing.length) existing.forEach(addRow);
+  else addRow();
+})();
+</script>
+{% endblock %}

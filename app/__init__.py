@@ -37,10 +37,12 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.main.routes import bp as main_bp
     from app.modules.user_management.routes import bp as user_mgmt_bp
     from app.modules.document_config.routes import bp as doc_config_bp
+    from app.modules.approval_config.routes import bp as approval_config_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(user_mgmt_bp)
     app.register_blueprint(doc_config_bp)
+    app.register_blueprint(approval_config_bp)
 
     from app.cli import register_cli
     register_cli(app)

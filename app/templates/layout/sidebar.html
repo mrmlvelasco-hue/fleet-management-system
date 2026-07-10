@@ -29,5 +29,13 @@
     <li><a href="{{ url_for('document_config.schemes_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('document_config.schemes') }}">
       <i class="bi bi-123 me-2"></i><span class="sidebar-label">Numbering</span></a></li>
     {% endif %}
+    {% if current_user.has_permission('approvalpath.view') %}
+    <li><a href="{{ url_for('approval_config.paths_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('approval_config.paths') }}">
+      <i class="bi bi-diagram-3 me-2"></i><span class="sidebar-label">Approval Paths</span></a></li>
+    {% endif %}
+    {% if current_user.has_permission('approvalmatrix.view') %}
+    <li><a href="{{ url_for('approval_config.matrix_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('approval_config.matrix') }}">
+      <i class="bi bi-grid-3x3 me-2"></i><span class="sidebar-label">Approval Matrix</span></a></li>
+    {% endif %}
   </ul>
 </aside>

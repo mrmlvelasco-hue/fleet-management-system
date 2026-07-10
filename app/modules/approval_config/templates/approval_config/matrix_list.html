@@ -1,0 +1,63 @@
+{% extends "layout/base.html" %}
+{% block title %}Approval Matrix{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Approval Matrix</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Approval Matrix</h1>
+  {% if current_user.has_permission('approvalmatrix.create') %}
+  <a class="btn btn-primary" href="{{ url_for('approval_config.matrix_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Entry</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr>
+    <th>Document Type</th><th>Amount Range</th><th>Approval Path</th>
+    <th>Effective</th><th>Active</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for m in items %}
+    <tr>
+      <td><code>{{ m.document_type.code }}</code> — {{ m.document_type.name }}</td>
+      <td>
+        {% if m.min_amount is none and m.max_amount is none %}Any / N.A.
+        {% else %}{{ m.min_amount if m.min_amount is not none else '–∞' }}
+          to {{ m.max_amount if m.max_amount is not none else '∞' }}{% endif %}
+      </td>
+      <td>{{ m.approval_path.name }}</td>
+      <td>{{ m.effective_from or '…' }} → {{ m.effective_to or '…' }}</td>
+      <td>{% if m.is_active %}<span class="badge text-bg-success">Yes</span>
+          {% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
+      <td class="text-end">
+        {% if current_user.has_permission('approvalmatrix.update') %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('approval_config.matrix_edit', matrix_id=m.id) }}">
+          <i class="bi bi-pencil"></i></a>
+        {% endif %}
+        {% if current_user.has_permission('approvalmatrix.delete') and m.is_active %}
+        <form method="post" class="d-inline fms-confirm"
+              data-confirm="Deactivate this matrix entry?"
+              action="{{ url_for('approval_config.matrix_deactivate', matrix_id=m.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll("form.fms-confirm").forEach(function (f) {
+  f.addEventListener("submit", function (e) {
+    e.preventDefault();
+    Swal.fire({title: f.dataset.confirm, icon: "warning",
+               showCancelButton: true, confirmButtonText: "Yes"})
+      .then(function (r) { if (r.isConfirmed) f.submit(); });
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "layout/base.html" %}
+{% block title %}Approval Paths{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Approval Paths</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Approval Paths</h1>
+  {% if current_user.has_permission('approvalpath.create') %}
+  <a class="btn btn-primary" href="{{ url_for('approval_config.paths_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Path</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr>
+    <th>Name</th><th>Description</th><th>Levels</th><th>Active</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for p in items %}
+    <tr>
+      <td>{{ p.name }}</td>
+      <td>{{ p.description or '—' }}</td>
+      <td>
+        {% for l in p.levels %}
+        <span class="badge text-bg-secondary">
+          {{ l.level_number }}:
+          {% if l.approver_type == 'ROLE' %}{{ l.role.name if l.role else '?' }}
+          {% else %}{{ l.user.username if l.user else '?' }}{% endif %}
+        </span>
+        {% endfor %}
+      </td>
+      <td>{% if p.is_active %}<span class="badge text-bg-success">Yes</span>
+          {% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
+      <td class="text-end">
+        {% if current_user.has_permission('approvalpath.update') %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('approval_config.paths_edit', path_id=p.id) }}">
+          <i class="bi bi-pencil"></i></a>
+        {% endif %}
+        {% if current_user.has_permission('approvalpath.delete') and p.is_active %}
+        <form method="post" class="d-inline fms-confirm"
+              data-confirm="Deactivate path {{ p.name }}?"
+              action="{{ url_for('approval_config.paths_deactivate', path_id=p.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll("form.fms-confirm").forEach(function (f) {
+  f.addEventListener("submit", function (e) {
+    e.preventDefault();
+    Swal.fire({title: f.dataset.confirm, icon: "warning",
+               showCancelButton: true, confirmButtonText: "Yes"})
+      .then(function (r) { if (r.isConfirmed) f.submit(); });
+  });
+});
+</script>
+{% endblock %}

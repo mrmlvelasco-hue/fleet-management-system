@@ -1,0 +1,31 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('approval_config.matrix_list') }}">Approval Matrix</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" novalidate class="row g-3">
+  {{ form.hidden_tag() }}
+  <div class="col-md-6">{{ form.document_type_id.label(class="form-label") }}
+    {{ form.document_type_id(class="form-select fms-select2") }}</div>
+  <div class="col-md-6">{{ form.approval_path_id.label(class="form-label") }}
+    {{ form.approval_path_id(class="form-select fms-select2") }}</div>
+  <div class="col-md-3">{{ form.min_amount.label(class="form-label") }}
+    {{ form.min_amount(class="form-control") }}
+    <div class="form-text">Leave both amounts blank for amount-independent documents.</div></div>
+  <div class="col-md-3">{{ form.max_amount.label(class="form-label") }}
+    {{ form.max_amount(class="form-control") }}</div>
+  <div class="col-md-3">{{ form.effective_from.label(class="form-label") }}
+    {{ form.effective_from(class="form-control", type="date") }}</div>
+  <div class="col-md-3">{{ form.effective_to.label(class="form-label") }}
+    {{ form.effective_to(class="form-control", type="date") }}</div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('approval_config.matrix_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}
