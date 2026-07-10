@@ -51,6 +51,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.approval_config.routes import bp as approval_config_bp
     from app.modules.system_admin.routes import bp as system_admin_bp
     from app.modules.master_data.routes import bp as master_data_bp
+    from app.modules.transactions.routes import bp as transactions_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(user_mgmt_bp)
@@ -58,6 +59,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(approval_config_bp)
     app.register_blueprint(system_admin_bp)
     app.register_blueprint(master_data_bp)
+    app.register_blueprint(transactions_bp)
 
     from app.modules.system_admin.services.notification_engine import (
         register_notification_hooks)

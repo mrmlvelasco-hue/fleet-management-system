@@ -1,0 +1,37 @@
+{% extends "layout/base.html" %}
+{% block title %}Trip Tickets{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Trip Tickets</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Trip Tickets</h1>
+  {% if current_user.has_permission('tripticket.create') %}
+  <a class="btn btn-primary" href="{{ url_for('transactions.tripticket_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Trip Ticket</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr>
+    <th>Doc No.</th><th>Vehicle</th><th>Driver</th><th>Destination</th>
+    <th>Departure</th><th>Status</th><th>Approval</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for t in items %}
+    <tr>
+      <td>{{ t.document_number or '—' }}</td>
+      <td>{{ t.vehicle.plate_number or t.vehicle.conduction_number if t.vehicle else '—' }}</td>
+      <td>{{ t.driver.full_name if t.driver else (t.driver_name_manual or '—') }}</td>
+      <td>{{ t.destination }}</td>
+      <td>{{ t.departure_datetime }}</td>
+      <td><span class="badge text-bg-{{ 'success' if t.status=='COMPLETED' else 'info' if t.status=='RELEASED' else 'danger' if t.status=='CANCELLED' else 'secondary' }}">{{ t.status }}</span></td>
+      <td>{% if t.approval_instance %}<span class="badge text-bg-{{ 'success' if t.approval_instance.status=='APPROVED' else 'warning' if t.approval_instance.status=='PENDING' else 'danger' }}">{{ t.approval_instance.status }}</span>{% else %}—{% endif %}</td>
+      <td class="text-end">
+        <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.tripticket_detail', tid=t.id) }}">
+          <i class="bi bi-eye"></i></a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

@@ -1,0 +1,97 @@
+{% extends "layout/base.html" %}
+{% block title %}Trip Ticket {{ item.document_number }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.tripticket_list') }}">Trip Tickets</a></li>
+<li class="breadcrumb-item active">{{ item.document_number or 'Draft' }}</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+  <h1 class="h3">{{ item.document_number or 'Draft Trip Ticket' }}</h1>
+  <div>
+    {% if current_user.has_permission('tripticket.print') %}
+    <a class="btn btn-outline-secondary" target="_blank"
+       href="{{ url_for('transactions.tripticket_print', tid=item.id) }}">
+      <i class="bi bi-printer me-1"></i>Print</a>
+    {% endif %}
+  </div>
+</div>
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Trip Details</div>
+    <div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-4">Vehicle</dt><dd class="col-sm-8">{{ item.vehicle.plate_number or item.vehicle.conduction_number }} — {{ item.vehicle.brand }} {{ item.vehicle.model }}</dd>
+        <dt class="col-sm-4">Driver</dt><dd class="col-sm-8">{{ item.driver.full_name if item.driver else item.driver_name_manual or '—' }}</dd>
+        <dt class="col-sm-4">Destination</dt><dd class="col-sm-8">{{ item.destination }}</dd>
+        <dt class="col-sm-4">Purpose</dt><dd class="col-sm-8">{{ item.purpose }}</dd>
+        <dt class="col-sm-4">Departure</dt><dd class="col-sm-8">{{ item.departure_datetime }}</dd>
+        <dt class="col-sm-4">Return</dt><dd class="col-sm-8">{{ item.return_datetime or '—' }}</dd>
+        <dt class="col-sm-4">Odometer Out/In</dt><dd class="col-sm-8">{{ item.odometer_out or '—' }} / {{ item.odometer_in or '—' }}</dd>
+        <dt class="col-sm-4">Passengers</dt><dd class="col-sm-8">{{ item.passengers or '—' }}</dd>
+      </dl>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Status & Actions</div>
+    <div class="card-body">
+      <p><strong>Physical Status:</strong>
+        <span class="badge text-bg-{{ 'success' if item.status=='COMPLETED' else 'info' if item.status=='RELEASED' else 'danger' if item.status=='CANCELLED' else 'secondary' }}">{{ item.status }}</span></p>
+      <p><strong>Approval Status:</strong>
+        {% if item.approval_instance %}
+        <span class="badge text-bg-{{ 'success' if item.approval_instance.status=='APPROVED' else 'warning' if item.approval_instance.status=='PENDING' else 'danger' }}">{{ item.approval_instance.status }}</span>
+        (Level {{ item.approval_instance.current_level }})
+        {% else %}<span class="text-muted">Not submitted</span>{% endif %}</p>
+
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        {% if not item.approval_instance and current_user.has_permission('tripticket.update') %}
+        <form method="post" action="{{ url_for('transactions.tripticket_submit', tid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-sm">Submit</button>
+        </form>
+        {% endif %}
+        {% if item.approval_instance and item.approval_instance.status == 'PENDING' %}
+        <form method="post" action="{{ url_for('transactions.tripticket_approve', tid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-success btn-sm">Approve</button>
+        </form>
+        <form method="post" action="{{ url_for('transactions.tripticket_reject', tid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-sm">Reject</button>
+        </form>
+        <form method="post" action="{{ url_for('transactions.tripticket_return', tid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-warning btn-sm">Return</button>
+        </form>
+        {% endif %}
+        {% if item.approval_instance and item.approval_instance.status == 'APPROVED' and item.status == 'DRAFT' and current_user.has_permission('tripticket.update') %}
+        <form method="post" action="{{ url_for('transactions.tripticket_release', tid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-sm">Release Vehicle</button>
+        </form>
+        {% endif %}
+        {% if item.status not in ['COMPLETED', 'CANCELLED'] and current_user.has_permission('tripticket.update') %}
+        <form method="post" action="{{ url_for('transactions.tripticket_cancel', tid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-danger btn-sm">Cancel</button>
+        </form>
+        {% endif %}
+      </div>
+
+      {% if item.status == 'RELEASED' and current_user.has_permission('tripticket.update') %}
+      <hr>
+      <form method="post" action="{{ url_for('transactions.tripticket_complete', tid=item.id) }}" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-6"><label class="form-label small">Return Date/Time</label>
+          <input type="datetime-local" name="return_datetime" class="form-control form-control-sm" required></div>
+        <div class="col-6"><label class="form-label small">Odometer In</label>
+          <input type="number" name="odometer_in" class="form-control form-control-sm" required></div>
+        <div class="col-12"><button class="btn btn-sm btn-success">Mark Complete</button></div>
+      </form>
+      {% endif %}
+    </div></div>
+  </div>
+</div>
+{% set reference_table = "trip_tickets" %}
+{% set reference_id = item.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endblock %}

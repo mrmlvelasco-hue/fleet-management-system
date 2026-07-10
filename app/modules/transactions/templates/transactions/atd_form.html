@@ -1,0 +1,38 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.atd_list') }}">Authority To Drive</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Vehicle</label>
+    <select name="vehicle_id" class="form-select fms-select2" required>
+      <option value="">— Select vehicle —</option>
+      {% for v in vehicles %}
+      <option value="{{ v.id }}">{{ v.plate_number or v.conduction_number }} — {{ v.brand }} {{ v.model }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Driver</label>
+    <select name="driver_id" class="form-select fms-select2" required>
+      <option value="">— Select driver —</option>
+      {% for d in drivers %}
+      <option value="{{ d.id }}">{{ d.employee_number }} — {{ d.last_name }}, {{ d.first_name }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-12"><label class="form-label">Purpose</label>
+    <input type="text" name="purpose" class="form-control" required></div>
+  <div class="col-md-6"><label class="form-label">Valid From</label>
+    <input type="date" name="valid_from" class="form-control" required></div>
+  <div class="col-md-6"><label class="form-label">Valid To</label>
+    <input type="date" name="valid_to" class="form-control" required></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save as Draft</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.atd_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}

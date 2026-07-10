@@ -131,4 +131,29 @@
       </ul>
     </div>
   </div>
+
+  {# ── Transactions (collapsible group) ── #}
+  <div class="sidebar-group">
+    <button class="btn sidebar-group-toggle w-100 d-flex justify-content-between align-items-center text-uppercase small sidebar-section"
+            type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupTransactions">
+      <span class="sidebar-label">Transactions</span>
+      <i class="bi bi-chevron-down sidebar-label sidebar-chevron"></i>
+    </button>
+    <div class="collapse show" id="sbGroupTransactions">
+      <ul class="nav nav-pills flex-column">
+        {% if current_user.has_permission('tripticket.view') %}
+        <li><a href="{{ url_for('transactions.tripticket_list') }}" class="nav-link {{ 'active' if request.endpoint and 'tripticket' in (request.endpoint or '') }}">
+          <i class="bi bi-ticket-perforated me-2"></i><span class="sidebar-label">Trip Tickets</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('atd.view') %}
+        <li><a href="{{ url_for('transactions.atd_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.atd') }}">
+          <i class="bi bi-file-earmark-check me-2"></i><span class="sidebar-label">Authority To Drive</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('vehiclemovement.view') %}
+        <li><a href="{{ url_for('transactions.vehiclemovement_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehiclemovement' in (request.endpoint or '') }}">
+          <i class="bi bi-arrow-left-right me-2"></i><span class="sidebar-label">Vehicle Movement</span></a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
 </aside>

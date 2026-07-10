@@ -1,0 +1,37 @@
+{% extends "layout/base.html" %}
+{% block title %}Vehicle Movements{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Vehicle Movements</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Vehicle Movements</h1>
+  {% if current_user.has_permission('vehiclemovement.create') %}
+  <a class="btn btn-primary" href="{{ url_for('transactions.vehiclemovement_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Movement</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr>
+    <th>Doc No.</th><th>Vehicle</th><th>Type</th><th>From</th><th>To</th>
+    <th>Date</th><th>Status</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for m in items %}
+    <tr>
+      <td>{{ m.document_number or '—' }}</td>
+      <td>{{ m.vehicle.plate_number or m.vehicle.conduction_number if m.vehicle else '—' }}</td>
+      <td>{{ m.movement_type }}</td>
+      <td>{{ m.from_location }}</td>
+      <td>{{ m.to_location }}</td>
+      <td>{{ m.movement_date }}</td>
+      <td><span class="badge text-bg-{{ 'success' if m.status=='COMPLETED' else 'info' if m.status=='IN_TRANSIT' else 'danger' if m.status=='CANCELLED' else 'secondary' }}">{{ m.status }}</span></td>
+      <td class="text-end">
+        <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.vehiclemovement_detail', mid=m.id) }}">
+          <i class="bi bi-eye"></i></a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

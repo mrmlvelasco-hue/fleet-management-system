@@ -1,0 +1,46 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.tripticket_list') }}">Trip Tickets</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Vehicle</label>
+    <select name="vehicle_id" class="form-select fms-select2" required>
+      <option value="">— Select vehicle —</option>
+      {% for v in vehicles %}
+      <option value="{{ v.id }}">{{ v.plate_number or v.conduction_number }} — {{ v.brand }} {{ v.model }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Driver (from Master)</label>
+    <select name="driver_id" class="form-select fms-select2">
+      <option value="">— Manual entry below —</option>
+      {% for d in drivers %}
+      <option value="{{ d.id }}">{{ d.employee_number }} — {{ d.last_name }}, {{ d.first_name }}</option>
+      {% endfor %}
+    </select>
+    <div class="form-text">Leave blank and fill "Manual Driver Name" only if
+      System Parameter REQUIRE_DRIVER_FROM_MASTER = NO.</div></div>
+  <div class="col-md-6"><label class="form-label">Manual Driver Name</label>
+    <input type="text" name="driver_name_manual" class="form-control"></div>
+  <div class="col-md-6"><label class="form-label">Destination</label>
+    <input type="text" name="destination" class="form-control" required></div>
+  <div class="col-12"><label class="form-label">Purpose</label>
+    <input type="text" name="purpose" class="form-control" required></div>
+  <div class="col-md-4"><label class="form-label">Departure Date/Time</label>
+    <input type="datetime-local" name="departure_datetime" class="form-control" required></div>
+  <div class="col-md-4"><label class="form-label">Odometer Out</label>
+    <input type="number" name="odometer_out" class="form-control"></div>
+  <div class="col-md-4"><label class="form-label">Passengers</label>
+    <input type="text" name="passengers" class="form-control"></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save as Draft</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.tripticket_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}

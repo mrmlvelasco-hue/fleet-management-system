@@ -1,0 +1,40 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.vehiclemovement_list') }}">Vehicle Movements</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Vehicle</label>
+    <select name="vehicle_id" class="form-select fms-select2" required>
+      <option value="">— Select vehicle —</option>
+      {% for v in vehicles %}
+      <option value="{{ v.id }}">{{ v.plate_number or v.conduction_number }} — {{ v.brand }} {{ v.model }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Movement Type</label>
+    <select name="movement_type" class="form-select" required>
+      <option value="TRANSFER">Transfer</option>
+      <option value="DISPATCH">Dispatch</option>
+      <option value="RETURN">Return</option>
+      <option value="OTHER">Other</option>
+    </select></div>
+  <div class="col-md-6"><label class="form-label">From Location</label>
+    <input type="text" name="from_location" class="form-control" required></div>
+  <div class="col-md-6"><label class="form-label">To Location</label>
+    <input type="text" name="to_location" class="form-control" required></div>
+  <div class="col-md-6"><label class="form-label">Movement Date</label>
+    <input type="date" name="movement_date" class="form-control" required></div>
+  <div class="col-12"><label class="form-label">Remarks</label>
+    <textarea name="remarks" class="form-control" rows="2"></textarea></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save as Draft</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.vehiclemovement_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}
