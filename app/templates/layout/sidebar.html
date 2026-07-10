@@ -21,5 +21,13 @@
     <li><a href="{{ url_for('user_management.permissions_list') }}" class="nav-link {{ 'active' if request.endpoint == 'user_management.permissions_list' }}">
       <i class="bi bi-shield-lock me-2"></i><span class="sidebar-label">Permissions</span></a></li>
     {% endif %}
+    {% if current_user.has_permission('doctype.view') %}
+    <li><a href="{{ url_for('document_config.doctypes_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('document_config.doctypes') }}">
+      <i class="bi bi-file-earmark-text me-2"></i><span class="sidebar-label">Document Types</span></a></li>
+    {% endif %}
+    {% if current_user.has_permission('numbering.view') %}
+    <li><a href="{{ url_for('document_config.schemes_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('document_config.schemes') }}">
+      <i class="bi bi-123 me-2"></i><span class="sidebar-label">Numbering</span></a></li>
+    {% endif %}
   </ul>
 </aside>

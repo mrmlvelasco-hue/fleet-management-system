@@ -1,0 +1,63 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('document_config.schemes_list') }}">Numbering Schemes</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" novalidate class="row g-3">
+  {{ form.hidden_tag() }}
+  <div class="col-md-6">{{ form.document_type_id.label(class="form-label") }}
+    {{ form.document_type_id(class="form-select fms-select2") }}</div>
+  <div class="col-md-3">{{ form.prefix.label(class="form-label") }}
+    {{ form.prefix(class="form-control", id="nsPrefix") }}</div>
+  <div class="col-md-3">{{ form.suffix.label(class="form-label") }}
+    {{ form.suffix(class="form-control", id="nsSuffix") }}</div>
+  <div class="col-md-3">{{ form.digit_count.label(class="form-label") }}
+    {{ form.digit_count(class="form-control", id="nsDigits") }}
+    {% for e in form.digit_count.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  <div class="col-md-3">{{ form.separator.label(class="form-label") }}
+    {{ form.separator(class="form-control", id="nsSep") }}</div>
+  <div class="col-md-3">{{ form.reset_policy.label(class="form-label") }}
+    {{ form.reset_policy(class="form-select") }}</div>
+  <div class="col-md-3 d-flex align-items-end gap-3">
+    <div class="form-check">{{ form.include_year(class="form-check-input", id="nsYear") }}
+      {{ form.include_year.label(class="form-check-label") }}</div>
+    <div class="form-check">{{ form.include_month(class="form-check-input", id="nsMonth") }}
+      {{ form.include_month.label(class="form-check-label") }}</div>
+  </div>
+  <div class="col-12">
+    <label class="form-label">Preview</label>
+    <div class="form-control-plaintext fs-5"><code id="nsPreview"></code></div>
+  </div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('document_config.schemes_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  function el(id) { return document.getElementById(id); }
+  function preview() {
+    var parts = [];
+    var sep = el("nsSep").value || "-";
+    if (el("nsPrefix").value) parts.push(el("nsPrefix").value);
+    if (el("nsYear").checked) parts.push(new Date().getFullYear());
+    if (el("nsMonth").checked)
+      parts.push(String(new Date().getMonth() + 1).padStart(2, "0"));
+    var digits = parseInt(el("nsDigits").value || "6", 10);
+    parts.push("1".padStart(digits, "0"));
+    if (el("nsSuffix").value) parts.push(el("nsSuffix").value);
+    el("nsPreview").textContent = parts.join(sep);
+  }
+  ["nsPrefix", "nsSuffix", "nsDigits", "nsSep", "nsYear", "nsMonth"]
+    .forEach(function (id) { el(id).addEventListener("input", preview); });
+  preview();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('document_config.doctypes_list') }}">Document Types</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" novalidate class="row g-3">
+  {{ form.hidden_tag() }}
+  <div class="col-md-3">{{ form.code.label(class="form-label") }}{{ form.code(class="form-control") }}
+    {% for e in form.code.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  <div class="col-md-9">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}
+    {% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  <div class="col-12">{{ form.description.label(class="form-label") }}{{ form.description(class="form-control") }}</div>
+  <div class="col-12">
+    {% for f in [form.requires_approval, form.auto_numbering, form.printable,
+                 form.mobile_available, form.attachment_allowed] %}
+    <div class="form-check form-check-inline">
+      {{ f(class="form-check-input") }}{{ f.label(class="form-check-label") }}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('document_config.doctypes_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "layout/base.html" %}
+{% block title %}Document Types{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Document Types</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Document Types</h1>
+  {% if current_user.has_permission('doctype.create') %}
+  <a class="btn btn-primary" href="{{ url_for('document_config.doctypes_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Document Type</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr>
+    <th>Code</th><th>Name</th><th>Approval</th><th>Auto No.</th>
+    <th>Printable</th><th>Mobile</th><th>Attachments</th><th>Active</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for d in items %}
+    <tr>
+      <td><code>{{ d.code }}</code></td>
+      <td>{{ d.name }}</td>
+      {% for flag in [d.requires_approval, d.auto_numbering, d.printable,
+                      d.mobile_available, d.attachment_allowed, d.is_active] %}
+      <td>{% if flag %}<i class="bi bi-check-circle text-success"></i>
+          {% else %}<i class="bi bi-dash-circle text-muted"></i>{% endif %}</td>
+      {% endfor %}
+      <td class="text-end">
+        {% if current_user.has_permission('doctype.update') %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('document_config.doctypes_edit', doctype_id=d.id) }}">
+          <i class="bi bi-pencil"></i></a>
+        {% endif %}
+        {% if current_user.has_permission('doctype.delete') and d.is_active %}
+        <form method="post" class="d-inline fms-confirm"
+              data-confirm="Deactivate {{ d.code }}?"
+              action="{{ url_for('document_config.doctypes_deactivate', doctype_id=d.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll("form.fms-confirm").forEach(function (f) {
+  f.addEventListener("submit", function (e) {
+    e.preventDefault();
+    Swal.fire({title: f.dataset.confirm, icon: "warning",
+               showCancelButton: true, confirmButtonText: "Yes"})
+      .then(function (r) { if (r.isConfirmed) f.submit(); });
+  });
+});
+</script>
+{% endblock %}
