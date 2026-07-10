@@ -25,16 +25,14 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.core.audit.audit_service import register_audit_listeners
     register_audit_listeners()
 
-    # Import all model modules so SQLAlchemy metadata is complete for
-    # create_all/migrations regardless of which blueprint imports what.
-    from app.core.models import audit_log  # noqa: F401
+    # Import all model modules so SQLAlchemy metadata is complete.
+    from app.core.models import audit_log        # noqa: F401
+    from app.core.models import attachment        # noqa: F401
     from app.core.approval import models as _apm  # noqa: F401
     from app.modules.user_management import models as _um  # noqa: F401
     from app.modules.document_config import models as _dc  # noqa: F401
     from app.modules.approval_config import models as _ac  # noqa: F401
-    from app.modules.system_admin import models as _sa  # noqa: F401
-    from app.modules.master_data.org import models as _org  # noqa: F401
-    from app.modules.master_data.reference import models as _ref  # noqa: F401
+    from app.modules.system_admin import models as _sa     # noqa: F401
 
     from app.modules.auth.routes import bp as auth_bp
     from app.modules.main.routes import bp as main_bp
