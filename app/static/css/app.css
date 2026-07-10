@@ -11,5 +11,16 @@
 .fms-sidebar .nav-link { color: var(--bs-body-color); }
 .fms-sidebar .nav-link.active { background: var(--bs-primary); color: #fff; }
 .sidebar-section { color: var(--bs-secondary-color); letter-spacing: .05em; }
+.sidebar-group-toggle {
+  color: var(--bs-secondary-color);
+  border: none;
+  background: none;
+  padding: .5rem .25rem;
+  margin-top: .5rem;
+}
+.sidebar-group-toggle:hover { color: var(--bs-body-color); }
+.sidebar-chevron { transition: transform .15s ease; font-size: .75rem; }
+.sidebar-group-toggle[aria-expanded="false"] .sidebar-chevron { transform: rotate(-90deg); }
+#fms-wrapper.sidebar-collapsed .sidebar-group-toggle { pointer-events: none; }
 .fms-topnav { background: var(--bs-body-bg); }
 .kpi-card .bi { font-size: 1.8rem; opacity: .6; }

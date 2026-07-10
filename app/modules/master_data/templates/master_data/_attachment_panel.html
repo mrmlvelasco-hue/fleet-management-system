@@ -1,43 +1,61 @@
 {# Reusable attachment panel — include with reference_table and reference_id in context #}
-<div class="card mt-4">
+<div class="card mt-4" id="attachmentCard-{{ reference_table }}-{{ reference_id }}"
+     data-reference-table="{{ reference_table }}" data-reference-id="{{ reference_id }}">
   <div class="card-header d-flex justify-content-between align-items-center">
     <span><i class="bi bi-paperclip me-1"></i>Attachments</span>
     <button class="btn btn-sm btn-outline-primary" type="button"
-            data-bs-toggle="collapse" data-bs-target="#attachPanel">
+            data-bs-toggle="collapse" data-bs-target="#attachPanel-{{ reference_table }}-{{ reference_id }}">
       <i class="bi bi-plus-lg"></i> Add
     </button>
   </div>
-  <div class="collapse" id="attachPanel">
+  <div class="collapse" id="attachPanel-{{ reference_table }}-{{ reference_id }}">
     <div class="card-body border-bottom">
-      <form method="post"
-            action="{{ url_for('master_data.attachment_upload') }}"
-            enctype="multipart/form-data" class="row g-2">
+      <form class="fms-attachment-upload-form row g-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="reference_table" value="{{ reference_table }}">
         <input type="hidden" name="reference_id" value="{{ reference_id }}">
         <div class="col-md-8">
-          <input type="file" name="file" class="form-control">
+          <input type="file" name="file" class="form-control" required>
         </div>
         <div class="col-md-4">
-          <button class="btn btn-primary w-100" type="submit">Upload</button>
+          <button class="btn btn-primary w-100" type="submit">
+            <span class="upload-label">Upload</span>
+            <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+          </button>
         </div>
+        <div class="col-12 fms-upload-error text-danger small d-none"></div>
       </form>
     </div>
   </div>
-  <ul class="list-group list-group-flush">
+  <div class="fms-attachment-gallery p-3 d-none row g-2"></div>
+  <ul class="list-group list-group-flush fms-attachment-list">
     {% for att in attachments %}
-    <li class="list-group-item d-flex justify-content-between align-items-center">
-      <span><i class="bi bi-file-earmark me-2"></i>{{ att.original_filename }}
-        <span class="text-muted small ms-2">{{ "%.1f"|format(att.file_size/1024) }} KB</span></span>
+    <li class="list-group-item d-flex justify-content-between align-items-center"
+        data-attachment-id="{{ att.id }}">
+      <span>
+        {% if att.mime_type and att.mime_type.startswith('image/') %}
+        <a href="{{ url_for('master_data.attachment_view', att_id=att.id) }}" target="_blank">
+          <img src="{{ url_for('master_data.attachment_view', att_id=att.id) }}"
+               alt="{{ att.original_filename }}" style="height:32px;width:32px;object-fit:cover;border-radius:4px;" class="me-2">
+        </a>
+        {% else %}
+        <i class="bi bi-file-earmark me-2"></i>
+        {% endif %}
+        {{ att.original_filename }}
+        <span class="text-muted small ms-2">{{ "%.1f"|format(att.file_size/1024) }} KB</span>
+      </span>
       <div>
+        {% if att.mime_type and att.mime_type.startswith('image/') %}
+        <a class="btn btn-sm btn-outline-secondary" target="_blank"
+           href="{{ url_for('master_data.attachment_view', att_id=att.id) }}">
+          <i class="bi bi-eye"></i></a>
+        {% endif %}
         <a class="btn btn-sm btn-outline-secondary"
            href="{{ url_for('master_data.attachment_download', att_id=att.id) }}">
           <i class="bi bi-download"></i></a>
-        <form method="post" class="d-inline"
-              action="{{ url_for('master_data.attachment_delete', att_id=att.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-        </form>
+        <button type="button" class="btn btn-sm btn-outline-danger fms-attachment-delete"
+                data-attachment-id="{{ att.id }}">
+          <i class="bi bi-trash"></i></button>
       </div>
     </li>
     {% else %}

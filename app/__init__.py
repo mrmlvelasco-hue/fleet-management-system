@@ -83,9 +83,10 @@ def create_app(config_name: str | None = None) -> Flask:
 def _configure_logging(app: Flask) -> None:
     if app.testing:
         return
-    os.makedirs("instance/logs", exist_ok=True)
+    log_dir = os.path.join(app.instance_path, "logs")
+    os.makedirs(log_dir, exist_ok=True)
     handler = RotatingFileHandler(
-        "instance/logs/fms.log", maxBytes=1_000_000, backupCount=5
+        os.path.join(log_dir, "fms.log"), maxBytes=1_000_000, backupCount=5
     )
     handler.setFormatter(
         logging.Formatter(

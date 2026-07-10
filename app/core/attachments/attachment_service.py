@@ -7,6 +7,7 @@ configurable without code changes.
 import os
 import uuid
 from werkzeug.utils import secure_filename
+from flask import current_app
 
 from app.extensions import db
 from app.core.models.attachment import Attachment
@@ -17,7 +18,10 @@ DEFAULT_MAX_MB = 10
 
 
 def _get_upload_dir(reference_table: str) -> str:
-    base = os.path.join("instance", "uploads", reference_table)
+    # Use Flask's absolute instance_path (not a CWD-relative path) so
+    # uploads are found consistently regardless of process working
+    # directory (dev server, gunicorn, tests, etc.)
+    base = os.path.join(current_app.instance_path, "uploads", reference_table)
     os.makedirs(base, exist_ok=True)
     return base
 

@@ -30,6 +30,14 @@
   <div class="col-md-4"><label class="form-label">Tread Depth (initial)</label>
     <input type="number" step="any" name="tread_depth_initial" class="form-control"
            value="{{ item.tread_depth_initial if item and item.tread_depth_initial else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Vendor</label>
+    <select name="vendor_id" class="form-select fms-select2">
+      <option value="">— Select vendor —</option>
+      {% for v in vendors %}
+      <option value="{{ v.id }}" {{ 'selected' if item and item.vendor_id==v.id }}>
+        {{ v.code }} — {{ v.name }}</option>
+      {% endfor %}
+    </select></div>
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Save</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('master_data.tire_list') }}">Cancel</a>

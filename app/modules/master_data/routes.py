@@ -3,7 +3,7 @@ Thin controllers: parse → service → render. All business logic in services."
 from datetime import date
 
 from flask import (Blueprint, render_template, redirect, url_for,
-                   flash, request, jsonify, send_from_directory)
+                   flash, request, jsonify, send_from_directory, current_app)
 from flask_login import login_required, current_user
 
 from app.core.security.decorators import require_permission
@@ -682,6 +682,21 @@ def battery_deactivate(bid):
 
 # ── Attachments ────────────────────────────────────────────────────────────
 
+@bp.route("/attachments/list")
+@login_required
+def attachment_list_json():
+    ref_table = request.args.get("reference_table")
+    ref_id = request.args.get("reference_id")
+    items = _attachment_rows(ref_table, int(ref_id)) if ref_table and ref_id else []
+    return jsonify(attachments=[{
+        "id": a.id, "filename": a.original_filename,
+        "size": a.file_size, "mime_type": a.mime_type,
+        "is_image": bool(a.mime_type and a.mime_type.startswith("image/")),
+        "view_url": url_for("master_data.attachment_view", att_id=a.id),
+        "download_url": url_for("master_data.attachment_download", att_id=a.id),
+    } for a in items])
+
+
 @bp.route("/attachments/upload", methods=["POST"])
 @login_required
 @require_permission("attachment.upload")
@@ -695,7 +710,14 @@ def attachment_upload():
         db.session.commit()
         return jsonify(ok=True, id=att.id,
                        filename=att.original_filename,
-                       size=att.file_size)
+                       size=att.file_size,
+                       mime_type=att.mime_type,
+                       is_image=bool(att.mime_type and
+                                    att.mime_type.startswith("image/")),
+                       view_url=url_for("master_data.attachment_view",
+                                        att_id=att.id),
+                       download_url=url_for("master_data.attachment_download",
+                                            att_id=att.id))
     except AttachmentError as e:
         return jsonify(ok=False, error=str(e)), 400
 
@@ -715,6 +737,22 @@ def attachment_download(att_id):
     if att is None or not att.is_active:
         flash("Attachment not found.", "warning")
         return redirect(url_for("main.dashboard"))
-    upload_dir = os.path.join("instance", "uploads", att.reference_table)
+    upload_dir = os.path.join(current_app.instance_path, "uploads",
+                              att.reference_table)
     return send_from_directory(upload_dir, att.filename,
                                download_name=att.original_filename)
+
+
+@bp.route("/attachments/<int:att_id>/view")
+@login_required
+def attachment_view(att_id):
+    """Serve the file inline (not as a download) so images can be
+    previewed/embedded directly in the browser (e.g. <img> tags)."""
+    att = db.session.get(Attachment, att_id)
+    if att is None or not att.is_active:
+        flash("Attachment not found.", "warning")
+        return redirect(url_for("main.dashboard"))
+    upload_dir = os.path.join(current_app.instance_path, "uploads",
+                              att.reference_table)
+    return send_from_directory(upload_dir, att.filename, as_attachment=False,
+                               mimetype=att.mime_type)

@@ -8,103 +8,127 @@
         <i class="bi bi-speedometer2 me-2"></i><span class="sidebar-label">Dashboard</span>
       </a>
     </li>
-    <li class="mt-3 mb-1 text-uppercase small sidebar-section sidebar-label">System Administration</li>
-    {% if current_user.has_permission('user.view') %}
-    <li><a href="{{ url_for('user_management.users_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('user_management.users') }}">
-      <i class="bi bi-people me-2"></i><span class="sidebar-label">Users</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('role.view') %}
-    <li><a href="{{ url_for('user_management.roles_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('user_management.roles') }}">
-      <i class="bi bi-person-badge me-2"></i><span class="sidebar-label">Roles</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('permission.view') %}
-    <li><a href="{{ url_for('user_management.permissions_list') }}" class="nav-link {{ 'active' if request.endpoint == 'user_management.permissions_list' }}">
-      <i class="bi bi-shield-lock me-2"></i><span class="sidebar-label">Permissions</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('doctype.view') %}
-    <li><a href="{{ url_for('document_config.doctypes_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('document_config.doctypes') }}">
-      <i class="bi bi-file-earmark-text me-2"></i><span class="sidebar-label">Document Types</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('numbering.view') %}
-    <li><a href="{{ url_for('document_config.schemes_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('document_config.schemes') }}">
-      <i class="bi bi-123 me-2"></i><span class="sidebar-label">Numbering</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('approvalpath.view') %}
-    <li><a href="{{ url_for('approval_config.paths_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('approval_config.paths') }}">
-      <i class="bi bi-diagram-3 me-2"></i><span class="sidebar-label">Approval Paths</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('approvalmatrix.view') %}
-    <li><a href="{{ url_for('approval_config.matrix_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('approval_config.matrix') }}">
-      <i class="bi bi-grid-3x3 me-2"></i><span class="sidebar-label">Approval Matrix</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('sysparam.view') %}
-    <li><a href="{{ url_for('system_admin.sysparam_list') }}" class="nav-link {{ 'active' if request.endpoint and 'sysparam' in (request.endpoint or '') }}">
-      <i class="bi bi-sliders me-2"></i><span class="sidebar-label">System Parameters</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('lookup.view') %}
-    <li><a href="{{ url_for('system_admin.lookup_list') }}" class="nav-link {{ 'active' if request.endpoint and 'lookup' in (request.endpoint or '') }}">
-      <i class="bi bi-card-list me-2"></i><span class="sidebar-label">Lookups</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('company.view') %}
-    <li><a href="{{ url_for('system_admin.company_profile') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.company_profile' }}">
-      <i class="bi bi-building me-2"></i><span class="sidebar-label">Company Profile</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('emailtemplate.view') %}
-    <li><a href="{{ url_for('system_admin.email_template_list') }}" class="nav-link {{ 'active' if request.endpoint and 'email_template' in (request.endpoint or '') }}">
-      <i class="bi bi-envelope me-2"></i><span class="sidebar-label">Email Templates</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('notificationrule.view') %}
-    <li><a href="{{ url_for('system_admin.notification_rule_list') }}" class="nav-link {{ 'active' if request.endpoint and 'notification_rule' in (request.endpoint or '') }}">
-      <i class="bi bi-bell me-2"></i><span class="sidebar-label">Notification Rules</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('audittrail.view') %}
-    <li><a href="{{ url_for('system_admin.audit_trail') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.audit_trail' }}">
-      <i class="bi bi-journal-text me-2"></i><span class="sidebar-label">Audit Trail</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('dashboardconfig.view') %}
-    <li><a href="{{ url_for('system_admin.dashboard_config') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.dashboard_config' }}">
-      <i class="bi bi-layout-wtf me-2"></i><span class="sidebar-label">Dashboard Config</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('backupconfig.view') %}
-    <li><a href="{{ url_for('system_admin.backup_config') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.backup_config' }}">
-      <i class="bi bi-hdd me-2"></i><span class="sidebar-label">Backup Config</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('reportconfig.view') %}
-    <li><a href="{{ url_for('system_admin.report_config_list') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.report_config_list' }}">
-      <i class="bi bi-bar-chart me-2"></i><span class="sidebar-label">Report Config</span></a></li>
-    {% endif %}
-    <li class="mt-3 mb-1 text-uppercase small sidebar-section sidebar-label">Master Data</li>
-    {% if current_user.has_permission('vehicle.view') %}
-    <li><a href="{{ url_for('master_data.vehicle_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehicle' in (request.endpoint or '') }}">
-      <i class="bi bi-truck me-2"></i><span class="sidebar-label">Vehicles</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('driver.view') %}
-    <li><a href="{{ url_for('master_data.driver_list') }}" class="nav-link {{ 'active' if request.endpoint and 'driver' in (request.endpoint or '') }}">
-      <i class="bi bi-person-badge me-2"></i><span class="sidebar-label">Drivers</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('tire.view') %}
-    <li><a href="{{ url_for('master_data.tire_list') }}" class="nav-link {{ 'active' if request.endpoint and 'tire' in (request.endpoint or '') }}">
-      <i class="bi bi-circle me-2"></i><span class="sidebar-label">Tires</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('battery.view') %}
-    <li><a href="{{ url_for('master_data.battery_list') }}" class="nav-link {{ 'active' if request.endpoint and 'battery' in (request.endpoint or '') }}">
-      <i class="bi bi-battery-half me-2"></i><span class="sidebar-label">Batteries</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('vendor.view') %}
-    <li><a href="{{ url_for('master_data.vendor_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vendor' in (request.endpoint or '') }}">
-      <i class="bi bi-shop me-2"></i><span class="sidebar-label">Vendors</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('branch.view') %}
-    <li><a href="{{ url_for('master_data.branch_list') }}" class="nav-link {{ 'active' if request.endpoint and 'branch' in (request.endpoint or '') }}">
-      <i class="bi bi-building me-2"></i><span class="sidebar-label">Branches</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('department.view') %}
-    <li><a href="{{ url_for('master_data.department_list') }}" class="nav-link {{ 'active' if request.endpoint and 'department' in (request.endpoint or '') }}">
-      <i class="bi bi-diagram-2 me-2"></i><span class="sidebar-label">Departments</span></a></li>
-    {% endif %}
-    {% if current_user.has_permission('vehicletype.view') %}
-    <li><a href="{{ url_for('master_data.vehicletype_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehicletype' in (request.endpoint or '') }}">
-      <i class="bi bi-tags me-2"></i><span class="sidebar-label">Vehicle Types</span></a></li>
-    {% endif %}
   </ul>
+
+  {# ── System Administration (collapsible group) ── #}
+  <div class="sidebar-group">
+    <button class="btn sidebar-group-toggle w-100 d-flex justify-content-between align-items-center text-uppercase small sidebar-section"
+            type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupSysAdmin">
+      <span class="sidebar-label">System Administration</span>
+      <i class="bi bi-chevron-down sidebar-label sidebar-chevron"></i>
+    </button>
+    <div class="collapse show" id="sbGroupSysAdmin">
+      <ul class="nav nav-pills flex-column">
+        {% if current_user.has_permission('user.view') %}
+        <li><a href="{{ url_for('user_management.users_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('user_management.users') }}">
+          <i class="bi bi-people me-2"></i><span class="sidebar-label">Users</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('role.view') %}
+        <li><a href="{{ url_for('user_management.roles_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('user_management.roles') }}">
+          <i class="bi bi-person-badge me-2"></i><span class="sidebar-label">Roles</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('permission.view') %}
+        <li><a href="{{ url_for('user_management.permissions_list') }}" class="nav-link {{ 'active' if request.endpoint == 'user_management.permissions_list' }}">
+          <i class="bi bi-shield-lock me-2"></i><span class="sidebar-label">Permissions</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('doctype.view') %}
+        <li><a href="{{ url_for('document_config.doctypes_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('document_config.doctypes') }}">
+          <i class="bi bi-file-earmark-text me-2"></i><span class="sidebar-label">Document Types</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('numbering.view') %}
+        <li><a href="{{ url_for('document_config.schemes_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('document_config.schemes') }}">
+          <i class="bi bi-123 me-2"></i><span class="sidebar-label">Numbering</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('approvalpath.view') %}
+        <li><a href="{{ url_for('approval_config.paths_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('approval_config.paths') }}">
+          <i class="bi bi-diagram-3 me-2"></i><span class="sidebar-label">Approval Paths</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('approvalmatrix.view') %}
+        <li><a href="{{ url_for('approval_config.matrix_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('approval_config.matrix') }}">
+          <i class="bi bi-grid-3x3 me-2"></i><span class="sidebar-label">Approval Matrix</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('sysparam.view') %}
+        <li><a href="{{ url_for('system_admin.sysparam_list') }}" class="nav-link {{ 'active' if request.endpoint and 'sysparam' in (request.endpoint or '') }}">
+          <i class="bi bi-sliders me-2"></i><span class="sidebar-label">System Parameters</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('lookup.view') %}
+        <li><a href="{{ url_for('system_admin.lookup_list') }}" class="nav-link {{ 'active' if request.endpoint and 'lookup' in (request.endpoint or '') }}">
+          <i class="bi bi-card-list me-2"></i><span class="sidebar-label">Lookups</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('company.view') %}
+        <li><a href="{{ url_for('system_admin.company_profile') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.company_profile' }}">
+          <i class="bi bi-building me-2"></i><span class="sidebar-label">Company Profile</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('emailtemplate.view') %}
+        <li><a href="{{ url_for('system_admin.email_template_list') }}" class="nav-link {{ 'active' if request.endpoint and 'email_template' in (request.endpoint or '') }}">
+          <i class="bi bi-envelope me-2"></i><span class="sidebar-label">Email Templates</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('notificationrule.view') %}
+        <li><a href="{{ url_for('system_admin.notification_rule_list') }}" class="nav-link {{ 'active' if request.endpoint and 'notification_rule' in (request.endpoint or '') }}">
+          <i class="bi bi-bell me-2"></i><span class="sidebar-label">Notification Rules</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('audittrail.view') %}
+        <li><a href="{{ url_for('system_admin.audit_trail') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.audit_trail' }}">
+          <i class="bi bi-journal-text me-2"></i><span class="sidebar-label">Audit Trail</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('dashboardconfig.view') %}
+        <li><a href="{{ url_for('system_admin.dashboard_config') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.dashboard_config' }}">
+          <i class="bi bi-layout-wtf me-2"></i><span class="sidebar-label">Dashboard Config</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('backupconfig.view') %}
+        <li><a href="{{ url_for('system_admin.backup_config') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.backup_config' }}">
+          <i class="bi bi-hdd me-2"></i><span class="sidebar-label">Backup Config</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('reportconfig.view') %}
+        <li><a href="{{ url_for('system_admin.report_config_list') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.report_config_list' }}">
+          <i class="bi bi-bar-chart me-2"></i><span class="sidebar-label">Report Config</span></a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+
+  {# ── Master Data (collapsible group) ── #}
+  <div class="sidebar-group">
+    <button class="btn sidebar-group-toggle w-100 d-flex justify-content-between align-items-center text-uppercase small sidebar-section"
+            type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupMasterData">
+      <span class="sidebar-label">Master Data</span>
+      <i class="bi bi-chevron-down sidebar-label sidebar-chevron"></i>
+    </button>
+    <div class="collapse show" id="sbGroupMasterData">
+      <ul class="nav nav-pills flex-column">
+        {% if current_user.has_permission('vehicle.view') %}
+        <li><a href="{{ url_for('master_data.vehicle_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehicle' in (request.endpoint or '') }}">
+          <i class="bi bi-truck me-2"></i><span class="sidebar-label">Vehicles</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('driver.view') %}
+        <li><a href="{{ url_for('master_data.driver_list') }}" class="nav-link {{ 'active' if request.endpoint and 'driver' in (request.endpoint or '') }}">
+          <i class="bi bi-person-badge me-2"></i><span class="sidebar-label">Drivers</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('tire.view') %}
+        <li><a href="{{ url_for('master_data.tire_list') }}" class="nav-link {{ 'active' if request.endpoint and 'tire' in (request.endpoint or '') }}">
+          <i class="bi bi-circle me-2"></i><span class="sidebar-label">Tires</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('battery.view') %}
+        <li><a href="{{ url_for('master_data.battery_list') }}" class="nav-link {{ 'active' if request.endpoint and 'battery' in (request.endpoint or '') }}">
+          <i class="bi bi-battery-half me-2"></i><span class="sidebar-label">Batteries</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('vendor.view') %}
+        <li><a href="{{ url_for('master_data.vendor_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vendor' in (request.endpoint or '') }}">
+          <i class="bi bi-shop me-2"></i><span class="sidebar-label">Vendors</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('branch.view') %}
+        <li><a href="{{ url_for('master_data.branch_list') }}" class="nav-link {{ 'active' if request.endpoint and 'branch' in (request.endpoint or '') }}">
+          <i class="bi bi-building me-2"></i><span class="sidebar-label">Branches</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('department.view') %}
+        <li><a href="{{ url_for('master_data.department_list') }}" class="nav-link {{ 'active' if request.endpoint and 'department' in (request.endpoint or '') }}">
+          <i class="bi bi-diagram-2 me-2"></i><span class="sidebar-label">Departments</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('vehicletype.view') %}
+        <li><a href="{{ url_for('master_data.vehicletype_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehicletype' in (request.endpoint or '') }}">
+          <i class="bi bi-tags me-2"></i><span class="sidebar-label">Vehicle Types</span></a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
 </aside>
