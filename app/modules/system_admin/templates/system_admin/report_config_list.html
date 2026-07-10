@@ -1,0 +1,22 @@
+{% extends "layout/base.html" %}
+{% block title %}Report Config{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Report Config</li>{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Report Configuration</h1>
+<p class="text-muted">Report rendering will be implemented in Phase 5. Register report codes here.</p>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr><th>Code</th><th>Name</th><th>Description</th><th>Template</th></tr></thead>
+  <tbody>
+  {% for r in items %}
+    <tr>
+      <td><code>{{ r.report_code }}</code></td>
+      <td>{{ r.name }}</td>
+      <td>{{ r.description or '—' }}</td>
+      <td>{{ r.template_path or '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

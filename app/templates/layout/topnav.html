@@ -6,9 +6,18 @@
     <button class="btn btn-outline-secondary btn-sm" id="darkModeToggle" type="button" title="Toggle dark mode">
       <i class="bi bi-moon"></i>
     </button>
-    <button class="btn btn-outline-secondary btn-sm position-relative" type="button" title="Notifications (coming soon)" disabled>
+    <button class="btn btn-outline-secondary btn-sm position-relative" type="button"
+            id="notifBell" title="Notifications" data-bs-toggle="dropdown">
       <i class="bi bi-bell"></i>
+      <span class="badge text-bg-danger position-absolute top-0 start-100 translate-middle rounded-pill d-none" id="notifBadge"></span>
     </button>
+    <ul class="dropdown-menu dropdown-menu-end" style="min-width:320px;" id="notifDropdown">
+      <li class="px-3 py-2 d-flex justify-content-between align-items-center border-bottom">
+        <span class="fw-semibold small">Notifications</span>
+        <a href="#" class="small" id="markAllRead">Mark all read</a>
+      </li>
+      <li id="notifItems"><li class="px-3 py-2 text-muted small">Loading...</li></li>
+    </ul>
     <div class="dropdown">
       <a class="d-flex align-items-center text-decoration-none dropdown-toggle" data-bs-toggle="dropdown" href="#">
         <i class="bi bi-person-circle me-2 fs-5"></i>{{ current_user.full_name }}

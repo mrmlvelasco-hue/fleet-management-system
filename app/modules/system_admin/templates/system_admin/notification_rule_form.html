@@ -1,0 +1,56 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('system_admin.notification_rule_list') }}">Notification Rules</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-4"><label class="form-label">Event Code</label>
+    <select name="event_code" class="form-select" required>
+      {% for code in ['submitted','approved_level','approved_final','rejected','returned','resubmitted','cancelled'] %}
+      <option value="{{ code }}">{{ code }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Channel</label>
+    <select name="channel" class="form-select">
+      <option value="IN_APP">In-App</option>
+      <option value="EMAIL">Email</option>
+      <option value="BOTH">Both</option>
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Recipient Type</label>
+    <select name="recipient_type" id="recipientType" class="form-select" onchange="toggleRecipient()">
+      <option value="SUBMITTER">Submitter</option>
+      <option value="CURRENT_APPROVER">Current Approver</option>
+      <option value="ROLE">Role</option>
+      <option value="SPECIFIC_USER">Specific User</option>
+    </select></div>
+  <div class="col-md-6 d-none" id="roleDiv"><label class="form-label">Role</label>
+    <select name="role_id" class="form-select fms-select2">
+      <option value="">— Select role —</option>
+      {% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-6 d-none" id="userDiv"><label class="form-label">User</label>
+    <select name="user_id" class="form-select fms-select2">
+      <option value="">— Select user —</option>
+      {% for u in users %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
+    </select></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.notification_rule_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+function toggleRecipient() {
+  var v = document.getElementById("recipientType").value;
+  document.getElementById("roleDiv").classList.toggle("d-none", v !== "ROLE");
+  document.getElementById("userDiv").classList.toggle("d-none", v !== "SPECIFIC_USER");
+}
+toggleRecipient();
+</script>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('system_admin.email_template_list') }}">Email Templates</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-4"><label class="form-label">Event Code</label>
+    <input type="text" name="event_code" class="form-control" value="{{ item.event_code if item else '' }}" {{ 'readonly' if item }} required></div>
+  <div class="col-md-8"><label class="form-label">Name</label>
+    <input type="text" name="name" class="form-control" value="{{ item.name if item else '' }}" required></div>
+  <div class="col-12"><label class="form-label">Subject <span class="text-muted small">(Jinja2: use {{ "{{ doc_number }}" }})</span></label>
+    <input type="text" name="subject" class="form-control" value="{{ item.subject if item else '' }}" required></div>
+  <div class="col-md-6"><label class="form-label">Body HTML</label>
+    <textarea name="body_html" class="form-control font-monospace" rows="10">{{ item.body_html if item else '' }}</textarea></div>
+  <div class="col-md-6"><label class="form-label">Body Text</label>
+    <textarea name="body_text" class="form-control font-monospace" rows="10">{{ item.body_text if item else '' }}</textarea></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.email_template_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}

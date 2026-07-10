@@ -1,0 +1,25 @@
+{% extends "layout/base.html" %}
+{% block title %}Backup Config{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Backup Config</li>{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Backup & Restore Configuration</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-4"><label class="form-label">Schedule</label>
+    <select name="schedule" class="form-select">
+      <option value="DAILY" {{ 'selected' if cfg and cfg.schedule=='DAILY' }}>Daily</option>
+      <option value="WEEKLY" {{ 'selected' if cfg and cfg.schedule=='WEEKLY' }}>Weekly</option>
+      <option value="MANUAL" {{ 'selected' if not cfg or cfg.schedule=='MANUAL' }}>Manual</option>
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Retention (days)</label>
+    <input type="number" name="retention_days" class="form-control" value="{{ cfg.retention_days if cfg else 30 }}"></div>
+  <div class="col-md-8"><label class="form-label">Destination Path</label>
+    <input type="text" name="destination_path" class="form-control" value="{{ cfg.destination_path if cfg else '' }}"></div>
+  <p class="text-muted small col-12">Actual backup execution will be implemented in Phase 5.</p>
+  {% if current_user.has_permission('backupconfig.update') %}
+  <div class="col-12"><button class="btn btn-primary" type="submit">Save</button></div>
+  {% endif %}
+</form>
+</div></div>
+{% endblock %}

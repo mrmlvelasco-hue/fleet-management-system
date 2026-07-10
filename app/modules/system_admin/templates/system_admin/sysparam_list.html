@@ -1,0 +1,34 @@
+{% extends "layout/base.html" %}
+{% block title %}System Parameters{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">System Parameters</li>{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">System Parameters</h1>
+{% set groups = params | groupby('group_name') %}
+{% for group_name, group_params in groups %}
+<div class="card mb-3">
+  <div class="card-header fw-semibold">{{ group_name }}</div>
+  <div class="card-body p-0">
+  <table class="table table-sm mb-0">
+    <thead><tr><th>Code</th><th>Value</th><th>Type</th><th>Description</th><th></th></tr></thead>
+    <tbody>
+    {% for p in group_params %}
+      <tr>
+        <td><code>{{ p.code }}</code></td>
+        <td>{{ p.value }}</td>
+        <td><span class="badge text-bg-secondary">{{ p.data_type }}</span></td>
+        <td class="text-muted small">{{ p.description or '—' }}</td>
+        <td class="text-end">
+          {% if p.is_editable and current_user.has_permission('sysparam.update') %}
+          <a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('system_admin.sysparam_edit', param_id=p.id) }}">
+            <i class="bi bi-pencil"></i></a>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

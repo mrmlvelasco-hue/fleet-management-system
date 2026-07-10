@@ -1,0 +1,26 @@
+{% extends "layout/base.html" %}
+{% block title %}Edit Parameter{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('system_admin.sysparam_list') }}">System Parameters</a></li>
+<li class="breadcrumb-item active">{{ param.code }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Edit Parameter — <code>{{ param.code }}</code></h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-12">
+    <label class="form-label">Description</label>
+    <p class="form-control-plaintext text-muted">{{ param.description or '—' }}</p>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label">Value <span class="badge text-bg-secondary">{{ param.data_type }}</span></label>
+    <input type="text" name="value" class="form-control" value="{{ param.value }}" required>
+  </div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.sysparam_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}

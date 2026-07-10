@@ -1,0 +1,29 @@
+{% extends "layout/base.html" %}
+{% block title %}Dashboard Config{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Dashboard Config</li>{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Dashboard Configuration</h1>
+<div class="card"><div class="card-body">
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <p class="text-muted">Select which KPI widgets to show on your dashboard.</p>
+  <div class="row g-3 mb-4">
+  {% for w in widgets %}
+    {% set visible = user_configs.get(w.code, w.default_visible) %}
+    <div class="col-md-4">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="visible_widgets"
+               value="{{ w.code }}" id="w_{{ w.code }}" {{ 'checked' if visible }}>
+        <label class="form-check-label" for="w_{{ w.code }}">
+          <i class="bi {{ w.icon }} me-1"></i>{{ w.label }}
+        </label>
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+  {% if current_user.has_permission('dashboardconfig.update') %}
+  <button class="btn btn-primary" type="submit">Save</button>
+  {% endif %}
+</form>
+</div></div>
+{% endblock %}

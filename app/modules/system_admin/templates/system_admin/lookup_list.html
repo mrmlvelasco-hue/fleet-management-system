@@ -1,0 +1,57 @@
+{% extends "layout/base.html" %}
+{% block title %}Lookup Maintenance{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Lookup Maintenance</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Lookup Maintenance</h1>
+  {% if current_user.has_permission('lookup.create') %}
+  <a class="btn btn-primary" href="{{ url_for('system_admin.lookup_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Lookup</a>
+  {% endif %}
+</div>
+<div class="card mb-3"><div class="card-body">
+  <form method="get" class="row g-2 align-items-end">
+    <div class="col-md-4">
+      <label class="form-label">Filter by Type</label>
+      <select name="type" class="form-select fms-select2" onchange="this.form.submit()">
+        <option value="">— All types —</option>
+        {% for t in types %}<option value="{{ t }}" {{ 'selected' if filter_type==t }}>{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+  </form>
+</div></div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr><th>Type</th><th>Code</th><th>Description</th><th>Sort</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+  {% for item in items %}
+    <tr>
+      <td><code>{{ item.lookup_type }}</code></td>
+      <td><code>{{ item.code }}</code></td>
+      <td>{{ item.description }}</td>
+      <td>{{ item.sort_order }}</td>
+      <td>{% if item.is_active %}<span class="badge text-bg-success">Yes</span>
+          {% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
+      <td class="text-end">
+        {% if current_user.has_permission('lookup.update') %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('system_admin.lookup_edit', lookup_id=item.id) }}">
+          <i class="bi bi-pencil"></i></a>
+        {% endif %}
+        {% if current_user.has_permission('lookup.delete') and item.is_active %}
+        <form method="post" class="d-inline fms-confirm" data-confirm="Deactivate {{ item.code }}?"
+              action="{{ url_for('system_admin.lookup_deactivate', lookup_id=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>document.querySelectorAll("form.fms-confirm").forEach(function(f){f.addEventListener("submit",function(e){e.preventDefault();Swal.fire({title:f.dataset.confirm,icon:"warning",showCancelButton:true,confirmButtonText:"Yes"}).then(function(r){if(r.isConfirmed)f.submit();});});});</script>
+{% endblock %}

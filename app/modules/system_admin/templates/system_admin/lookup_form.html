@@ -1,0 +1,40 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('system_admin.lookup_list') }}">Lookup Maintenance</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-4">
+    <label class="form-label">Lookup Type</label>
+    <input type="text" name="lookup_type" class="form-control text-uppercase"
+           value="{{ item.lookup_type if item else '' }}"
+           {{ 'readonly' if item }} required>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label">Code</label>
+    <input type="text" name="code" class="form-control text-uppercase"
+           value="{{ item.code if item else '' }}"
+           {{ 'readonly' if item }} required>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label">Sort Order</label>
+    <input type="number" name="sort_order" class="form-control"
+           value="{{ item.sort_order if item else 0 }}">
+  </div>
+  <div class="col-12">
+    <label class="form-label">Description</label>
+    <input type="text" name="description" class="form-control"
+           value="{{ item.description if item else '' }}" required>
+  </div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.lookup_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}

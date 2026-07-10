@@ -29,10 +29,14 @@ def seed_admin(admin_password):
 @seed_cli.command("all")
 @click.option("--admin-password", prompt=True, hide_input=True)
 def seed_all(admin_password):
-    """Sync permissions then create the admin role/user."""
+    """Sync permissions then create the admin role/user and seed defaults."""
     sync_permissions()
     db.session.commit()
     _seed_admin(admin_password)
+    _seed_system_parameters()
+    _seed_dashboard_widgets()
+    db.session.commit()
+    click.echo("Default system parameters and dashboard widgets seeded.")
 
 
 def _seed_admin(admin_password: str) -> None:
@@ -56,6 +60,43 @@ def _seed_admin(admin_password: str) -> None:
     else:
         click.echo("Admin user already exists; skipped.")
     db.session.commit()
+
+
+def _seed_system_parameters() -> None:
+    from app.modules.system_admin.models import SystemParameter
+    defaults = [
+        ("SESSION_TIMEOUT_MINUTES", "30", "INTEGER", "SECURITY",
+         "Session timeout in minutes"),
+        ("MAX_FAILED_LOGIN_ATTEMPTS", "5", "INTEGER", "SECURITY",
+         "Max failed login attempts before lockout"),
+        ("REQUIRE_DRIVER_FROM_MASTER", "YES", "STRING", "TRIP_TICKET",
+         "YES = driver must come from Driver Master; NO = manual entry"),
+        ("COMPANY_NAME", "My Company", "STRING", "GENERAL", "Company name"),
+    ]
+    for code, value, data_type, group, desc in defaults:
+        if not SystemParameter.query.filter_by(code=code).first():
+            db.session.add(SystemParameter(
+                code=code, value=value, data_type=data_type,
+                group_name=group, description=desc))
+    db.session.flush()
+
+
+def _seed_dashboard_widgets() -> None:
+    from app.modules.system_admin.models import DashboardWidget
+    widgets = [
+        ("FLEET", "Fleet", "bi-truck", 1),
+        ("MAINTENANCE", "Maintenance", "bi-wrench", 2),
+        ("APPROVALS", "Approvals", "bi-check2-square", 3),
+        ("REGISTRATIONS", "Registrations", "bi-card-checklist", 4),
+        ("TIRES", "Tires", "bi-circle", 5),
+        ("BATTERIES", "Batteries", "bi-battery-half", 6),
+    ]
+    for code, label, icon, sort in widgets:
+        if not DashboardWidget.query.filter_by(code=code).first():
+            db.session.add(DashboardWidget(
+                code=code, label=label, icon=icon,
+                sort_order=sort, default_visible=True))
+    db.session.flush()
 
 
 def register_cli(app):

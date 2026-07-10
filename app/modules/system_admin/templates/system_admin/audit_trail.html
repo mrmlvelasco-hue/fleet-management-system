@@ -1,0 +1,56 @@
+{% extends "layout/base.html" %}
+{% block title %}Audit Trail{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Audit Trail</li>{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Audit Trail</h1>
+<div class="card mb-3"><div class="card-body">
+<form method="get" class="row g-2 align-items-end">
+  <div class="col-md-3"><label class="form-label">Table</label>
+    <select name="table" class="form-select fms-select2">
+      <option value="">All tables</option>
+      {% for t in tables %}<option value="{{ t }}" {{ 'selected' if filters.get('table')==t }}>{{ t }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-2"><label class="form-label">Action</label>
+    <select name="action" class="form-select">
+      <option value="">All</option>
+      <option value="CREATE" {{ 'selected' if filters.get('action')=='CREATE' }}>CREATE</option>
+      <option value="UPDATE" {{ 'selected' if filters.get('action')=='UPDATE' }}>UPDATE</option>
+      <option value="DELETE" {{ 'selected' if filters.get('action')=='DELETE' }}>DELETE</option>
+    </select></div>
+  <div class="col-md-2"><label class="form-label">Date From</label>
+    <input type="date" name="date_from" class="form-control" value="{{ filters.get('date_from','') }}"></div>
+  <div class="col-md-2"><label class="form-label">Date To</label>
+    <input type="date" name="date_to" class="form-control" value="{{ filters.get('date_to','') }}"></div>
+  <div class="col-md-2">
+    <button class="btn btn-secondary w-100" type="submit"><i class="bi bi-search me-1"></i>Filter</button>
+  </div>
+  <div class="col-md-1">
+    <a class="btn btn-outline-secondary w-100" href="{{ url_for('system_admin.audit_trail') }}">Clear</a>
+  </div>
+</form>
+</div></div>
+<div class="card"><div class="card-body">
+<table class="table table-striped table-sm fms-datatable" style="font-size:.85rem">
+  <thead><tr><th>ID</th><th>Timestamp</th><th>Table</th><th>Record</th><th>Action</th><th>User</th><th>Changes</th></tr></thead>
+  <tbody>
+  {% for log in logs %}
+    <tr>
+      <td>{{ log.id }}</td>
+      <td class="text-nowrap">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+      <td><code>{{ log.table_name }}</code></td>
+      <td>{{ log.record_id }}</td>
+      <td><span class="badge text-bg-{{ 'success' if log.action=='CREATE' else 'warning' if log.action=='UPDATE' else 'danger' }}">{{ log.action }}</span></td>
+      <td>{{ log.user_id or '—' }}</td>
+      <td>
+        {% if log.action == 'UPDATE' and log.old_values %}
+          {% for k, v in log.old_values.items() %}
+          <span class="text-muted"><code>{{ k }}</code>: <del>{{ v }}</del> → {{ log.new_values.get(k) }}</span><br>
+          {% endfor %}
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

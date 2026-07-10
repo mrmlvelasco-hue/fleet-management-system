@@ -1,0 +1,30 @@
+{% extends "layout/base.html" %}
+{% block title %}Company Profile{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Company Profile</li>{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Company Profile</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-8"><label class="form-label">Company Name</label>
+    <input type="text" name="company_name" class="form-control" value="{{ profile.company_name if profile else '' }}" required></div>
+  <div class="col-md-4"><label class="form-label">TIN</label>
+    <input type="text" name="tin" class="form-control" value="{{ profile.tin if profile else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Address Line 1</label>
+    <input type="text" name="address_line1" class="form-control" value="{{ profile.address_line1 if profile else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Address Line 2</label>
+    <input type="text" name="address_line2" class="form-control" value="{{ profile.address_line2 if profile else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">City</label>
+    <input type="text" name="city" class="form-control" value="{{ profile.city if profile else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Country</label>
+    <input type="text" name="country" class="form-control" value="{{ profile.country if profile else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Phone</label>
+    <input type="text" name="phone" class="form-control" value="{{ profile.phone if profile else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Email</label>
+    <input type="email" name="email" class="form-control" value="{{ profile.email if profile else '' }}"></div>
+  {% if current_user.has_permission('company.update') %}
+  <div class="col-12"><button class="btn btn-primary" type="submit">Save</button></div>
+  {% endif %}
+</form>
+</div></div>
+{% endblock %}
