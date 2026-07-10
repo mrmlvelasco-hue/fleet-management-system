@@ -3,6 +3,13 @@
 Phase 1a foundation: Flask app factory, RBAC (users/roles/permissions),
 session auth with lockout, automatic audit trail, Enterprise UI shell.
 
+Phase 1b core engines: Document Type Maintenance, generic Auto Numbering
+Engine (configurable format, yearly/monthly/never reset, concurrency-safe
+counters), Approval Path/Matrix maintenance, and the generic Approval Engine
+runtime (Document Type → Amount Range → Matrix → Path → Levels; unlimited
+levels; Submit/Approve/Reject/Return/Cancel; event hooks for the upcoming
+Notification Engine).
+
 ## Quick start (PyCharm / local)
 
 1. Open the `fms/` folder as a PyCharm project.
