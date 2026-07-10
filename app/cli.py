@@ -35,8 +35,9 @@ def seed_all(admin_password):
     _seed_admin(admin_password)
     _seed_system_parameters()
     _seed_dashboard_widgets()
+    _seed_lookups()
     db.session.commit()
-    click.echo("Default system parameters and dashboard widgets seeded.")
+    click.echo("Default system parameters, dashboard widgets and lookups seeded.")
 
 
 def _seed_admin(admin_password: str) -> None:
@@ -97,6 +98,15 @@ def _seed_dashboard_widgets() -> None:
                 code=code, label=label, icon=icon,
                 sort_order=sort, default_visible=True))
     db.session.flush()
+
+
+def _seed_lookups() -> None:
+    """Sync all module-registered lookup types (FUEL_TYPE, LICENSE_TYPE, etc.)
+    Must import the master_data routes module first so its lookup
+    registrations run (module-level registry.register() calls)."""
+    import app.modules.master_data.routes  # noqa: F401 (triggers registration)
+    from app.modules.system_admin.services.lookup_service import sync_lookups
+    sync_lookups()
 
 
 def register_cli(app):

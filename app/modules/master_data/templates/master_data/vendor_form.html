@@ -33,6 +33,12 @@
   <div class="col-md-6"><label class="form-label">Contact Person</label>
     <input type="text" name="contact_person" class="form-control"
            value="{{ item.contact_person if item and item.contact_person else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Vendor Type</label>
+    <select name="vendor_type" class="form-select">
+      <option value="GOODS" {{ 'selected' if item and item.vendor_type=='GOODS' }}>Goods</option>
+      <option value="SERVICES" {{ 'selected' if item and item.vendor_type=='SERVICES' }}>Services</option>
+      <option value="BOTH" {{ 'selected' if item and item.vendor_type=='BOTH' }}>Both</option>
+    </select></div>
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Save</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vendor_list') }}">Cancel</a>

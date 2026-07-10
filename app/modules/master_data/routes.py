@@ -10,6 +10,8 @@ from app.core.security.decorators import require_permission
 from app.core.security.registry import registry
 from app.core.attachments.service import AttachmentService, AttachmentError
 from app.core.attachments.models import Attachment
+from app.modules.system_admin.services.lookup_service import (
+    LookupService, registry as lookup_registry)
 from app.modules.master_data.org.models import Branch, Department, BusinessUnit
 from app.modules.master_data.org.service import (
     BranchService, DepartmentService, BusinessUnitService, DuplicateCodeError)
@@ -44,6 +46,21 @@ for _mod in ["vehicle", "driver", "tire", "battery", "vendor",
 for _act in ["upload", "delete"]:
     registry.register(f"attachment.{_act}", "attachment", _act,
                       f"{_act.title()} attachments")
+
+# Lookup-driven dropdowns for Vehicle/Driver masters (idempotent seed via
+# `flask seed all` -> sync_lookups()).
+for _code, _desc, _order in [
+    ("DIESEL", "Diesel", 1), ("GASOLINE", "Gasoline", 2),
+    ("ELECTRIC", "Electric", 3), ("HYBRID", "Hybrid", 4), ("LPG", "LPG Gas", 5),
+]:
+    lookup_registry.register("FUEL_TYPE", _code, _desc, _order)
+
+for _code, _desc, _order in [
+    ("PROFESSIONAL", "Professional", 1),
+    ("NON_PROFESSIONAL", "Non-Professional", 2),
+    ("STUDENT_PERMIT", "Student Permit", 3),
+]:
+    lookup_registry.register("LICENSE_TYPE", _code, _desc, _order)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -404,7 +421,7 @@ def vehicle_detail(vid):
     item = db.session.get(Vehicle, vid)
     attachments = _attachment_rows("vehicles", vid)
     return render_template("master_data/vehicle_detail.html",
-                           item=item, attachments=attachments)
+                           item=item, vehicle=item, attachments=attachments)
 
 
 @bp.route("/vehicles/new", methods=["GET", "POST"])
@@ -415,6 +432,7 @@ def vehicle_new():
     branches = BranchService().list()
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
+    fuel_types = LookupService().get_by_type("FUEL_TYPE")
     if request.method == "POST":
         try:
             VehicleService().create(**_vehicle_fields())
@@ -423,8 +441,9 @@ def vehicle_new():
         except DuplicateVehicleError as e:
             flash(str(e), "danger")
     return render_template("master_data/vehicle_form.html",
-                           item=None, vtypes=vtypes, branches=branches,
-                           departments=departments, bus=bus,
+                           item=None, vtypes=vtypes, vehicle_types=vtypes,
+                           branches=branches, departments=departments,
+                           bus=bus, fuel_types=fuel_types,
                            title="New Vehicle")
 
 
@@ -437,13 +456,15 @@ def vehicle_edit(vid):
     branches = BranchService().list()
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
+    fuel_types = LookupService().get_by_type("FUEL_TYPE")
     if request.method == "POST":
         VehicleService().update(vid, **_vehicle_fields(include_conduction=False))
         flash("Vehicle updated.", "success")
         return redirect(url_for("master_data.vehicle_detail", vid=vid))
     return render_template("master_data/vehicle_form.html",
-                           item=item, vtypes=vtypes, branches=branches,
-                           departments=departments, bus=bus,
+                           item=item, vtypes=vtypes, vehicle_types=vtypes,
+                           branches=branches, departments=departments,
+                           bus=bus, fuel_types=fuel_types,
                            title=f"Edit — {item.conduction_number or item.plate_number}")
 
 
@@ -487,7 +508,8 @@ def _vehicle_fields(include_conduction=True):
 @require_permission("driver.view")
 def driver_list():
     items = DriverService().list(include_inactive=True)
-    return render_template("master_data/driver_list.html", items=items)
+    return render_template("master_data/driver_list.html", items=items,
+                           today=date.today())
 
 
 @bp.route("/drivers/<int:did>")
@@ -497,7 +519,8 @@ def driver_detail(did):
     item = db.session.get(Driver, did)
     attachments = _attachment_rows("drivers", did)
     return render_template("master_data/driver_detail.html",
-                           item=item, attachments=attachments)
+                           item=item, driver=item, attachments=attachments,
+                           today=date.today())
 
 
 @bp.route("/drivers/new", methods=["GET", "POST"])
@@ -506,6 +529,7 @@ def driver_detail(did):
 def driver_new():
     branches = BranchService().list()
     departments = DepartmentService().list()
+    license_types = LookupService().get_by_type("LICENSE_TYPE")
     if request.method == "POST":
         try:
             DriverService().create(**_driver_fields())
@@ -515,7 +539,8 @@ def driver_new():
             flash(str(e), "danger")
     return render_template("master_data/driver_form.html",
                            item=None, branches=branches,
-                           departments=departments, title="New Driver")
+                           departments=departments,
+                           license_types=license_types, title="New Driver")
 
 
 @bp.route("/drivers/<int:did>/edit", methods=["GET", "POST"])
@@ -525,6 +550,7 @@ def driver_edit(did):
     item = db.session.get(Driver, did)
     branches = BranchService().list()
     departments = DepartmentService().list()
+    license_types = LookupService().get_by_type("LICENSE_TYPE")
     if request.method == "POST":
         DriverService().update(
             did,
@@ -542,6 +568,7 @@ def driver_edit(did):
     return render_template("master_data/driver_form.html",
                            item=item, branches=branches,
                            departments=departments,
+                           license_types=license_types,
                            title=f"Edit — {item.full_name}")
 
 
