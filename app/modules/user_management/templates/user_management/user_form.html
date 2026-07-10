@@ -1,0 +1,29 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('user_management.users_list') }}">Users</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" novalidate class="row g-3">
+  {{ form.hidden_tag() }}
+  <div class="col-md-6">{{ form.username.label(class="form-label") }}{{ form.username(class="form-control") }}
+    {% for e in form.username.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  <div class="col-md-6">{{ form.email.label(class="form-label") }}{{ form.email(class="form-control") }}
+    {% for e in form.email.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  <div class="col-md-6">{{ form.first_name.label(class="form-label") }}{{ form.first_name(class="form-control") }}</div>
+  <div class="col-md-6">{{ form.last_name.label(class="form-label") }}{{ form.last_name(class="form-control") }}</div>
+  <div class="col-md-6">{{ form.password.label(class="form-label") }}{{ form.password(class="form-control") }}
+    <div class="form-text">Leave blank to keep unchanged (edit) or auto-assign a temp password (new).</div>
+    {% for e in form.password.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  <div class="col-md-6">{{ form.roles.label(class="form-label") }}{{ form.roles(class="form-select fms-select2", multiple=True) }}</div>
+  <div class="col-12 form-check ms-2">{{ form.must_change_password(class="form-check-input") }}{{ form.must_change_password.label(class="form-check-label") }}</div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('user_management.users_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}

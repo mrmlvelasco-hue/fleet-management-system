@@ -1,0 +1,23 @@
+<nav class="navbar border-bottom px-3 fms-topnav">
+  <button class="btn btn-outline-secondary btn-sm" id="sidebarToggle" type="button" title="Toggle sidebar">
+    <i class="bi bi-list"></i>
+  </button>
+  <div class="d-flex align-items-center gap-3 ms-auto">
+    <button class="btn btn-outline-secondary btn-sm" id="darkModeToggle" type="button" title="Toggle dark mode">
+      <i class="bi bi-moon"></i>
+    </button>
+    <button class="btn btn-outline-secondary btn-sm position-relative" type="button" title="Notifications (coming soon)" disabled>
+      <i class="bi bi-bell"></i>
+    </button>
+    <div class="dropdown">
+      <a class="d-flex align-items-center text-decoration-none dropdown-toggle" data-bs-toggle="dropdown" href="#">
+        <i class="bi bi-person-circle me-2 fs-5"></i>{{ current_user.full_name }}
+      </a>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="{{ url_for('auth.change_password') }}">Change password</a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">Sign out</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>

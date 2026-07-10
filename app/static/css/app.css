@@ -1,0 +1,15 @@
+/* FMS shell styling: sidebar, dark mode, dashboard cards */
+.fms-sidebar {
+  width: 240px;
+  min-height: 100vh;
+  background: var(--bs-tertiary-bg);
+  border-right: 1px solid var(--bs-border-color);
+  transition: width .15s ease;
+}
+#fms-wrapper.sidebar-collapsed .fms-sidebar { width: 64px; }
+#fms-wrapper.sidebar-collapsed .sidebar-label { display: none; }
+.fms-sidebar .nav-link { color: var(--bs-body-color); }
+.fms-sidebar .nav-link.active { background: var(--bs-primary); color: #fff; }
+.sidebar-section { color: var(--bs-secondary-color); letter-spacing: .05em; }
+.fms-topnav { background: var(--bs-body-bg); }
+.kpi-card .bi { font-size: 1.8rem; opacity: .6; }

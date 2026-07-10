@@ -1,0 +1,60 @@
+{% extends "layout/base.html" %}
+{% block title %}Users{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Users</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Users</h1>
+  {% if current_user.has_permission('user.create') %}
+  <a class="btn btn-primary" href="{{ url_for('user_management.users_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New User</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr>
+    <th>Username</th><th>Name</th><th>Email</th><th>Roles</th>
+    <th>Active</th><th>Last login</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for u in users %}
+    <tr>
+      <td>{{ u.username }}</td>
+      <td>{{ u.full_name }}</td>
+      <td>{{ u.email }}</td>
+      <td>{% for r in u.roles %}<span class="badge text-bg-secondary">{{ r.name }}</span> {% endfor %}</td>
+      <td>{% if u.is_active %}<span class="badge text-bg-success">Yes</span>
+          {% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
+      <td>{{ u.last_login_at or '—' }}</td>
+      <td class="text-end">
+        {% if current_user.has_permission('user.update') %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('user_management.users_edit', user_id=u.id) }}">
+          <i class="bi bi-pencil"></i></a>
+        {% endif %}
+        {% if current_user.has_permission('user.delete') and u.is_active %}
+        <form method="post" class="d-inline fms-confirm"
+              data-confirm="Deactivate {{ u.username }}?"
+              action="{{ url_for('user_management.users_deactivate', user_id=u.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-person-x"></i></button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll("form.fms-confirm").forEach(function (f) {
+  f.addEventListener("submit", function (e) {
+    e.preventDefault();
+    Swal.fire({title: f.dataset.confirm, icon: "warning",
+               showCancelButton: true, confirmButtonText: "Yes"})
+      .then(function (r) { if (r.isConfirmed) f.submit(); });
+  });
+});
+</script>
+{% endblock %}

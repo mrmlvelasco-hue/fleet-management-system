@@ -1,0 +1,1 @@
+"""Dashboard landing page module."""

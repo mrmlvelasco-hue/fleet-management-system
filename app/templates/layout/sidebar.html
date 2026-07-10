@@ -1,0 +1,25 @@
+<aside class="fms-sidebar d-flex flex-column p-3" id="fmsSidebar">
+  <a href="{{ url_for('main.dashboard') }}" class="d-flex align-items-center mb-3 text-decoration-none fs-5 fw-semibold sidebar-brand">
+    <i class="bi bi-truck-front me-2"></i><span class="sidebar-label">FMS</span>
+  </a>
+  <ul class="nav nav-pills flex-column mb-auto">
+    <li class="nav-item">
+      <a href="{{ url_for('main.dashboard') }}" class="nav-link {{ 'active' if request.endpoint == 'main.dashboard' }}">
+        <i class="bi bi-speedometer2 me-2"></i><span class="sidebar-label">Dashboard</span>
+      </a>
+    </li>
+    <li class="mt-3 mb-1 text-uppercase small sidebar-section sidebar-label">System Administration</li>
+    {% if current_user.has_permission('user.view') %}
+    <li><a href="{{ url_for('user_management.users_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('user_management.users') }}">
+      <i class="bi bi-people me-2"></i><span class="sidebar-label">Users</span></a></li>
+    {% endif %}
+    {% if current_user.has_permission('role.view') %}
+    <li><a href="{{ url_for('user_management.roles_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('user_management.roles') }}">
+      <i class="bi bi-person-badge me-2"></i><span class="sidebar-label">Roles</span></a></li>
+    {% endif %}
+    {% if current_user.has_permission('permission.view') %}
+    <li><a href="{{ url_for('user_management.permissions_list') }}" class="nav-link {{ 'active' if request.endpoint == 'user_management.permissions_list' }}">
+      <i class="bi bi-shield-lock me-2"></i><span class="sidebar-label">Permissions</span></a></li>
+    {% endif %}
+  </ul>
+</aside>

@@ -25,8 +25,27 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.core.audit.audit_service import register_audit_listeners
     register_audit_listeners()
 
-    # Blueprints, error handlers, and permission sync are registered in
-    # later tasks; this factory grows as tasks land.
+    from app.modules.auth.routes import bp as auth_bp
+    from app.modules.main.routes import bp as main_bp
+    from app.modules.user_management.routes import bp as user_mgmt_bp
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(main_bp)
+    app.register_blueprint(user_mgmt_bp)
+
+    from flask import render_template
+
+    @app.errorhandler(403)
+    def forbidden(_e):
+        return render_template("errors/403.html"), 403
+
+    @app.errorhandler(404)
+    def not_found(_e):
+        return render_template("errors/404.html"), 404
+
+    @app.errorhandler(500)
+    def server_error(_e):
+        return render_template("errors/500.html"), 500
+
     return app
 
 

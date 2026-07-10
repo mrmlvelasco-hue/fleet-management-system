@@ -1,0 +1,23 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('user_management.roles_list') }}">Roles</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" novalidate class="row g-3">
+  {{ form.hidden_tag() }}
+  <div class="col-md-6">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}
+    {% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  <div class="col-md-6">{{ form.description.label(class="form-label") }}{{ form.description(class="form-control") }}</div>
+  <div class="col-12">{{ form.permissions.label(class="form-label") }}
+    {{ form.permissions(class="form-select fms-select2", multiple=True) }}</div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('user_management.roles_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}
