@@ -28,6 +28,7 @@ def create_app(config_name: str | None = None) -> Flask:
     # Import all model modules so SQLAlchemy metadata is complete for
     # create_all/migrations regardless of which blueprint imports what.
     from app.core.models import audit_log  # noqa: F401
+    from app.core.approval import models as _apm  # noqa: F401
     from app.modules.user_management import models as _um  # noqa: F401
     from app.modules.document_config import models as _dc  # noqa: F401
     from app.modules.approval_config import models as _ac  # noqa: F401

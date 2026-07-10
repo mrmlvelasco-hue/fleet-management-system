@@ -12,6 +12,9 @@ def app():
         yield app
         _db.session.remove()
         _db.drop_all()
+    # Clear approval-engine event subscribers registered during the test.
+    from app.core.approval import engine as _engine
+    _engine._subscribers.clear()
 
 
 @pytest.fixture()
