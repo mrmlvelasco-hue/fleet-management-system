@@ -22,8 +22,11 @@ def create_app(config_name: str | None = None) -> Flask:
     init_celery(app)
     _configure_logging(app)
 
-    # Blueprints, error handlers, permission sync and audit hooks are
-    # registered in later tasks; this factory grows as tasks land.
+    from app.core.audit.audit_service import register_audit_listeners
+    register_audit_listeners()
+
+    # Blueprints, error handlers, and permission sync are registered in
+    # later tasks; this factory grows as tasks land.
     return app
 
 
