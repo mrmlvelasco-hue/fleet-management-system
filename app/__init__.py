@@ -32,6 +32,9 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(main_bp)
     app.register_blueprint(user_mgmt_bp)
 
+    from app.cli import register_cli
+    register_cli(app)
+
     from flask import render_template
 
     @app.errorhandler(403)
