@@ -5,6 +5,7 @@ insert/update/delete on models inheriting BaseModel is logged without any
 per-module code. Values are serialised to JSON-safe primitives.
 """
 from datetime import datetime, date
+from decimal import Decimal
 
 from sqlalchemy import event, inspect
 
@@ -38,6 +39,8 @@ def _current_ip():
 def _serialise(value):
     if isinstance(value, (datetime, date)):
         return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
     return value
 
 
