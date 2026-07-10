@@ -1,0 +1,47 @@
+{% extends "layout/base.html" %}
+{% block title %}Vehicle — {{ vehicle.plate_number or vehicle.conduction_number }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.vehicle_list') }}">Vehicles</a></li>
+<li class="breadcrumb-item active">{{ vehicle.plate_number or vehicle.conduction_number }}</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+  <h1 class="h3">{{ vehicle.brand }} {{ vehicle.model }} ({{ vehicle.year }})</h1>
+  {% if current_user.has_permission('vehicle.update') %}
+  <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_edit', id=vehicle.id) }}">
+    <i class="bi bi-pencil me-1"></i>Edit</a>
+  {% endif %}
+</div>
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Identification</div>
+    <div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-5">Plate Number</dt><dd class="col-sm-7">{{ vehicle.plate_number or '— (not yet assigned)' }}</dd>
+        <dt class="col-sm-5">Conduction No.</dt><dd class="col-sm-7">{{ vehicle.conduction_number or '—' }}</dd>
+        <dt class="col-sm-5">Chassis</dt><dd class="col-sm-7">{{ vehicle.chassis_number or '—' }}</dd>
+        <dt class="col-sm-5">Engine</dt><dd class="col-sm-7">{{ vehicle.engine_number or '—' }}</dd>
+        <dt class="col-sm-5">Type</dt><dd class="col-sm-7">{{ vehicle.vehicle_type.name if vehicle.vehicle_type else '—' }}</dd>
+        <dt class="col-sm-5">Fuel</dt><dd class="col-sm-7">{{ vehicle.fuel_type or '—' }}</dd>
+        <dt class="col-sm-5">Color</dt><dd class="col-sm-7">{{ vehicle.color or '—' }}</dd>
+      </dl>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Assignment & Status</div>
+    <div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-5">Status</dt>
+        <dd class="col-sm-7"><span class="badge text-bg-{{ 'success' if vehicle.status=='ACTIVE' else 'warning' if vehicle.status=='IN_REPAIR' else 'danger' }}">{{ vehicle.status }}</span></dd>
+        <dt class="col-sm-5">Branch</dt><dd class="col-sm-7">{{ vehicle.branch.name if vehicle.branch else '—' }}</dd>
+        <dt class="col-sm-5">Odometer</dt><dd class="col-sm-7">{{ "{:,.0f}".format(vehicle.current_odometer) if vehicle.current_odometer else '0' }} km</dd>
+        <dt class="col-sm-5">Acquisition</dt><dd class="col-sm-7">{{ vehicle.acquisition_date or '—' }}</dd>
+        <dt class="col-sm-5">Cost</dt><dd class="col-sm-7">{{ "{:,.2f}".format(vehicle.acquisition_cost) if vehicle.acquisition_cost else '—' }}</dd>
+      </dl>
+    </div></div>
+  </div>
+</div>
+{% set reference_table = "vehicles" %}
+{% set reference_id = vehicle.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endblock %}

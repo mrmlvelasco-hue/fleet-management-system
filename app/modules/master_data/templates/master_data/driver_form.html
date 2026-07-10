@@ -1,0 +1,74 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.driver_list') }}">Drivers</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-4"><label class="form-label">Employee Number</label>
+    <input type="text" name="employee_number" class="form-control"
+           value="{{ item.employee_number if item else '' }}" required></div>
+  <div class="col-md-4"><label class="form-label">Last Name</label>
+    <input type="text" name="last_name" class="form-control"
+           value="{{ item.last_name if item else '' }}" required></div>
+  <div class="col-md-4"><label class="form-label">First Name</label>
+    <input type="text" name="first_name" class="form-control"
+           value="{{ item.first_name if item else '' }}" required></div>
+  <div class="col-md-4"><label class="form-label">Middle Name</label>
+    <input type="text" name="middle_name" class="form-control"
+           value="{{ item.middle_name if item else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">License Number</label>
+    <input type="text" name="license_number" class="form-control"
+           value="{{ item.license_number if item else '' }}" required></div>
+  <div class="col-md-4"><label class="form-label">License Expiry</label>
+    <input type="text" name="license_expiry" class="form-control flatpickr"
+           value="{{ item.license_expiry if item and item.license_expiry else '' }}" required></div>
+  <div class="col-md-4"><label class="form-label">License Type</label>
+    <select name="license_type" class="form-select fms-select2">
+      <option value="">— Select —</option>
+      {% for lt in license_types %}
+      <option value="{{ lt.code }}" {{ 'selected' if item and item.license_type==lt.code }}>{{ lt.description }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Branch</label>
+    <select name="branch_id" class="form-select fms-select2" required>
+      <option value="">— Select —</option>
+      {% for b in branches %}
+      <option value="{{ b.id }}" {{ 'selected' if item and item.branch_id==b.id }}>{{ b.name }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Status</label>
+    <select name="status" class="form-select">
+      {% for s in ['ACTIVE','INACTIVE','SUSPENDED'] %}
+      <option value="{{ s }}" {{ 'selected' if item and item.status==s }}>{{ s }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Phone</label>
+    <input type="text" name="phone" class="form-control"
+           value="{{ item.phone if item else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Email</label>
+    <input type="email" name="email" class="form-control"
+           value="{{ item.email if item else '' }}"></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.driver_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% if item and item.id %}
+{% set reference_table = "drivers" %}
+{% set reference_id = item.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+if (window.jQuery && typeof flatpickr !== 'undefined') {
+  flatpickr(".flatpickr", {dateFormat: "Y-m-d"});
+}
+</script>
+{% endblock %}

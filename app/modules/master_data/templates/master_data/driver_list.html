@@ -1,0 +1,46 @@
+{% extends "layout/base.html" %}
+{% block title %}Drivers{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Drivers</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Driver / Assignee Master</h1>
+  {% if current_user.has_permission('driver.create') %}
+  <a class="btn btn-primary" href="{{ url_for('master_data.driver_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Driver</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr>
+    <th>Employee No.</th><th>Name</th><th>License No.</th>
+    <th>License Expiry</th><th>Type</th><th>Branch</th><th>Status</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for d in items %}
+    <tr class="{{ 'table-warning' if d.license_expiry and d.license_expiry < today else '' }}">
+      <td>{{ d.employee_number }}</td>
+      <td>{{ d.last_name }}, {{ d.first_name }}{% if d.middle_name %} {{ d.middle_name[0] }}.{% endif %}</td>
+      <td>{{ d.license_number }}</td>
+      <td>{{ d.license_expiry }}
+        {% if d.license_expiry and d.license_expiry < today %}
+        <span class="badge text-bg-danger ms-1">EXPIRED</span>
+        {% endif %}</td>
+      <td>{{ d.license_type }}</td>
+      <td>{{ d.branch.name if d.branch else '—' }}</td>
+      <td><span class="badge text-bg-{{ 'success' if d.status=='ACTIVE' else 'danger' }}">{{ d.status }}</span></td>
+      <td class="text-end">
+        <a class="btn btn-sm btn-outline-info"
+           href="{{ url_for('master_data.driver_detail', id=d.id) }}">
+          <i class="bi bi-eye"></i></a>
+        {% if current_user.has_permission('driver.update') %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('master_data.driver_edit', id=d.id) }}">
+          <i class="bi bi-pencil"></i></a>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

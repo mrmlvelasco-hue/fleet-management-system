@@ -1,0 +1,47 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.vendor_list') }}">{{ Vendors }}</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Code</label>
+    <input type="text" name="code" class="form-control"
+           value="{{ item.code if item and item.code else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Name</label>
+    <input type="text" name="name" class="form-control"
+           value="{{ item.name if item and item.name else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Address</label>
+    <input type="text" name="address" class="form-control"
+           value="{{ item.address if item and item.address else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">City</label>
+    <input type="text" name="city" class="form-control"
+           value="{{ item.city if item and item.city else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Phone</label>
+    <input type="text" name="phone" class="form-control"
+           value="{{ item.phone if item and item.phone else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Email</label>
+    <input type="email" name="email" class="form-control"
+           value="{{ item.email if item and item.email else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">TIN</label>
+    <input type="text" name="tin" class="form-control"
+           value="{{ item.tin if item and item.tin else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Contact Person</label>
+    <input type="text" name="contact_person" class="form-control"
+           value="{{ item.contact_person if item and item.contact_person else '' }}"></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vendor_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% if item and item.id %}
+{% set reference_table = "vendors" %}
+{% set reference_id = item.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.battery_list') }}">{{ Batteries }}</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Serial Number</label>
+    <input type="text" name="serial_number" class="form-control"
+           value="{{ item.serial_number if item and item.serial_number else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Brand</label>
+    <input type="text" name="brand" class="form-control"
+           value="{{ item.brand if item and item.brand else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Capacity (Ah)</label>
+    <input type="number" step="any" name="capacity_ah" class="form-control"
+           value="{{ item.capacity_ah if item and item.capacity_ah else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Voltage</label>
+    <input type="number" step="any" name="voltage" class="form-control"
+           value="{{ item.voltage if item and item.voltage else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Purchase Date</label>
+    <input type="text" name="purchase_date" class="form-control flatpickr"
+           value="{{ item.purchase_date if item and item.purchase_date else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Purchase Cost</label>
+    <input type="number" step="any" name="purchase_cost" class="form-control"
+           value="{{ item.purchase_cost if item and item.purchase_cost else '' }}"></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.battery_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% if item and item.id %}
+{% set reference_table = "batteries" %}
+{% set reference_id = item.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endif %}
+{% endblock %}

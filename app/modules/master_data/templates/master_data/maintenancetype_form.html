@@ -1,0 +1,41 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.maintenancetype_list') }}">{{ Maintenance Types }}</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Code</label>
+    <input type="text" name="code" class="form-control"
+           value="{{ item.code if item and item.code else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Name</label>
+    <input type="text" name="name" class="form-control"
+           value="{{ item.name if item and item.name else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Category</label>
+    <input type="text" name="category" class="form-control"
+           value="{{ item.category if item and item.category else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Interval KM</label>
+    <input type="number" step="any" name="interval_km" class="form-control"
+           value="{{ item.interval_km if item and item.interval_km else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Interval Days</label>
+    <input type="number" step="any" name="interval_days" class="form-control"
+           value="{{ item.interval_days if item and item.interval_days else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Description</label>
+    <input type="text" name="description" class="form-control"
+           value="{{ item.description if item and item.description else '' }}"></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.maintenancetype_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% if item and item.id %}
+{% set reference_table = "maintenance_types" %}
+{% set reference_id = item.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endif %}
+{% endblock %}

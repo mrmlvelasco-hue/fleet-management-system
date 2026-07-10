@@ -1,0 +1,91 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.vehicle_list') }}">Vehicles</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-4"><label class="form-label">Conduction Number</label>
+    <input type="text" name="conduction_number" class="form-control text-uppercase"
+           value="{{ item.conduction_number if item else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Plate Number</label>
+    <input type="text" name="plate_number" class="form-control text-uppercase"
+           value="{{ item.plate_number if item else '' }}">
+    <div class="form-text">Leave blank until LTO plate is assigned.</div></div>
+  <div class="col-md-4"><label class="form-label">Chassis Number</label>
+    <input type="text" name="chassis_number" class="form-control"
+           value="{{ item.chassis_number if item else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Engine Number</label>
+    <input type="text" name="engine_number" class="form-control"
+           value="{{ item.engine_number if item else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Vehicle Type</label>
+    <select name="vehicle_type_id" class="form-select fms-select2" required>
+      <option value="">— Select —</option>
+      {% for vt in vehicle_types %}
+      <option value="{{ vt.id }}" {{ 'selected' if item and item.vehicle_type_id==vt.id }}>
+        {{ vt.code }} — {{ vt.name }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Brand</label>
+    <input type="text" name="brand" class="form-control"
+           value="{{ item.brand if item else '' }}" required></div>
+  <div class="col-md-4"><label class="form-label">Model</label>
+    <input type="text" name="model" class="form-control"
+           value="{{ item.model if item else '' }}" required></div>
+  <div class="col-md-2"><label class="form-label">Year</label>
+    <input type="number" name="year" class="form-control"
+           value="{{ item.year if item else '' }}" required></div>
+  <div class="col-md-3"><label class="form-label">Color</label>
+    <input type="text" name="color" class="form-control"
+           value="{{ item.color if item else '' }}"></div>
+  <div class="col-md-3"><label class="form-label">Fuel Type</label>
+    <select name="fuel_type" class="form-select fms-select2">
+      <option value="">— Select —</option>
+      {% for lt in fuel_types %}
+      <option value="{{ lt.code }}" {{ 'selected' if item and item.fuel_type==lt.code }}>{{ lt.description }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Branch</label>
+    <select name="branch_id" class="form-select fms-select2" required>
+      <option value="">— Select —</option>
+      {% for b in branches %}
+      <option value="{{ b.id }}" {{ 'selected' if item and item.branch_id==b.id }}>{{ b.name }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Acquisition Date</label>
+    <input type="text" name="acquisition_date" class="form-control flatpickr"
+           value="{{ item.acquisition_date if item and item.acquisition_date else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Acquisition Cost</label>
+    <input type="number" step="0.01" name="acquisition_cost" class="form-control"
+           value="{{ item.acquisition_cost if item and item.acquisition_cost else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Status</label>
+    <select name="status" class="form-select">
+      {% for s in ['ACTIVE','INACTIVE','IN_REPAIR','DISPOSED'] %}
+      <option value="{{ s }}" {{ 'selected' if item and item.status==s }}>{{ s }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-12"><label class="form-label">Notes</label>
+    <textarea name="notes" class="form-control" rows="2">{{ item.notes if item else '' }}</textarea></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% if item and item.id %}
+{% set reference_table = "vehicles" %}
+{% set reference_id = item.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+if (window.jQuery && typeof flatpickr !== 'undefined') {
+  flatpickr(".flatpickr", {dateFormat: "Y-m-d"});
+}
+</script>
+{% endblock %}

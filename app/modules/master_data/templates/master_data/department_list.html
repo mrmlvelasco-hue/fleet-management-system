@@ -1,0 +1,45 @@
+{% extends "layout/base.html" %}
+{% block title %}Departments{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item"><a href="{{ url_for('master_data.department_list') }}">Departments</a></li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Departments</h1>
+  {% if current_user.has_permission('department.create') %}
+  <a class="btn btn-primary" href="{{ url_for('master_data.department_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr><th>Code</th><th>Name</th><th>Branch</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+  {% for item in items %}
+    <tr>
+      <td>{{ item.code or '—' }}</td>
+      <td>{{ item.name or '—' }}</td>
+      <td>{{ item.branch.name if item.branch else '—' }}</td>
+      <td>{% if item.is_active %}<span class="badge text-bg-success">Yes</span>
+          {% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
+      <td class="text-end">
+        {% if current_user.has_permission('department.update') %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('master_data.department_edit', id=item.id) }}">
+          <i class="bi bi-pencil"></i></a>
+        {% endif %}
+        {% if current_user.has_permission('department.delete') and item.is_active %}
+        <form method="post" class="d-inline fms-confirm" data-confirm="Deactivate?"
+              action="{{ url_for('master_data.department_deactivate', id=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>document.querySelectorAll("form.fms-confirm").forEach(function(f){f.addEventListener("submit",function(e){e.preventDefault();Swal.fire({title:f.dataset.confirm,icon:"warning",showCancelButton:true,confirmButtonText:"Yes"}).then(function(r){if(r.isConfirmed)f.submit();});});});</script>
+{% endblock %}

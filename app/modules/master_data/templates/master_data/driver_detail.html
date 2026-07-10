@@ -1,0 +1,33 @@
+{% extends "layout/base.html" %}
+{% block title %}Driver — {{ driver.last_name }}, {{ driver.first_name }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.driver_list') }}">Drivers</a></li>
+<li class="breadcrumb-item active">{{ driver.last_name }}, {{ driver.first_name }}</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+  <h1 class="h3">{{ driver.last_name }}, {{ driver.first_name }} {{ driver.middle_name or '' }}</h1>
+  {% if current_user.has_permission('driver.update') %}
+  <a class="btn btn-outline-secondary" href="{{ url_for('master_data.driver_edit', id=driver.id) }}">
+    <i class="bi bi-pencil me-1"></i>Edit</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+  <dl class="row">
+    <dt class="col-sm-3">Employee No.</dt><dd class="col-sm-3">{{ driver.employee_number }}</dd>
+    <dt class="col-sm-3">Status</dt><dd class="col-sm-3"><span class="badge text-bg-{{ 'success' if driver.status=='ACTIVE' else 'danger' }}">{{ driver.status }}</span></dd>
+    <dt class="col-sm-3">License No.</dt><dd class="col-sm-3">{{ driver.license_number }}</dd>
+    <dt class="col-sm-3">License Type</dt><dd class="col-sm-3">{{ driver.license_type }}</dd>
+    <dt class="col-sm-3">License Expiry</dt>
+    <dd class="col-sm-3">{{ driver.license_expiry }}
+      {% if driver.license_expiry and driver.license_expiry < today %}
+      <span class="badge text-bg-danger ms-1">EXPIRED</span>{% endif %}</dd>
+    <dt class="col-sm-3">Branch</dt><dd class="col-sm-3">{{ driver.branch.name if driver.branch else '—' }}</dd>
+    <dt class="col-sm-3">Phone</dt><dd class="col-sm-3">{{ driver.phone or '—' }}</dd>
+    <dt class="col-sm-3">Email</dt><dd class="col-sm-3">{{ driver.email or '—' }}</dd>
+  </dl>
+</div></div>
+{% set reference_table = "drivers" %}
+{% set reference_id = driver.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endblock %}

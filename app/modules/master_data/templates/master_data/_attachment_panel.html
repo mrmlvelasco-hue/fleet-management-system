@@ -1,0 +1,47 @@
+{# Reusable attachment panel — include with reference_table and reference_id in context #}
+<div class="card mt-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-paperclip me-1"></i>Attachments</span>
+    <button class="btn btn-sm btn-outline-primary" type="button"
+            data-bs-toggle="collapse" data-bs-target="#attachPanel">
+      <i class="bi bi-plus-lg"></i> Add
+    </button>
+  </div>
+  <div class="collapse" id="attachPanel">
+    <div class="card-body border-bottom">
+      <form method="post"
+            action="{{ url_for('master_data.attachment_upload') }}"
+            enctype="multipart/form-data" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="reference_table" value="{{ reference_table }}">
+        <input type="hidden" name="reference_id" value="{{ reference_id }}">
+        <div class="col-md-8">
+          <input type="file" name="file" class="form-control">
+        </div>
+        <div class="col-md-4">
+          <button class="btn btn-primary w-100" type="submit">Upload</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <ul class="list-group list-group-flush">
+    {% for att in attachments %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-file-earmark me-2"></i>{{ att.original_filename }}
+        <span class="text-muted small ms-2">{{ "%.1f"|format(att.file_size/1024) }} KB</span></span>
+      <div>
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('master_data.attachment_download', att_id=att.id) }}">
+          <i class="bi bi-download"></i></a>
+        <form method="post" class="d-inline"
+              action="{{ url_for('master_data.attachment_delete', att_id=att.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+        </form>
+      </div>
+    </li>
+    {% else %}
+    <li class="list-group-item text-muted small">No attachments yet.</li>
+    {% endfor %}
+  </ul>
+</div>
