@@ -99,6 +99,166 @@
     });
   };
 
+  // Search Modal: for large datasets (>100 records per the UX threshold
+  // rule), a full filter + sort + paginate + Select dialog rather than a
+  // dropdown. Reuses the same /api/search/<module>/table endpoints as the
+  // AJAX selects (server-side search/sort/filter/pagination).
+  //
+  // config = {
+  //   title, endpoint,
+  //   columns: [{key, label, sortable}],
+  //   filters: [{key, label, options: [{value, label}]}],
+  //   onSelect: function(row) {...}
+  // }
+  window.openSearchModal = function (config) {
+    var modalEl = document.getElementById("fmsSearchModal");
+    if (!modalEl || !window.jQuery || !window.bootstrap) return;
+    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    var state = { q: "", page: 1, sortBy: null, sortDir: "asc", filters: {} };
+
+    document.getElementById("fmsSearchModalTitle").textContent = config.title || "Search";
+
+    var head = document.getElementById("fmsSearchModalHead");
+    head.innerHTML = "<tr>" + config.columns.map(function (col) {
+      var sortAttr = col.sortable ? ' data-sort="' + col.key + '" style="cursor:pointer"' : "";
+      return "<th" + sortAttr + ">" + col.label +
+        (col.sortable ? ' <i class="bi bi-arrow-down-up small text-muted"></i>' : "") +
+        "</th>";
+    }).join("") + "<th></th></tr>";
+
+    var filtersBox = document.getElementById("fmsSearchModalFilters");
+    filtersBox.innerHTML = (config.filters || []).map(function (f) {
+      var opts = '<option value="">' + f.label + ': All</option>' +
+        f.options.map(function (o) { return '<option value="' + o.value + '">' + o.label + "</option>"; }).join("");
+      return '<select class="form-select form-select-sm fms-modal-filter" data-key="' + f.key + '">' + opts + "</select>";
+    }).join("");
+
+    function load() {
+      var params = new URLSearchParams();
+      params.set("q", state.q);
+      params.set("page", state.page);
+      params.set("per_page", 10);
+      if (state.sortBy) { params.set("sort_by", state.sortBy); params.set("sort_dir", state.sortDir); }
+      Object.keys(state.filters).forEach(function (k) {
+        if (state.filters[k]) params.set(k, state.filters[k]);
+      });
+      fetch(config.endpoint + "?" + params.toString())
+        .then(function (r) { return r.json(); })
+        .then(renderRows)
+        .catch(function () {
+          document.getElementById("fmsSearchModalBody").innerHTML =
+            '<tr><td class="text-center text-danger py-3">Search failed. Please try again.</td></tr>';
+        });
+    }
+
+    function renderRows(data) {
+      var body = document.getElementById("fmsSearchModalBody");
+      if (!data.rows || !data.rows.length) {
+        body.innerHTML = '<tr><td colspan="' + (config.columns.length + 1) +
+          '" class="text-center text-muted py-4">No matching records.</td></tr>';
+      } else {
+        body.innerHTML = data.rows.map(function (row) {
+          return "<tr>" + config.columns.map(function (col) {
+            return "<td>" + (row[col.key] === undefined || row[col.key] === null ? "—" : row[col.key]) + "</td>";
+          }).join("") +
+            '<td><button type="button" class="btn btn-sm btn-primary fms-modal-select">Select</button></td></tr>';
+        }).join("");
+        Array.prototype.forEach.call(body.querySelectorAll(".fms-modal-select"), function (btn, i) {
+          btn.addEventListener("click", function () {
+            config.onSelect(data.rows[i]);
+            modal.hide();
+          });
+        });
+      }
+      document.getElementById("fmsSearchModalSummary").textContent =
+        "Showing " + ((data.page - 1) * data.per_page + 1) + "–" +
+        Math.min(data.page * data.per_page, data.total) + " of " + data.total;
+      renderPagination(data);
+    }
+
+    function renderPagination(data) {
+      var pager = document.getElementById("fmsSearchModalPagination");
+      var pages = [];
+      for (var p = 1; p <= data.total_pages; p++) pages.push(p);
+      pager.innerHTML = pages.map(function (p) {
+        return '<li class="page-item ' + (p === data.page ? "active" : "") + '">' +
+          '<a class="page-link" href="#" data-page="' + p + '">' + p + "</a></li>";
+      }).join("");
+      Array.prototype.forEach.call(pager.querySelectorAll("a[data-page]"), function (a) {
+        a.addEventListener("click", function (e) {
+          e.preventDefault();
+          state.page = parseInt(a.dataset.page, 10);
+          load();
+        });
+      });
+    }
+
+    var queryBox = document.getElementById("fmsSearchModalQuery");
+    queryBox.value = "";
+    var debounceTimer;
+    queryBox.oninput = function () {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function () {
+        state.q = queryBox.value;
+        state.page = 1;
+        load();
+      }, 300);
+    };
+
+    Array.prototype.forEach.call(filtersBox.querySelectorAll(".fms-modal-filter"), function (sel) {
+      sel.onchange = function () {
+        state.filters[sel.dataset.key] = sel.value;
+        state.page = 1;
+        load();
+      };
+    });
+
+    head.querySelectorAll("[data-sort]").forEach(function (th) {
+      th.onclick = function () {
+        var key = th.dataset.sort;
+        if (state.sortBy === key) {
+          state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+        } else {
+          state.sortBy = key;
+          state.sortDir = "asc";
+        }
+        load();
+      };
+    });
+
+    modal.show();
+    load();
+  };
+
+  // Convenience wrapper: wires an "Advanced Search" button to open the
+  // Vehicle Search Modal and populate a paired Select2 field. Saves every
+  // form from repeating the full column/onSelect config.
+  window.wireVehicleSearchModal = function (buttonId, selectId, tableEndpoint) {
+    var btn = document.getElementById(buttonId);
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      openSearchModal({
+        title: "Search Vehicles",
+        endpoint: tableEndpoint,
+        columns: [
+          { key: "plate", label: "Plate / Conduction No.", sortable: true },
+          { key: "brand", label: "Make", sortable: true },
+          { key: "model", label: "Model", sortable: true },
+          { key: "year", label: "Year", sortable: true },
+          { key: "branch", label: "Branch" },
+          { key: "status", label: "Status", sortable: true }
+        ],
+        onSelect: function (row) {
+          var $select = jQuery("#" + selectId);
+          if ($select.find("option[value='" + row.id + "']").length === 0) {
+            $select.append(new Option(row.text, row.id, true, true));
+          }
+          $select.val(row.id).trigger("change");
+        }
+      });
+    });
+  };
+
   // Notification bell: poll unread count + load recent on open
   function loadNotifications() {
     fetch("/admin/notifications/recent")

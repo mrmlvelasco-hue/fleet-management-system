@@ -10,9 +10,13 @@
 <form method="post" class="row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-6"><label class="form-label">Vehicle</label>
-    <select name="vehicle_id" id="moVehicleSelect" class="form-select" required>
-      <option value="">— Type plate number, make, or model —</option>
-    </select></div>
+    <div class="input-group">
+      <select name="vehicle_id" id="moVehicleSelect" class="form-select" required>
+        <option value="">— Type plate number, make, or model —</option>
+      </select>
+      <button type="button" class="btn btn-outline-secondary" id="moVehicleModalBtn" title="Advanced search">
+        <i class="bi bi-search"></i></button>
+    </div></div>
   <div class="col-md-6"><label class="form-label">Maintenance Type</label>
     <select name="maintenance_type_id" class="form-select fms-select2" required>
       <option value="">— Select —</option>
@@ -52,6 +56,8 @@
     jQuery(function () {
       initAjaxSelect("#moVehicleSelect", "{{ url_for('api_search.search_vehicles') }}",
         { placeholder: "Type plate number, make, or model..." });
+      wireVehicleSearchModal("moVehicleModalBtn", "moVehicleSelect",
+        "{{ url_for('api_search.search_vehicles_table') }}");
       initAjaxSelect("#moVendorSelect", "{{ url_for('api_search.search_vendors') }}",
         { placeholder: "Type vendor code or name...", allowClear: true });
     });
