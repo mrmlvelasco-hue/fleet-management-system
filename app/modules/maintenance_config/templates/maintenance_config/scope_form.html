@@ -13,10 +13,17 @@
     <input type="text" name="name" class="form-control" required
            placeholder="e.g. 5,000 KM PMS Scope"></div>
   <div class="col-md-4"><label class="form-label">Maintenance Type</label>
+    {% if maintenance_types %}
     <select name="maintenance_type_id" class="form-select fms-select2" required>
       <option value="">— Select —</option>
       {% for mt in maintenance_types %}<option value="{{ mt.id }}">{{ mt.code }} — {{ mt.name }}</option>{% endfor %}
-    </select></div>
+    </select>
+    {% else %}
+    <div class="alert alert-warning py-2 px-3 mb-0 small">
+      No Maintenance Types yet —
+      <a href="{{ url_for('master_data.maintenancetype_new') }}">create one first</a>.
+    </div>
+    {% endif %}</div>
   <div class="col-md-4"><label class="form-label">Ties to specific PM Template (optional)</label>
     <select name="pm_schedule_id" class="form-select fms-select2">
       <option value="">— Generic (any vehicle with this Maintenance Type) —</option>

@@ -24,10 +24,18 @@
 
   <div class="col-12"><hr><h6 class="text-muted text-uppercase small">PM Type & Trigger</h6></div>
   <div class="col-md-6"><label class="form-label">Maintenance Type</label>
+    {% if maintenance_types %}
     <select name="maintenance_type_id" class="form-select fms-select2" required>
       <option value="">— Select —</option>
       {% for mt in maintenance_types %}<option value="{{ mt.id }}">{{ mt.code }} — {{ mt.name }}</option>{% endfor %}
-    </select></div>
+    </select>
+    {% else %}
+    <div class="alert alert-warning py-2 px-3 mb-0 small">
+      No Maintenance Types yet —
+      <a href="{{ url_for('master_data.maintenancetype_new') }}">create one first</a>,
+      then come back to this form.
+    </div>
+    {% endif %}</div>
   <div class="col-md-3"><label class="form-label">Trigger Mode</label>
     <select name="trigger_mode" class="form-select" required>
       <option value="KM">KM only</option>
