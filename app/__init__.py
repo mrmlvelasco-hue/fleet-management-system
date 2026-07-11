@@ -43,6 +43,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.transactions.trip_ticket import models as _tt  # noqa: F401
     from app.modules.transactions.atd import models as _atd        # noqa: F401
     from app.modules.transactions.vehicle_movement import models as _vm  # noqa: F401
+    from app.modules.maintenance_config import models as _pmc  # noqa: F401
 
     from app.modules.auth.routes import bp as auth_bp
     from app.modules.main.routes import bp as main_bp
