@@ -47,6 +47,8 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.transactions.maintenance_order import models as _mo  # noqa: F401
     from app.modules.transactions.tire_txn import models as _tirtx  # noqa: F401
     from app.modules.transactions.battery_txn import models as _battx  # noqa: F401
+    from app.modules.transactions.purchase_request import models as _pr  # noqa: F401
+    from app.modules.transactions.vehicle_registration import models as _vreg  # noqa: F401
 
     from app.modules.auth.routes import bp as auth_bp
     from app.modules.main.routes import bp as main_bp
