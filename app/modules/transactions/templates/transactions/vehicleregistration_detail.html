@@ -1,0 +1,75 @@
+{% extends "layout/base.html" %}
+{% block title %}Registration {{ item.document_number }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.vehicleregistration_list') }}">Vehicle Registrations</a></li>
+<li class="breadcrumb-item active">{{ item.document_number or 'Draft' }}</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+  <h1 class="h3">{{ item.document_number or 'Draft Registration' }}</h1>
+  {% if current_user.has_permission('vehicleregistration.print') %}
+  <a class="btn btn-outline-secondary" target="_blank"
+     href="{{ url_for('transactions.vehicleregistration_print', rid=item.id) }}">
+    <i class="bi bi-printer me-1"></i>Print</a>
+  {% endif %}
+</div>
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Registration Details</div>
+    <div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-4">Vehicle</dt><dd class="col-sm-8">{{ item.vehicle.plate_number or item.vehicle.conduction_number }} — {{ item.vehicle.brand }} {{ item.vehicle.model }}</dd>
+        <dt class="col-sm-4">Type</dt><dd class="col-sm-8"><span class="badge text-bg-info">{{ item.registration_type }}</span></dd>
+        <dt class="col-sm-4">Registration Date</dt><dd class="col-sm-8">{{ item.registration_date }}</dd>
+        <dt class="col-sm-4">Validity</dt><dd class="col-sm-8">{{ item.validity_years }} year(s)</dd>
+        <dt class="col-sm-4">Expiry Date</dt><dd class="col-sm-8">{{ item.expiry_date }}</dd>
+        <dt class="col-sm-4">OR Number</dt><dd class="col-sm-8">{{ item.or_number or '—' }}</dd>
+        <dt class="col-sm-4">CR Number</dt><dd class="col-sm-8">{{ item.cr_number or '—' }}</dd>
+        <dt class="col-sm-4">Plate Number</dt><dd class="col-sm-8">{{ item.plate_number or '—' }}</dd>
+        <dt class="col-sm-4">OR/CR Cost</dt><dd class="col-sm-8">{{ "{:,.2f}".format(item.or_cr_cost) if item.or_cr_cost else '—' }}</dd>
+      </dl>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Status & Actions</div>
+    <div class="card-body">
+      <p><strong>Status:</strong>
+        <span class="badge text-bg-{{ 'success' if item.status=='COMPLETED' else 'danger' if item.status=='CANCELLED' else 'secondary' }}">{{ item.status }}</span></p>
+
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        {% if not item.approval_instance and item.status == 'DRAFT' and current_user.has_permission('vehicleregistration.update') %}
+        <form method="post" action="{{ url_for('transactions.vehicleregistration_submit', rid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-sm">Submit</button>
+        </form>
+        {% endif %}
+        {% if item.status not in ['COMPLETED', 'CANCELLED'] and current_user.has_permission('vehicleregistration.update') %}
+        <form method="post" action="{{ url_for('transactions.vehicleregistration_cancel', rid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-danger btn-sm">Cancel</button>
+        </form>
+        {% endif %}
+      </div>
+
+      {% if item.status == 'DRAFT' and current_user.has_permission('vehicleregistration.update') %}
+      <hr>
+      <form method="post" action="{{ url_for('transactions.vehicleregistration_complete', rid=item.id) }}" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-6"><label class="form-label small">OR Number</label>
+          <input type="text" name="or_number" class="form-control form-control-sm" required></div>
+        <div class="col-6"><label class="form-label small">CR Number</label>
+          <input type="text" name="cr_number" class="form-control form-control-sm" required></div>
+        {% if item.registration_type == 'NEW' %}
+        <div class="col-12"><label class="form-label small">Plate Number (assigns to vehicle)</label>
+          <input type="text" name="plate_number" class="form-control form-control-sm"></div>
+        {% endif %}
+        <div class="col-12"><button class="btn btn-sm btn-success">Complete Registration</button></div>
+      </form>
+      {% endif %}
+    </div></div>
+  </div>
+</div>
+{% set reference_table = "vehicle_registrations" %}
+{% set reference_id = item.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endblock %}

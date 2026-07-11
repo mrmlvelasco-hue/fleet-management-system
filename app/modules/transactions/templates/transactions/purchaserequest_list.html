@@ -1,0 +1,32 @@
+{% extends "layout/base.html" %}
+{% block title %}Purchase Requests{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Purchase Requests</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Purchase Requests</h1>
+  {% if current_user.has_permission('purchaserequest.create') %}
+  <a class="btn btn-primary" href="{{ url_for('transactions.purchaserequest_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Request</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr><th>Doc No.</th><th>Description</th><th>Amount</th><th>Status</th><th>Approval</th><th></th></tr></thead>
+  <tbody>
+  {% for pr in items %}
+    <tr>
+      <td>{{ pr.document_number or '—' }}</td>
+      <td>{{ pr.description }}</td>
+      <td>{{ "{:,.2f}".format(pr.amount) }}</td>
+      <td><span class="badge text-bg-{{ 'success' if pr.status=='RECEIVED' else 'primary' if pr.status=='ORDERED' else 'danger' if pr.status=='CANCELLED' else 'secondary' }}">{{ pr.status }}</span></td>
+      <td>{% if pr.approval_instance %}<span class="badge text-bg-{{ 'success' if pr.approval_instance.status=='APPROVED' else 'warning' if pr.approval_instance.status=='PENDING' else 'danger' }}">{{ pr.approval_instance.status }}</span>{% else %}—{% endif %}</td>
+      <td class="text-end">
+        <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.purchaserequest_detail', pid=pr.id) }}">
+          <i class="bi bi-eye"></i></a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "layout/base.html" %}
+{% block title %}Vehicle Registrations{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Vehicle Registrations</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Vehicle Registrations</h1>
+  {% if current_user.has_permission('vehicleregistration.create') %}
+  <a class="btn btn-primary" href="{{ url_for('transactions.vehicleregistration_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Registration</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr>
+    <th>Doc No.</th><th>Vehicle</th><th>Type</th><th>Reg. Date</th>
+    <th>Expiry</th><th>Plate</th><th>Status</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for r in items %}
+    <tr>
+      <td>{{ r.document_number or '—' }}</td>
+      <td>{{ r.vehicle.plate_number or r.vehicle.conduction_number if r.vehicle else '—' }}</td>
+      <td><span class="badge text-bg-info">{{ r.registration_type }}</span></td>
+      <td>{{ r.registration_date or '—' }}</td>
+      <td>{{ r.expiry_date or '—' }}</td>
+      <td>{{ r.plate_number or '—' }}</td>
+      <td><span class="badge text-bg-{{ 'success' if r.status=='COMPLETED' else 'danger' if r.status=='CANCELLED' else 'secondary' }}">{{ r.status }}</span></td>
+      <td class="text-end">
+        <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.vehicleregistration_detail', rid=r.id) }}">
+          <i class="bi bi-eye"></i></a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

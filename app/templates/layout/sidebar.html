@@ -165,6 +165,14 @@
         <li><a href="{{ url_for('transactions.batterytxn_list') }}" class="nav-link {{ 'active' if request.endpoint and 'batterytxn' in (request.endpoint or '') }}">
           <i class="bi bi-battery-half me-2"></i><span class="sidebar-label">Battery Transactions</span></a></li>
         {% endif %}
+        {% if current_user.has_permission('purchaserequest.view') %}
+        <li><a href="{{ url_for('transactions.purchaserequest_list') }}" class="nav-link {{ 'active' if request.endpoint and 'purchaserequest' in (request.endpoint or '') }}">
+          <i class="bi bi-cart me-2"></i><span class="sidebar-label">Purchase Requests</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('vehicleregistration.view') %}
+        <li><a href="{{ url_for('transactions.vehicleregistration_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehicleregistration' in (request.endpoint or '') }}">
+          <i class="bi bi-card-checklist me-2"></i><span class="sidebar-label">Vehicle Registration</span></a></li>
+        {% endif %}
         {% if current_user.has_permission('pmschedule.view') %}
         <li><a href="{{ url_for('maintenance_config.pmschedule_list') }}" class="nav-link {{ 'active' if request.endpoint and 'pmschedule' in (request.endpoint or '') }}">
           <i class="bi bi-calendar-check me-2"></i><span class="sidebar-label">PM Schedules</span></a></li>

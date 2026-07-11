@@ -1,0 +1,96 @@
+{% extends "layout/base.html" %}
+{% block title %}PR {{ item.document_number }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.purchaserequest_list') }}">Purchase Requests</a></li>
+<li class="breadcrumb-item active">{{ item.document_number or 'Draft' }}</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+  <h1 class="h3">{{ item.document_number or 'Draft Purchase Request' }}</h1>
+  {% if current_user.has_permission('purchaserequest.print') %}
+  <a class="btn btn-outline-secondary" target="_blank"
+     href="{{ url_for('transactions.purchaserequest_print', pid=item.id) }}">
+    <i class="bi bi-printer me-1"></i>Print</a>
+  {% endif %}
+</div>
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Request Details</div>
+    <div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-4">Description</dt><dd class="col-sm-8">{{ item.description }}</dd>
+        <dt class="col-sm-4">Department</dt><dd class="col-sm-8">{{ item.department.name if item.department else '—' }}</dd>
+        <dt class="col-sm-4">Vendor</dt><dd class="col-sm-8">{{ item.vendor.name if item.vendor else '—' }}</dd>
+        <dt class="col-sm-4">Justification</dt><dd class="col-sm-8">{{ item.justification or '—' }}</dd>
+        <dt class="col-sm-4">Needed By</dt><dd class="col-sm-8">{{ item.needed_by_date or '—' }}</dd>
+        <dt class="col-sm-4">Amount</dt><dd class="col-sm-8"><strong>{{ "{:,.2f}".format(item.amount) }}</strong></dd>
+      </dl>
+      <table class="table table-sm mt-3">
+        <thead><tr><th>Item</th><th>Qty</th><th>Unit Cost</th><th>Total</th></tr></thead>
+        <tbody>
+        {% for line in item.lines %}
+          <tr><td>{{ line.item_description }}</td><td>{{ line.quantity }}</td>
+              <td>{{ "{:,.2f}".format(line.unit_cost) }}</td>
+              <td>{{ "{:,.2f}".format(line.line_total) }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Status & Actions</div>
+    <div class="card-body">
+      <p><strong>Physical Status:</strong>
+        <span class="badge text-bg-{{ 'success' if item.status=='RECEIVED' else 'primary' if item.status=='ORDERED' else 'danger' if item.status=='CANCELLED' else 'secondary' }}">{{ item.status }}</span></p>
+      <p><strong>Approval Status:</strong>
+        {% if item.approval_instance %}
+        <span class="badge text-bg-{{ 'success' if item.approval_instance.status=='APPROVED' else 'warning' if item.approval_instance.status=='PENDING' else 'danger' }}">{{ item.approval_instance.status }}</span>
+        {% else %}<span class="text-muted">Not submitted</span>{% endif %}</p>
+
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        {% if not item.approval_instance and current_user.has_permission('purchaserequest.update') %}
+        <form method="post" action="{{ url_for('transactions.purchaserequest_submit', pid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-sm">Submit</button>
+        </form>
+        {% endif %}
+        {% if item.approval_instance and item.approval_instance.status == 'PENDING' %}
+        <form method="post" action="{{ url_for('transactions.purchaserequest_approve', pid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-success btn-sm">Approve</button>
+        </form>
+        <form method="post" action="{{ url_for('transactions.purchaserequest_reject', pid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-sm">Reject</button>
+        </form>
+        <form method="post" action="{{ url_for('transactions.purchaserequest_return', pid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-warning btn-sm">Return</button>
+        </form>
+        {% endif %}
+        {% if item.approval_instance and item.approval_instance.status == 'APPROVED' and item.status == 'DRAFT' and current_user.has_permission('purchaserequest.update') %}
+        <form method="post" action="{{ url_for('transactions.purchaserequest_mark_ordered', pid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-sm">Mark Ordered</button>
+        </form>
+        {% endif %}
+        {% if item.status == 'ORDERED' and current_user.has_permission('purchaserequest.update') %}
+        <form method="post" action="{{ url_for('transactions.purchaserequest_mark_received', pid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-success btn-sm">Mark Received</button>
+        </form>
+        {% endif %}
+        {% if item.status not in ['RECEIVED', 'CANCELLED'] and current_user.has_permission('purchaserequest.update') %}
+        <form method="post" action="{{ url_for('transactions.purchaserequest_cancel', pid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-danger btn-sm">Cancel</button>
+        </form>
+        {% endif %}
+      </div>
+    </div></div>
+  </div>
+</div>
+{% set reference_table = "purchase_requests" %}
+{% set reference_id = item.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endblock %}

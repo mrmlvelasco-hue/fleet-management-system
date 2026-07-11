@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>PR {{ item.document_number }}</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 40px; }
+  .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
+  .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
+  table.info { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  table.info td { padding: 6px 8px; border: 1px solid #999; }
+  table.info td.label { font-weight: bold; width: 30%; background: #f2f2f2; }
+  table.lines { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  table.lines th, table.lines td { padding: 6px 8px; border: 1px solid #999; text-align: left; }
+  .signatures { display: flex; justify-content: space-between; margin-top: 60px; }
+  .sig-block { text-align: center; width: 30%; }
+  .sig-line { border-top: 1px solid #333; margin-top: 50px; padding-top: 4px; }
+  .no-print { text-align: center; margin-bottom: 20px; }
+  @media print { .no-print { display: none; } }
+</style></head>
+<body>
+  <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+  <div class="letterhead"><h1>{{ company.company_name if company else 'Company Name' }}</h1></div>
+  <div class="doc-title">PURCHASE REQUEST — {{ item.document_number or 'DRAFT' }}</div>
+  <table class="info">
+    <tr><td class="label">Description</td><td>{{ item.description }}</td></tr>
+    <tr><td class="label">Department</td><td>{{ item.department.name if item.department else '—' }}</td></tr>
+    <tr><td class="label">Vendor</td><td>{{ item.vendor.name if item.vendor else '—' }}</td></tr>
+    <tr><td class="label">Needed By</td><td>{{ item.needed_by_date or '—' }}</td></tr>
+    <tr><td class="label">Status</td><td>{{ item.status }}</td></tr>
+  </table>
+  <table class="lines">
+    <tr><th>Item</th><th>Qty</th><th>Unit Cost</th><th>Total</th></tr>
+    {% for line in item.lines %}
+    <tr><td>{{ line.item_description }}</td><td>{{ line.quantity }}</td>
+        <td>{{ "{:,.2f}".format(line.unit_cost) }}</td>
+        <td>{{ "{:,.2f}".format(line.line_total) }}</td></tr>
+    {% endfor %}
+    <tr><td colspan="3" style="text-align:right"><strong>Total</strong></td>
+        <td><strong>{{ "{:,.2f}".format(item.amount) }}</strong></td></tr>
+  </table>
+  <div class="signatures">
+    <div class="sig-block"><div class="sig-line">Requested By</div></div>
+    <div class="sig-block"><div class="sig-line">Approved By</div></div>
+    <div class="sig-block"><div class="sig-line">Received By</div></div>
+  </div>
+</body>
+</html>

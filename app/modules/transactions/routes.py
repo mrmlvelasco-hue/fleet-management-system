@@ -33,12 +33,20 @@ from app.modules.transactions.tire_txn.models import TireTransaction
 from app.modules.transactions.battery_txn.service import (
     BatteryTransactionService, InvalidBatteryActionError)
 from app.modules.transactions.battery_txn.models import BatteryTransaction
+from app.modules.transactions.purchase_request.service import (
+    PurchaseRequestService, LineManagementError)
+from app.modules.transactions.purchase_request.models import PurchaseRequest
+from app.modules.transactions.vehicle_registration.service import (
+    VehicleRegistrationService, DuplicateActiveRegistrationError,
+    NoExistingRegistrationError)
+from app.modules.transactions.vehicle_registration.models import (
+    VehicleRegistration)
 
 bp = Blueprint("transactions", __name__, url_prefix="/transactions",
                template_folder="templates")
 
 for _mod in ["tripticket", "atd", "vehiclemovement", "maintenanceorder",
-             "tiretxn", "batterytxn"]:
+             "tiretxn", "batterytxn", "purchaserequest", "vehicleregistration"]:
     for _act in ["view", "create", "update", "delete", "print"]:
         _code = f"{_mod}.{_act}"
         registry.register(_code, _mod, _act, f"{_act.title()} {_mod}")
@@ -684,3 +692,232 @@ def batterytxn_print(bid):
     company = CompanyProfileService().get()
     return render_template("transactions/batterytxn_print.html", item=item,
                            company=company)
+
+
+# ── Purchase Requests ────────────────────────────────────────────────────────
+
+@bp.route("/purchase-requests")
+@login_required
+@require_permission("purchaserequest.view")
+def purchaserequest_list():
+    items = PurchaseRequestService().list()
+    return render_template("transactions/purchaserequest_list.html", items=items)
+
+
+@bp.route("/purchase-requests/new", methods=["GET", "POST"])
+@login_required
+@require_permission("purchaserequest.create")
+def purchaserequest_new():
+    from app.modules.master_data.org.service import DepartmentService
+    from app.modules.master_data.vendor.service import VendorService
+    departments = DepartmentService().list()
+    vendors = VendorService().list()
+    if request.method == "POST":
+        f = request.form
+        descs = f.getlist("item_description")
+        qtys = f.getlist("quantity")
+        costs = f.getlist("unit_cost")
+        lines = [{"item_description": d, "quantity": float(q), "unit_cost": float(c)}
+                 for d, q, c in zip(descs, qtys, costs) if d and q and c]
+        PurchaseRequestService().create(
+            description=f["description"], user=current_user, lines=lines,
+            department_id=int(f["department_id"]) if f.get("department_id") else None,
+            vendor_id=int(f["vendor_id"]) if f.get("vendor_id") else None,
+            justification=f.get("justification"),
+            needed_by_date=date.fromisoformat(f["needed_by_date"]) if f.get("needed_by_date") else None)
+        flash("Purchase Request created.", "success")
+        return redirect(url_for("transactions.purchaserequest_list"))
+    return render_template("transactions/purchaserequest_form.html",
+                           departments=departments, vendors=vendors,
+                           title="New Purchase Request")
+
+
+@bp.route("/purchase-requests/<int:pid>")
+@login_required
+@require_permission("purchaserequest.view")
+def purchaserequest_detail(pid):
+    item = db.session.get(PurchaseRequest, pid)
+    return render_template("transactions/purchaserequest_detail.html", item=item)
+
+
+@bp.route("/purchase-requests/<int:pid>/print")
+@login_required
+@require_permission("purchaserequest.print")
+def purchaserequest_print(pid):
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    item = db.session.get(PurchaseRequest, pid)
+    company = CompanyProfileService().get()
+    return render_template("transactions/purchaserequest_print.html",
+                           item=item, company=company)
+
+
+@bp.route("/purchase-requests/<int:pid>/submit", methods=["POST"])
+@login_required
+@require_permission("purchaserequest.update")
+def purchaserequest_submit(pid):
+    try:
+        PurchaseRequestService().submit(pid, user=current_user)
+        flash("Purchase Request submitted.", "success")
+    except Exception as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.purchaserequest_detail", pid=pid))
+
+
+@bp.route("/purchase-requests/<int:pid>/approve", methods=["POST"])
+@login_required
+@require_permission("purchaserequest.view")
+def purchaserequest_approve(pid):
+    try:
+        PurchaseRequestService().approve(pid, user=current_user,
+                                         remarks=request.form.get("remarks"))
+        flash("Purchase Request approved.", "success")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.purchaserequest_detail", pid=pid))
+
+
+@bp.route("/purchase-requests/<int:pid>/reject", methods=["POST"])
+@login_required
+@require_permission("purchaserequest.view")
+def purchaserequest_reject(pid):
+    try:
+        PurchaseRequestService().reject(pid, user=current_user,
+                                        remarks=request.form.get("remarks"))
+        flash("Purchase Request rejected.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.purchaserequest_detail", pid=pid))
+
+
+@bp.route("/purchase-requests/<int:pid>/return", methods=["POST"])
+@login_required
+@require_permission("purchaserequest.view")
+def purchaserequest_return(pid):
+    try:
+        PurchaseRequestService().return_document(
+            pid, user=current_user, remarks=request.form.get("remarks"))
+        flash("Purchase Request returned to requester.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.purchaserequest_detail", pid=pid))
+
+
+@bp.route("/purchase-requests/<int:pid>/cancel", methods=["POST"])
+@login_required
+@require_permission("purchaserequest.update")
+def purchaserequest_cancel(pid):
+    try:
+        PurchaseRequestService().cancel(pid, user=current_user)
+        flash("Purchase Request cancelled.", "info")
+    except InvalidStateError as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.purchaserequest_detail", pid=pid))
+
+
+@bp.route("/purchase-requests/<int:pid>/mark-ordered", methods=["POST"])
+@login_required
+@require_permission("purchaserequest.update")
+def purchaserequest_mark_ordered(pid):
+    PurchaseRequestService().mark_ordered(pid)
+    flash("Purchase Request marked as ordered.", "success")
+    return redirect(url_for("transactions.purchaserequest_detail", pid=pid))
+
+
+@bp.route("/purchase-requests/<int:pid>/mark-received", methods=["POST"])
+@login_required
+@require_permission("purchaserequest.update")
+def purchaserequest_mark_received(pid):
+    PurchaseRequestService().mark_received(pid)
+    flash("Purchase Request marked as received.", "success")
+    return redirect(url_for("transactions.purchaserequest_detail", pid=pid))
+
+
+# ── Vehicle Registration ─────────────────────────────────────────────────────
+
+@bp.route("/vehicle-registrations")
+@login_required
+@require_permission("vehicleregistration.view")
+def vehicleregistration_list():
+    items = VehicleRegistrationService().list()
+    return render_template("transactions/vehicleregistration_list.html",
+                           items=items)
+
+
+@bp.route("/vehicle-registrations/new", methods=["GET", "POST"])
+@login_required
+@require_permission("vehicleregistration.create")
+def vehicleregistration_new():
+    vehicles = VehicleService().list()
+    if request.method == "POST":
+        f = request.form
+        try:
+            VehicleRegistrationService().create(
+                vehicle_id=int(f["vehicle_id"]),
+                registration_type=f["registration_type"],
+                registration_date=date.fromisoformat(f["registration_date"]),
+                or_cr_cost=f.get("or_cr_cost") or None, user=current_user)
+            flash("Vehicle Registration created.", "success")
+            return redirect(url_for("transactions.vehicleregistration_list"))
+        except (DuplicateActiveRegistrationError,
+                NoExistingRegistrationError) as e:
+            flash(str(e), "danger")
+    return render_template("transactions/vehicleregistration_form.html",
+                           vehicles=vehicles, title="New Vehicle Registration")
+
+
+@bp.route("/vehicle-registrations/<int:rid>")
+@login_required
+@require_permission("vehicleregistration.view")
+def vehicleregistration_detail(rid):
+    item = db.session.get(VehicleRegistration, rid)
+    return render_template("transactions/vehicleregistration_detail.html",
+                           item=item)
+
+
+@bp.route("/vehicle-registrations/<int:rid>/print")
+@login_required
+@require_permission("vehicleregistration.print")
+def vehicleregistration_print(rid):
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    item = db.session.get(VehicleRegistration, rid)
+    company = CompanyProfileService().get()
+    return render_template("transactions/vehicleregistration_print.html",
+                           item=item, company=company)
+
+
+@bp.route("/vehicle-registrations/<int:rid>/submit", methods=["POST"])
+@login_required
+@require_permission("vehicleregistration.update")
+def vehicleregistration_submit(rid):
+    try:
+        VehicleRegistrationService().submit(rid, user=current_user)
+        flash("Vehicle Registration submitted.", "success")
+    except Exception as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
+
+
+@bp.route("/vehicle-registrations/<int:rid>/cancel", methods=["POST"])
+@login_required
+@require_permission("vehicleregistration.update")
+def vehicleregistration_cancel(rid):
+    try:
+        VehicleRegistrationService().cancel(rid, user=current_user)
+        flash("Vehicle Registration cancelled.", "info")
+    except InvalidStateError as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
+
+
+@bp.route("/vehicle-registrations/<int:rid>/complete", methods=["POST"])
+@login_required
+@require_permission("vehicleregistration.update")
+def vehicleregistration_complete(rid):
+    f = request.form
+    VehicleRegistrationService().complete(
+        rid, or_number=f["or_number"], cr_number=f["cr_number"],
+        plate_number=f.get("plate_number") or None)
+    flash("Vehicle Registration completed.", "success")
+    return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))

@@ -1,0 +1,72 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.purchaserequest_list') }}">Purchase Requests</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Department (optional)</label>
+    <select name="department_id" class="form-select fms-select2">
+      <option value="">— None —</option>
+      {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Suggested Vendor (optional)</label>
+    <select name="vendor_id" class="form-select fms-select2">
+      <option value="">— None —</option>
+      {% for v in vendors %}<option value="{{ v.id }}">{{ v.code }} — {{ v.name }}</option>{% endfor %}
+    </select></div>
+  <div class="col-12"><label class="form-label">Description</label>
+    <input type="text" name="description" class="form-control" required></div>
+  <div class="col-md-6"><label class="form-label">Justification</label>
+    <input type="text" name="justification" class="form-control"></div>
+  <div class="col-md-6"><label class="form-label">Needed By</label>
+    <input type="date" name="needed_by_date" class="form-control"></div>
+
+  <div class="col-12">
+    <label class="form-label">Line Items</label>
+    <div id="lineRows"></div>
+    <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="addLineRow">
+      <i class="bi bi-plus-lg"></i> Add Line Item</button>
+    <div class="mt-2"><strong>Total: <span id="lineTotal">0.00</span></strong></div>
+  </div>
+
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save as Draft</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.purchaserequest_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+function recalcTotal() {
+  var total = 0;
+  document.querySelectorAll("#lineRows .line-row").forEach(function (row) {
+    var qty = parseFloat(row.querySelector(".line-qty").value) || 0;
+    var cost = parseFloat(row.querySelector(".line-cost").value) || 0;
+    total += qty * cost;
+  });
+  document.getElementById("lineTotal").textContent = total.toFixed(2);
+}
+function addLineRow() {
+  var div = document.createElement("div");
+  div.className = "row g-2 mb-2 align-items-center line-row";
+  div.innerHTML =
+    '<div class="col-md-5"><input type="text" name="item_description" class="form-control form-control-sm" placeholder="Item description" required></div>' +
+    '<div class="col-md-2"><input type="number" step="0.01" name="quantity" class="form-control form-control-sm line-qty" placeholder="Qty" required></div>' +
+    '<div class="col-md-3"><input type="number" step="0.01" name="unit_cost" class="form-control form-control-sm line-cost" placeholder="Unit Cost" required></div>' +
+    '<div class="col-md-2"><button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button></div>';
+  document.getElementById("lineRows").appendChild(div);
+  div.querySelector(".remove-row").addEventListener("click", function () { div.remove(); recalcTotal(); });
+  div.querySelectorAll(".line-qty, .line-cost").forEach(function (el) {
+    el.addEventListener("input", recalcTotal);
+  });
+}
+document.getElementById("addLineRow").addEventListener("click", addLineRow);
+addLineRow();
+</script>
+{% endblock %}

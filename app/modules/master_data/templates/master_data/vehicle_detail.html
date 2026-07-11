@@ -64,6 +64,29 @@
 </div>
 {% endif %}
 
+{% if registration_history %}
+<div class="card mt-4">
+  <div class="card-header"><i class="bi bi-card-checklist me-1"></i>Registration History</div>
+  <div class="card-body p-0">
+  <table class="table table-striped mb-0">
+    <thead><tr><th>Doc No.</th><th>Type</th><th>Reg. Date</th><th>Expiry</th><th>Plate</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for r in registration_history %}
+      <tr>
+        <td>{{ r.document_number or '—' }}</td>
+        <td>{{ r.registration_type }}</td>
+        <td>{{ r.registration_date or '—' }}</td>
+        <td>{{ r.expiry_date or '—' }}</td>
+        <td>{{ r.plate_number or '—' }}</td>
+        <td><span class="badge text-bg-{{ 'success' if r.status=='COMPLETED' else 'danger' if r.status=='CANCELLED' else 'secondary' }}">{{ r.status }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
 {% set reference_table = "vehicles" %}
 {% set reference_id = vehicle.id %}
 {% include "master_data/_attachment_panel.html" %}
