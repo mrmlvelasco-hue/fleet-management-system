@@ -12,12 +12,107 @@
   <div class="col-md-6">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}
     {% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
   <div class="col-md-6">{{ form.description.label(class="form-label") }}{{ form.description(class="form-control") }}</div>
-  <div class="col-12">{{ form.permissions.label(class="form-label") }}
-    {{ form.permissions(class="form-select fms-select2", multiple=True) }}</div>
+
+  <div class="col-12">
+    <label class="form-label d-flex justify-content-between align-items-center">
+      <span>Permissions <span class="text-muted small" id="permCountLabel"></span></span>
+    </label>
+    <div class="card">
+      <div class="card-header d-flex flex-wrap gap-2 align-items-center bg-body-tertiary">
+        <input type="search" id="permSearch" class="form-control form-control-sm"
+               style="max-width: 320px;" placeholder="🔍 Search permissions (code, module, description)...">
+        <button type="button" class="btn btn-sm btn-outline-primary" id="permSelectAll">Select All</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="permClearAll">Clear All</button>
+      </div>
+      <div class="card-body" style="max-height: 420px; overflow-y: auto;">
+        {% for module, perms in grouped_permissions.items() %}
+        <div class="perm-group mb-2" data-module="{{ module }}">
+          <div class="d-flex justify-content-between align-items-center border-bottom pb-1 mb-1">
+            <button type="button" class="btn btn-link btn-sm text-decoration-none p-0 fw-semibold perm-group-toggle"
+                    data-bs-toggle="collapse" data-bs-target="#permGroup-{{ loop.index }}">
+              <i class="bi bi-chevron-down me-1"></i>{{ module|title }}
+            </button>
+            <span class="small text-muted perm-group-count" data-total="{{ perms|length }}"></span>
+          </div>
+          <div class="collapse show" id="permGroup-{{ loop.index }}">
+            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-1 ps-3">
+              {% for p in perms %}
+              <div class="col perm-item"
+                   data-search="{{ p.code|lower }} {{ p.module|lower }} {{ (p.description or '')|lower }}">
+                <div class="form-check">
+                  <input type="checkbox" class="form-check-input perm-checkbox" name="permissions"
+                         value="{{ p.id }}" id="perm_{{ p.id }}"
+                         {{ 'checked' if p.id in selected_ids }}>
+                  <label class="form-check-label small" for="perm_{{ p.id }}" title="{{ p.description }}">
+                    <code>{{ p.code }}</code>
+                  </label>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Save</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('user_management.roles_list') }}">Cancel</a>
   </div>
 </form>
 </div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var checkboxes = Array.prototype.slice.call(document.querySelectorAll(".perm-checkbox"));
+  var searchBox = document.getElementById("permSearch");
+  var countLabel = document.getElementById("permCountLabel");
+
+  function updateGroupCounts() {
+    document.querySelectorAll(".perm-group").forEach(function (group) {
+      var boxes = group.querySelectorAll(".perm-checkbox");
+      var checked = Array.prototype.filter.call(boxes, function (b) { return b.checked; }).length;
+      var countEl = group.querySelector(".perm-group-count");
+      countEl.textContent = checked + " / " + boxes.length + " selected";
+    });
+    var totalChecked = checkboxes.filter(function (b) { return b.checked; }).length;
+    countLabel.textContent = "(" + totalChecked + " of " + checkboxes.length + " selected)";
+  }
+
+  function applyFilter() {
+    var term = (searchBox.value || "").toLowerCase().trim();
+    document.querySelectorAll(".perm-item").forEach(function (item) {
+      var match = !term || item.dataset.search.indexOf(term) !== -1;
+      item.classList.toggle("d-none", !match);
+    });
+    document.querySelectorAll(".perm-group").forEach(function (group) {
+      var anyVisible = group.querySelector(".perm-item:not(.d-none)");
+      group.classList.toggle("d-none", !anyVisible && term !== "");
+    });
+  }
+
+  searchBox.addEventListener("input", applyFilter);
+  checkboxes.forEach(function (cb) { cb.addEventListener("change", updateGroupCounts); });
+
+  document.getElementById("permSelectAll").addEventListener("click", function () {
+    checkboxes.forEach(function (cb) {
+      var item = cb.closest(".perm-item");
+      if (!item.classList.contains("d-none")) cb.checked = true;
+    });
+    updateGroupCounts();
+  });
+  document.getElementById("permClearAll").addEventListener("click", function () {
+    checkboxes.forEach(function (cb) {
+      var item = cb.closest(".perm-item");
+      if (!item.classList.contains("d-none")) cb.checked = false;
+    });
+    updateGroupCounts();
+  });
+
+  updateGroupCounts();
+})();
+</script>
 {% endblock %}

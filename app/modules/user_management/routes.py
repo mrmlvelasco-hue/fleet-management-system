@@ -36,6 +36,17 @@ def _populate_role_form(form: RoleForm) -> None:
                                 for p in PermissionRepository().list()]
 
 
+def _grouped_permissions():
+    """Return permissions grouped by module, sorted, for the Permission
+    Picker UI (search + group + Select All/Clear All)."""
+    perms = sorted(PermissionRepository().list(),
+                  key=lambda p: (p.module, p.action))
+    groups = {}
+    for p in perms:
+        groups.setdefault(p.module, []).append(p)
+    return dict(sorted(groups.items()))
+
+
 # ---------- Users ----------
 
 @bp.route("/users")
@@ -130,6 +141,8 @@ def roles_new():
         flash("Role created.", "success")
         return redirect(url_for("user_management.roles_list"))
     return render_template("user_management/role_form.html", form=form,
+                           grouped_permissions=_grouped_permissions(),
+                           selected_ids=set(),
                            title="New Role")
 
 
@@ -151,6 +164,8 @@ def roles_edit(role_id):
         return redirect(url_for("user_management.roles_list"))
     form.permissions.data = [p.id for p in role.permissions]
     return render_template("user_management/role_form.html", form=form,
+                           grouped_permissions=_grouped_permissions(),
+                           selected_ids={p.id for p in role.permissions},
                            title=f"Edit Role — {role.name}")
 
 
