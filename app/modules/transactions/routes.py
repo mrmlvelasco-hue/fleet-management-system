@@ -337,7 +337,9 @@ def vehiclemovement_list():
 @login_required
 @require_permission("vehiclemovement.create")
 def vehiclemovement_new():
+    from app.modules.system_admin.services.lookup_service import LookupService
     vehicles = VehicleService().list()
+    movement_types = LookupService().get_by_type_with_fallback("MOVEMENT_TYPE")
     if request.method == "POST":
         f = request.form
         try:
@@ -353,7 +355,8 @@ def vehiclemovement_new():
         except InvalidMovementTypeError as e:
             flash(str(e), "danger")
     return render_template("transactions/vehiclemovement_form.html",
-                           vehicles=vehicles, title="New Vehicle Movement")
+                           vehicles=vehicles, movement_types=movement_types,
+                           title="New Vehicle Movement")
 
 
 @bp.route("/vehicle-movements/<int:mid>")

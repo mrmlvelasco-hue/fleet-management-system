@@ -279,6 +279,8 @@ def vehicletype_list():
 @login_required
 @require_permission("vehicletype.create")
 def vehicletype_new():
+    from app.modules.system_admin.services.lookup_service import LookupService
+    categories = LookupService().get_by_type_with_fallback("VEHICLE_CATEGORY")
     if request.method == "POST":
         try:
             VehicleTypeService().create(
@@ -290,13 +292,16 @@ def vehicletype_new():
         except DuplicateCodeError as e:
             flash(str(e), "danger")
     return render_template("master_data/vehicletype_form.html",
-                           item=None, title="New Vehicle Type")
+                           item=None, categories=categories,
+                           title="New Vehicle Type")
 
 
 @bp.route("/vehicle-types/<int:vid>/edit", methods=["GET", "POST"])
 @login_required
 @require_permission("vehicletype.update")
 def vehicletype_edit(vid):
+    from app.modules.system_admin.services.lookup_service import LookupService
+    categories = LookupService().get_by_type_with_fallback("VEHICLE_CATEGORY")
     item = db.session.get(VehicleType, vid)
     if request.method == "POST":
         VehicleTypeService().update(
@@ -306,7 +311,8 @@ def vehicletype_edit(vid):
         flash("Vehicle type updated.", "success")
         return redirect(url_for("master_data.vehicletype_list"))
     return render_template("master_data/vehicletype_form.html",
-                           item=item, title=f"Edit — {item.code}")
+                           item=item, categories=categories,
+                           title=f"Edit — {item.code}")
 
 
 @bp.route("/vehicle-types/<int:vid>/deactivate", methods=["POST"])
@@ -390,6 +396,8 @@ def vendor_list():
 @login_required
 @require_permission("vendor.create")
 def vendor_new():
+    from app.modules.system_admin.services.lookup_service import LookupService
+    vendor_types = LookupService().get_by_type_with_fallback("VENDOR_TYPE")
     if request.method == "POST":
         try:
             VendorService().create(**_vendor_fields())
@@ -398,20 +406,24 @@ def vendor_new():
         except Exception as e:
             flash(str(e), "danger")
     return render_template("master_data/vendor_form.html",
-                           item=None, title="New Vendor")
+                           item=None, vendor_types=vendor_types,
+                           title="New Vendor")
 
 
 @bp.route("/vendors/<int:vid>/edit", methods=["GET", "POST"])
 @login_required
 @require_permission("vendor.update")
 def vendor_edit(vid):
+    from app.modules.system_admin.services.lookup_service import LookupService
+    vendor_types = LookupService().get_by_type_with_fallback("VENDOR_TYPE")
     item = db.session.get(Vendor, vid)
     if request.method == "POST":
         VendorService().update(vid, **_vendor_fields(include_code=False))
         flash("Vendor updated.", "success")
         return redirect(url_for("master_data.vendor_list"))
     return render_template("master_data/vendor_form.html",
-                           item=item, title=f"Edit — {item.code}")
+                           item=item, vendor_types=vendor_types,
+                           title=f"Edit — {item.code}")
 
 
 @bp.route("/vendors/<int:vid>/deactivate", methods=["POST"])
@@ -660,7 +672,9 @@ def tire_list():
 @login_required
 @require_permission("tire.create")
 def tire_new():
+    from app.modules.system_admin.services.lookup_service import LookupService
     vendors = VendorService().list()
+    tire_types = LookupService().get_by_type_with_fallback("TIRE_TYPE")
     if request.method == "POST":
         try:
             TireService().create(
@@ -675,7 +689,8 @@ def tire_new():
         except DuplicateSerialError as e:
             flash(str(e), "danger")
     return render_template("master_data/tire_form.html",
-                           item=None, vendors=vendors, title="New Tire")
+                           item=None, vendors=vendors, tire_types=tire_types,
+                           title="New Tire")
 
 
 @bp.route("/tires/<int:tid>/deactivate", methods=["POST"])

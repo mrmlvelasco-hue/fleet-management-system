@@ -51,6 +51,18 @@ class LookupService:
                 .order_by(Lookup.sort_order, Lookup.code)
                 .all())
 
+    def get_by_type_with_fallback(self, lookup_type: str) -> list:
+        """Like get_by_type, but falls back to the code-registered defaults
+        (module-level registry.register() calls) if the DB hasn't been
+        seeded yet (`flask seed all`) — so dropdowns never render empty on
+        a fresh install."""
+        rows = self.get_by_type(lookup_type)
+        if rows:
+            return rows
+        from types import SimpleNamespace
+        return [SimpleNamespace(code=d.code, description=d.description)
+               for d in registry.definitions if d.lookup_type == lookup_type]
+
     def create(self, lookup_type: str, code: str, description: str,
                sort_order: int = 0) -> Lookup:
         item = Lookup(lookup_type=lookup_type, code=code,

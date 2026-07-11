@@ -18,10 +18,9 @@
     </select></div>
   <div class="col-md-6"><label class="form-label">Movement Type</label>
     <select name="movement_type" class="form-select" required>
-      <option value="TRANSFER">Transfer</option>
-      <option value="DISPATCH">Dispatch</option>
-      <option value="RETURN">Return</option>
-      <option value="OTHER">Other</option>
+      {% for mt in movement_types %}
+      <option value="{{ mt.code }}">{{ mt.description }}</option>
+      {% endfor %}
     </select></div>
   <div class="col-md-6"><label class="form-label">From Location</label>
     <input type="text" name="from_location" class="form-control" required></div>

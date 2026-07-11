@@ -1,55 +1,53 @@
 # Lookup Type Reference — Which Module Uses Which Lookup
 
 This is the master list of `lookup_type` codes used across the system's
-generic Lookup Maintenance screen (System Administration → Lookups).
-When adding lookup values, use the **exact** `lookup_type` string shown
+generic Lookup Maintenance screen (System Administration -> Lookups).
+When adding lookup values, use the exact `lookup_type` string shown
 below (case-sensitive, uppercase with underscores).
 
-## Currently wired to a dropdown (Lookup-driven today)
+## Fully Lookup-driven today (admin can add values, no code change needed)
 
-| lookup_type | Used by | Example codes seeded | Where it appears |
+| lookup_type | Used by | Seeded defaults | Where it appears |
 |---|---|---|---|
-| `FUEL_TYPE` | Vehicle Master | DIESEL, GASOLINE, ELECTRIC, HYBRID, LPG | Vehicle form → Fuel Type dropdown |
-| `LICENSE_TYPE` | Driver Master | PROFESSIONAL, NON_PROFESSIONAL, STUDENT_PERMIT | Driver form → License Type dropdown |
+| FUEL_TYPE | Vehicle Master | DIESEL, GASOLINE, ELECTRIC, HYBRID, LPG | Vehicle form -> Fuel Type |
+| LICENSE_TYPE | Driver Master | PROFESSIONAL, NON_PROFESSIONAL, STUDENT_PERMIT | Driver form -> License Type |
+| VEHICLE_CATEGORY | Vehicle Type master | LIGHT, HEAVY, MOTORCYCLE, SPECIAL | Vehicle Type form -> Category |
+| VENDOR_TYPE | Vendor master | GOODS, SERVICES, BOTH | Vendor form -> Vendor Type |
+| TIRE_TYPE | Tire master | RADIAL, BIAS | Tire form -> Type |
+| MOVEMENT_TYPE | Vehicle Movement transaction | TRANSFER, DISPATCH, RETURN, OTHER | Movement form -> Movement Type (also validated server-side against this Lookup) |
+| PM_PRIORITY | PM Schedule | LOW, MEDIUM, HIGH | PM Schedule form -> Priority |
 
-These two are seeded automatically by `flask seed all` (via the module's own
-`LookupRegistry.register()` calls) so they're ready out of the box; you can
-add more values to them anytime in Lookup Maintenance without touching code.
+All seven are seeded automatically by `flask seed all`. Before the first
+seed run (fresh install), the dropdowns still show the code-registered
+defaults automatically (a safe fallback), so the UI never renders an empty
+dropdown even pre-seed.
 
-## Fields that are currently free-text / fixed choice (not yet Lookup-driven)
+To add a new value to any of the above: Sidebar -> Lookups -> New Lookup ->
+enter the exact lookup_type code from the table, your new code and
+description, save. It appears in the dropdown immediately.
 
-These fields exist and work today, but their allowed values are either a
-small hardcoded set in code or a free-text field — not yet wired to the
-generic Lookup screen. If you want any of these to become admin-editable via
-Lookup Maintenance instead, let me know and I'll wire it (small change per
-field, same pattern as FUEL_TYPE/LICENSE_TYPE above).
+## Intentionally NOT Lookup-driven (business logic depends on the exact value)
 
-| Field | Model | Current values | Notes |
+These fields have real if/elif code branches keyed to their specific
+values -- adding a new value via Lookup Maintenance alone would not give it
+matching behavior, so they stay as fixed dropdowns until a corresponding
+code change is made:
+
+| Field | Model | Fixed values | Why it can't be freely added-to |
 |---|---|---|---|
-| `category` (Vehicle Type) | VehicleType | LIGHT, HEAVY, MOTORCYCLE, SPECIAL (free text today) | Comment in code already says "from Lookup VEHICLE_CATEGORY" — planned but not wired yet |
-| `category` (Maintenance Type) | MaintenanceType | PREVENTIVE, CORRECTIVE (free text today) | Drives Maintenance Order's checklist-required logic |
-| `tire_type` | Tire | RADIAL, BIAS (free text today) | |
-| `vendor_type` | Vendor | GOODS, SERVICES, BOTH (fixed dropdown in form, not Lookup-driven) | |
-| `movement_type` | VehicleMovement | TRANSFER, DISPATCH, RETURN, OTHER (fixed dropdown, validated in code) | |
-| `action` (Tire Transaction) | TireTransaction | MOUNT, DISMOUNT, RETREAD, DISPOSE (fixed, validated in code) | |
-| `action` (Battery Transaction) | BatteryTransaction | MOUNT, DISMOUNT, DISPOSE (fixed, validated in code) | |
-| `trigger_mode` (PM Schedule) | PMSchedule | KM, CALENDAR, HYBRID (fixed dropdown) | |
-| `priority` (PM Schedule) | PMSchedule | LOW, MEDIUM, HIGH (fixed dropdown) | |
-| `status` fields (all transaction modules) | various | DRAFT/PENDING/APPROVED/etc. | These are workflow states, intentionally not Lookup-driven — they're controlled by the Approval Engine and physical lifecycle logic, not arbitrary admin-editable text |
+| category (Maintenance Type) | MaintenanceType | PREVENTIVE, CORRECTIVE | Determines whether a Maintenance Order requires a completed checklist before it can be marked complete |
+| trigger_mode | PMSchedule | KM, CALENDAR, HYBRID | Determines which due-date/due-km math the PMDueCalculationService runs |
+| action (Tire Transaction) | TireTransaction | MOUNT, DISMOUNT, RETREAD, DISPOSE | Each value drives a specific Tire Master status-sync rule |
+| action (Battery Transaction) | BatteryTransaction | MOUNT, DISMOUNT, DISPOSE | Same as above, for Battery Master |
+| status fields (all transaction modules) | various | DRAFT/PENDING/APPROVED/etc. | Controlled entirely by the Approval Engine and each module's physical-lifecycle logic |
 
-## How to add a new Lookup value to an existing type
+If you need a new value in one of these (e.g. a 4th Tire Transaction action
+like "REPAIR"), tell me -- it's a small, well-understood change (add the enum
+value + its corresponding status-sync branch), just not a pure Lookup-Maintenance-only edit.
 
-1. Sidebar → **Lookups**
-2. Click **New Lookup**
-3. Lookup Type: enter the exact code from the table above (e.g. `FUEL_TYPE`)
-4. Code: your new value's short code (e.g. `CNG`)
-5. Description: display label (e.g. "Compressed Natural Gas")
-6. Sort Order: controls dropdown ordering
-7. Save — it appears in the relevant dropdown immediately, no restart needed
+## How to request more fields converted to Lookup-driven
 
-## How to request a new Lookup-driven field
-
-If you want one of the "not yet Lookup-driven" fields above converted to
-use the Lookup Maintenance screen (so your admin can add values without
-asking me), just name the field — it's a small, consistent change following
-the same pattern already used for FUEL_TYPE and LICENSE_TYPE.
+Any other free-text or hardcoded-dropdown field you'd like made
+admin-configurable -- just name it. Converting one follows the same pattern
+used above: register defaults in code, add a DB-first-with-fallback query,
+swap the form's input/hardcoded select for a Lookup-driven one.

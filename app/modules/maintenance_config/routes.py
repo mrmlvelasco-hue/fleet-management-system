@@ -44,8 +44,10 @@ def pmschedule_list():
 @login_required
 @require_permission("pmschedule.create")
 def pmschedule_new():
+    from app.modules.system_admin.services.lookup_service import LookupService
     vehicle_types = VehicleTypeService().list()
     maintenance_types = MaintenanceTypeService().list()
+    priorities = LookupService().get_by_type_with_fallback("PM_PRIORITY")
     if request.method == "POST":
         f = request.form
         try:
@@ -63,6 +65,7 @@ def pmschedule_new():
     return render_template("maintenance_config/schedule_form.html",
                            vehicle_types=vehicle_types,
                            maintenance_types=maintenance_types,
+                           priorities=priorities,
                            title="New PM Schedule")
 
 

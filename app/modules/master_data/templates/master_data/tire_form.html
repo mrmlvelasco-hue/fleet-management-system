@@ -19,8 +19,11 @@
     <input type="text" name="size" class="form-control"
            value="{{ item.size if item and item.size else '' }}"></div>
   <div class="col-md-6"><label class="form-label">Type</label>
-    <input type="text" name="tire_type" class="form-control"
-           value="{{ item.tire_type if item and item.tire_type else '' }}"></div>
+    <select name="tire_type" class="form-select">
+      {% for tt in tire_types %}
+      <option value="{{ tt.code }}" {{ 'selected' if item and item.tire_type==tt.code }}>{{ tt.description }}</option>
+      {% endfor %}
+    </select></div>
   <div class="col-md-4"><label class="form-label">Purchase Date</label>
     <input type="text" name="purchase_date" class="form-control flatpickr"
            value="{{ item.purchase_date if item and item.purchase_date else '' }}"></div>

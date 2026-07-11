@@ -35,9 +35,9 @@
            value="{{ item.contact_person if item and item.contact_person else '' }}"></div>
   <div class="col-md-6"><label class="form-label">Vendor Type</label>
     <select name="vendor_type" class="form-select">
-      <option value="GOODS" {{ 'selected' if item and item.vendor_type=='GOODS' }}>Goods</option>
-      <option value="SERVICES" {{ 'selected' if item and item.vendor_type=='SERVICES' }}>Services</option>
-      <option value="BOTH" {{ 'selected' if item and item.vendor_type=='BOTH' }}>Both</option>
+      {% for vt in vendor_types %}
+      <option value="{{ vt.code }}" {{ 'selected' if item and item.vendor_type==vt.code }}>{{ vt.description }}</option>
+      {% endfor %}
     </select></div>
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Save</button>
