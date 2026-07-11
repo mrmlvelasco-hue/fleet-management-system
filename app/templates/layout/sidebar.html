@@ -128,6 +128,10 @@
         <li><a href="{{ url_for('master_data.vehicletype_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehicletype' in (request.endpoint or '') }}">
           <i class="bi bi-tags me-2"></i><span class="sidebar-label">Vehicle Types</span></a></li>
         {% endif %}
+        {% if current_user.has_permission('maintenancetype.view') %}
+        <li><a href="{{ url_for('master_data.maintenancetype_list') }}" class="nav-link {{ 'active' if request.endpoint and 'maintenancetype' in (request.endpoint or '') }}">
+          <i class="bi bi-wrench-adjustable me-2"></i><span class="sidebar-label">Maintenance Types</span></a></li>
+        {% endif %}
       </ul>
     </div>
   </div>
