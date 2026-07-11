@@ -75,3 +75,31 @@ Test:
 - If Notification Rules are configured for `submitted`/`approved_final`
   events, confirm the bell icon shows a notification when a PR or VR moves
   through those states
+
+## 3. PM Template Revision — Make/Model-specific intervals (client feedback)
+
+Setup:
+1. Master Data → Maintenance Types → create `PMS-010K` (category PREVENTIVE)
+2. System Administration → PM Templates → New:
+   - Make: `Honda`, Model: `City`
+   - Maintenance Type: PMS-010K, Trigger: KM, Interval KM: 10,000
+   - Notify Before KM: 500
+3. PM Templates → New (second one, same maintenance type, different brand):
+   - Make: `Toyota`, Model: `Vios`
+   - Trigger: KM, Interval KM: 8,000
+
+Test:
+1. Master Data → Vehicles → create a Honda City and a Toyota Vios, both with
+   odometer readings close to their respective due points
+2. Confirm each vehicle's due status calculates independently against its
+   own Make/Model template, not a shared generic interval
+3. Optionally: edit the Honda City vehicle and set **Assigned PM Template**
+   explicitly — confirm this direct assignment takes precedence even if you
+   later add a different Make/Model schedule
+4. PM Scope Templates → New → link a scope specifically to the "Honda City"
+   PM Template (not just the generic Maintenance Type) — confirm a Toyota
+   Vios does NOT pick up this Honda-specific checklist when its own
+   Maintenance Order is generated
+5. CSV import: re-upload the updated `pm_schedules_template.csv` /
+   `pm_scope_items_template.csv` (now with vehicle_make/vehicle_model
+   columns) and confirm they import correctly with make/model preserved
