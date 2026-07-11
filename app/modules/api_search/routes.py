@@ -18,10 +18,22 @@ bp = Blueprint("api_search", __name__, url_prefix="/api/search")
 class VehicleSearchService(SearchableService):
     model = Vehicle
     search_fields = ["plate_number", "conduction_number", "brand", "model"]
+    sortable_fields = ["plate_number", "brand", "model", "year",
+                       "current_odometer", "status"]
 
     def label(self, obj):
         ident = obj.plate_number or obj.conduction_number
         return f"{ident} — {obj.brand} {obj.model} ({obj.year})"
+
+    def row(self, obj):
+        return {
+            "id": obj.id,
+            "plate": obj.plate_number or obj.conduction_number or "—",
+            "brand": obj.brand, "model": obj.model, "year": obj.year,
+            "branch": obj.branch.name if obj.branch else "—",
+            "status": obj.status,
+            "text": self.label(obj),
+        }
 
 
 class DriverSearchService(SearchableService):
@@ -61,6 +73,25 @@ def _search_params():
 @require_permission("vehicle.view")
 def search_vehicles():
     return jsonify(VehicleSearchService().to_select2_response(**_search_params()))
+
+
+@bp.route("/vehicles/table")
+@login_required
+@require_permission("vehicle.view")
+def search_vehicles_table():
+    """Table-mode endpoint for the Search Modal: sortable, filterable,
+    paginated — used when a dataset is large enough that a dropdown alone
+    isn't a good fit (System Administration UX rule: modal for >100 records)."""
+    params = _search_params()
+    params["sort_by"] = request.args.get("sort_by")
+    params["sort_dir"] = request.args.get("sort_dir", "asc")
+    branch_id = request.args.get("branch_id")
+    status = request.args.get("status")
+    if branch_id:
+        params["branch_id"] = int(branch_id)
+    if status:
+        params["status"] = status
+    return jsonify(VehicleSearchService().to_table_response(**params))
 
 
 @bp.route("/drivers")
