@@ -36,6 +36,16 @@ idempotent auto-generation task creates draft Maintenance Orders + fires
 pm_due_soon/pm_overdue notifications for due vehicles. Vehicle detail page
 now has a Maintenance History tab.
 
+Phase 3c Procurement & Registration (completes Phase 3 — Transaction
+Modules): Purchase Requests with dynamic line items whose summed amount
+drives real Approval Matrix amount-range routing (small vs. large requests
+go to different approvers); Vehicle Registration with Philippine LTO rules
+(3-year validity for NEW, 1-year for RENEWAL, Conduction Number → Plate
+Number transition on completion, expiring-registration detection). Vehicle
+detail page now also has a Registration History tab.
+
+See `docs/superpowers/test-scripts/` for manual QA scripts per phase.
+
 ## Quick start (PyCharm / local)
 
 1. Open the `fms/` folder as a PyCharm project.
