@@ -31,6 +31,13 @@ class Vehicle(db.Model, BaseModel):
     acquisition_date = db.Column(db.Date, nullable=True)
     acquisition_cost = db.Column(db.Numeric(18, 2), nullable=True)
     current_odometer = db.Column(db.Integer, default=0, nullable=False)
+    # Assigned PM Template — direct link to the specific PM interval that
+    # applies to this vehicle (set at registration/edit). When set, this
+    # takes precedence over any make/model or vehicle-type PM matching in
+    # PMDueCalculationService, since the fleet admin has explicitly said
+    # "this exact vehicle follows this exact PM plan."
+    pm_schedule_id = db.Column(db.Integer, db.ForeignKey("pm_schedules.id"),
+                               nullable=True)
     # ACTIVE | INACTIVE | IN_REPAIR | DISPOSED
     status = db.Column(db.String(20), default="ACTIVE", nullable=False)
     notes = db.Column(db.Text)
@@ -39,3 +46,4 @@ class Vehicle(db.Model, BaseModel):
     branch = db.relationship("Branch")
     department = db.relationship("Department")
     business_unit = db.relationship("BusinessUnit")
+    pm_schedule = db.relationship("PMSchedule")

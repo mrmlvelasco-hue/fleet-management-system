@@ -35,26 +35,56 @@ def _worse(a: str, b: str) -> str:
 class PMDueCalculationService:
     def __init__(self):
         params = SystemParameterService()
-        self.due_soon_km = params.get("PM_DUE_SOON_KM",
-                                      default=DEFAULT_DUE_SOON_KM)
-        self.due_soon_days = params.get("PM_DUE_SOON_DAYS",
-                                        default=DEFAULT_DUE_SOON_DAYS)
+        self.default_due_soon_km = params.get("PM_DUE_SOON_KM",
+                                              default=DEFAULT_DUE_SOON_KM)
+        self.default_due_soon_days = params.get("PM_DUE_SOON_DAYS",
+                                                default=DEFAULT_DUE_SOON_DAYS)
         try:
-            self.due_soon_km = int(self.due_soon_km)
-            self.due_soon_days = int(self.due_soon_days)
+            self.default_due_soon_km = int(self.default_due_soon_km)
+            self.default_due_soon_days = int(self.default_due_soon_days)
         except (TypeError, ValueError):
-            self.due_soon_km = DEFAULT_DUE_SOON_KM
-            self.due_soon_days = DEFAULT_DUE_SOON_DAYS
+            self.default_due_soon_km = DEFAULT_DUE_SOON_KM
+            self.default_due_soon_days = DEFAULT_DUE_SOON_DAYS
 
     def _applicable_schedules(self, vehicle: Vehicle, maintenance_type_id=None):
-        query = PMSchedule.query.filter_by(is_active=True).filter(
-            (PMSchedule.vehicle_type_id == vehicle.vehicle_type_id) |
-            (PMSchedule.vehicle_type_id.is_(None)))
+        """Matching precedence (most to least specific):
+        1. Vehicle's directly assigned PM template (pm_schedule_id)
+        2. Exact vehicle_make + vehicle_model match (case-insensitive)
+        3. vehicle_type_id match
+        4. Global schedule (vehicle_type_id AND make/model all NULL)
+        """
+        if vehicle.pm_schedule_id:
+            sched = db.session.get(PMSchedule, vehicle.pm_schedule_id)
+            if sched and sched.is_active and (
+                    not maintenance_type_id or
+                    sched.maintenance_type_id == maintenance_type_id):
+                return [sched]
+
+        base_query = PMSchedule.query.filter_by(is_active=True)
         if maintenance_type_id:
-            query = query.filter_by(maintenance_type_id=maintenance_type_id)
-        # Prefer vehicle-type-specific schedules over global (NULL) ones.
-        return sorted(query.all(),
-                      key=lambda s: 0 if s.vehicle_type_id else 1)
+            base_query = base_query.filter_by(
+                maintenance_type_id=maintenance_type_id)
+
+        make = (vehicle.brand or "").strip().lower()
+        model = (vehicle.model or "").strip().lower()
+        make_model_matches = [
+            s for s in base_query.all()
+            if s.vehicle_make and s.vehicle_model
+            and s.vehicle_make.strip().lower() == make
+            and s.vehicle_model.strip().lower() == model]
+        if make_model_matches:
+            return make_model_matches
+
+        type_matches = base_query.filter_by(
+            vehicle_type_id=vehicle.vehicle_type_id).all()
+        type_matches = [s for s in type_matches
+                       if not s.vehicle_make and not s.vehicle_model]
+        if type_matches:
+            return type_matches
+
+        global_matches = base_query.filter_by(vehicle_type_id=None).all()
+        return [s for s in global_matches
+               if not s.vehicle_make and not s.vehicle_model]
 
     def _last_service(self, vehicle_id: int, maintenance_type_id: int):
         order = (MaintenanceOrder.query
@@ -81,6 +111,9 @@ class PMDueCalculationService:
         last_km, last_date = self._last_service(vehicle.id,
                                                 schedule.maintenance_type_id)
 
+        due_soon_km = schedule.notify_before_km or self.default_due_soon_km
+        due_soon_days = schedule.notify_before_days or self.default_due_soon_days
+
         next_due_km = None
         next_due_date = None
         status = "GOOD"
@@ -90,7 +123,7 @@ class PMDueCalculationService:
             current_km = vehicle.current_odometer or 0
             if current_km >= next_due_km:
                 status = _worse(status, "OVERDUE")
-            elif current_km >= next_due_km - self.due_soon_km:
+            elif current_km >= next_due_km - due_soon_km:
                 status = _worse(status, "DUE_SOON")
 
         if schedule.trigger_mode in ("CALENDAR", "HYBRID") and schedule.interval_days:
@@ -100,7 +133,7 @@ class PMDueCalculationService:
             days_remaining = (next_due_date - as_of_date).days
             if days_remaining <= 0:
                 status = _worse(status, "OVERDUE")
-            elif days_remaining <= self.due_soon_days:
+            elif days_remaining <= due_soon_days:
                 status = _worse(status, "DUE_SOON")
 
         return {"schedule": schedule, "status": status,

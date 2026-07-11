@@ -24,14 +24,21 @@ def _validate_schedule(trigger_mode, interval_km, interval_days):
 
 class PMScheduleService:
     def create(self, *, maintenance_type_id, trigger_mode,
-               vehicle_type_id=None, interval_km=None, interval_days=None,
-               priority="MEDIUM"):
+               vehicle_type_id=None, vehicle_make=None, vehicle_model=None,
+               interval_km=None, interval_days=None, priority="MEDIUM",
+               notify_before_km=None, notify_before_days=None,
+               escalate_if_overdue=True):
         _validate_schedule(trigger_mode, interval_km, interval_days)
         sched = PMSchedule(
             vehicle_type_id=vehicle_type_id,
+            vehicle_make=(vehicle_make or "").strip() or None,
+            vehicle_model=(vehicle_model or "").strip() or None,
             maintenance_type_id=maintenance_type_id,
             trigger_mode=trigger_mode, interval_km=interval_km,
-            interval_days=interval_days, priority=priority)
+            interval_days=interval_days, priority=priority,
+            notify_before_km=notify_before_km,
+            notify_before_days=notify_before_days,
+            escalate_if_overdue=escalate_if_overdue)
         db.session.add(sched)
         db.session.commit()
         return sched
@@ -46,6 +53,10 @@ class PMScheduleService:
             "interval_days": kwargs.get("interval_days", sched.interval_days),
         }
         _validate_schedule(**merged)
+        if "vehicle_make" in kwargs:
+            kwargs["vehicle_make"] = (kwargs["vehicle_make"] or "").strip() or None
+        if "vehicle_model" in kwargs:
+            kwargs["vehicle_model"] = (kwargs["vehicle_model"] or "").strip() or None
         for k, v in kwargs.items():
             setattr(sched, k, v)
         db.session.commit()
@@ -68,19 +79,22 @@ class PMScheduleService:
 
 
 class PMScopeTemplateService:
-    def create(self, *, maintenance_type_id, name, items, description=None):
+    def create(self, *, maintenance_type_id, name, items,
+               description=None, pm_schedule_id=None):
         if not items:
             raise InvalidScopeError(
                 "A scope template must have at least one activity item.")
         tmpl = PMScopeTemplate(maintenance_type_id=maintenance_type_id,
-                               name=name, description=description)
+                               name=name, description=description,
+                               pm_schedule_id=pm_schedule_id)
         db.session.add(tmpl)
         for item in items:
             tmpl.items.append(PMScopeItem(**item))
         db.session.commit()
         return tmpl
 
-    def update(self, template_id, *, name=None, description=None, items=None):
+    def update(self, template_id, *, name=None, description=None, items=None,
+               pm_schedule_id=None):
         tmpl = db.session.get(PMScopeTemplate, template_id)
         if tmpl is None:
             return None
@@ -88,6 +102,8 @@ class PMScopeTemplateService:
             tmpl.name = name
         if description is not None:
             tmpl.description = description
+        if pm_schedule_id is not None:
+            tmpl.pm_schedule_id = pm_schedule_id
         if items is not None:
             if not items:
                 raise InvalidScopeError(

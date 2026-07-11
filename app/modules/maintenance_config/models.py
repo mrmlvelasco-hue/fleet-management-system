@@ -8,6 +8,12 @@ class PMSchedule(db.Model, BaseModel):
     __tablename__ = "pm_schedules"
     vehicle_type_id = db.Column(db.Integer, db.ForeignKey("vehicle_types.id"),
                                 nullable=True)  # NULL = applies to all types
+    # vehicle_make/vehicle_model: free-text match against Vehicle.brand/model
+    # (case-insensitive). When set, takes precedence over vehicle_type_id —
+    # this is what lets different manufacturers have different PM intervals
+    # for the "same" vehicle type/category.
+    vehicle_make = db.Column(db.String(80), nullable=True)
+    vehicle_model = db.Column(db.String(80), nullable=True)
     maintenance_type_id = db.Column(db.Integer,
                                     db.ForeignKey("maintenance_types.id"),
                                     nullable=False)
@@ -17,8 +23,15 @@ class PMSchedule(db.Model, BaseModel):
     interval_days = db.Column(db.Integer, nullable=True)
     priority = db.Column(db.String(10), default="MEDIUM", nullable=False)
 
+    # Per-template alert overrides — fall back to the global SystemParameters
+    # PM_DUE_SOON_KM / PM_DUE_SOON_DAYS when NULL.
+    notify_before_km = db.Column(db.Integer, nullable=True)
+    notify_before_days = db.Column(db.Integer, nullable=True)
+    escalate_if_overdue = db.Column(db.Boolean, default=True, nullable=False)
+
     vehicle_type = db.relationship("VehicleType")
     maintenance_type = db.relationship("MaintenanceType")
+    scope_templates = db.relationship("PMScopeTemplate", backref="pm_schedule")
 
 
 class PMScopeTemplate(db.Model, BaseModel):
@@ -26,6 +39,13 @@ class PMScopeTemplate(db.Model, BaseModel):
     maintenance_type_id = db.Column(db.Integer,
                                     db.ForeignKey("maintenance_types.id"),
                                     nullable=False)
+    # Optional direct link to one specific PM Template (PMSchedule) — lets
+    # "Honda City 10,000 KM PMS" and "Toyota Hilux 10,000 KM PMS" have
+    # different checklists even though both nominally share the same
+    # maintenance_type. NULL = generic template matched by maintenance_type
+    # only (backward-compatible fallback).
+    pm_schedule_id = db.Column(db.Integer, db.ForeignKey("pm_schedules.id"),
+                               nullable=True)
     name = db.Column(db.String(120), nullable=False)
     description = db.Column(db.String(255))
 
