@@ -1,0 +1,84 @@
+"""Generic /api/search/<module> blueprint — powers AJAX-backed Select2
+smart selectors across the system. Each module registers a SearchableService
+subclass; the route is permission-gated on that module's existing `.view`
+permission (no new permissions needed)."""
+from flask import Blueprint, request, jsonify
+from flask_login import login_required
+
+from app.core.security.decorators import require_permission
+from app.core.search.searchable_service import SearchableService
+from app.modules.master_data.vehicle.models import Vehicle
+from app.modules.master_data.driver.models import Driver
+from app.modules.master_data.vendor.models import Vendor
+from app.modules.user_management.models import User
+
+bp = Blueprint("api_search", __name__, url_prefix="/api/search")
+
+
+class VehicleSearchService(SearchableService):
+    model = Vehicle
+    search_fields = ["plate_number", "conduction_number", "brand", "model"]
+
+    def label(self, obj):
+        ident = obj.plate_number or obj.conduction_number
+        return f"{ident} — {obj.brand} {obj.model} ({obj.year})"
+
+
+class DriverSearchService(SearchableService):
+    model = Driver
+    search_fields = ["employee_number", "first_name", "last_name"]
+
+    def label(self, obj):
+        return f"{obj.employee_number} — {obj.last_name}, {obj.first_name}"
+
+
+class UserSearchService(SearchableService):
+    model = User
+    search_fields = ["username", "first_name", "last_name"]
+
+    def label(self, obj):
+        return f"{obj.username} — {obj.full_name}"
+
+
+class VendorSearchService(SearchableService):
+    model = Vendor
+    search_fields = ["code", "name"]
+
+    def label(self, obj):
+        return f"{obj.code} — {obj.name}"
+
+
+def _search_params():
+    return {
+        "q": request.args.get("q", ""),
+        "page": int(request.args.get("page", 1)),
+        "per_page": int(request.args.get("per_page", 20)),
+    }
+
+
+@bp.route("/vehicles")
+@login_required
+@require_permission("vehicle.view")
+def search_vehicles():
+    return jsonify(VehicleSearchService().to_select2_response(**_search_params()))
+
+
+@bp.route("/drivers")
+@login_required
+@require_permission("driver.view")
+def search_drivers():
+    return jsonify(DriverSearchService().to_select2_response(**_search_params()))
+
+
+@bp.route("/users")
+@login_required
+@require_permission("user.view")
+def search_users():
+    return jsonify(UserSearchService().to_select2_response(**_search_params()))
+
+
+@bp.route("/vendors")
+@login_required
+@require_permission("vendor.view")
+def search_vendors():
+    return jsonify(VendorSearchService().to_select2_response(**_search_params()))
