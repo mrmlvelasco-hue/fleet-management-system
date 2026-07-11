@@ -1,0 +1,32 @@
+{% extends "layout/base.html" %}
+{% block title %}Tire Transactions{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Tire Transactions</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Tire Transactions</h1>
+  {% if current_user.has_permission('tiretxn.create') %}
+  <a class="btn btn-primary" href="{{ url_for('transactions.tiretxn_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Transaction</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr><th>Doc No.</th><th>Tire Serial</th><th>Vehicle</th><th>Action</th><th>Date</th><th></th></tr></thead>
+  <tbody>
+  {% for t in items %}
+    <tr>
+      <td>{{ t.document_number or '—' }}</td>
+      <td>{{ t.tire.serial_number if t.tire else '—' }}</td>
+      <td>{{ t.vehicle.plate_number or t.vehicle.conduction_number if t.vehicle else '—' }}</td>
+      <td><span class="badge text-bg-info">{{ t.action }}</span></td>
+      <td>{{ t.transaction_date }}</td>
+      <td class="text-end">
+        <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.tiretxn_detail', tid=t.id) }}">
+          <i class="bi bi-eye"></i></a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

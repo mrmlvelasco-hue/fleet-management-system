@@ -1,0 +1,30 @@
+{% extends "layout/base.html" %}
+{% block title %}Tire Txn {{ item.document_number }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.tiretxn_list') }}">Tire Transactions</a></li>
+<li class="breadcrumb-item active">{{ item.document_number or 'Draft' }}</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+  <h1 class="h3">{{ item.document_number or 'Draft' }}</h1>
+  {% if current_user.has_permission('tiretxn.print') %}
+  <a class="btn btn-outline-secondary" target="_blank"
+     href="{{ url_for('transactions.tiretxn_print', tid=item.id) }}">
+    <i class="bi bi-printer me-1"></i>Print</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+  <dl class="row mb-0">
+    <dt class="col-sm-3">Tire</dt><dd class="col-sm-9">{{ item.tire.serial_number }} — {{ item.tire.brand }} {{ item.tire.size }}</dd>
+    <dt class="col-sm-3">Vehicle</dt><dd class="col-sm-9">{{ item.vehicle.plate_number or item.vehicle.conduction_number if item.vehicle else '—' }}</dd>
+    <dt class="col-sm-3">Action</dt><dd class="col-sm-9"><span class="badge text-bg-info">{{ item.action }}</span></dd>
+    <dt class="col-sm-3">Date</dt><dd class="col-sm-9">{{ item.transaction_date }}</dd>
+    <dt class="col-sm-3">Odometer</dt><dd class="col-sm-9">{{ item.odometer_at_service or '—' }}</dd>
+    <dt class="col-sm-3">Remarks</dt><dd class="col-sm-9">{{ item.remarks or '—' }}</dd>
+    <dt class="col-sm-3">Status</dt><dd class="col-sm-9">{{ item.status }}</dd>
+  </dl>
+</div></div>
+{% set reference_table = "tire_transactions" %}
+{% set reference_id = item.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endblock %}

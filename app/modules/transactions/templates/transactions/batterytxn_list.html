@@ -1,0 +1,32 @@
+{% extends "layout/base.html" %}
+{% block title %}Battery Transactions{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Battery Transactions</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Battery Transactions</h1>
+  {% if current_user.has_permission('batterytxn.create') %}
+  <a class="btn btn-primary" href="{{ url_for('transactions.batterytxn_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Transaction</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr><th>Doc No.</th><th>Battery Serial</th><th>Vehicle</th><th>Action</th><th>Date</th><th></th></tr></thead>
+  <tbody>
+  {% for b in items %}
+    <tr>
+      <td>{{ b.document_number or '—' }}</td>
+      <td>{{ b.battery.serial_number if b.battery else '—' }}</td>
+      <td>{{ b.vehicle.plate_number or b.vehicle.conduction_number if b.vehicle else '—' }}</td>
+      <td><span class="badge text-bg-info">{{ b.action }}</span></td>
+      <td>{{ b.transaction_date }}</td>
+      <td class="text-end">
+        <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.batterytxn_detail', bid=b.id) }}">
+          <i class="bi bi-eye"></i></a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

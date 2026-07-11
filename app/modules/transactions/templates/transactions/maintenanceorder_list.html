@@ -1,0 +1,36 @@
+{% extends "layout/base.html" %}
+{% block title %}Maintenance Orders{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Maintenance Orders</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Maintenance Orders</h1>
+  {% if current_user.has_permission('maintenanceorder.create') %}
+  <a class="btn btn-primary" href="{{ url_for('transactions.maintenanceorder_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Order</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr>
+    <th>Doc No.</th><th>Vehicle</th><th>Type</th><th>Category</th>
+    <th>Scheduled</th><th>Status</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for o in items %}
+    <tr>
+      <td>{{ o.document_number or '—' }}</td>
+      <td>{{ o.vehicle.plate_number or o.vehicle.conduction_number if o.vehicle else '—' }}</td>
+      <td>{{ o.maintenance_type.name }}</td>
+      <td><span class="badge text-bg-{{ 'info' if o.category=='PREVENTIVE' else 'warning' }}">{{ o.category }}</span></td>
+      <td>{{ o.scheduled_date }}</td>
+      <td><span class="badge text-bg-{{ 'success' if o.status=='COMPLETED' else 'primary' if o.status=='IN_PROGRESS' else 'danger' if o.status=='CANCELLED' else 'secondary' }}">{{ o.status }}</span></td>
+      <td class="text-end">
+        <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.maintenanceorder_detail', oid=o.id) }}">
+          <i class="bi bi-eye"></i></a>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

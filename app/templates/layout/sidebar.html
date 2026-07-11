@@ -153,6 +153,26 @@
         <li><a href="{{ url_for('transactions.vehiclemovement_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehiclemovement' in (request.endpoint or '') }}">
           <i class="bi bi-arrow-left-right me-2"></i><span class="sidebar-label">Vehicle Movement</span></a></li>
         {% endif %}
+        {% if current_user.has_permission('maintenanceorder.view') %}
+        <li><a href="{{ url_for('transactions.maintenanceorder_list') }}" class="nav-link {{ 'active' if request.endpoint and 'maintenanceorder' in (request.endpoint or '') }}">
+          <i class="bi bi-tools me-2"></i><span class="sidebar-label">Maintenance Orders</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('tiretxn.view') %}
+        <li><a href="{{ url_for('transactions.tiretxn_list') }}" class="nav-link {{ 'active' if request.endpoint and 'tiretxn' in (request.endpoint or '') }}">
+          <i class="bi bi-circle me-2"></i><span class="sidebar-label">Tire Transactions</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('batterytxn.view') %}
+        <li><a href="{{ url_for('transactions.batterytxn_list') }}" class="nav-link {{ 'active' if request.endpoint and 'batterytxn' in (request.endpoint or '') }}">
+          <i class="bi bi-battery-half me-2"></i><span class="sidebar-label">Battery Transactions</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('pmschedule.view') %}
+        <li><a href="{{ url_for('maintenance_config.pmschedule_list') }}" class="nav-link {{ 'active' if request.endpoint and 'pmschedule' in (request.endpoint or '') }}">
+          <i class="bi bi-calendar-check me-2"></i><span class="sidebar-label">PM Schedules</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('pmscopetemplate.view') %}
+        <li><a href="{{ url_for('maintenance_config.pmscope_list') }}" class="nav-link {{ 'active' if request.endpoint and 'pmscope' in (request.endpoint or '') }}">
+          <i class="bi bi-list-check me-2"></i><span class="sidebar-label">PM Scope Templates</span></a></li>
+        {% endif %}
       </ul>
     </div>
   </div>

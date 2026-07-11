@@ -24,11 +24,21 @@ from app.modules.transactions.vehicle_movement.service import (
     VehicleMovementService, InvalidMovementTypeError)
 from app.modules.transactions.vehicle_movement.models import VehicleMovement
 from app.modules.transactions.trip_ticket.models import TripTicket
+from app.modules.transactions.maintenance_order.service import (
+    MaintenanceOrderService, IncompleteChecklistError, InvalidOrderStateError)
+from app.modules.transactions.maintenance_order.models import MaintenanceOrder
+from app.modules.transactions.tire_txn.service import (
+    TireTransactionService, InvalidTireActionError)
+from app.modules.transactions.tire_txn.models import TireTransaction
+from app.modules.transactions.battery_txn.service import (
+    BatteryTransactionService, InvalidBatteryActionError)
+from app.modules.transactions.battery_txn.models import BatteryTransaction
 
 bp = Blueprint("transactions", __name__, url_prefix="/transactions",
                template_folder="templates")
 
-for _mod in ["tripticket", "atd", "vehiclemovement"]:
+for _mod in ["tripticket", "atd", "vehiclemovement", "maintenanceorder",
+             "tiretxn", "batterytxn"]:
     for _act in ["view", "create", "update", "delete", "print"]:
         _code = f"{_mod}.{_act}"
         registry.register(_code, _mod, _act, f"{_act.title()} {_mod}")
@@ -398,3 +408,279 @@ def vehiclemovement_complete(mid):
     VehicleMovementService().complete(mid)
     flash("Vehicle Movement completed.", "success")
     return redirect(url_for("transactions.vehiclemovement_detail", mid=mid))
+
+
+# ── Maintenance Orders ───────────────────────────────────────────────────────
+
+@bp.route("/maintenance-orders")
+@login_required
+@require_permission("maintenanceorder.view")
+def maintenanceorder_list():
+    items = MaintenanceOrderService().list()
+    return render_template("transactions/maintenanceorder_list.html", items=items)
+
+
+@bp.route("/maintenance-orders/new", methods=["GET", "POST"])
+@login_required
+@require_permission("maintenanceorder.create")
+def maintenanceorder_new():
+    from app.modules.master_data.reference.service import MaintenanceTypeService
+    from app.modules.master_data.vendor.service import VendorService
+    from app.modules.maintenance_config.service import (
+        PMScheduleService, PMScopeTemplateService)
+
+    vehicles = VehicleService().list()
+    maintenance_types = MaintenanceTypeService().list()
+    vendors = VendorService().list()
+    scope_templates = PMScopeTemplateService().list()
+
+    if request.method == "POST":
+        f = request.form
+        MaintenanceOrderService().create(
+            vehicle_id=int(f["vehicle_id"]),
+            maintenance_type_id=int(f["maintenance_type_id"]),
+            scope_template_id=int(f["scope_template_id"]) if f.get("scope_template_id") else None,
+            scheduled_date=date.fromisoformat(f["scheduled_date"]),
+            odometer_at_service=int(f["odometer_at_service"]) if f.get("odometer_at_service") else None,
+            description=f.get("description"),
+            assigned_mechanic=f.get("assigned_mechanic"),
+            vendor_id=int(f["vendor_id"]) if f.get("vendor_id") else None,
+            estimated_cost=f.get("estimated_cost") or None,
+            user=current_user)
+        flash("Maintenance Order created.", "success")
+        return redirect(url_for("transactions.maintenanceorder_list"))
+    return render_template("transactions/maintenanceorder_form.html",
+                           vehicles=vehicles, maintenance_types=maintenance_types,
+                           vendors=vendors, scope_templates=scope_templates,
+                           title="New Maintenance Order")
+
+
+@bp.route("/maintenance-orders/<int:oid>")
+@login_required
+@require_permission("maintenanceorder.view")
+def maintenanceorder_detail(oid):
+    item = db.session.get(MaintenanceOrder, oid)
+    return render_template("transactions/maintenanceorder_detail.html", item=item)
+
+
+@bp.route("/maintenance-orders/<int:oid>/print")
+@login_required
+@require_permission("maintenanceorder.print")
+def maintenanceorder_print(oid):
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    item = db.session.get(MaintenanceOrder, oid)
+    company = CompanyProfileService().get()
+    return render_template("transactions/maintenanceorder_print.html",
+                           item=item, company=company)
+
+
+@bp.route("/maintenance-orders/<int:oid>/submit", methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_submit(oid):
+    try:
+        MaintenanceOrderService().submit(oid, user=current_user)
+        flash("Maintenance Order submitted.", "success")
+    except Exception as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+@bp.route("/maintenance-orders/<int:oid>/approve", methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.view")
+def maintenanceorder_approve(oid):
+    try:
+        MaintenanceOrderService().approve(oid, user=current_user,
+                                          remarks=request.form.get("remarks"))
+        flash("Maintenance Order approved.", "success")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+@bp.route("/maintenance-orders/<int:oid>/reject", methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.view")
+def maintenanceorder_reject(oid):
+    try:
+        MaintenanceOrderService().reject(oid, user=current_user,
+                                         remarks=request.form.get("remarks"))
+        flash("Maintenance Order rejected.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+@bp.route("/maintenance-orders/<int:oid>/return", methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.view")
+def maintenanceorder_return(oid):
+    try:
+        MaintenanceOrderService().return_document(
+            oid, user=current_user, remarks=request.form.get("remarks"))
+        flash("Maintenance Order returned to requester.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+@bp.route("/maintenance-orders/<int:oid>/cancel", methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_cancel(oid):
+    try:
+        MaintenanceOrderService().cancel(oid, user=current_user)
+        flash("Maintenance Order cancelled.", "info")
+    except InvalidStateError as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+@bp.route("/maintenance-orders/<int:oid>/start-work", methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_start_work(oid):
+    MaintenanceOrderService().start_work(oid)
+    flash("Maintenance work started.", "success")
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+@bp.route("/maintenance-orders/<int:oid>/checklist/<int:item_id>/toggle",
+          methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_checklist_toggle(oid, item_id):
+    done = request.form.get("done") == "1"
+    try:
+        MaintenanceOrderService().toggle_checklist_item(
+            item_id, done=done, user=current_user)
+    except InvalidOrderStateError as e:
+        flash(str(e), "danger")
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+@bp.route("/maintenance-orders/<int:oid>/complete", methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_complete(oid):
+    f = request.form
+    try:
+        MaintenanceOrderService().complete(
+            oid, actual_cost=f.get("actual_cost") or None,
+            completed_date=date.fromisoformat(f["completed_date"]))
+        flash("Maintenance Order marked complete.", "success")
+    except IncompleteChecklistError as e:
+        flash(str(e), "danger")
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+# ── Tire Transactions ────────────────────────────────────────────────────────
+
+@bp.route("/tire-transactions")
+@login_required
+@require_permission("tiretxn.view")
+def tiretxn_list():
+    items = TireTransactionService().list()
+    return render_template("transactions/tiretxn_list.html", items=items)
+
+
+@bp.route("/tire-transactions/new", methods=["GET", "POST"])
+@login_required
+@require_permission("tiretxn.create")
+def tiretxn_new():
+    from app.modules.master_data.tire.service import TireService
+    tires = TireService().list()
+    vehicles = VehicleService().list()
+    if request.method == "POST":
+        f = request.form
+        try:
+            TireTransactionService().create(
+                tire_id=int(f["tire_id"]),
+                vehicle_id=int(f["vehicle_id"]) if f.get("vehicle_id") else None,
+                action=f["action"],
+                transaction_date=date.fromisoformat(f["transaction_date"]),
+                odometer_at_service=int(f["odometer_at_service"]) if f.get("odometer_at_service") else None,
+                remarks=f.get("remarks"), user=current_user)
+            flash("Tire Transaction recorded.", "success")
+            return redirect(url_for("transactions.tiretxn_list"))
+        except InvalidTireActionError as e:
+            flash(str(e), "danger")
+    return render_template("transactions/tiretxn_form.html", tires=tires,
+                           vehicles=vehicles, title="New Tire Transaction")
+
+
+@bp.route("/tire-transactions/<int:tid>")
+@login_required
+@require_permission("tiretxn.view")
+def tiretxn_detail(tid):
+    item = db.session.get(TireTransaction, tid)
+    return render_template("transactions/tiretxn_detail.html", item=item)
+
+
+@bp.route("/tire-transactions/<int:tid>/print")
+@login_required
+@require_permission("tiretxn.print")
+def tiretxn_print(tid):
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    item = db.session.get(TireTransaction, tid)
+    company = CompanyProfileService().get()
+    return render_template("transactions/tiretxn_print.html", item=item,
+                           company=company)
+
+
+# ── Battery Transactions ─────────────────────────────────────────────────────
+
+@bp.route("/battery-transactions")
+@login_required
+@require_permission("batterytxn.view")
+def batterytxn_list():
+    items = BatteryTransactionService().list()
+    return render_template("transactions/batterytxn_list.html", items=items)
+
+
+@bp.route("/battery-transactions/new", methods=["GET", "POST"])
+@login_required
+@require_permission("batterytxn.create")
+def batterytxn_new():
+    from app.modules.master_data.battery.service import BatteryService
+    batteries = BatteryService().list()
+    vehicles = VehicleService().list()
+    if request.method == "POST":
+        f = request.form
+        try:
+            BatteryTransactionService().create(
+                battery_id=int(f["battery_id"]),
+                vehicle_id=int(f["vehicle_id"]) if f.get("vehicle_id") else None,
+                action=f["action"],
+                transaction_date=date.fromisoformat(f["transaction_date"]),
+                remarks=f.get("remarks"), user=current_user)
+            flash("Battery Transaction recorded.", "success")
+            return redirect(url_for("transactions.batterytxn_list"))
+        except InvalidBatteryActionError as e:
+            flash(str(e), "danger")
+    return render_template("transactions/batterytxn_form.html",
+                           batteries=batteries, vehicles=vehicles,
+                           title="New Battery Transaction")
+
+
+@bp.route("/battery-transactions/<int:bid>")
+@login_required
+@require_permission("batterytxn.view")
+def batterytxn_detail(bid):
+    item = db.session.get(BatteryTransaction, bid)
+    return render_template("transactions/batterytxn_detail.html", item=item)
+
+
+@bp.route("/battery-transactions/<int:bid>/print")
+@login_required
+@require_permission("batterytxn.print")
+def batterytxn_print(bid):
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    item = db.session.get(BatteryTransaction, bid)
+    company = CompanyProfileService().get()
+    return render_template("transactions/batterytxn_print.html", item=item,
+                           company=company)

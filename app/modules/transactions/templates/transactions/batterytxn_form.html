@@ -1,0 +1,38 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.batterytxn_list') }}">Battery Transactions</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Battery</label>
+    <select name="battery_id" class="form-select fms-select2" required>
+      <option value="">— Select battery —</option>
+      {% for b in batteries %}<option value="{{ b.id }}">{{ b.serial_number }} — {{ b.brand }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Action</label>
+    <select name="action" class="form-select" required>
+      <option value="MOUNT">Mount</option>
+      <option value="DISMOUNT">Dismount</option>
+      <option value="DISPOSE">Dispose</option>
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Vehicle (required for Mount)</label>
+    <select name="vehicle_id" class="form-select fms-select2">
+      <option value="">— None —</option>
+      {% for v in vehicles %}<option value="{{ v.id }}">{{ v.plate_number or v.conduction_number }} — {{ v.brand }} {{ v.model }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Transaction Date</label>
+    <input type="date" name="transaction_date" class="form-control" required></div>
+  <div class="col-12"><label class="form-label">Remarks</label>
+    <textarea name="remarks" class="form-control" rows="2"></textarea></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.batterytxn_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}

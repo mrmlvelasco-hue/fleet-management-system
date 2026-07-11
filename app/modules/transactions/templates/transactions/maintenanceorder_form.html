@@ -1,0 +1,52 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.maintenanceorder_list') }}">Maintenance Orders</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Vehicle</label>
+    <select name="vehicle_id" class="form-select fms-select2" required>
+      <option value="">— Select vehicle —</option>
+      {% for v in vehicles %}
+      <option value="{{ v.id }}">{{ v.plate_number or v.conduction_number }} — {{ v.brand }} {{ v.model }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Maintenance Type</label>
+    <select name="maintenance_type_id" class="form-select fms-select2" required>
+      <option value="">— Select —</option>
+      {% for mt in maintenance_types %}
+      <option value="{{ mt.id }}">{{ mt.code }} — {{ mt.name }} ({{ mt.category }})</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-6"><label class="form-label">PM Scope Template (optional — generates checklist)</label>
+    <select name="scope_template_id" class="form-select fms-select2">
+      <option value="">— None (Corrective / unscheduled) —</option>
+      {% for st in scope_templates %}<option value="{{ st.id }}">{{ st.name }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Vendor (optional)</label>
+    <select name="vendor_id" class="form-select fms-select2">
+      <option value="">— None —</option>
+      {% for v in vendors %}<option value="{{ v.id }}">{{ v.code }} — {{ v.name }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Scheduled Date</label>
+    <input type="date" name="scheduled_date" class="form-control" required></div>
+  <div class="col-md-4"><label class="form-label">Odometer at Service</label>
+    <input type="number" name="odometer_at_service" class="form-control"></div>
+  <div class="col-md-4"><label class="form-label">Estimated Cost</label>
+    <input type="number" step="0.01" name="estimated_cost" class="form-control"></div>
+  <div class="col-md-6"><label class="form-label">Assigned Mechanic</label>
+    <input type="text" name="assigned_mechanic" class="form-control"></div>
+  <div class="col-12"><label class="form-label">Description</label>
+    <textarea name="description" class="form-control" rows="2"></textarea></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save as Draft</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.maintenanceorder_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}

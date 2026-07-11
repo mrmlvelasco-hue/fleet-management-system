@@ -1,0 +1,122 @@
+{% extends "layout/base.html" %}
+{% block title %}MO {{ item.document_number }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.maintenanceorder_list') }}">Maintenance Orders</a></li>
+<li class="breadcrumb-item active">{{ item.document_number or 'Draft' }}</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+  <h1 class="h3">{{ item.document_number or 'Draft Maintenance Order' }}</h1>
+  {% if current_user.has_permission('maintenanceorder.print') %}
+  <a class="btn btn-outline-secondary" target="_blank"
+     href="{{ url_for('transactions.maintenanceorder_print', oid=item.id) }}">
+    <i class="bi bi-printer me-1"></i>Print</a>
+  {% endif %}
+</div>
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Order Details</div>
+    <div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-4">Vehicle</dt><dd class="col-sm-8">{{ item.vehicle.plate_number or item.vehicle.conduction_number }} — {{ item.vehicle.brand }} {{ item.vehicle.model }}</dd>
+        <dt class="col-sm-4">Maintenance Type</dt><dd class="col-sm-8">{{ item.maintenance_type.name }}</dd>
+        <dt class="col-sm-4">Category</dt><dd class="col-sm-8"><span class="badge text-bg-{{ 'info' if item.category=='PREVENTIVE' else 'warning' }}">{{ item.category }}</span></dd>
+        <dt class="col-sm-4">Scheduled</dt><dd class="col-sm-8">{{ item.scheduled_date }}</dd>
+        <dt class="col-sm-4">Completed</dt><dd class="col-sm-8">{{ item.completed_date or '—' }}</dd>
+        <dt class="col-sm-4">Odometer</dt><dd class="col-sm-8">{{ item.odometer_at_service or '—' }}</dd>
+        <dt class="col-sm-4">Mechanic</dt><dd class="col-sm-8">{{ item.assigned_mechanic or '—' }}</dd>
+        <dt class="col-sm-4">Vendor</dt><dd class="col-sm-8">{{ item.vendor.name if item.vendor else '—' }}</dd>
+        <dt class="col-sm-4">Est. / Actual Cost</dt><dd class="col-sm-8">{{ item.estimated_cost or '—' }} / {{ item.actual_cost or '—' }}</dd>
+        <dt class="col-sm-4">Description</dt><dd class="col-sm-8">{{ item.description or '—' }}</dd>
+      </dl>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Status & Actions</div>
+    <div class="card-body">
+      <p><strong>Physical Status:</strong>
+        <span class="badge text-bg-{{ 'success' if item.status=='COMPLETED' else 'primary' if item.status=='IN_PROGRESS' else 'danger' if item.status=='CANCELLED' else 'secondary' }}">{{ item.status }}</span></p>
+      <p><strong>Approval Status:</strong>
+        {% if item.approval_instance %}
+        <span class="badge text-bg-{{ 'success' if item.approval_instance.status=='APPROVED' else 'warning' if item.approval_instance.status=='PENDING' else 'danger' }}">{{ item.approval_instance.status }}</span>
+        {% else %}<span class="text-muted">Not submitted</span>{% endif %}</p>
+
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        {% if not item.approval_instance and current_user.has_permission('maintenanceorder.update') %}
+        <form method="post" action="{{ url_for('transactions.maintenanceorder_submit', oid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-sm">Submit</button>
+        </form>
+        {% endif %}
+        {% if item.approval_instance and item.approval_instance.status == 'PENDING' %}
+        <form method="post" action="{{ url_for('transactions.maintenanceorder_approve', oid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-success btn-sm">Approve</button>
+        </form>
+        <form method="post" action="{{ url_for('transactions.maintenanceorder_reject', oid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-sm">Reject</button>
+        </form>
+        <form method="post" action="{{ url_for('transactions.maintenanceorder_return', oid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-warning btn-sm">Return</button>
+        </form>
+        {% endif %}
+        {% if item.status == 'DRAFT' and (not item.approval_instance or item.approval_instance.status == 'APPROVED') and current_user.has_permission('maintenanceorder.update') %}
+        <form method="post" action="{{ url_for('transactions.maintenanceorder_start_work', oid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-sm">Start Work</button>
+        </form>
+        {% endif %}
+        {% if item.status not in ['COMPLETED', 'CANCELLED'] and current_user.has_permission('maintenanceorder.update') %}
+        <form method="post" action="{{ url_for('transactions.maintenanceorder_cancel', oid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-danger btn-sm">Cancel</button>
+        </form>
+        {% endif %}
+      </div>
+
+      {% if item.status == 'IN_PROGRESS' and current_user.has_permission('maintenanceorder.update') %}
+      <hr>
+      <form method="post" action="{{ url_for('transactions.maintenanceorder_complete', oid=item.id) }}" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-6"><label class="form-label small">Completed Date</label>
+          <input type="date" name="completed_date" class="form-control form-control-sm" required></div>
+        <div class="col-6"><label class="form-label small">Actual Cost</label>
+          <input type="number" step="0.01" name="actual_cost" class="form-control form-control-sm"></div>
+        <div class="col-12"><button class="btn btn-sm btn-success">Mark Complete</button></div>
+      </form>
+      {% endif %}
+    </div></div>
+  </div>
+</div>
+
+{% if item.checklist_items %}
+<div class="card mt-3">
+  <div class="card-header">Maintenance Checklist</div>
+  <ul class="list-group list-group-flush">
+    {% for ci in item.checklist_items %}
+    <li class="list-group-item d-flex justify-content-between align-items-center">
+      <span>
+        {% if ci.is_done %}<i class="bi bi-check-circle-fill text-success me-2"></i>
+        {% else %}<i class="bi bi-circle text-muted me-2"></i>{% endif %}
+        <code class="me-2">{{ ci.activity_code }}</code>{{ ci.activity_description }}
+      </span>
+      {% if item.status == 'IN_PROGRESS' and current_user.has_permission('maintenanceorder.update') %}
+      <form method="post" action="{{ url_for('transactions.maintenanceorder_checklist_toggle', oid=item.id, item_id=ci.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="done" value="{{ '0' if ci.is_done else '1' }}">
+        <button class="btn btn-sm btn-outline-{{ 'secondary' if ci.is_done else 'success' }}">
+          {{ 'Undo' if ci.is_done else 'Mark Done' }}</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% set reference_table = "maintenance_orders" %}
+{% set reference_id = item.id %}
+{% include "master_data/_attachment_panel.html" %}
+{% endblock %}

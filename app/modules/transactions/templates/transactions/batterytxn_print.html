@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Battery Transaction {{ item.document_number }}</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 40px; }
+  .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
+  .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
+  table.info { width: 100%; border-collapse: collapse; }
+  table.info td { padding: 6px 8px; border: 1px solid #999; }
+  table.info td.label { font-weight: bold; width: 30%; background: #f2f2f2; }
+  .no-print { text-align: center; margin-bottom: 20px; }
+  @media print { .no-print { display: none; } }
+</style></head>
+<body>
+  <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+  <div class="letterhead"><h1>{{ company.company_name if company else 'Company Name' }}</h1></div>
+  <div class="doc-title">BATTERY TRANSACTION — {{ item.document_number or 'DRAFT' }}</div>
+  <table class="info">
+    <tr><td class="label">Battery Serial</td><td>{{ item.battery.serial_number }}</td></tr>
+    <tr><td class="label">Vehicle</td><td>{{ item.vehicle.plate_number or item.vehicle.conduction_number if item.vehicle else '—' }}</td></tr>
+    <tr><td class="label">Action</td><td>{{ item.action }}</td></tr>
+    <tr><td class="label">Date</td><td>{{ item.transaction_date }}</td></tr>
+  </table>
+</body>
+</html>

@@ -41,6 +41,29 @@
     </div></div>
   </div>
 </div>
+
+{% if maintenance_history %}
+<div class="card mt-4">
+  <div class="card-header"><i class="bi bi-clock-history me-1"></i>Maintenance History</div>
+  <div class="card-body p-0">
+  <table class="table table-striped mb-0">
+    <thead><tr><th>Date</th><th>Work Order</th><th>PM Type</th><th>Cost</th><th>Vendor</th></tr></thead>
+    <tbody>
+    {% for m in maintenance_history %}
+      <tr>
+        <td>{{ m.completed_date }}</td>
+        <td>{{ m.document_number }}</td>
+        <td>{{ m.maintenance_type.name }}</td>
+        <td>{{ "{:,.2f}".format(m.actual_cost) if m.actual_cost else '—' }}</td>
+        <td>{{ m.vendor.name if m.vendor else '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
 {% set reference_table = "vehicles" %}
 {% set reference_id = vehicle.id %}
 {% include "master_data/_attachment_panel.html" %}

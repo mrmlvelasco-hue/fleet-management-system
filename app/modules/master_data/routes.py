@@ -420,8 +420,19 @@ def vehicle_list():
 def vehicle_detail(vid):
     item = db.session.get(Vehicle, vid)
     attachments = _attachment_rows("vehicles", vid)
+    maintenance_history = []
+    try:
+        from app.modules.transactions.maintenance_order.models import (
+            MaintenanceOrder)
+        maintenance_history = (MaintenanceOrder.query
+                              .filter_by(vehicle_id=vid, status="COMPLETED")
+                              .order_by(MaintenanceOrder.completed_date.desc())
+                              .all())
+    except Exception:
+        pass  # transactions module may not be loaded in older phases
     return render_template("master_data/vehicle_detail.html",
-                           item=item, vehicle=item, attachments=attachments)
+                           item=item, vehicle=item, attachments=attachments,
+                           maintenance_history=maintenance_history)
 
 
 @bp.route("/vehicles/new", methods=["GET", "POST"])

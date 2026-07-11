@@ -1,0 +1,37 @@
+{% extends "layout/base.html" %}
+{% block title %}PM Scope Templates{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">PM Scope Templates</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">PM Scope Templates</h1>
+  {% if current_user.has_permission('pmscopetemplate.create') %}
+  <a class="btn btn-primary" href="{{ url_for('maintenance_config.pmscope_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Template</a>
+  {% endif %}
+</div>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr><th>Name</th><th>Maintenance Type</th><th>Activities</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+  {% for t in items %}
+    <tr>
+      <td>{{ t.name }}</td>
+      <td>{{ t.maintenance_type.name }}</td>
+      <td>{% for i in t.items %}<span class="badge text-bg-secondary">{{ i.activity_code }}</span> {% endfor %}</td>
+      <td>{% if t.is_active %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
+      <td class="text-end">
+        {% if current_user.has_permission('pmscopetemplate.delete') and t.is_active %}
+        <form method="post" class="d-inline fms-confirm" data-confirm="Deactivate this template?"
+              action="{{ url_for('maintenance_config.pmscope_deactivate', tid=t.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}
+{% block scripts %}<script>document.querySelectorAll("form.fms-confirm").forEach(function(f){f.addEventListener("submit",function(e){e.preventDefault();Swal.fire({title:f.dataset.confirm,icon:"warning",showCancelButton:true,confirmButtonText:"Yes"}).then(function(r){if(r.isConfirmed)f.submit();});});});</script>{% endblock %}

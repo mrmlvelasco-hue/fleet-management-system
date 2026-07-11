@@ -1,0 +1,44 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.pmschedule_list') }}">PM Schedules</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Vehicle Type</label>
+    <select name="vehicle_type_id" class="form-select fms-select2">
+      <option value="">— All vehicle types —</option>
+      {% for vt in vehicle_types %}<option value="{{ vt.id }}">{{ vt.code }} — {{ vt.name }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Maintenance Type</label>
+    <select name="maintenance_type_id" class="form-select fms-select2" required>
+      <option value="">— Select —</option>
+      {% for mt in maintenance_types %}<option value="{{ mt.id }}">{{ mt.code }} — {{ mt.name }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Trigger Mode</label>
+    <select name="trigger_mode" class="form-select" required>
+      <option value="KM">KM only</option>
+      <option value="CALENDAR">Calendar only</option>
+      <option value="HYBRID" selected>Hybrid (whichever comes first)</option>
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Interval (KM)</label>
+    <input type="number" name="interval_km" class="form-control"></div>
+  <div class="col-md-4"><label class="form-label">Interval (Days)</label>
+    <input type="number" name="interval_days" class="form-control"></div>
+  <div class="col-md-4"><label class="form-label">Priority</label>
+    <select name="priority" class="form-select">
+      <option value="LOW">Low</option>
+      <option value="MEDIUM" selected>Medium</option>
+      <option value="HIGH">High</option>
+    </select></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('maintenance_config.pmschedule_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}
