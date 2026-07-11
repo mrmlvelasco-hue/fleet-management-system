@@ -62,6 +62,33 @@ for _code, _desc, _order in [
 ]:
     lookup_registry.register("LICENSE_TYPE", _code, _desc, _order)
 
+for _code, _desc, _order in [
+    ("LIGHT", "Light Vehicle", 1), ("HEAVY", "Heavy Vehicle", 2),
+    ("MOTORCYCLE", "Motorcycle", 3), ("SPECIAL", "Special Purpose", 4),
+]:
+    lookup_registry.register("VEHICLE_CATEGORY", _code, _desc, _order)
+
+for _code, _desc, _order in [
+    ("GOODS", "Goods", 1), ("SERVICES", "Services", 2), ("BOTH", "Both", 3),
+]:
+    lookup_registry.register("VENDOR_TYPE", _code, _desc, _order)
+
+for _code, _desc, _order in [
+    ("RADIAL", "Radial", 1), ("BIAS", "Bias", 2),
+]:
+    lookup_registry.register("TIRE_TYPE", _code, _desc, _order)
+
+for _code, _desc, _order in [
+    ("TRANSFER", "Transfer", 1), ("DISPATCH", "Dispatch", 2),
+    ("RETURN", "Return", 3), ("OTHER", "Other", 4),
+]:
+    lookup_registry.register("MOVEMENT_TYPE", _code, _desc, _order)
+
+for _code, _desc, _order in [
+    ("LOW", "Low", 1), ("MEDIUM", "Medium", 2), ("HIGH", "High", 3),
+]:
+    lookup_registry.register("PM_PRIORITY", _code, _desc, _order)
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 

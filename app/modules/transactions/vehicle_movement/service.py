@@ -1,11 +1,14 @@
 """Vehicle Movement service: creation, submit/approve/reject/return/cancel
-(shared base), plus start_transit/complete physical-lifecycle actions."""
+(shared base), plus start_transit/complete physical-lifecycle actions.
+
+movement_type is validated against the MOVEMENT_TYPE Lookup (System
+Administration → Lookups) rather than a hardcoded set, so an admin can add
+new movement types without a code change — this field is purely descriptive
+and doesn't drive any branching logic."""
 from app.extensions import db
 from app.core.numbering.numbering_service import AutoNumberingService
 from app.modules.transactions.base_service import BaseTransactionService
 from app.modules.transactions.vehicle_movement.models import VehicleMovement
-
-VALID_MOVEMENT_TYPES = {"TRANSFER", "DISPATCH", "RETURN", "OTHER"}
 
 
 class InvalidMovementTypeError(Exception):
@@ -19,10 +22,19 @@ class VehicleMovementService(BaseTransactionService):
 
     def create(self, *, vehicle_id, movement_type, from_location,
                to_location, movement_date, user, remarks=None):
-        if movement_type not in VALID_MOVEMENT_TYPES:
+        from app.modules.system_admin.services.lookup_service import (
+            LookupService, registry as lookup_registry)
+        valid_types = {i.code for i in
+                      LookupService().get_by_type("MOVEMENT_TYPE")}
+        if not valid_types:
+            # Fresh install, `flask seed all` not yet run: fall back to the
+            # code-registered defaults so this doesn't hard-depend on seeding.
+            valid_types = {d.code for d in lookup_registry.definitions
+                          if d.lookup_type == "MOVEMENT_TYPE"}
+        if movement_type not in valid_types:
             raise InvalidMovementTypeError(
                 f"'{movement_type}' is not a valid movement type. "
-                f"Must be one of: {', '.join(sorted(VALID_MOVEMENT_TYPES))}.")
+                f"Must be one of: {', '.join(sorted(valid_types))}.")
 
         numbering = AutoNumberingService()
         try:
