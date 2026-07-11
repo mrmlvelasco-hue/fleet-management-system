@@ -1,0 +1,34 @@
+{% extends "layout/base.html" %}
+{% block title %}Import PM Scope Templates{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.pmscope_list') }}">PM Scope Templates</a></li>
+<li class="breadcrumb-item active">Import CSV</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Import PM Scope Templates from CSV</h1>
+<div class="card mb-3"><div class="card-body">
+  <p class="mb-2">CSV columns (header row required):</p>
+  <code>maintenance_type_code,scope_template_name,activity_code,activity_description,standard_labor_hours,estimated_cost,required_parts,vendor_recommendation,sort_order</code>
+  <ul class="small text-muted mt-2 mb-0">
+    <li>One row per checklist activity — multiple rows with the same <code>scope_template_name</code> become one template</li>
+    <li><code>maintenance_type_code</code> must already exist in Maintenance Types</li>
+    <li>Re-uploading replaces the activity list for that template name (so edits are picked up)</li>
+  </ul>
+</div></div>
+<div class="card"><div class="card-body">
+<form method="post" enctype="multipart/form-data" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-8"><input type="file" name="csv_file" accept=".csv" class="form-control" required></div>
+  <div class="col-md-4"><button class="btn btn-primary w-100" type="submit">Upload & Import</button></div>
+</form>
+</div></div>
+{% if result %}
+<div class="card mt-3"><div class="card-body">
+  <p>Templates created: <strong>{{ result.templates_created }}</strong> — Activity items imported: <strong>{{ result.items_created }}</strong></p>
+  {% if result.errors %}
+  <p class="text-danger">Errors:</p>
+  <ul class="text-danger small">{% for e in result.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  {% endif %}
+</div></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,5 @@
+vehicle_type_code,maintenance_type_code,trigger_mode,interval_km,interval_days,priority
+Hilux,PMS-5K,HYBRID,5000,180,MEDIUM
+Hilux,PMS-10K,HYBRID,10000,365,MEDIUM
+L300,OIL-CHG,CALENDAR,,180,MEDIUM
+NSeries,MAJOR-PMS,HYBRID,20000,365,HIGH

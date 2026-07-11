@@ -1,0 +1,10 @@
+maintenance_type_code,scope_template_name,activity_code,activity_description,standard_labor_hours,estimated_cost,required_parts,vendor_recommendation,sort_order
+PMS-5K,5000 KM PMS Scope,OIL,Change Engine Oil,0.5,800,Engine oil 4L,Toyota Genuine Parts,1
+PMS-5K,5000 KM PMS Scope,FILTER,Replace Oil Filter,0.2,150,Oil filter,Toyota Genuine Parts,2
+PMS-5K,5000 KM PMS Scope,BRAKE,Check Brakes,0.3,0,,,3
+PMS-5K,5000 KM PMS Scope,TIRE,Check Tire Pressure,0.1,0,,,4
+PMS-5K,5000 KM PMS Scope,BATTERY,Inspect Battery,0.2,0,,,5
+PMS-10K,10000 KM PMS Scope,OIL,Change Engine Oil,0.5,800,Engine oil 4L,Toyota Genuine Parts,1
+PMS-10K,10000 KM PMS Scope,AIRFILTER,Replace Air Filter,0.3,350,Air filter,Toyota Genuine Parts,2
+PMS-10K,10000 KM PMS Scope,ROTATE,Tire Rotation,0.5,0,,,3
+PMS-10K,10000 KM PMS Scope,SUSPENSION,Suspension Inspection,0.5,0,,,4

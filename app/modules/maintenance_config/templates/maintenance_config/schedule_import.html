@@ -1,0 +1,35 @@
+{% extends "layout/base.html" %}
+{% block title %}Import PM Schedules{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.pmschedule_list') }}">PM Schedules</a></li>
+<li class="breadcrumb-item active">Import CSV</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Import PM Schedules from CSV</h1>
+<div class="card mb-3"><div class="card-body">
+  <p class="mb-2">CSV columns (header row required):</p>
+  <code>vehicle_type_code,maintenance_type_code,trigger_mode,interval_km,interval_days,priority</code>
+  <ul class="small text-muted mt-2 mb-0">
+    <li><code>vehicle_type_code</code> — leave blank to apply to all vehicle types</li>
+    <li><code>maintenance_type_code</code> — must already exist in Maintenance Types</li>
+    <li><code>trigger_mode</code> — KM, CALENDAR, or HYBRID</li>
+    <li>Re-uploading is safe — existing matching schedules are skipped, not duplicated</li>
+  </ul>
+</div></div>
+<div class="card"><div class="card-body">
+<form method="post" enctype="multipart/form-data" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-8"><input type="file" name="csv_file" accept=".csv" class="form-control" required></div>
+  <div class="col-md-4"><button class="btn btn-primary w-100" type="submit">Upload & Import</button></div>
+</form>
+</div></div>
+{% if result %}
+<div class="card mt-3"><div class="card-body">
+  <p>Created: <strong>{{ result.created }}</strong> — Skipped (already exists): <strong>{{ result.skipped }}</strong></p>
+  {% if result.errors %}
+  <p class="text-danger">Errors:</p>
+  <ul class="text-danger small">{% for e in result.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  {% endif %}
+</div></div>
+{% endif %}
+{% endblock %}

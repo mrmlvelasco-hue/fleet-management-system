@@ -8,6 +8,8 @@ from app.core.security.registry import registry
 from app.modules.maintenance_config.service import (
     PMScheduleService, PMScopeTemplateService,
     InvalidScheduleError, InvalidScopeError)
+from app.modules.maintenance_config.import_service import (
+    PMScheduleImportService, PMScopeImportService)
 from app.modules.master_data.reference.service import (
     VehicleTypeService, MaintenanceTypeService)
 
@@ -114,3 +116,50 @@ def pmscope_deactivate(tid):
     PMScopeTemplateService().deactivate(tid)
     flash("PM Scope Template deactivated.", "info")
     return redirect(url_for("maintenance_config.pmscope_list"))
+
+
+# ── CSV Bulk Import ──────────────────────────────────────────────────────
+
+@bp.route("/pm-schedules/import", methods=["GET", "POST"])
+@login_required
+@require_permission("pmschedule.create")
+def pmschedule_import():
+    result = None
+    if request.method == "POST":
+        file = request.files.get("csv_file")
+        if file and file.filename:
+            import io
+            content = file.read().decode("utf-8-sig")
+            result = PMScheduleImportService().import_csv(io.StringIO(content))
+            if result["created"]:
+                flash(f"Imported {result['created']} PM schedule(s).", "success")
+            if result["errors"]:
+                flash(f"{len(result['errors'])} row(s) had errors — see below.",
+                     "warning")
+        else:
+            flash("Please choose a CSV file.", "danger")
+    return render_template("maintenance_config/schedule_import.html",
+                           result=result)
+
+
+@bp.route("/pm-scope-templates/import", methods=["GET", "POST"])
+@login_required
+@require_permission("pmscopetemplate.create")
+def pmscope_import():
+    result = None
+    if request.method == "POST":
+        file = request.files.get("csv_file")
+        if file and file.filename:
+            import io
+            content = file.read().decode("utf-8-sig")
+            result = PMScopeImportService().import_csv(io.StringIO(content))
+            if result["templates_created"] or result["items_created"]:
+                flash(f"Imported {result['templates_created']} template(s), "
+                     f"{result['items_created']} activity item(s).", "success")
+            if result["errors"]:
+                flash(f"{len(result['errors'])} row(s) had errors — see below.",
+                     "warning")
+        else:
+            flash("Please choose a CSV file.", "danger")
+    return render_template("maintenance_config/scope_import.html",
+                           result=result)
