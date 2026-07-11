@@ -489,11 +489,13 @@ def vehicle_detail(vid):
 @login_required
 @require_permission("vehicle.create")
 def vehicle_new():
+    from app.modules.maintenance_config.service import PMScheduleService
     vtypes = VehicleTypeService().list()
     branches = BranchService().list()
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
+    pm_schedules = PMScheduleService().list()
     if request.method == "POST":
         try:
             VehicleService().create(**_vehicle_fields())
@@ -505,6 +507,7 @@ def vehicle_new():
                            item=None, vtypes=vtypes, vehicle_types=vtypes,
                            branches=branches, departments=departments,
                            bus=bus, fuel_types=fuel_types,
+                           pm_schedules=pm_schedules,
                            title="New Vehicle")
 
 
@@ -512,12 +515,14 @@ def vehicle_new():
 @login_required
 @require_permission("vehicle.update")
 def vehicle_edit(vid):
+    from app.modules.maintenance_config.service import PMScheduleService
     item = db.session.get(Vehicle, vid)
     vtypes = VehicleTypeService().list()
     branches = BranchService().list()
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
+    pm_schedules = PMScheduleService().list()
     if request.method == "POST":
         VehicleService().update(vid, **_vehicle_fields(include_conduction=False))
         flash("Vehicle updated.", "success")
@@ -526,6 +531,7 @@ def vehicle_edit(vid):
                            item=item, vtypes=vtypes, vehicle_types=vtypes,
                            branches=branches, departments=departments,
                            bus=bus, fuel_types=fuel_types,
+                           pm_schedules=pm_schedules,
                            title=f"Edit — {item.conduction_number or item.plate_number}")
 
 
@@ -556,6 +562,7 @@ def _vehicle_fields(include_conduction=True):
         acquisition_date=date.fromisoformat(f["acquisition_date"]) if f.get("acquisition_date") else None,
         acquisition_cost=f.get("acquisition_cost") or None,
         current_odometer=int(f.get("current_odometer") or 0),
+        pm_schedule_id=int(f["pm_schedule_id"]) if f.get("pm_schedule_id") else None,
         notes=f.get("notes", ""))
     if include_conduction:
         d["conduction_number"] = f.get("conduction_number") or None

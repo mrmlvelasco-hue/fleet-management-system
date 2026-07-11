@@ -49,13 +49,22 @@ class PMScheduleImportService:
                     f"Row {i}: unknown vehicle_type_code '{vt_code}'.")
                 continue
 
+            vehicle_make = (row.get("vehicle_make") or "").strip() or None
+            vehicle_model = (row.get("vehicle_model") or "").strip() or None
             trigger_mode = (row.get("trigger_mode") or "").strip().upper()
             interval_km = int(row["interval_km"]) if row.get("interval_km") else None
             interval_days = int(row["interval_days"]) if row.get("interval_days") else None
             priority = (row.get("priority") or "MEDIUM").strip().upper()
+            notify_before_km = (int(row["notify_before_km"])
+                                if row.get("notify_before_km") else None)
+            notify_before_days = (int(row["notify_before_days"])
+                                  if row.get("notify_before_days") else None)
+            escalate_raw = (row.get("escalate_if_overdue") or "true").strip().lower()
+            escalate_if_overdue = escalate_raw in ("true", "1", "yes")
 
             existing = PMSchedule.query.filter_by(
                 vehicle_type_id=vt.id if vt else None,
+                vehicle_make=vehicle_make, vehicle_model=vehicle_model,
                 maintenance_type_id=mt.id,
                 trigger_mode=trigger_mode).first()
             if existing:
@@ -64,9 +73,12 @@ class PMScheduleImportService:
 
             db.session.add(PMSchedule(
                 vehicle_type_id=vt.id if vt else None,
+                vehicle_make=vehicle_make, vehicle_model=vehicle_model,
                 maintenance_type_id=mt.id, trigger_mode=trigger_mode,
                 interval_km=interval_km, interval_days=interval_days,
-                priority=priority))
+                priority=priority, notify_before_km=notify_before_km,
+                notify_before_days=notify_before_days,
+                escalate_if_overdue=escalate_if_overdue))
             created += 1
 
         db.session.commit()
@@ -93,14 +105,33 @@ class PMScopeImportService:
         items_created = 0
 
         for (mt_id, name), rows in rows_by_template.items():
+            # Optional make/model columns resolve this template to one
+            # specific PM Template (PMSchedule), so e.g. "Honda City 10,000
+            # KM PMS" and "Toyota Hilux 10,000 KM PMS" stay distinct even
+            # though both may share the same maintenance_type_code.
+            first_row = rows[0]
+            make = (first_row.get("vehicle_make") or "").strip()
+            model = (first_row.get("vehicle_model") or "").strip()
+            pm_schedule_id = None
+            if make and model:
+                matched_schedule = PMSchedule.query.filter_by(
+                    maintenance_type_id=mt_id).filter(
+                    PMSchedule.vehicle_make.ilike(make),
+                    PMSchedule.vehicle_model.ilike(model)).first()
+                if matched_schedule:
+                    pm_schedule_id = matched_schedule.id
+
             tmpl = PMScopeTemplate.query.filter_by(
                 maintenance_type_id=mt_id, name=name).first()
             if tmpl is None:
-                tmpl = PMScopeTemplate(maintenance_type_id=mt_id, name=name)
+                tmpl = PMScopeTemplate(maintenance_type_id=mt_id, name=name,
+                                       pm_schedule_id=pm_schedule_id)
                 db.session.add(tmpl)
                 db.session.flush()
                 templates_created += 1
             else:
+                if pm_schedule_id:
+                    tmpl.pm_schedule_id = pm_schedule_id
                 tmpl.items.clear()
                 db.session.flush()
 

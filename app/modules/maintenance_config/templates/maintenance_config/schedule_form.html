@@ -1,40 +1,62 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
 {% block breadcrumbs %}
-<li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.pmschedule_list') }}">PM Schedules</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.pmschedule_list') }}">PM Templates</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
 {% block content %}
 <h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
+<div class="card mb-3"><div class="card-body">
 <form method="post" class="row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-6"><label class="form-label">Vehicle Type</label>
+
+  <div class="col-12"><h6 class="text-muted text-uppercase small">Match Criteria</h6></div>
+  <div class="col-md-4"><label class="form-label">Make</label>
+    <input type="text" name="vehicle_make" class="form-control" placeholder="e.g. Toyota">
+    <div class="form-text">Leave Make/Model blank to match by Vehicle Type or all vehicles instead.</div></div>
+  <div class="col-md-4"><label class="form-label">Model</label>
+    <input type="text" name="vehicle_model" class="form-control" placeholder="e.g. Hilux"></div>
+  <div class="col-md-4"><label class="form-label">Vehicle Type (fallback match)</label>
     <select name="vehicle_type_id" class="form-select fms-select2">
       <option value="">— All vehicle types —</option>
       {% for vt in vehicle_types %}<option value="{{ vt.id }}">{{ vt.code }} — {{ vt.name }}</option>{% endfor %}
     </select></div>
+
+  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">PM Type & Trigger</h6></div>
   <div class="col-md-6"><label class="form-label">Maintenance Type</label>
     <select name="maintenance_type_id" class="form-select fms-select2" required>
       <option value="">— Select —</option>
       {% for mt in maintenance_types %}<option value="{{ mt.id }}">{{ mt.code }} — {{ mt.name }}</option>{% endfor %}
     </select></div>
-  <div class="col-md-4"><label class="form-label">Trigger Mode</label>
+  <div class="col-md-3"><label class="form-label">Trigger Mode</label>
     <select name="trigger_mode" class="form-select" required>
       <option value="KM">KM only</option>
       <option value="CALENDAR">Calendar only</option>
       <option value="HYBRID" selected>Hybrid (whichever comes first)</option>
     </select></div>
-  <div class="col-md-4"><label class="form-label">Interval (KM)</label>
-    <input type="number" name="interval_km" class="form-control"></div>
-  <div class="col-md-4"><label class="form-label">Interval (Days)</label>
-    <input type="number" name="interval_days" class="form-control"></div>
-  <div class="col-md-4"><label class="form-label">Priority</label>
+  <div class="col-md-3"><label class="form-label">Priority</label>
     <select name="priority" class="form-select">
       {% for p in priorities %}
       <option value="{{ p.code }}" {{ 'selected' if p.code=='MEDIUM' }}>{{ p.description }}</option>
       {% endfor %}
     </select></div>
+  <div class="col-md-6"><label class="form-label">Trigger KM</label>
+    <input type="number" name="interval_km" class="form-control" placeholder="e.g. 10000"></div>
+  <div class="col-md-6"><label class="form-label">Trigger Days</label>
+    <input type="number" name="interval_days" class="form-control" placeholder="e.g. 180 (~6 months)"></div>
+
+  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Alert Setup</h6></div>
+  <div class="col-md-4"><label class="form-label">Notify Before (KM)</label>
+    <input type="number" name="notify_before_km" class="form-control" placeholder="Default: 500">
+    <div class="form-text">Leave blank to use the system default.</div></div>
+  <div class="col-md-4"><label class="form-label">Notify Before (Days)</label>
+    <input type="number" name="notify_before_days" class="form-control" placeholder="Default: 30"></div>
+  <div class="col-md-4 d-flex align-items-end">
+    <div class="form-check">
+      <input type="checkbox" name="escalate_if_overdue" class="form-check-input" id="escalate" checked>
+      <label class="form-check-label" for="escalate">Escalate to Fleet Admin if overdue</label>
+    </div></div>
+
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Save</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('maintenance_config.pmschedule_list') }}">Cancel</a>

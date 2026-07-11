@@ -53,12 +53,17 @@ def pmschedule_new():
         try:
             PMScheduleService().create(
                 vehicle_type_id=int(f["vehicle_type_id"]) if f.get("vehicle_type_id") else None,
+                vehicle_make=f.get("vehicle_make"),
+                vehicle_model=f.get("vehicle_model"),
                 maintenance_type_id=int(f["maintenance_type_id"]),
                 trigger_mode=f["trigger_mode"],
                 interval_km=int(f["interval_km"]) if f.get("interval_km") else None,
                 interval_days=int(f["interval_days"]) if f.get("interval_days") else None,
-                priority=f.get("priority", "MEDIUM"))
-            flash("PM Schedule created.", "success")
+                priority=f.get("priority", "MEDIUM"),
+                notify_before_km=int(f["notify_before_km"]) if f.get("notify_before_km") else None,
+                notify_before_days=int(f["notify_before_days"]) if f.get("notify_before_days") else None,
+                escalate_if_overdue=f.get("escalate_if_overdue") == "on")
+            flash("PM Template created.", "success")
             return redirect(url_for("maintenance_config.pmschedule_list"))
         except InvalidScheduleError as e:
             flash(str(e), "danger")
@@ -66,7 +71,7 @@ def pmschedule_new():
                            vehicle_types=vehicle_types,
                            maintenance_types=maintenance_types,
                            priorities=priorities,
-                           title="New PM Schedule")
+                           title="New PM Template")
 
 
 @bp.route("/pm-schedules/<int:sid>/deactivate", methods=["POST"])
@@ -93,6 +98,7 @@ def pmscope_list():
 @require_permission("pmscopetemplate.create")
 def pmscope_new():
     maintenance_types = MaintenanceTypeService().list()
+    pm_schedules = PMScheduleService().list()
     if request.method == "POST":
         f = request.form
         codes = f.getlist("activity_code")
@@ -102,6 +108,7 @@ def pmscope_new():
         try:
             PMScopeTemplateService().create(
                 maintenance_type_id=int(f["maintenance_type_id"]),
+                pm_schedule_id=int(f["pm_schedule_id"]) if f.get("pm_schedule_id") else None,
                 name=f["name"], description=f.get("description"), items=items)
             flash("PM Scope Template created.", "success")
             return redirect(url_for("maintenance_config.pmscope_list"))
@@ -109,6 +116,7 @@ def pmscope_new():
             flash(str(e), "danger")
     return render_template("maintenance_config/scope_form.html",
                            maintenance_types=maintenance_types,
+                           pm_schedules=pm_schedules,
                            title="New PM Scope Template")
 
 

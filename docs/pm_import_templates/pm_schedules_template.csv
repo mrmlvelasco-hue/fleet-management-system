@@ -1,5 +1,7 @@
-vehicle_type_code,maintenance_type_code,trigger_mode,interval_km,interval_days,priority
-Hilux,PMS-5K,HYBRID,5000,180,MEDIUM
-Hilux,PMS-10K,HYBRID,10000,365,MEDIUM
-L300,OIL-CHG,CALENDAR,,180,MEDIUM
-NSeries,MAJOR-PMS,HYBRID,20000,365,HIGH
+vehicle_type_code,vehicle_make,vehicle_model,maintenance_type_code,trigger_mode,interval_km,interval_days,priority,notify_before_km,notify_before_days,escalate_if_overdue
+,Toyota,Vios,PMS-005K,HYBRID,5000,180,MEDIUM,500,15,true
+,Toyota,Vios,PMS-010K,HYBRID,10000,365,MEDIUM,500,30,true
+,Chery Tiggo,Tiggo 7 Pro,PMS-006K,HYBRID,6000,180,MEDIUM,500,15,true
+,Honda,City,PMS-010K,HYBRID,10000,365,MEDIUM,500,30,true
+,Toyota,Hilux,PMS-005K,HYBRID,5000,180,MEDIUM,500,15,true
+,Toyota,Hilux,PMS-010K,HYBRID,10000,365,MEDIUM,500,30,true

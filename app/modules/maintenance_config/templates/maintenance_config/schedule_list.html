@@ -1,27 +1,28 @@
 {% extends "layout/base.html" %}
-{% block title %}PM Schedules{% endblock %}
-{% block breadcrumbs %}<li class="breadcrumb-item active">PM Schedules</li>{% endblock %}
+{% block title %}PM Templates{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">PM Templates</li>{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h1 class="h3 mb-0">PM Schedules</h1>
+  <h1 class="h3 mb-0">PM Templates</h1>
   {% if current_user.has_permission('pmschedule.create') %}
   <div>
     <a class="btn btn-outline-secondary" href="{{ url_for('maintenance_config.pmschedule_import') }}">
       <i class="bi bi-upload me-1"></i>Import CSV</a>
     <a class="btn btn-primary" href="{{ url_for('maintenance_config.pmschedule_new') }}">
-      <i class="bi bi-plus-lg me-1"></i>New Schedule</a>
+      <i class="bi bi-plus-lg me-1"></i>New Template</a>
   </div>
   {% endif %}
 </div>
 <div class="card"><div class="card-body">
 <table class="table table-striped fms-datatable">
   <thead><tr>
-    <th>Vehicle Type</th><th>Maintenance Type</th><th>Trigger</th>
+    <th>Make / Model</th><th>Vehicle Type</th><th>Maintenance Type</th><th>Trigger</th>
     <th>Interval KM</th><th>Interval Days</th><th>Priority</th><th>Active</th><th></th>
   </tr></thead>
   <tbody>
   {% for s in items %}
     <tr>
+      <td>{% if s.vehicle_make %}{{ s.vehicle_make }} {{ s.vehicle_model }}{% else %}<span class="text-muted">Any</span>{% endif %}</td>
       <td>{{ s.vehicle_type.name if s.vehicle_type else 'All Types' }}</td>
       <td>{{ s.maintenance_type.name }}</td>
       <td><span class="badge text-bg-info">{{ s.trigger_mode }}</span></td>
@@ -31,7 +32,7 @@
       <td>{% if s.is_active %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
       <td class="text-end">
         {% if current_user.has_permission('pmschedule.delete') and s.is_active %}
-        <form method="post" class="d-inline fms-confirm" data-confirm="Deactivate this schedule?"
+        <form method="post" class="d-inline fms-confirm" data-confirm="Deactivate this template?"
               action="{{ url_for('maintenance_config.pmschedule_deactivate', sid=s.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>

@@ -68,6 +68,17 @@
       <option value="{{ s }}" {{ 'selected' if item and item.status==s }}>{{ s }}</option>
       {% endfor %}
     </select></div>
+  <div class="col-md-8"><label class="form-label">Assigned PM Template</label>
+    <select name="pm_schedule_id" class="form-select fms-select2">
+      <option value="">— Auto-match by Make/Model or Vehicle Type —</option>
+      {% for s in pm_schedules %}
+      <option value="{{ s.id }}" {{ 'selected' if item and item.pm_schedule_id==s.id }}>
+        {% if s.vehicle_make %}{{ s.vehicle_make }} {{ s.vehicle_model }}{% else %}{{ s.vehicle_type.name if s.vehicle_type else 'All Vehicles' }}{% endif %}
+        — {{ s.maintenance_type.name }}
+      </option>
+      {% endfor %}
+    </select>
+    <div class="form-text">Optional — explicitly pins this vehicle to one PM Template, overriding automatic Make/Model matching.</div></div>
   <div class="col-12"><label class="form-label">Notes</label>
     <textarea name="notes" class="form-control" rows="2">{{ item.notes if item else '' }}</textarea></div>
   <div class="col-12">

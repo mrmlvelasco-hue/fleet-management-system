@@ -17,6 +17,17 @@
       <option value="">— Select —</option>
       {% for mt in maintenance_types %}<option value="{{ mt.id }}">{{ mt.code }} — {{ mt.name }}</option>{% endfor %}
     </select></div>
+  <div class="col-md-4"><label class="form-label">Ties to specific PM Template (optional)</label>
+    <select name="pm_schedule_id" class="form-select fms-select2">
+      <option value="">— Generic (any vehicle with this Maintenance Type) —</option>
+      {% for s in pm_schedules %}
+      <option value="{{ s.id }}">
+        {% if s.vehicle_make %}{{ s.vehicle_make }} {{ s.vehicle_model }}{% else %}{{ s.vehicle_type.name if s.vehicle_type else 'All Vehicles' }}{% endif %}
+        — {{ s.maintenance_type.name }} ({{ s.interval_km or s.interval_days }}{{ 'km' if s.interval_km else 'd' }})
+      </option>
+      {% endfor %}
+    </select>
+    <div class="form-text">Leave blank for a generic checklist shared across all vehicles with this Maintenance Type.</div></div>
   <div class="col-12"><label class="form-label">Description</label>
     <input type="text" name="description" class="form-control"></div>
 

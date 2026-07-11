@@ -29,6 +29,40 @@ PMS-5K,5000 KM PMS Scope,FILTER,Replace Oil Filter,0.2,150,Oil filter,Toyota Gen
 """
 
 
+def test_import_schedules_with_make_model_columns(db, env):
+    vt, mt = env
+    csv_with_make_model = (
+        "vehicle_type_code,vehicle_make,vehicle_model,maintenance_type_code,"
+        "trigger_mode,interval_km,interval_days,priority,notify_before_km,"
+        "notify_before_days,escalate_if_overdue\n"
+        ",Honda,City,PMS-5K,KM,10000,,MEDIUM,1000,,true\n")
+    svc = PMScheduleImportService()
+    result = svc.import_csv(io.StringIO(csv_with_make_model))
+    assert result["created"] == 1
+    sched = PMSchedule.query.filter_by(vehicle_make="Honda").first()
+    assert sched.vehicle_model == "City"
+    assert sched.notify_before_km == 1000
+    assert sched.escalate_if_overdue is True
+
+
+def test_scope_import_resolves_pm_schedule_id_from_make_model_columns(db, env):
+    vt, mt = env
+    PMScheduleImportService().import_csv(io.StringIO(
+        "vehicle_type_code,vehicle_make,vehicle_model,maintenance_type_code,"
+        "trigger_mode,interval_km,interval_days,priority\n"
+        ",Honda,City,PMS-5K,KM,10000,,MEDIUM\n"))
+
+    scope_csv = (
+        "maintenance_type_code,scope_template_name,vehicle_make,vehicle_model,"
+        "activity_code,activity_description,sort_order\n"
+        "PMS-5K,Honda City 10K PMS,Honda,City,OIL,Change Oil,1\n")
+    result = PMScopeImportService().import_csv(io.StringIO(scope_csv))
+    assert result["templates_created"] == 1
+    tmpl = PMScopeTemplate.query.filter_by(name="Honda City 10K PMS").first()
+    assert tmpl.pm_schedule_id is not None
+    assert tmpl.pm_schedule.vehicle_make == "Honda"
+
+
 def test_import_schedules_from_csv(db, env):
     vt, mt = env
     svc = PMScheduleImportService()
