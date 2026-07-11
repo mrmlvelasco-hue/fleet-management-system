@@ -48,11 +48,11 @@
           <i class="bi bi-grid-3x3 me-2"></i><span class="sidebar-label">Approval Matrix</span></a></li>
         {% endif %}
         {% if current_user.has_permission('sysparam.view') %}
-        <li><a href="{{ url_for('system_admin.sysparam_list') }}" class="nav-link {{ 'active' if request.endpoint and 'sysparam' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('system_admin.sysparam_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('system_admin.sysparam_') }}">
           <i class="bi bi-sliders me-2"></i><span class="sidebar-label">System Parameters</span></a></li>
         {% endif %}
         {% if current_user.has_permission('lookup.view') %}
-        <li><a href="{{ url_for('system_admin.lookup_list') }}" class="nav-link {{ 'active' if request.endpoint and 'lookup' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('system_admin.lookup_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('system_admin.lookup_') }}">
           <i class="bi bi-card-list me-2"></i><span class="sidebar-label">Lookups</span></a></li>
         {% endif %}
         {% if current_user.has_permission('company.view') %}
@@ -60,11 +60,11 @@
           <i class="bi bi-building me-2"></i><span class="sidebar-label">Company Profile</span></a></li>
         {% endif %}
         {% if current_user.has_permission('emailtemplate.view') %}
-        <li><a href="{{ url_for('system_admin.email_template_list') }}" class="nav-link {{ 'active' if request.endpoint and 'email_template' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('system_admin.email_template_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('system_admin.email_template_') }}">
           <i class="bi bi-envelope me-2"></i><span class="sidebar-label">Email Templates</span></a></li>
         {% endif %}
         {% if current_user.has_permission('notificationrule.view') %}
-        <li><a href="{{ url_for('system_admin.notification_rule_list') }}" class="nav-link {{ 'active' if request.endpoint and 'notification_rule' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('system_admin.notification_rule_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('system_admin.notification_rule_') }}">
           <i class="bi bi-bell me-2"></i><span class="sidebar-label">Notification Rules</span></a></li>
         {% endif %}
         {% if current_user.has_permission('audittrail.view') %}
@@ -97,39 +97,39 @@
     <div class="collapse show" id="sbGroupMasterData">
       <ul class="nav nav-pills flex-column">
         {% if current_user.has_permission('vehicle.view') %}
-        <li><a href="{{ url_for('master_data.vehicle_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehicle' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('master_data.vehicle_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vehicle_') }}">
           <i class="bi bi-truck me-2"></i><span class="sidebar-label">Vehicles</span></a></li>
         {% endif %}
         {% if current_user.has_permission('driver.view') %}
-        <li><a href="{{ url_for('master_data.driver_list') }}" class="nav-link {{ 'active' if request.endpoint and 'driver' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('master_data.driver_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.driver_') }}">
           <i class="bi bi-person-badge me-2"></i><span class="sidebar-label">Drivers</span></a></li>
         {% endif %}
         {% if current_user.has_permission('tire.view') %}
-        <li><a href="{{ url_for('master_data.tire_list') }}" class="nav-link {{ 'active' if request.endpoint and 'tire' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('master_data.tire_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.tire_') }}">
           <i class="bi bi-circle me-2"></i><span class="sidebar-label">Tires</span></a></li>
         {% endif %}
         {% if current_user.has_permission('battery.view') %}
-        <li><a href="{{ url_for('master_data.battery_list') }}" class="nav-link {{ 'active' if request.endpoint and 'battery' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('master_data.battery_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.battery_') }}">
           <i class="bi bi-battery-half me-2"></i><span class="sidebar-label">Batteries</span></a></li>
         {% endif %}
         {% if current_user.has_permission('vendor.view') %}
-        <li><a href="{{ url_for('master_data.vendor_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vendor' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('master_data.vendor_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vendor_') }}">
           <i class="bi bi-shop me-2"></i><span class="sidebar-label">Vendors</span></a></li>
         {% endif %}
         {% if current_user.has_permission('branch.view') %}
-        <li><a href="{{ url_for('master_data.branch_list') }}" class="nav-link {{ 'active' if request.endpoint and 'branch' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('master_data.branch_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.branch_') }}">
           <i class="bi bi-building me-2"></i><span class="sidebar-label">Branches</span></a></li>
         {% endif %}
         {% if current_user.has_permission('department.view') %}
-        <li><a href="{{ url_for('master_data.department_list') }}" class="nav-link {{ 'active' if request.endpoint and 'department' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('master_data.department_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.department_') }}">
           <i class="bi bi-diagram-2 me-2"></i><span class="sidebar-label">Departments</span></a></li>
         {% endif %}
         {% if current_user.has_permission('vehicletype.view') %}
-        <li><a href="{{ url_for('master_data.vehicletype_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehicletype' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('master_data.vehicletype_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vehicletype_') }}">
           <i class="bi bi-tags me-2"></i><span class="sidebar-label">Vehicle Types</span></a></li>
         {% endif %}
         {% if current_user.has_permission('maintenancetype.view') %}
-        <li><a href="{{ url_for('master_data.maintenancetype_list') }}" class="nav-link {{ 'active' if request.endpoint and 'maintenancetype' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('master_data.maintenancetype_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.maintenancetype_') }}">
           <i class="bi bi-wrench-adjustable me-2"></i><span class="sidebar-label">Maintenance Types</span></a></li>
         {% endif %}
       </ul>
@@ -146,7 +146,7 @@
     <div class="collapse show" id="sbGroupTransactions">
       <ul class="nav nav-pills flex-column">
         {% if current_user.has_permission('tripticket.view') %}
-        <li><a href="{{ url_for('transactions.tripticket_list') }}" class="nav-link {{ 'active' if request.endpoint and 'tripticket' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('transactions.tripticket_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.tripticket_') }}">
           <i class="bi bi-ticket-perforated me-2"></i><span class="sidebar-label">Trip Tickets</span></a></li>
         {% endif %}
         {% if current_user.has_permission('atd.view') %}
@@ -154,35 +154,35 @@
           <i class="bi bi-file-earmark-check me-2"></i><span class="sidebar-label">Authority To Drive</span></a></li>
         {% endif %}
         {% if current_user.has_permission('vehiclemovement.view') %}
-        <li><a href="{{ url_for('transactions.vehiclemovement_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehiclemovement' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('transactions.vehiclemovement_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.vehiclemovement_') }}">
           <i class="bi bi-arrow-left-right me-2"></i><span class="sidebar-label">Vehicle Movement</span></a></li>
         {% endif %}
         {% if current_user.has_permission('maintenanceorder.view') %}
-        <li><a href="{{ url_for('transactions.maintenanceorder_list') }}" class="nav-link {{ 'active' if request.endpoint and 'maintenanceorder' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('transactions.maintenanceorder_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.maintenanceorder_') }}">
           <i class="bi bi-tools me-2"></i><span class="sidebar-label">Maintenance Orders</span></a></li>
         {% endif %}
         {% if current_user.has_permission('tiretxn.view') %}
-        <li><a href="{{ url_for('transactions.tiretxn_list') }}" class="nav-link {{ 'active' if request.endpoint and 'tiretxn' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('transactions.tiretxn_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.tiretxn_') }}">
           <i class="bi bi-circle me-2"></i><span class="sidebar-label">Tire Transactions</span></a></li>
         {% endif %}
         {% if current_user.has_permission('batterytxn.view') %}
-        <li><a href="{{ url_for('transactions.batterytxn_list') }}" class="nav-link {{ 'active' if request.endpoint and 'batterytxn' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('transactions.batterytxn_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.batterytxn_') }}">
           <i class="bi bi-battery-half me-2"></i><span class="sidebar-label">Battery Transactions</span></a></li>
         {% endif %}
         {% if current_user.has_permission('purchaserequest.view') %}
-        <li><a href="{{ url_for('transactions.purchaserequest_list') }}" class="nav-link {{ 'active' if request.endpoint and 'purchaserequest' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('transactions.purchaserequest_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.purchaserequest_') }}">
           <i class="bi bi-cart me-2"></i><span class="sidebar-label">Purchase Requests</span></a></li>
         {% endif %}
         {% if current_user.has_permission('vehicleregistration.view') %}
-        <li><a href="{{ url_for('transactions.vehicleregistration_list') }}" class="nav-link {{ 'active' if request.endpoint and 'vehicleregistration' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('transactions.vehicleregistration_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.vehicleregistration_') }}">
           <i class="bi bi-card-checklist me-2"></i><span class="sidebar-label">Vehicle Registration</span></a></li>
         {% endif %}
         {% if current_user.has_permission('pmschedule.view') %}
-        <li><a href="{{ url_for('maintenance_config.pmschedule_list') }}" class="nav-link {{ 'active' if request.endpoint and 'pmschedule' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('maintenance_config.pmschedule_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmschedule_') }}">
           <i class="bi bi-calendar-check me-2"></i><span class="sidebar-label">PM Templates</span></a></li>
         {% endif %}
         {% if current_user.has_permission('pmscopetemplate.view') %}
-        <li><a href="{{ url_for('maintenance_config.pmscope_list') }}" class="nav-link {{ 'active' if request.endpoint and 'pmscope' in (request.endpoint or '') }}">
+        <li><a href="{{ url_for('maintenance_config.pmscope_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmscope_') }}">
           <i class="bi bi-list-check me-2"></i><span class="sidebar-label">PM Scope Templates</span></a></li>
         {% endif %}
       </ul>

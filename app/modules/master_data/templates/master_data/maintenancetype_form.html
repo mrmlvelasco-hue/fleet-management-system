@@ -7,26 +7,33 @@
 {% block content %}
 <h1 class="h3 mb-4">{{ title }}</h1>
 <div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post" class="row g-3" autocomplete="off">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-6"><label class="form-label">Code</label>
-    <input type="text" name="code" class="form-control"
+    <input type="text" name="code" class="form-control" autocomplete="off"
            value="{{ item.code if item and item.code else '' }}"></div>
   <div class="col-md-6"><label class="form-label">Name</label>
-    <input type="text" name="name" class="form-control"
+    <input type="text" name="name" class="form-control" autocomplete="off"
            value="{{ item.name if item and item.name else '' }}"></div>
   <div class="col-md-6"><label class="form-label">Category</label>
-    <input type="text" name="category" class="form-control"
-           value="{{ item.category if item and item.category else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Interval KM</label>
-    <input type="number" step="any" name="interval_km" class="form-control"
-           value="{{ item.interval_km if item and item.interval_km else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Interval Days</label>
-    <input type="number" step="any" name="interval_days" class="form-control"
-           value="{{ item.interval_days if item and item.interval_days else '' }}"></div>
+    <select name="category" class="form-select">
+      <option value="PREVENTIVE" {{ 'selected' if item and item.category=='PREVENTIVE' }}>Preventive</option>
+      <option value="CORRECTIVE" {{ 'selected' if item and item.category=='CORRECTIVE' }}>Corrective</option>
+      <option value="PREDICTIVE" {{ 'selected' if item and item.category=='PREDICTIVE' }}>Predictive</option>
+    </select>
+    <div class="form-text">Preventive orders require a completed checklist before closing; Corrective does not.</div></div>
   <div class="col-md-6"><label class="form-label">Description</label>
-    <input type="text" name="description" class="form-control"
+    <input type="text" name="description" class="form-control" autocomplete="off"
            value="{{ item.description if item and item.description else '' }}"></div>
+  <div class="col-12">
+    <div class="alert alert-info small mb-0">
+      <i class="bi bi-info-circle me-1"></i>
+      KM/Calendar intervals are configured per vehicle Make &amp; Model in
+      <a href="{{ url_for('maintenance_config.pmschedule_list') }}">PM Templates</a>,
+      not here — a single Maintenance Type (e.g. "5,000 KM PMS") can have a
+      different interval for a Honda City vs. a Toyota Hilux.
+    </div>
+  </div>
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Save</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('master_data.maintenancetype_list') }}">Cancel</a>

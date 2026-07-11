@@ -11,15 +11,19 @@
 </div>
 <div class="card"><div class="card-body">
 <table class="table table-striped fms-datatable">
-  <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Interval KM</th><th>Interval Days</th><th>Active</th><th></th></tr></thead>
+  <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>PM Templates</th><th>Active</th><th></th></tr></thead>
   <tbody>
   {% for item in items %}
     <tr>
       <td>{{ item.code or '—' }}</td>
       <td>{{ item.name or '—' }}</td>
-      <td>{{ item.category or '—' }}</td>
-      <td>{{ item.interval_km or '—' }}</td>
-      <td>{{ item.interval_days or '—' }}</td>
+      <td><span class="badge text-bg-{{ 'info' if item.category=='PREVENTIVE' else 'warning' if item.category=='CORRECTIVE' else 'secondary' }}">{{ item.category or '—' }}</span></td>
+      <td>
+        {% if item.pm_schedules %}
+        <a href="{{ url_for('maintenance_config.pmschedule_list') }}" class="small">
+          {{ item.pm_schedules|length }} template(s)</a>
+        {% else %}<span class="text-muted small">None configured</span>{% endif %}
+      </td>
       <td>{% if item.is_active %}<span class="badge text-bg-success">Yes</span>
           {% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
       <td class="text-end">

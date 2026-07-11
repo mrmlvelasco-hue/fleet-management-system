@@ -30,7 +30,8 @@ class PMSchedule(db.Model, BaseModel):
     escalate_if_overdue = db.Column(db.Boolean, default=True, nullable=False)
 
     vehicle_type = db.relationship("VehicleType")
-    maintenance_type = db.relationship("MaintenanceType")
+    maintenance_type = db.relationship("MaintenanceType",
+                                       backref="pm_schedules")
     scope_templates = db.relationship("PMScopeTemplate", backref="pm_schedule")
 
 

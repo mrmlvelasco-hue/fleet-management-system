@@ -344,8 +344,6 @@ def maintenancetype_new():
             MaintenanceTypeService().create(
                 code=request.form["code"], name=request.form["name"],
                 category=request.form["category"],
-                interval_km=request.form.get("interval_km") or None,
-                interval_days=request.form.get("interval_days") or None,
                 description=request.form.get("description", ""))
             flash("Maintenance type created.", "success")
             return redirect(url_for("master_data.maintenancetype_list"))
@@ -364,8 +362,6 @@ def maintenancetype_edit(mid):
         MaintenanceTypeService().update(
             mid, name=request.form["name"],
             category=request.form["category"],
-            interval_km=request.form.get("interval_km") or None,
-            interval_days=request.form.get("interval_days") or None,
             description=request.form.get("description", ""))
         flash("Maintenance type updated.", "success")
         return redirect(url_for("master_data.maintenancetype_list"))
