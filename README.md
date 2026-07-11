@@ -10,6 +10,32 @@ runtime (Document Type → Amount Range → Matrix → Path → Levels; unlimite
 levels; Submit/Approve/Reject/Return/Cancel; event hooks for the upcoming
 Notification Engine).
 
+Phase 1c remaining System Administration: System Parameters, Lookup
+Maintenance, Company Profile, Email Templates, Notification Rules + the
+Notification Engine (in-app + Celery-queued email), Audit Trail viewer,
+Dashboard Config, Backup/Report Config.
+
+Phase 2 Master Data: Branch/Department/Business Unit, Vehicle/Maintenance
+Types, Vehicle/Driver/Tire/Battery/Vendor masters, with a generic
+Attachment service (multi-file upload, image preview, download) reused by
+every module.
+
+Phase 3a Transaction Modules: Trip Ticket (with the driver-from-master
+toggle), Authority To Drive, Vehicle Movement — all auto-numbered, routed
+through the Approval Engine, audited automatically, with a simple
+printable HTML view (browser print-to-PDF).
+
+Phase 3b Maintenance Cluster: PM Schedules (KM/Calendar/Hybrid "whichever
+comes first" triggers) and PM Scope Templates (checklists) configure how
+and when preventive maintenance is due; Maintenance Orders (Preventive +
+Corrective) generate a checklist from the scope template and gate
+completion until all items are done; Tire and Battery Transactions
+(mount/dismount/retread/dispose) keep master status in sync; a
+PMDueCalculationService computes GOOD/DUE_SOON/OVERDUE per vehicle and an
+idempotent auto-generation task creates draft Maintenance Orders + fires
+pm_due_soon/pm_overdue notifications for due vehicles. Vehicle detail page
+now has a Maintenance History tab.
+
 ## Quick start (PyCharm / local)
 
 1. Open the `fms/` folder as a PyCharm project.
