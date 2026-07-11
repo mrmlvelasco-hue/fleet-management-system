@@ -10,11 +10,8 @@
 <form method="post" class="row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-6"><label class="form-label">Vehicle</label>
-    <select name="vehicle_id" class="form-select fms-select2" required>
-      <option value="">— Select vehicle —</option>
-      {% for v in vehicles %}
-      <option value="{{ v.id }}">{{ v.plate_number or v.conduction_number }} — {{ v.brand }} {{ v.model }}</option>
-      {% endfor %}
+    <select name="vehicle_id" id="moVehicleSelect" class="form-select" required>
+      <option value="">— Type plate number, make, or model —</option>
     </select></div>
   <div class="col-md-6"><label class="form-label">Maintenance Type</label>
     <select name="maintenance_type_id" class="form-select fms-select2" required>
@@ -29,9 +26,8 @@
       {% for st in scope_templates %}<option value="{{ st.id }}">{{ st.name }}</option>{% endfor %}
     </select></div>
   <div class="col-md-6"><label class="form-label">Vendor (optional)</label>
-    <select name="vendor_id" class="form-select fms-select2">
-      <option value="">— None —</option>
-      {% for v in vendors %}<option value="{{ v.id }}">{{ v.code }} — {{ v.name }}</option>{% endfor %}
+    <select name="vendor_id" id="moVendorSelect" class="form-select">
+      <option value="">— Type vendor code or name —</option>
     </select></div>
   <div class="col-md-4"><label class="form-label">Scheduled Date</label>
     <input type="date" name="scheduled_date" class="form-control" required></div>
@@ -49,4 +45,16 @@
   </div>
 </form>
 </div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+  if (window.jQuery) {
+    jQuery(function () {
+      initAjaxSelect("#moVehicleSelect", "{{ url_for('api_search.search_vehicles') }}",
+        { placeholder: "Type plate number, make, or model..." });
+      initAjaxSelect("#moVendorSelect", "{{ url_for('api_search.search_vendors') }}",
+        { placeholder: "Type vendor code or name...", allowClear: true });
+    });
+  }
+</script>
 {% endblock %}

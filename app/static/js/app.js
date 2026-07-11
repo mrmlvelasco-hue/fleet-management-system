@@ -67,6 +67,38 @@
     });
   }
 
+  // Smart Selector: wire a <select> to a paginated AJAX search endpoint
+  // (Select2 remote-data mode). Used for Vehicles/Drivers/Users/Vendors and
+  // any future module registered under /api/search/<module>.
+  window.initAjaxSelect = function (selector, endpoint, opts) {
+    if (!window.jQuery) return;
+    opts = opts || {};
+    jQuery(selector).select2({
+      width: "100%",
+      theme: "default",
+      placeholder: opts.placeholder || "Type to search...",
+      minimumInputLength: 0,
+      allowClear: !!opts.allowClear,
+      ajax: {
+        url: endpoint,
+        dataType: "json",
+        delay: 300,
+        data: function (params) {
+          return {
+            q: params.term || "",
+            page: params.page || 1,
+            per_page: opts.perPage || 20
+          };
+        },
+        processResults: function (data, params) {
+          params.page = params.page || 1;
+          return { results: data.results, pagination: data.pagination };
+        },
+        cache: true
+      }
+    });
+  };
+
   // Notification bell: poll unread count + load recent on open
   function loadNotifications() {
     fetch("/admin/notifications/recent")

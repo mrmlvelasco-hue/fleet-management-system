@@ -680,7 +680,6 @@ def tire_list():
 @require_permission("tire.create")
 def tire_new():
     from app.modules.system_admin.services.lookup_service import LookupService
-    vendors = VendorService().list()
     tire_types = LookupService().get_by_type_with_fallback("TIRE_TYPE")
     if request.method == "POST":
         try:
@@ -696,7 +695,7 @@ def tire_new():
         except DuplicateSerialError as e:
             flash(str(e), "danger")
     return render_template("master_data/tire_form.html",
-                           item=None, vendors=vendors, tire_types=tire_types,
+                           item=None, tire_types=tire_types,
                            title="New Tire")
 
 
@@ -723,7 +722,6 @@ def battery_list():
 @login_required
 @require_permission("battery.create")
 def battery_new():
-    vendors = VendorService().list()
     if request.method == "POST":
         try:
             BatteryService().create(
@@ -739,7 +737,7 @@ def battery_new():
         except Exception as e:
             flash(str(e), "danger")
     return render_template("master_data/battery_form.html",
-                           item=None, vendors=vendors, title="New Battery")
+                           item=None, title="New Battery")
 
 
 @bp.route("/batteries/<int:bid>/deactivate", methods=["POST"])

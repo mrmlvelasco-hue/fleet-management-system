@@ -70,8 +70,6 @@ def tripticket_list():
 @login_required
 @require_permission("tripticket.create")
 def tripticket_new():
-    vehicles = VehicleService().list()
-    drivers = DriverService().list()
     if request.method == "POST":
         f = request.form
         try:
@@ -88,7 +86,6 @@ def tripticket_new():
         except DriverRequiredError as e:
             flash(str(e), "danger")
     return render_template("transactions/tripticket_form.html",
-                           vehicles=vehicles, drivers=drivers,
                            title="New Trip Ticket")
 
 
@@ -213,8 +210,6 @@ def atd_list():
 @login_required
 @require_permission("atd.create")
 def atd_new():
-    vehicles = VehicleService().list()
-    drivers = DriverService().list()
     if request.method == "POST":
         f = request.form
         ATDService().create(
@@ -224,8 +219,8 @@ def atd_new():
             valid_to=date.fromisoformat(f["valid_to"]), user=current_user)
         flash("Authority To Drive created.", "success")
         return redirect(url_for("transactions.atd_list"))
-    return render_template("transactions/atd_form.html", vehicles=vehicles,
-                           drivers=drivers, title="New Authority To Drive")
+    return render_template("transactions/atd_form.html",
+                           title="New Authority To Drive")
 
 
 @bp.route("/atd/<int:aid>")
@@ -338,7 +333,6 @@ def vehiclemovement_list():
 @require_permission("vehiclemovement.create")
 def vehiclemovement_new():
     from app.modules.system_admin.services.lookup_service import LookupService
-    vehicles = VehicleService().list()
     movement_types = LookupService().get_by_type_with_fallback("MOVEMENT_TYPE")
     if request.method == "POST":
         f = request.form
@@ -355,7 +349,7 @@ def vehiclemovement_new():
         except InvalidMovementTypeError as e:
             flash(str(e), "danger")
     return render_template("transactions/vehiclemovement_form.html",
-                           vehicles=vehicles, movement_types=movement_types,
+                           movement_types=movement_types,
                            title="New Vehicle Movement")
 
 
@@ -436,13 +430,10 @@ def maintenanceorder_list():
 @require_permission("maintenanceorder.create")
 def maintenanceorder_new():
     from app.modules.master_data.reference.service import MaintenanceTypeService
-    from app.modules.master_data.vendor.service import VendorService
     from app.modules.maintenance_config.service import (
         PMScheduleService, PMScopeTemplateService)
 
-    vehicles = VehicleService().list()
     maintenance_types = MaintenanceTypeService().list()
-    vendors = VendorService().list()
     scope_templates = PMScopeTemplateService().list()
 
     if request.method == "POST":
@@ -461,8 +452,8 @@ def maintenanceorder_new():
         flash("Maintenance Order created.", "success")
         return redirect(url_for("transactions.maintenanceorder_list"))
     return render_template("transactions/maintenanceorder_form.html",
-                           vehicles=vehicles, maintenance_types=maintenance_types,
-                           vendors=vendors, scope_templates=scope_templates,
+                           maintenance_types=maintenance_types,
+                           scope_templates=scope_templates,
                            title="New Maintenance Order")
 
 
@@ -603,7 +594,6 @@ def tiretxn_list():
 def tiretxn_new():
     from app.modules.master_data.tire.service import TireService
     tires = TireService().list()
-    vehicles = VehicleService().list()
     if request.method == "POST":
         f = request.form
         try:
@@ -619,7 +609,7 @@ def tiretxn_new():
         except InvalidTireActionError as e:
             flash(str(e), "danger")
     return render_template("transactions/tiretxn_form.html", tires=tires,
-                           vehicles=vehicles, title="New Tire Transaction")
+                           title="New Tire Transaction")
 
 
 @bp.route("/tire-transactions/<int:tid>")
@@ -658,7 +648,6 @@ def batterytxn_list():
 def batterytxn_new():
     from app.modules.master_data.battery.service import BatteryService
     batteries = BatteryService().list()
-    vehicles = VehicleService().list()
     if request.method == "POST":
         f = request.form
         try:
@@ -673,7 +662,7 @@ def batterytxn_new():
         except InvalidBatteryActionError as e:
             flash(str(e), "danger")
     return render_template("transactions/batterytxn_form.html",
-                           batteries=batteries, vehicles=vehicles,
+                           batteries=batteries,
                            title="New Battery Transaction")
 
 
@@ -712,9 +701,7 @@ def purchaserequest_list():
 @require_permission("purchaserequest.create")
 def purchaserequest_new():
     from app.modules.master_data.org.service import DepartmentService
-    from app.modules.master_data.vendor.service import VendorService
     departments = DepartmentService().list()
-    vendors = VendorService().list()
     if request.method == "POST":
         f = request.form
         descs = f.getlist("item_description")
@@ -731,7 +718,7 @@ def purchaserequest_new():
         flash("Purchase Request created.", "success")
         return redirect(url_for("transactions.purchaserequest_list"))
     return render_template("transactions/purchaserequest_form.html",
-                           departments=departments, vendors=vendors,
+                           departments=departments,
                            title="New Purchase Request")
 
 

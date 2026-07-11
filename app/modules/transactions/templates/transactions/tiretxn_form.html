@@ -22,9 +22,8 @@
       <option value="DISPOSE">Dispose</option>
     </select></div>
   <div class="col-md-6"><label class="form-label">Vehicle (required for Mount)</label>
-    <select name="vehicle_id" class="form-select fms-select2">
-      <option value="">— None —</option>
-      {% for v in vehicles %}<option value="{{ v.id }}">{{ v.plate_number or v.conduction_number }} — {{ v.brand }} {{ v.model }}</option>{% endfor %}
+    <select name="vehicle_id" id="tirtxVehicleSelect" class="form-select">
+      <option value="">— Type plate number, make, or model —</option>
     </select></div>
   <div class="col-md-6"><label class="form-label">Transaction Date</label>
     <input type="date" name="transaction_date" class="form-control" required></div>
@@ -38,4 +37,14 @@
   </div>
 </form>
 </div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+  if (window.jQuery) {
+    jQuery(function () {
+      initAjaxSelect("#tirtxVehicleSelect", "{{ url_for('api_search.search_vehicles') }}",
+        { placeholder: "Type plate number, make, or model...", allowClear: true });
+    });
+  }
+</script>
 {% endblock %}

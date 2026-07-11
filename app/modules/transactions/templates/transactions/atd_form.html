@@ -10,18 +10,12 @@
 <form method="post" class="row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-6"><label class="form-label">Vehicle</label>
-    <select name="vehicle_id" class="form-select fms-select2" required>
-      <option value="">— Select vehicle —</option>
-      {% for v in vehicles %}
-      <option value="{{ v.id }}">{{ v.plate_number or v.conduction_number }} — {{ v.brand }} {{ v.model }}</option>
-      {% endfor %}
+    <select name="vehicle_id" id="atdVehicleSelect" class="form-select" required>
+      <option value="">— Type plate number, make, or model —</option>
     </select></div>
   <div class="col-md-6"><label class="form-label">Driver</label>
-    <select name="driver_id" class="form-select fms-select2" required>
-      <option value="">— Select driver —</option>
-      {% for d in drivers %}
-      <option value="{{ d.id }}">{{ d.employee_number }} — {{ d.last_name }}, {{ d.first_name }}</option>
-      {% endfor %}
+    <select name="driver_id" id="atdDriverSelect" class="form-select" required>
+      <option value="">— Type employee number or name —</option>
     </select></div>
   <div class="col-12"><label class="form-label">Purpose</label>
     <input type="text" name="purpose" class="form-control" required></div>
@@ -35,4 +29,16 @@
   </div>
 </form>
 </div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+  if (window.jQuery) {
+    jQuery(function () {
+      initAjaxSelect("#atdVehicleSelect", "{{ url_for('api_search.search_vehicles') }}",
+        { placeholder: "Type plate number, make, or model..." });
+      initAjaxSelect("#atdDriverSelect", "{{ url_for('api_search.search_drivers') }}",
+        { placeholder: "Type employee number or name..." });
+    });
+  }
+</script>
 {% endblock %}

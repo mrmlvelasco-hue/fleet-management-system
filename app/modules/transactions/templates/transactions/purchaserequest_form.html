@@ -15,9 +15,8 @@
       {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
     </select></div>
   <div class="col-md-6"><label class="form-label">Suggested Vendor (optional)</label>
-    <select name="vendor_id" class="form-select fms-select2">
-      <option value="">— None —</option>
-      {% for v in vendors %}<option value="{{ v.id }}">{{ v.code }} — {{ v.name }}</option>{% endfor %}
+    <select name="vendor_id" id="prVendorSelect" class="form-select">
+      <option value="">— Type vendor code or name —</option>
     </select></div>
   <div class="col-12"><label class="form-label">Description</label>
     <input type="text" name="description" class="form-control" required></div>
@@ -68,5 +67,11 @@ function addLineRow() {
 }
 document.getElementById("addLineRow").addEventListener("click", addLineRow);
 addLineRow();
+if (window.jQuery) {
+  jQuery(function () {
+    initAjaxSelect("#prVendorSelect", "{{ url_for('api_search.search_vendors') }}",
+      { placeholder: "Type vendor code or name...", allowClear: true });
+  });
+}
 </script>
 {% endblock %}

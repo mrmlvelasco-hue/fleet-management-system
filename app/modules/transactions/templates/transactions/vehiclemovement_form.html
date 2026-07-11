@@ -10,11 +10,8 @@
 <form method="post" class="row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-6"><label class="form-label">Vehicle</label>
-    <select name="vehicle_id" class="form-select fms-select2" required>
-      <option value="">— Select vehicle —</option>
-      {% for v in vehicles %}
-      <option value="{{ v.id }}">{{ v.plate_number or v.conduction_number }} — {{ v.brand }} {{ v.model }}</option>
-      {% endfor %}
+    <select name="vehicle_id" id="vmVehicleSelect" class="form-select" required>
+      <option value="">— Type plate number, make, or model —</option>
     </select></div>
   <div class="col-md-6"><label class="form-label">Movement Type</label>
     <select name="movement_type" class="form-select" required>
@@ -36,4 +33,14 @@
   </div>
 </form>
 </div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+  if (window.jQuery) {
+    jQuery(function () {
+      initAjaxSelect("#vmVehicleSelect", "{{ url_for('api_search.search_vehicles') }}",
+        { placeholder: "Type plate number, make, or model..." });
+    });
+  }
+</script>
 {% endblock %}
