@@ -58,10 +58,11 @@ def auto_generate_due_maintenance_orders() -> int:
             continue
 
         from datetime import date
+        scope_template = schedule.scope_templates[0] if schedule.scope_templates else None
         order = order_service.create(
             vehicle_id=vehicle.id, maintenance_type_id=maintenance_type_id,
             pm_schedule_id=schedule.id,
-            scope_template_id=None,
+            scope_template_id=scope_template.id if scope_template else None,
             scheduled_date=date.today(),
             odometer_at_service=vehicle.current_odometer, user=None)
         created += 1

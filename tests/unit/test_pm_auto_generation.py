@@ -95,3 +95,19 @@ def test_good_vehicles_produce_no_orders(db, env):
     _make_vehicle(branch, vt, 100, "4")
     created = auto_generate_due_maintenance_orders()
     assert created == 0
+
+
+def test_auto_generation_uses_schedule_linked_scope_template(db, env):
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+    branch, vt, mt, admin_user = env
+    schedule = PMScheduleService().list()[0]
+    PMScopeTemplateService().create(
+        maintenance_type_id=mt.id, name="Linked Scope",
+        pm_schedule_id=schedule.id,
+        items=[{"activity_code": "OIL", "activity_description": "Change Oil",
+               "sort_order": 1}])
+    vehicle = _make_vehicle(branch, vt, 5200, "5")
+    auto_generate_due_maintenance_orders()
+    order = MaintenanceOrder.query.filter_by(vehicle_id=vehicle.id).first()
+    assert len(order.checklist_items) == 1
+    assert order.checklist_items[0].activity_code == "OIL"
