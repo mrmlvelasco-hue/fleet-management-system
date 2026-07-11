@@ -10,6 +10,7 @@ from app.core.search.searchable_service import SearchableService
 from app.modules.master_data.vehicle.models import Vehicle
 from app.modules.master_data.driver.models import Driver
 from app.modules.master_data.vendor.models import Vendor
+from app.modules.master_data.org.models import Branch
 from app.modules.user_management.models import User
 
 bp = Blueprint("api_search", __name__, url_prefix="/api/search")
@@ -54,6 +55,14 @@ class UserSearchService(SearchableService):
 
 class VendorSearchService(SearchableService):
     model = Vendor
+    search_fields = ["code", "name"]
+
+    def label(self, obj):
+        return f"{obj.code} — {obj.name}"
+
+
+class BranchSearchService(SearchableService):
+    model = Branch
     search_fields = ["code", "name"]
 
     def label(self, obj):
@@ -113,3 +122,10 @@ def search_users():
 @require_permission("vendor.view")
 def search_vendors():
     return jsonify(VendorSearchService().to_select2_response(**_search_params()))
+
+
+@bp.route("/branches")
+@login_required
+@require_permission("branch.view")
+def search_branches():
+    return jsonify(BranchSearchService().to_select2_response(**_search_params()))

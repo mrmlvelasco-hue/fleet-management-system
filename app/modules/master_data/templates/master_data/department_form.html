@@ -16,13 +16,16 @@
     <input type="text" name="name" class="form-control"
            value="{{ item.name if item else '' }}" required></div>
   <div class="col-md-6"><label class="form-label">Branch</label>
-    <select name="branch_id" class="form-select fms-select2" {{ 'disabled' if item }} required>
-      <option value="">— Select branch —</option>
-      {% for b in branches %}
-      <option value="{{ b.id }}" {{ 'selected' if item and item.branch_id==b.id }}>{{ b.name }}</option>
-      {% endfor %}
+    {% if item %}
+    <select name="branch_id" class="form-select" disabled>
+      <option value="{{ item.branch.id }}" selected>{{ item.branch.code }} — {{ item.branch.name }}</option>
     </select>
-    {% if item %}<div class="form-text">Branch cannot be changed after creation.</div>{% endif %}
+    <div class="form-text">Branch cannot be changed after creation.</div>
+    {% else %}
+    <select name="branch_id" id="deptBranchSelect" class="form-select" required>
+      <option value="">— Type branch code or name —</option>
+    </select>
+    {% endif %}
   </div>
   <div class="col-12"><label class="form-label">Description</label>
     <input type="text" name="description" class="form-control"
@@ -33,4 +36,14 @@
   </div>
 </form>
 </div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+  if (window.jQuery) {
+    jQuery(function () {
+      initAjaxSelect("#deptBranchSelect", "{{ url_for('api_search.search_branches') }}",
+        { placeholder: "Type branch code or name..." });
+    });
+  }
+</script>
 {% endblock %}

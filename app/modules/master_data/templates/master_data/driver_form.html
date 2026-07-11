@@ -35,11 +35,12 @@
       {% endfor %}
     </select></div>
   <div class="col-md-4"><label class="form-label">Branch</label>
-    <select name="branch_id" class="form-select fms-select2" required>
-      <option value="">— Select —</option>
-      {% for b in branches %}
-      <option value="{{ b.id }}" {{ 'selected' if item and item.branch_id==b.id }}>{{ b.name }}</option>
-      {% endfor %}
+    <select name="branch_id" id="drvBranchSelect" class="form-select" required>
+      {% if item and item.branch %}
+      <option value="{{ item.branch.id }}" selected>{{ item.branch.code }} — {{ item.branch.name }}</option>
+      {% else %}
+      <option value="">— Type branch code or name —</option>
+      {% endif %}
     </select></div>
   <div class="col-md-4"><label class="form-label">Status</label>
     <select name="status" class="form-select">
@@ -69,6 +70,12 @@
 <script>
 if (window.jQuery && typeof flatpickr !== 'undefined') {
   flatpickr(".flatpickr", {dateFormat: "Y-m-d"});
+}
+if (window.jQuery) {
+  jQuery(function () {
+    initAjaxSelect("#drvBranchSelect", "{{ url_for('api_search.search_branches') }}",
+      { placeholder: "Type branch code or name..." });
+  });
 }
 </script>
 {% endblock %}

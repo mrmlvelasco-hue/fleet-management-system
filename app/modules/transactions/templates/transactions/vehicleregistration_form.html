@@ -10,12 +10,13 @@
 <form method="post" class="row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-6"><label class="form-label">Vehicle</label>
-    <select name="vehicle_id" class="form-select fms-select2" required>
-      <option value="">— Select vehicle —</option>
-      {% for v in vehicles %}
-      <option value="{{ v.id }}">{{ v.plate_number or v.conduction_number }} — {{ v.brand }} {{ v.model }}</option>
-      {% endfor %}
-    </select></div>
+    <div class="input-group">
+      <select name="vehicle_id" id="vrVehicleSelect" class="form-select" required>
+        <option value="">— Type plate number, make, or model —</option>
+      </select>
+      <button type="button" class="btn btn-outline-secondary" id="vrVehicleModalBtn" title="Advanced search">
+        <i class="bi bi-search"></i></button>
+    </div></div>
   <div class="col-md-6"><label class="form-label">Registration Type</label>
     <select name="registration_type" class="form-select" required>
       <option value="NEW">New (3-year validity)</option>
@@ -31,4 +32,16 @@
   </div>
 </form>
 </div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+  if (window.jQuery) {
+    jQuery(function () {
+      initAjaxSelect("#vrVehicleSelect", "{{ url_for('api_search.search_vehicles') }}",
+        { placeholder: "Type plate number, make, or model..." });
+      wireVehicleSearchModal("vrVehicleModalBtn", "vrVehicleSelect",
+        "{{ url_for('api_search.search_vehicles_table') }}");
+    });
+  }
+</script>
 {% endblock %}

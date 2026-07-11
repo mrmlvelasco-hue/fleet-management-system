@@ -173,7 +173,6 @@ def department_list():
 @login_required
 @require_permission("department.create")
 def department_new():
-    branches = BranchService().list()
     if request.method == "POST":
         try:
             DepartmentService().create(
@@ -185,7 +184,7 @@ def department_new():
         except DuplicateCodeError as e:
             flash(str(e), "danger")
     return render_template("master_data/department_form.html",
-                           item=None, branches=branches, title="New Department")
+                           item=None, title="New Department")
 
 
 @bp.route("/departments/<int:did>/edit", methods=["GET", "POST"])
@@ -193,7 +192,6 @@ def department_new():
 @require_permission("department.update")
 def department_edit(did):
     item = db.session.get(Department, did)
-    branches = BranchService().list()
     if request.method == "POST":
         DepartmentService().update(
             did, name=request.form["name"],
@@ -201,7 +199,7 @@ def department_edit(did):
         flash("Department updated.", "success")
         return redirect(url_for("master_data.department_list"))
     return render_template("master_data/department_form.html",
-                           item=item, branches=branches,
+                           item=item,
                            title=f"Edit Department — {item.code}")
 
 
@@ -487,7 +485,6 @@ def vehicle_detail(vid):
 def vehicle_new():
     from app.modules.maintenance_config.service import PMScheduleService
     vtypes = VehicleTypeService().list()
-    branches = BranchService().list()
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
@@ -501,7 +498,7 @@ def vehicle_new():
             flash(str(e), "danger")
     return render_template("master_data/vehicle_form.html",
                            item=None, vtypes=vtypes, vehicle_types=vtypes,
-                           branches=branches, departments=departments,
+                           departments=departments,
                            bus=bus, fuel_types=fuel_types,
                            pm_schedules=pm_schedules,
                            title="New Vehicle")
@@ -514,7 +511,6 @@ def vehicle_edit(vid):
     from app.modules.maintenance_config.service import PMScheduleService
     item = db.session.get(Vehicle, vid)
     vtypes = VehicleTypeService().list()
-    branches = BranchService().list()
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
@@ -525,7 +521,7 @@ def vehicle_edit(vid):
         return redirect(url_for("master_data.vehicle_detail", vid=vid))
     return render_template("master_data/vehicle_form.html",
                            item=item, vtypes=vtypes, vehicle_types=vtypes,
-                           branches=branches, departments=departments,
+                           departments=departments,
                            bus=bus, fuel_types=fuel_types,
                            pm_schedules=pm_schedules,
                            title=f"Edit — {item.conduction_number or item.plate_number}")
@@ -591,7 +587,6 @@ def driver_detail(did):
 @login_required
 @require_permission("driver.create")
 def driver_new():
-    branches = BranchService().list()
     departments = DepartmentService().list()
     license_types = LookupService().get_by_type("LICENSE_TYPE")
     if request.method == "POST":
@@ -602,7 +597,7 @@ def driver_new():
         except DuplicateDriverError as e:
             flash(str(e), "danger")
     return render_template("master_data/driver_form.html",
-                           item=None, branches=branches,
+                           item=None,
                            departments=departments,
                            license_types=license_types, title="New Driver")
 
@@ -612,7 +607,6 @@ def driver_new():
 @require_permission("driver.update")
 def driver_edit(did):
     item = db.session.get(Driver, did)
-    branches = BranchService().list()
     departments = DepartmentService().list()
     license_types = LookupService().get_by_type("LICENSE_TYPE")
     if request.method == "POST":
@@ -630,7 +624,7 @@ def driver_edit(did):
         flash("Driver updated.", "success")
         return redirect(url_for("master_data.driver_detail", did=did))
     return render_template("master_data/driver_form.html",
-                           item=item, branches=branches,
+                           item=item,
                            departments=departments,
                            license_types=license_types,
                            title=f"Edit — {item.full_name}")

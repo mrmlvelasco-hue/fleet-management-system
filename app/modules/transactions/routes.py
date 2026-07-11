@@ -838,7 +838,6 @@ def vehicleregistration_list():
 @login_required
 @require_permission("vehicleregistration.create")
 def vehicleregistration_new():
-    vehicles = VehicleService().list()
     if request.method == "POST":
         f = request.form
         try:
@@ -853,7 +852,7 @@ def vehicleregistration_new():
                 NoExistingRegistrationError) as e:
             flash(str(e), "danger")
     return render_template("transactions/vehicleregistration_form.html",
-                           vehicles=vehicles, title="New Vehicle Registration")
+                           title="New Vehicle Registration")
 
 
 @bp.route("/vehicle-registrations/<int:rid>")
