@@ -128,6 +128,14 @@
         <li><a href="{{ url_for('master_data.vehicletype_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vehicletype_') }}">
           <i class="bi bi-tags me-2"></i><span class="sidebar-label">Vehicle Types</span></a></li>
         {% endif %}
+        {% if current_user.has_permission('vehiclebrand.view') %}
+        <li><a href="{{ url_for('master_data.vehiclebrand_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vehiclebrand_') }}">
+          <i class="bi bi-award me-2"></i><span class="sidebar-label">Vehicle Brands</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('vehiclemodel.view') %}
+        <li><a href="{{ url_for('master_data.vehiclemodel_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vehiclemodel_') }}">
+          <i class="bi bi-tag me-2"></i><span class="sidebar-label">Vehicle Models</span></a></li>
+        {% endif %}
         {% if current_user.has_permission('maintenancetype.view') %}
         <li><a href="{{ url_for('master_data.maintenancetype_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.maintenancetype_') }}">
           <i class="bi bi-wrench-adjustable me-2"></i><span class="sidebar-label">Maintenance Types</span></a></li>

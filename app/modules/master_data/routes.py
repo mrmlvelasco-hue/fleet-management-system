@@ -22,7 +22,14 @@ from app.modules.master_data.reference.service import (
     VehicleTypeService, MaintenanceTypeService)
 from app.modules.master_data.vehicle.models import Vehicle
 from app.modules.master_data.vehicle.service import (
-    VehicleService, DuplicateVehicleError)
+    VehicleService, DuplicateVehicleError,
+    BrandRequiredError, ModelRequiredError, InvalidBrandError,
+    InvalidModelError, ModelBrandMismatchError)
+from app.modules.master_data.vehicle_brand.models import (
+    VehicleBrand, VehicleModel)
+from app.modules.master_data.vehicle_brand.service import (
+    VehicleBrandService, VehicleModelService,
+    DuplicateBrandError, DuplicateModelError)
 from app.modules.master_data.driver.models import Driver
 from app.modules.master_data.driver.service import (
     DriverService, DuplicateDriverError)
@@ -41,7 +48,8 @@ bp = Blueprint("master_data", __name__, url_prefix="/master",
 # ── Register permissions ───────────────────────────────────────────────────
 for _mod in ["vehicle", "driver", "tire", "battery", "vendor",
              "branch", "department", "businessunit",
-             "vehicletype", "maintenancetype"]:
+             "vehicletype", "maintenancetype",
+             "vehiclebrand", "vehiclemodel"]:
     for _act in ["view", "create", "update", "delete"]:
         _code = f"{_mod}.{_act}"
         registry.register(_code, _mod, _act, f"{_act.title()} {_mod}")
@@ -439,6 +447,117 @@ def _vendor_fields(include_code=True):
     return {k: request.form.get(k, "") for k in fields}
 
 
+# ── Vehicle Brands ───────────────────────────────────────────────────────────
+
+@bp.route("/vehicle-brands")
+@login_required
+@require_permission("vehiclebrand.view")
+def vehiclebrand_list():
+    items = VehicleBrandService().list(include_inactive=True)
+    return render_template("master_data/vehiclebrand_list.html", items=items)
+
+
+@bp.route("/vehicle-brands/new", methods=["GET", "POST"])
+@login_required
+@require_permission("vehiclebrand.create")
+def vehiclebrand_new():
+    if request.method == "POST":
+        try:
+            VehicleBrandService().create(name=request.form["name"])
+            flash("Vehicle brand created.", "success")
+            return redirect(url_for("master_data.vehiclebrand_list"))
+        except DuplicateBrandError as e:
+            flash(str(e), "danger")
+    return render_template("master_data/vehiclebrand_form.html",
+                           item=None, title="New Vehicle Brand")
+
+
+@bp.route("/vehicle-brands/<int:bid>/edit", methods=["GET", "POST"])
+@login_required
+@require_permission("vehiclebrand.update")
+def vehiclebrand_edit(bid):
+    item = db.session.get(VehicleBrand, bid)
+    if item is None:
+        flash("Vehicle brand not found.", "warning")
+        return redirect(url_for("master_data.vehiclebrand_list"))
+    if request.method == "POST":
+        try:
+            VehicleBrandService().update(bid, name=request.form["name"])
+            flash("Vehicle brand updated.", "success")
+            return redirect(url_for("master_data.vehiclebrand_list"))
+        except DuplicateBrandError as e:
+            flash(str(e), "danger")
+    return render_template("master_data/vehiclebrand_form.html",
+                           item=item, title=f"Edit — {item.name}")
+
+
+@bp.route("/vehicle-brands/<int:bid>/deactivate", methods=["POST"])
+@login_required
+@require_permission("vehiclebrand.delete")
+def vehiclebrand_deactivate(bid):
+    VehicleBrandService().deactivate(bid)
+    flash("Vehicle brand deactivated.", "info")
+    return redirect(url_for("master_data.vehiclebrand_list"))
+
+
+# ── Vehicle Models ───────────────────────────────────────────────────────────
+
+@bp.route("/vehicle-models")
+@login_required
+@require_permission("vehiclemodel.view")
+def vehiclemodel_list():
+    items = VehicleModelService().list(include_inactive=True)
+    return render_template("master_data/vehiclemodel_list.html", items=items)
+
+
+@bp.route("/vehicle-models/new", methods=["GET", "POST"])
+@login_required
+@require_permission("vehiclemodel.create")
+def vehiclemodel_new():
+    brands = VehicleBrandService().list()
+    if request.method == "POST":
+        try:
+            VehicleModelService().create(
+                brand_id=int(request.form["brand_id"]),
+                name=request.form["name"])
+            flash("Vehicle model created.", "success")
+            return redirect(url_for("master_data.vehiclemodel_list"))
+        except DuplicateModelError as e:
+            flash(str(e), "danger")
+    return render_template("master_data/vehiclemodel_form.html",
+                           item=None, brands=brands, title="New Vehicle Model")
+
+
+@bp.route("/vehicle-models/<int:mid>/edit", methods=["GET", "POST"])
+@login_required
+@require_permission("vehiclemodel.update")
+def vehiclemodel_edit(mid):
+    item = db.session.get(VehicleModel, mid)
+    brands = VehicleBrandService().list()
+    if item is None:
+        flash("Vehicle model not found.", "warning")
+        return redirect(url_for("master_data.vehiclemodel_list"))
+    if request.method == "POST":
+        try:
+            VehicleModelService().update(mid, name=request.form["name"])
+            flash("Vehicle model updated.", "success")
+            return redirect(url_for("master_data.vehiclemodel_list"))
+        except DuplicateModelError as e:
+            flash(str(e), "danger")
+    return render_template("master_data/vehiclemodel_form.html",
+                           item=item, brands=brands,
+                           title=f"Edit — {item.name}")
+
+
+@bp.route("/vehicle-models/<int:mid>/deactivate", methods=["POST"])
+@login_required
+@require_permission("vehiclemodel.delete")
+def vehiclemodel_deactivate(mid):
+    VehicleModelService().deactivate(mid)
+    flash("Vehicle model deactivated.", "info")
+    return redirect(url_for("master_data.vehiclemodel_list"))
+
+
 # ── Vehicles ───────────────────────────────────────────────────────────────
 
 @bp.route("/vehicles")
@@ -486,24 +605,30 @@ def vehicle_detail(vid):
 @require_permission("vehicle.create")
 def vehicle_new():
     from app.modules.maintenance_config.service import PMScheduleService
+    from app.modules.master_data.vehicle_brand.service import VehicleBrandService
     vtypes = VehicleTypeService().list()
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
     pm_schedules = PMScheduleService().list()
+    vehicle_brands = VehicleBrandService().list()
+    brand_ids_by_name = {b.name: b.id for b in vehicle_brands}
     if request.method == "POST":
         try:
-            VehicleService().create(**_vehicle_fields())
+            VehicleService().create(**_vehicle_fields(), strict=True)
             flash("Vehicle created.", "success")
             return redirect(url_for("master_data.vehicle_list"))
-        except (DuplicateVehicleError, DateFormatError,
-                RequiredFieldError) as e:
+        except (DuplicateVehicleError, DateFormatError, RequiredFieldError,
+                BrandRequiredError, ModelRequiredError, InvalidBrandError,
+                InvalidModelError, ModelBrandMismatchError) as e:
             flash(str(e), "danger")
     return render_template("master_data/vehicle_form.html",
                            item=None, vtypes=vtypes, vehicle_types=vtypes,
                            departments=departments,
                            bus=bus, fuel_types=fuel_types,
                            pm_schedules=pm_schedules,
+                           vehicle_brands=vehicle_brands,
+                           brand_ids_by_name=brand_ids_by_name,
                            title="New Vehicle")
 
 
@@ -512,24 +637,32 @@ def vehicle_new():
 @require_permission("vehicle.update")
 def vehicle_edit(vid):
     from app.modules.maintenance_config.service import PMScheduleService
+    from app.modules.master_data.vehicle_brand.service import VehicleBrandService
     item = db.session.get(Vehicle, vid)
     vtypes = VehicleTypeService().list()
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
     pm_schedules = PMScheduleService().list()
+    vehicle_brands = VehicleBrandService().list()
+    brand_ids_by_name = {b.name: b.id for b in vehicle_brands}
     if request.method == "POST":
         try:
-            VehicleService().update(vid, **_vehicle_fields(include_conduction=False))
+            VehicleService().update(vid, **_vehicle_fields(include_conduction=False),
+                                    strict=True)
             flash("Vehicle updated.", "success")
             return redirect(url_for("master_data.vehicle_detail", vid=vid))
-        except (DateFormatError, RequiredFieldError) as e:
+        except (DateFormatError, RequiredFieldError, BrandRequiredError,
+                ModelRequiredError, InvalidBrandError, InvalidModelError,
+                ModelBrandMismatchError) as e:
             flash(str(e), "danger")
     return render_template("master_data/vehicle_form.html",
                            item=item, vtypes=vtypes, vehicle_types=vtypes,
                            departments=departments,
                            bus=bus, fuel_types=fuel_types,
                            pm_schedules=pm_schedules,
+                           vehicle_brands=vehicle_brands,
+                           brand_ids_by_name=brand_ids_by_name,
                            title=f"Edit — {item.conduction_number or item.plate_number}")
 
 

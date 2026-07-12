@@ -1,0 +1,32 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.vehiclemodel_list') }}">Vehicle Models</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Brand</label>
+    {% if item %}
+    <input type="text" class="form-control" value="{{ item.brand.name }}" disabled>
+    <div class="form-text">Brand cannot be changed after creation.</div>
+    {% else %}
+    <select name="brand_id" class="form-select fms-select2" required>
+      <option value="">— Select brand —</option>
+      {% for b in brands %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+    </select>
+    {% endif %}
+  </div>
+  <div class="col-md-6"><label class="form-label">Model Name</label>
+    <input type="text" name="name" class="form-control" autocomplete="off" required
+           value="{{ item.name if item else '' }}" placeholder="e.g. Hilux"></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehiclemodel_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}

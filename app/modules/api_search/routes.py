@@ -129,3 +129,19 @@ def search_vendors():
 @require_permission("branch.view")
 def search_branches():
     return jsonify(BranchSearchService().to_select2_response(**_search_params()))
+
+
+@bp.route("/vehicle-models")
+@login_required
+@require_permission("vehicle.view")
+def search_vehicle_models():
+    """Cascading Model list for a given Brand — powers the Vehicle master
+    form's Brand→Model selector (Model options depend on the selected
+    Brand, so this isn't a generic /table search, just a filtered list)."""
+    from app.modules.master_data.vehicle_brand.service import VehicleModelService
+    brand_id = request.args.get("brand_id")
+    if not brand_id:
+        return jsonify({"results": []})
+    models = VehicleModelService().list(brand_id=int(brand_id))
+    return jsonify({"results": [{"id": m.id, "text": m.name, "name": m.name}
+                               for m in models]})

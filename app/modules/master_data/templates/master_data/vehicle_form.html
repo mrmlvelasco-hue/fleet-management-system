@@ -31,11 +31,32 @@
       {% endfor %}
     </select></div>
   <div class="col-md-4"><label class="form-label">Brand</label>
-    <input type="text" name="brand" class="form-control"
-           value="{{ item.brand if item else '' }}" required></div>
+    <select name="brand" id="vehBrandSelect" class="form-select" required>
+      <option value="">— Select a Brand —</option>
+      {% for b in vehicle_brands %}
+      <option value="{{ b.name }}" {{ 'selected' if item and item.brand==b.name }}>{{ b.name }}</option>
+      {% endfor %}
+    </select>
+    {% if not vehicle_brands %}
+    <div class="form-text">
+      No Vehicle Brands yet —
+      <a href="{{ url_for('master_data.vehiclebrand_new') }}">create one first</a>.
+    </div>
+    {% endif %}
+  </div>
   <div class="col-md-4"><label class="form-label">Model</label>
-    <input type="text" name="model" class="form-control"
-           value="{{ item.model if item else '' }}" required></div>
+    <select name="model" id="vehModelSelect" class="form-select" required>
+      {% if item and item.model %}
+      <option value="{{ item.model }}" selected>{{ item.model }}</option>
+      {% else %}
+      <option value="">— Select a Brand first —</option>
+      {% endif %}
+    </select>
+    <div class="form-text">
+      Models are managed under
+      <a href="{{ url_for('master_data.vehiclemodel_list') }}">Vehicle Models</a>.
+    </div>
+  </div>
   <div class="col-md-2"><label class="form-label">Year</label>
     <input type="number" name="year" class="form-control"
            value="{{ item.year if item else '' }}" required></div>
@@ -105,5 +126,41 @@ if (window.jQuery) {
       { placeholder: "Type branch code or name..." });
   });
 }
+
+// Cascading Brand -> Model: fetch the Model list whenever Brand changes.
+(function () {
+  var brandSelect = document.getElementById("vehBrandSelect");
+  var modelSelect = document.getElementById("vehModelSelect");
+  var brandIdsByName = {{ brand_ids_by_name|tojson }};
+  var currentModel = "{{ item.model if item else '' }}";
+
+  function loadModels(brandName, preselect) {
+    var brandId = brandIdsByName[brandName];
+    if (!brandId) {
+      modelSelect.innerHTML = '<option value="">— Select a Brand first —</option>';
+      return;
+    }
+    fetch("{{ url_for('api_search.search_vehicle_models') }}?brand_id=" + brandId)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.results.length) {
+          modelSelect.innerHTML = '<option value="">— No models yet for this Brand —</option>';
+          return;
+        }
+        modelSelect.innerHTML = data.results.map(function (m) {
+          var sel = (preselect && m.name === preselect) ? " selected" : "";
+          return '<option value="' + m.name + '"' + sel + '>' + m.name + "</option>";
+        }).join("");
+      });
+  }
+
+  brandSelect.addEventListener("change", function () {
+    loadModels(brandSelect.value, null);
+  });
+
+  if (brandSelect.value) {
+    loadModels(brandSelect.value, currentModel);
+  }
+})();
 </script>
 {% endblock %}
