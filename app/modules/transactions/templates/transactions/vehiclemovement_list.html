@@ -13,7 +13,7 @@
 <table class="table table-striped fms-datatable">
   <thead><tr>
     <th>Doc No.</th><th>Vehicle</th><th>Type</th><th>From</th><th>To</th>
-    <th>Date</th><th>Status</th><th></th>
+    <th>Date</th><th>Status</th><th>Requested By</th><th></th>
   </tr></thead>
   <tbody>
   {% for m in items %}
@@ -25,6 +25,7 @@
       <td>{{ m.to_location }}</td>
       <td>{{ m.movement_date }}</td>
       <td><span class="badge text-bg-{{ 'success' if m.status=='COMPLETED' else 'info' if m.status=='IN_TRANSIT' else 'danger' if m.status=='CANCELLED' else 'secondary' }}">{{ m.status }}</span></td>
+      <td>{{ m.requester.full_name if m.requester else '—' }}</td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.vehiclemovement_detail', mid=m.id) }}">
           <i class="bi bi-eye"></i></a>

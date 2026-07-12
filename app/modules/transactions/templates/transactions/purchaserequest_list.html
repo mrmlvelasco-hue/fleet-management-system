@@ -11,7 +11,7 @@
 </div>
 <div class="card"><div class="card-body">
 <table class="table table-striped fms-datatable">
-  <thead><tr><th>Doc No.</th><th>Description</th><th>Amount</th><th>Status</th><th>Approval</th><th></th></tr></thead>
+  <thead><tr><th>Doc No.</th><th>Description</th><th>Amount</th><th>Status</th><th>Approval</th><th>Requested By</th><th></th></tr></thead>
   <tbody>
   {% for pr in items %}
     <tr>
@@ -20,6 +20,7 @@
       <td>{{ "{:,.2f}".format(pr.amount) }}</td>
       <td><span class="badge text-bg-{{ 'success' if pr.status=='RECEIVED' else 'primary' if pr.status=='ORDERED' else 'danger' if pr.status=='CANCELLED' else 'secondary' }}">{{ pr.status }}</span></td>
       <td>{% if pr.approval_instance %}<span class="badge text-bg-{{ 'success' if pr.approval_instance.status=='APPROVED' else 'warning' if pr.approval_instance.status=='PENDING' else 'danger' }}">{{ pr.approval_instance.status }}</span>{% else %}—{% endif %}</td>
+      <td>{{ pr.requester.full_name if pr.requester else '—' }}</td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.purchaserequest_detail', pid=pr.id) }}">
           <i class="bi bi-eye"></i></a>

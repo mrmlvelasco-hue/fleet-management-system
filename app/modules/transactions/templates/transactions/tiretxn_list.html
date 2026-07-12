@@ -11,7 +11,7 @@
 </div>
 <div class="card"><div class="card-body">
 <table class="table table-striped fms-datatable">
-  <thead><tr><th>Doc No.</th><th>Tire Serial</th><th>Vehicle</th><th>Action</th><th>Date</th><th></th></tr></thead>
+  <thead><tr><th>Doc No.</th><th>Tire Serial</th><th>Vehicle</th><th>Action</th><th>Date</th><th>Requested By</th><th></th></tr></thead>
   <tbody>
   {% for t in items %}
     <tr>
@@ -20,6 +20,7 @@
       <td>{{ t.vehicle.plate_number or t.vehicle.conduction_number if t.vehicle else '—' }}</td>
       <td><span class="badge text-bg-info">{{ t.action }}</span></td>
       <td>{{ t.transaction_date }}</td>
+      <td>{{ t.requester.full_name if t.requester else '—' }}</td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.tiretxn_detail', tid=t.id) }}">
           <i class="bi bi-eye"></i></a>

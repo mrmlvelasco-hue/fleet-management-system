@@ -13,7 +13,7 @@
 <table class="table table-striped fms-datatable">
   <thead><tr>
     <th>Doc No.</th><th>Vehicle</th><th>Type</th><th>Category</th>
-    <th>Scheduled</th><th>Status</th><th></th>
+    <th>Scheduled</th><th>Status</th><th>Requested By</th><th></th>
   </tr></thead>
   <tbody>
   {% for o in items %}
@@ -24,6 +24,7 @@
       <td><span class="badge text-bg-{{ 'info' if o.category=='PREVENTIVE' else 'warning' }}">{{ o.category }}</span></td>
       <td>{{ o.scheduled_date }}</td>
       <td><span class="badge text-bg-{{ 'success' if o.status=='COMPLETED' else 'primary' if o.status=='IN_PROGRESS' else 'danger' if o.status=='CANCELLED' else 'secondary' }}">{{ o.status }}</span></td>
+      <td>{{ o.requester.full_name if o.requester else '—' }}</td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.maintenanceorder_detail', oid=o.id) }}">
           <i class="bi bi-eye"></i></a>

@@ -13,7 +13,7 @@
 <table class="table table-striped fms-datatable">
   <thead><tr>
     <th>Doc No.</th><th>Vehicle</th><th>Driver</th><th>Destination</th>
-    <th>Departure</th><th>Status</th><th>Approval</th><th></th>
+    <th>Departure</th><th>Status</th><th>Approval</th><th>Requested By</th><th></th>
   </tr></thead>
   <tbody>
   {% for t in items %}
@@ -25,6 +25,7 @@
       <td>{{ t.departure_datetime }}</td>
       <td><span class="badge text-bg-{{ 'success' if t.status=='COMPLETED' else 'info' if t.status=='RELEASED' else 'danger' if t.status=='CANCELLED' else 'secondary' }}">{{ t.status }}</span></td>
       <td>{% if t.approval_instance %}<span class="badge text-bg-{{ 'success' if t.approval_instance.status=='APPROVED' else 'warning' if t.approval_instance.status=='PENDING' else 'danger' }}">{{ t.approval_instance.status }}</span>{% else %}—{% endif %}</td>
+      <td>{{ t.requester.full_name if t.requester else '—' }}</td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.tripticket_detail', tid=t.id) }}">
           <i class="bi bi-eye"></i></a>

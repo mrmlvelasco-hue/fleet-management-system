@@ -13,7 +13,7 @@
 <table class="table table-striped fms-datatable">
   <thead><tr>
     <th>Doc No.</th><th>Vehicle</th><th>Type</th><th>Reg. Date</th>
-    <th>Expiry</th><th>Plate</th><th>Status</th><th></th>
+    <th>Expiry</th><th>Plate</th><th>Status</th><th>Requested By</th><th></th>
   </tr></thead>
   <tbody>
   {% for r in items %}
@@ -25,6 +25,7 @@
       <td>{{ r.expiry_date or '—' }}</td>
       <td>{{ r.plate_number or '—' }}</td>
       <td><span class="badge text-bg-{{ 'success' if r.status=='COMPLETED' else 'danger' if r.status=='CANCELLED' else 'secondary' }}">{{ r.status }}</span></td>
+      <td>{{ r.requester.full_name if r.requester else '—' }}</td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.vehicleregistration_detail', rid=r.id) }}">
           <i class="bi bi-eye"></i></a>
