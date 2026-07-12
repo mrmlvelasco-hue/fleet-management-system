@@ -36,3 +36,22 @@ def test_required_true_raises_when_missing():
         parse_form_date("", "Registration Date", required=True)
     assert "Registration Date" in str(exc_info.value)
     assert "required" in str(exc_info.value).lower()
+
+
+def test_parse_form_datetime_valid():
+    from datetime import datetime
+    from app.core.validation.date_utils import parse_form_datetime
+    result = parse_form_datetime("2026-07-15T08:00", "Departure")
+    assert result == datetime(2026, 7, 15, 8, 0)
+
+
+def test_parse_form_datetime_invalid_raises_friendly_error():
+    from app.core.validation.date_utils import parse_form_datetime
+    with pytest.raises(DateFormatError) as exc_info:
+        parse_form_datetime("07/15/2026 8:00 AM", "Departure")
+    assert "Departure" in str(exc_info.value)
+
+
+def test_parse_form_datetime_empty_returns_none():
+    from app.core.validation.date_utils import parse_form_datetime
+    assert parse_form_datetime("", "Departure") is None
