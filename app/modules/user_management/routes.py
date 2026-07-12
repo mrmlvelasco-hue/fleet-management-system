@@ -1,6 +1,7 @@
 """User/Role/Permission admin blueprint. Thin controllers: parse input,
 call service, render. Permission checks via @require_permission."""
-from flask import Blueprint, render_template, redirect, url_for, flash, jsonify
+from flask import (Blueprint, render_template, redirect, url_for, flash,
+                   jsonify, request)
 from flask_login import login_required
 
 from app.core.security.decorators import require_permission
@@ -190,3 +191,52 @@ def permissions_list():
     perms = PermissionRepository().list()
     return render_template("user_management/permissions_list.html",
                            permissions=perms)
+
+
+# ---------- Organizational Scope (F1) ----------
+
+@bp.route("/users/<int:user_id>/org-scope", methods=["GET", "POST"])
+@login_required
+@require_permission("user.update")
+def user_org_scope(user_id):
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService, InvalidScopeError)
+    from app.modules.master_data.org.service import (
+        BranchService, BusinessUnitService)
+
+    user = UserRepository().get_by_id(user_id, include_inactive=True)
+    if user is None:
+        flash("User not found.", "warning")
+        return redirect(url_for("user_management.users_list"))
+
+    svc = UserOrgScopeService()
+    branches = BranchService().list()
+    business_units = BusinessUnitService().list()
+
+    if request.method == "POST":
+        f = request.form
+        try:
+            svc.assign(
+                user_id, scope_type=f["scope_type"],
+                branch_id=int(f["branch_id"]) if f.get("branch_id") else None,
+                business_unit_id=int(f["business_unit_id"])
+                if f.get("business_unit_id") else None)
+            flash("Organizational scope added.", "success")
+        except InvalidScopeError as e:
+            flash(str(e), "danger")
+        return redirect(url_for("user_management.user_org_scope", user_id=user_id))
+
+    scopes = svc.list_for_user(user_id)
+    return render_template("user_management/user_org_scope.html",
+                           target_user=user, scopes=scopes,
+                           branches=branches, business_units=business_units)
+
+
+@bp.route("/users/<int:user_id>/org-scope/<int:scope_id>/remove", methods=["POST"])
+@login_required
+@require_permission("user.update")
+def user_org_scope_remove(user_id, scope_id):
+    from app.modules.user_management.org_scope_service import UserOrgScopeService
+    UserOrgScopeService().remove(scope_id)
+    flash("Organizational scope removed.", "info")
+    return redirect(url_for("user_management.user_org_scope", user_id=user_id))
