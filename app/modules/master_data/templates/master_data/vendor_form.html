@@ -39,6 +39,18 @@
       <option value="{{ vt.code }}" {{ 'selected' if item and item.vendor_type==vt.code }}>{{ vt.description }}</option>
       {% endfor %}
     </select></div>
+  <div class="col-12"><label class="form-label">Serves These Branches</label>
+    <select name="branch_ids" id="vendorBranchSelect" class="form-select" multiple>
+      {% if item %}
+      {% for b in item.branches %}
+      <option value="{{ b.id }}" selected>{{ b.code }} — {{ b.name }}</option>
+      {% endfor %}
+      {% endif %}
+    </select>
+    <div class="form-text">Leave blank if this vendor serves every branch
+      (e.g. a nationwide supplier). Assign specific branches for a local
+      shop that only realistically serves nearby locations — e.g. a
+      Laguna shop that also covers Manila.</div></div>
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Save</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vendor_list') }}">Cancel</a>
@@ -50,4 +62,14 @@
 {% set reference_id = item.id %}
 {% include "master_data/_attachment_panel.html" %}
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  if (window.jQuery) {
+    jQuery(function () {
+      initAjaxSelect("#vendorBranchSelect", "{{ url_for('api_search.search_branches') }}",
+        { placeholder: "Type branch code or name..." });
+    });
+  }
+</script>
 {% endblock %}

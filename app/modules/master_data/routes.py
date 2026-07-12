@@ -393,7 +393,7 @@ def maintenancetype_deactivate(mid):
 @login_required
 @require_permission("vendor.view")
 def vendor_list():
-    items = VendorService().list(include_inactive=True)
+    items = VendorService().list(include_inactive=True, user=current_user)
     return render_template("master_data/vendor_list.html", items=items)
 
 
@@ -405,7 +405,10 @@ def vendor_new():
     vendor_types = LookupService().get_by_type_with_fallback("VENDOR_TYPE")
     if request.method == "POST":
         try:
-            VendorService().create(**_vendor_fields())
+            vendor = VendorService().create(**_vendor_fields())
+            branch_ids = [int(b) for b in request.form.getlist("branch_ids")]
+            if branch_ids:
+                VendorService().assign_branches(vendor.id, branch_ids)
             flash("Vendor created.", "success")
             return redirect(url_for("master_data.vendor_list"))
         except Exception as e:
@@ -421,9 +424,13 @@ def vendor_new():
 def vendor_edit(vid):
     from app.modules.system_admin.services.lookup_service import LookupService
     vendor_types = LookupService().get_by_type_with_fallback("VENDOR_TYPE")
-    item = db.session.get(Vendor, vid)
+    item = VendorService().get_visible(vid, current_user)
+    if item is None:
+        abort(403)
     if request.method == "POST":
         VendorService().update(vid, **_vendor_fields(include_code=False))
+        branch_ids = [int(b) for b in request.form.getlist("branch_ids")]
+        VendorService().assign_branches(vid, branch_ids)
         flash("Vendor updated.", "success")
         return redirect(url_for("master_data.vendor_list"))
     return render_template("master_data/vendor_form.html",
