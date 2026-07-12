@@ -45,11 +45,17 @@ class User(db.Model, BaseModel, UserMixin):
     password_hash = db.Column(db.String(255), nullable=False)
     first_name = db.Column(db.String(80))
     last_name = db.Column(db.String(80))
-    branch_id = db.Column(db.Integer, nullable=True)  # FK added with Branch master (Phase 2)
+    employee_id = db.Column(db.String(40), nullable=True)
+    branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
+                          nullable=True)
+    department_id = db.Column(db.Integer, db.ForeignKey("departments.id"),
+                              nullable=True)
     last_login_at = db.Column(db.DateTime, nullable=True)
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
     must_change_password = db.Column(db.Boolean, default=False, nullable=False)
     roles = db.relationship("Role", secondary=user_roles, backref="users")
+    branch = db.relationship("Branch", foreign_keys=[branch_id])
+    department = db.relationship("Department")
 
     def has_permission(self, code: str) -> bool:
         return any(
