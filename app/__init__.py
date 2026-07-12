@@ -40,6 +40,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.master_data.driver import models as _drv    # noqa: F401
     from app.modules.master_data.tire import models as _tir      # noqa: F401
     from app.modules.master_data.battery import models as _bat   # noqa: F401
+    from app.modules.master_data.vehicle_brand import models as _vbm  # noqa: F401
     from app.modules.transactions.trip_ticket import models as _tt  # noqa: F401
     from app.modules.transactions.atd import models as _atd        # noqa: F401
     from app.modules.transactions.vehicle_movement import models as _vm  # noqa: F401
