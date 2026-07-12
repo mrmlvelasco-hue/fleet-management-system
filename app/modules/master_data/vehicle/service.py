@@ -150,13 +150,38 @@ class VehicleService:
             return None
         return obj
 
-    def list(self, include_inactive=False, branch_id=None):
+    def get_visible(self, record_id, user):
+        """Like get(), but returns None if `user` doesn't have visibility
+        into this vehicle per organizational scope — mirrors the same
+        pattern used for transaction detail pages."""
+        obj = db.session.get(Vehicle, record_id)
+        if obj is None:
+            return None
+        if user is None:
+            return obj
+        if obj.created_by == getattr(user, "id", None):
+            return obj
+        from app.modules.user_management.org_scope_service import (
+            UserOrgScopeService)
+        if UserOrgScopeService().covers(user.id, branch_id=obj.branch_id):
+            return obj
+        return None
+
+    def list(self, include_inactive=False, branch_id=None, user=None):
         q = Vehicle.query
         if not include_inactive:
             q = q.filter_by(is_active=True)
         if branch_id:
             q = q.filter_by(branch_id=branch_id)
-        return q.order_by(Vehicle.brand, Vehicle.model).all()
+        records = q.order_by(Vehicle.brand, Vehicle.model).all()
+        if user is None:
+            return records
+        from app.modules.user_management.org_scope_service import (
+            UserOrgScopeService)
+        scope_svc = UserOrgScopeService()
+        return [v for v in records
+               if v.created_by == getattr(user, "id", None)
+               or scope_svc.covers(user.id, branch_id=v.branch_id)]
 
     def deactivate(self, record_id):
         obj = db.session.get(Vehicle, record_id)

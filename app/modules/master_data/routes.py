@@ -3,7 +3,8 @@ Thin controllers: parse → service → render. All business logic in services."
 from datetime import date
 
 from flask import (Blueprint, render_template, redirect, url_for,
-                   flash, request, jsonify, send_from_directory, current_app)
+                   flash, request, jsonify, send_from_directory, current_app,
+                   abort)
 from flask_login import login_required, current_user
 
 from app.core.security.decorators import require_permission
@@ -564,7 +565,7 @@ def vehiclemodel_deactivate(mid):
 @login_required
 @require_permission("vehicle.view")
 def vehicle_list():
-    items = VehicleService().list(include_inactive=True)
+    items = VehicleService().list(include_inactive=True, user=current_user)
     return render_template("master_data/vehicle_list.html", items=items)
 
 
@@ -572,7 +573,9 @@ def vehicle_list():
 @login_required
 @require_permission("vehicle.view")
 def vehicle_detail(vid):
-    item = db.session.get(Vehicle, vid)
+    item = VehicleService().get_visible(vid, current_user)
+    if item is None:
+        abort(403)
     attachments = _attachment_rows("vehicles", vid)
     maintenance_history = []
     registration_history = []
