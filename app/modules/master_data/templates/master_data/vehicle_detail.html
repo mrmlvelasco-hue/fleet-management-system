@@ -34,6 +34,8 @@
         <dt class="col-sm-5">Status</dt>
         <dd class="col-sm-7"><span class="badge text-bg-{{ 'success' if vehicle.status=='ACTIVE' else 'warning' if vehicle.status=='IN_REPAIR' else 'danger' }}">{{ vehicle.status }}</span></dd>
         <dt class="col-sm-5">Branch</dt><dd class="col-sm-7">{{ vehicle.branch.name if vehicle.branch else '—' }}</dd>
+        <dt class="col-sm-5">Assigned Driver</dt>
+        <dd class="col-sm-7">{% if vehicle.assigned_driver %}{{ vehicle.assigned_driver.employee_number }} — {{ vehicle.assigned_driver.last_name }}, {{ vehicle.assigned_driver.first_name }} ({{ vehicle.assigned_driver.license_type }}){% else %}—{% endif %}</dd>
         <dt class="col-sm-5">Odometer</dt><dd class="col-sm-7">{{ "{:,.0f}".format(vehicle.current_odometer) if vehicle.current_odometer else '0' }} km</dd>
         <dt class="col-sm-5">Acquisition</dt><dd class="col-sm-7">{{ vehicle.acquisition_date or '—' }}</dd>
         <dt class="col-sm-5">Cost</dt><dd class="col-sm-7">{{ "{:,.2f}".format(vehicle.acquisition_cost) if vehicle.acquisition_cost else '—' }}</dd>

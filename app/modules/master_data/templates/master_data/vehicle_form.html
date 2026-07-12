@@ -107,6 +107,18 @@
       {% endfor %}
     </select>
     <div class="form-text">Optional — explicitly pins this vehicle to one PM Template, overriding automatic Make/Model matching.</div></div>
+  <div class="col-md-8"><label class="form-label">Assigned Driver</label>
+    <select name="assigned_driver_id" id="vehDriverSelect" class="form-select">
+      {% if item and item.assigned_driver %}
+      <option value="{{ item.assigned_driver.id }}" selected>
+        {{ item.assigned_driver.employee_number }} — {{ item.assigned_driver.last_name }}, {{ item.assigned_driver.first_name }}
+        ({{ item.assigned_driver.license_type }})
+      </option>
+      {% else %}
+      <option value="">— Type employee number or name —</option>
+      {% endif %}
+    </select>
+    <div class="form-text">Optional — maintains accountability for this vehicle; only active drivers are selectable.</div></div>
   <div class="col-12"><label class="form-label">Notes</label>
     <textarea name="notes" class="form-control" rows="2">{{ item.notes if item else '' }}</textarea></div>
   <div class="col-12">
@@ -130,6 +142,8 @@ if (window.jQuery) {
   jQuery(function () {
     initAjaxSelect("#vehBranchSelect", "{{ url_for('api_search.search_branches') }}",
       { placeholder: "Type branch code or name..." });
+    initAjaxSelect("#vehDriverSelect", "{{ url_for('api_search.search_drivers') }}",
+      { placeholder: "Type employee number or name...", allowClear: true });
   });
 }
 

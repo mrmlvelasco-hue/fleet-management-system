@@ -737,6 +737,7 @@ def _vehicle_fields(include_conduction=True):
         acquisition_cost=f.get("acquisition_cost") or None,
         current_odometer=int(f.get("current_odometer") or 0),
         pm_schedule_id=int(f["pm_schedule_id"]) if f.get("pm_schedule_id") else None,
+        assigned_driver_id=int(f["assigned_driver_id"]) if f.get("assigned_driver_id") else None,
         notes=f.get("notes", ""))
     if include_conduction:
         d["conduction_number"] = f.get("conduction_number") or None

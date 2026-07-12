@@ -27,7 +27,8 @@ class Vehicle(db.Model, BaseModel):
     business_unit_id = db.Column(db.Integer,
                                  db.ForeignKey("business_units.id"),
                                  nullable=True)
-    assigned_driver_id = db.Column(db.Integer, nullable=True)  # FK to drivers
+    assigned_driver_id = db.Column(db.Integer, db.ForeignKey("drivers.id"),
+                                   nullable=True)
     acquisition_date = db.Column(db.Date, nullable=True)
     acquisition_cost = db.Column(db.Numeric(18, 2), nullable=True)
     current_odometer = db.Column(db.Integer, default=0, nullable=False)
@@ -47,3 +48,4 @@ class Vehicle(db.Model, BaseModel):
     department = db.relationship("Department")
     business_unit = db.relationship("BusinessUnit")
     pm_schedule = db.relationship("PMSchedule")
+    assigned_driver = db.relationship("Driver")

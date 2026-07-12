@@ -47,7 +47,8 @@ class DriverSearchService(SearchableService):
     search_fields = ["employee_number", "first_name", "last_name"]
 
     def label(self, obj):
-        return f"{obj.employee_number} — {obj.last_name}, {obj.first_name}"
+        return (f"{obj.employee_number} — {obj.last_name}, {obj.first_name} "
+               f"({obj.license_type})")
 
 
 class UserSearchService(SearchableService):
