@@ -93,6 +93,17 @@ def create_app(config_name: str | None = None) -> Flask:
     def server_error(_e):
         return render_template("errors/500.html"), 500
 
+    @app.template_global()
+    def lookup_user(user_id):
+        """Resolves a plain user-id column (created_by/updated_by on
+        BaseModel — intentionally FK-less to avoid circular deps across
+        every model in the system) to the User object, for display in
+        templates like the Requestor Info panel."""
+        if not user_id:
+            return None
+        from app.modules.user_management.models import User
+        return db.session.get(User, user_id)
+
     return app
 
 

@@ -1,0 +1,30 @@
+{# Shared Requestor / Initiator Info block — include on any transaction
+   detail page. Expects `item` (the transaction record, with `.requester`
+   and `.created_at`/`.updated_at`/`.updated_by` from BaseModel) in scope. #}
+<div class="card mt-3">
+  <div class="card-header"><i class="bi bi-person-lines-fill me-1"></i>Requestor Information</div>
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-sm-3">Requested By</dt>
+      <dd class="col-sm-3">{{ item.requester.full_name if item.requester else '—' }}</dd>
+      <dt class="col-sm-3">Employee ID</dt>
+      <dd class="col-sm-3">{{ item.requester.employee_id if item.requester and item.requester.employee_id else '—' }}</dd>
+
+      <dt class="col-sm-3">Department</dt>
+      <dd class="col-sm-3">{{ item.requester.department.name if item.requester and item.requester.department else '—' }}</dd>
+      <dt class="col-sm-3">Branch</dt>
+      <dd class="col-sm-3">{{ item.requester.branch.name if item.requester and item.requester.branch else '—' }}</dd>
+
+      <dt class="col-sm-3">Date Created</dt>
+      <dd class="col-sm-3">{{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '—' }}</dd>
+      <dt class="col-sm-3">Last Updated</dt>
+      <dd class="col-sm-3">{{ item.updated_at.strftime('%Y-%m-%d %H:%M') if item.updated_at else '—' }}</dd>
+
+      <dt class="col-sm-3">Last Updated By</dt>
+      <dd class="col-sm-9">
+        {% set updater = lookup_user(item.updated_by) %}
+        {{ updater.full_name if updater else '—' }}
+      </dd>
+    </dl>
+  </div>
+</div>
