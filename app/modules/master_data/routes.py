@@ -606,6 +606,7 @@ def vehicle_detail(vid):
 def vehicle_new():
     from app.modules.maintenance_config.service import PMScheduleService
     from app.modules.master_data.vehicle_brand.service import VehicleBrandService
+    from app.core.validation.form_echo import FormEcho
     vtypes = VehicleTypeService().list()
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
@@ -613,6 +614,8 @@ def vehicle_new():
     pm_schedules = PMScheduleService().list()
     vehicle_brands = VehicleBrandService().list()
     brand_ids_by_name = {b.name: b.id for b in vehicle_brands}
+    item = None
+    error_field = None
     if request.method == "POST":
         try:
             VehicleService().create(**_vehicle_fields(), strict=True)
@@ -622,13 +625,19 @@ def vehicle_new():
                 BrandRequiredError, ModelRequiredError, InvalidBrandError,
                 InvalidModelError, ModelBrandMismatchError) as e:
             flash(str(e), "danger")
+            error_field = _guess_error_field(e)
+            branch = None
+            if request.form.get("branch_id"):
+                branch = db.session.get(Branch, int(request.form["branch_id"]))
+            item = FormEcho(request.form, branch=branch)
     return render_template("master_data/vehicle_form.html",
-                           item=None, vtypes=vtypes, vehicle_types=vtypes,
+                           item=item, vtypes=vtypes, vehicle_types=vtypes,
                            departments=departments,
                            bus=bus, fuel_types=fuel_types,
                            pm_schedules=pm_schedules,
                            vehicle_brands=vehicle_brands,
                            brand_ids_by_name=brand_ids_by_name,
+                           error_field=error_field,
                            title="New Vehicle")
 
 
@@ -638,7 +647,9 @@ def vehicle_new():
 def vehicle_edit(vid):
     from app.modules.maintenance_config.service import PMScheduleService
     from app.modules.master_data.vehicle_brand.service import VehicleBrandService
+    from app.core.validation.form_echo import FormEcho
     item = db.session.get(Vehicle, vid)
+    original_label = item.conduction_number or item.plate_number
     vtypes = VehicleTypeService().list()
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
@@ -646,6 +657,7 @@ def vehicle_edit(vid):
     pm_schedules = PMScheduleService().list()
     vehicle_brands = VehicleBrandService().list()
     brand_ids_by_name = {b.name: b.id for b in vehicle_brands}
+    error_field = None
     if request.method == "POST":
         try:
             VehicleService().update(vid, **_vehicle_fields(include_conduction=False),
@@ -656,6 +668,11 @@ def vehicle_edit(vid):
                 ModelRequiredError, InvalidBrandError, InvalidModelError,
                 ModelBrandMismatchError) as e:
             flash(str(e), "danger")
+            error_field = _guess_error_field(e)
+            # Show what the user just typed, not the stale saved values —
+            # same fix as vehicle_new (preserve submitted data on error).
+            branch = item.branch if item else None
+            item = FormEcho(request.form, branch=branch)
     return render_template("master_data/vehicle_form.html",
                            item=item, vtypes=vtypes, vehicle_types=vtypes,
                            departments=departments,
@@ -663,7 +680,8 @@ def vehicle_edit(vid):
                            pm_schedules=pm_schedules,
                            vehicle_brands=vehicle_brands,
                            brand_ids_by_name=brand_ids_by_name,
-                           title=f"Edit — {item.conduction_number or item.plate_number}")
+                           error_field=error_field,
+                           title=f"Edit — {original_label}")
 
 
 @bp.route("/vehicles/<int:vid>/deactivate", methods=["POST"])
@@ -673,6 +691,30 @@ def vehicle_deactivate(vid):
     VehicleService().deactivate(vid)
     flash("Vehicle deactivated.", "info")
     return redirect(url_for("master_data.vehicle_list"))
+
+
+_ERROR_FIELD_HINTS = [
+    ("acquisition date", "acquisition_date"),
+    ("brand", "brand"),
+    ("model", "model"),
+    ("license expiry", "license_expiry"),
+    ("registration date", "registration_date"),
+    ("valid from", "valid_from"),
+    ("valid to", "valid_to"),
+    ("purchase date", "purchase_date"),
+]
+
+
+def _guess_error_field(exc: Exception):
+    """Best-effort mapping from a validation error's message to the form
+    field it concerns, so the template can highlight it. Returns None
+    (no highlight) if the message doesn't match a known hint — the error
+    is still shown via flash either way, this is purely a UX nicety."""
+    message = str(exc).lower()
+    for hint, field_name in _ERROR_FIELD_HINTS:
+        if hint in message:
+            return field_name
+    return None
 
 
 def _vehicle_fields(include_conduction=True):
