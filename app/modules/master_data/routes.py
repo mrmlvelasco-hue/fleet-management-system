@@ -10,6 +10,8 @@ from app.core.security.decorators import require_permission
 from app.core.security.registry import registry
 from app.core.attachments.service import AttachmentService, AttachmentError
 from app.core.attachments.models import Attachment
+from app.core.validation.date_utils import (
+    parse_form_date, DateFormatError, RequiredFieldError)
 from app.modules.system_admin.services.lookup_service import (
     LookupService, registry as lookup_registry)
 from app.modules.master_data.org.models import Branch, Department, BusinessUnit
@@ -494,7 +496,8 @@ def vehicle_new():
             VehicleService().create(**_vehicle_fields())
             flash("Vehicle created.", "success")
             return redirect(url_for("master_data.vehicle_list"))
-        except DuplicateVehicleError as e:
+        except (DuplicateVehicleError, DateFormatError,
+                RequiredFieldError) as e:
             flash(str(e), "danger")
     return render_template("master_data/vehicle_form.html",
                            item=None, vtypes=vtypes, vehicle_types=vtypes,
@@ -516,9 +519,12 @@ def vehicle_edit(vid):
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
     pm_schedules = PMScheduleService().list()
     if request.method == "POST":
-        VehicleService().update(vid, **_vehicle_fields(include_conduction=False))
-        flash("Vehicle updated.", "success")
-        return redirect(url_for("master_data.vehicle_detail", vid=vid))
+        try:
+            VehicleService().update(vid, **_vehicle_fields(include_conduction=False))
+            flash("Vehicle updated.", "success")
+            return redirect(url_for("master_data.vehicle_detail", vid=vid))
+        except (DateFormatError, RequiredFieldError) as e:
+            flash(str(e), "danger")
     return render_template("master_data/vehicle_form.html",
                            item=item, vtypes=vtypes, vehicle_types=vtypes,
                            departments=departments,
@@ -551,7 +557,8 @@ def _vehicle_fields(include_conduction=True):
         chassis_number=f.get("chassis_number") or None,
         engine_number=f.get("engine_number") or None,
         plate_number=f.get("plate_number") or None,
-        acquisition_date=date.fromisoformat(f["acquisition_date"]) if f.get("acquisition_date") else None,
+        acquisition_date=parse_form_date(f.get("acquisition_date"),
+                                         "Acquisition Date"),
         acquisition_cost=f.get("acquisition_cost") or None,
         current_odometer=int(f.get("current_odometer") or 0),
         pm_schedule_id=int(f["pm_schedule_id"]) if f.get("pm_schedule_id") else None,
@@ -594,7 +601,8 @@ def driver_new():
             DriverService().create(**_driver_fields())
             flash("Driver created.", "success")
             return redirect(url_for("master_data.driver_list"))
-        except DuplicateDriverError as e:
+        except (DuplicateDriverError, DateFormatError,
+                RequiredFieldError) as e:
             flash(str(e), "danger")
     return render_template("master_data/driver_form.html",
                            item=None,
@@ -610,19 +618,24 @@ def driver_edit(did):
     departments = DepartmentService().list()
     license_types = LookupService().get_by_type("LICENSE_TYPE")
     if request.method == "POST":
-        DriverService().update(
-            did,
-            first_name=request.form.get("first_name", ""),
-            last_name=request.form.get("last_name", ""),
-            middle_name=request.form.get("middle_name", ""),
-            license_expiry=date.fromisoformat(request.form["license_expiry"]),
-            license_type=request.form.get("license_type", ""),
-            phone=request.form.get("phone", ""),
-            email=request.form.get("email", ""),
-            branch_id=int(request.form["branch_id"]),
-            department_id=int(request.form["department_id"]) if request.form.get("department_id") else None)
-        flash("Driver updated.", "success")
-        return redirect(url_for("master_data.driver_detail", did=did))
+        try:
+            DriverService().update(
+                did,
+                first_name=request.form.get("first_name", ""),
+                last_name=request.form.get("last_name", ""),
+                middle_name=request.form.get("middle_name", ""),
+                license_expiry=parse_form_date(
+                    request.form.get("license_expiry"), "License Expiry",
+                    required=True),
+                license_type=request.form.get("license_type", ""),
+                phone=request.form.get("phone", ""),
+                email=request.form.get("email", ""),
+                branch_id=int(request.form["branch_id"]),
+                department_id=int(request.form["department_id"]) if request.form.get("department_id") else None)
+            flash("Driver updated.", "success")
+            return redirect(url_for("master_data.driver_detail", did=did))
+        except (DateFormatError, RequiredFieldError) as e:
+            flash(str(e), "danger")
     return render_template("master_data/driver_form.html",
                            item=item,
                            departments=departments,
@@ -647,7 +660,8 @@ def _driver_fields():
         last_name=f.get("last_name", ""),
         middle_name=f.get("middle_name", ""),
         license_number=f.get("license_number", ""),
-        license_expiry=date.fromisoformat(f["license_expiry"]),
+        license_expiry=parse_form_date(f.get("license_expiry"),
+                                       "License Expiry", required=True),
         license_type=f.get("license_type", ""),
         branch_id=int(f["branch_id"]),
         department_id=int(f["department_id"]) if f.get("department_id") else None,
@@ -677,12 +691,14 @@ def tire_new():
                 serial_number=request.form["serial_number"],
                 brand=request.form["brand"], size=request.form["size"],
                 tire_type=request.form["tire_type"],
-                purchase_date=date.fromisoformat(request.form["purchase_date"]) if request.form.get("purchase_date") else None,
+                purchase_date=parse_form_date(
+                    request.form.get("purchase_date"), "Purchase Date"),
                 purchase_cost=request.form.get("purchase_cost") or None,
                 vendor_id=int(request.form["vendor_id"]) if request.form.get("vendor_id") else None)
             flash("Tire created.", "success")
             return redirect(url_for("master_data.tire_list"))
-        except DuplicateSerialError as e:
+        except (DuplicateSerialError, DateFormatError,
+                RequiredFieldError) as e:
             flash(str(e), "danger")
     return render_template("master_data/tire_form.html",
                            item=None, tire_types=tire_types,
@@ -719,7 +735,8 @@ def battery_new():
                 brand=request.form["brand"],
                 capacity_ah=int(request.form["capacity_ah"]) if request.form.get("capacity_ah") else None,
                 voltage=int(request.form["voltage"]) if request.form.get("voltage") else None,
-                purchase_date=date.fromisoformat(request.form["purchase_date"]) if request.form.get("purchase_date") else None,
+                purchase_date=parse_form_date(
+                    request.form.get("purchase_date"), "Purchase Date"),
                 purchase_cost=request.form.get("purchase_cost") or None,
                 vendor_id=int(request.form["vendor_id"]) if request.form.get("vendor_id") else None)
             flash("Battery created.", "success")
