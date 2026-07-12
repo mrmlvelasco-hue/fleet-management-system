@@ -11,6 +11,7 @@ from app.extensions import db
 from app.core.approval.models import ApprovalInstance, ApprovalAction
 from app.modules.approval_config.service import ApprovalMatrixService
 from app.modules.document_config.repository import DocumentTypeRepository
+from app.modules.user_management.org_scope_service import UserOrgScopeService
 
 
 class NotEligibleApproverError(Exception):
@@ -61,6 +62,17 @@ class ApprovalEngine:
                        for r in user.roles):
                 raise NotEligibleApproverError(
                     "You do not hold the approver role for this level.")
+            # F1: Role alone is never sufficient — the user's organizational
+            # scope must also cover this transaction's branch/business
+            # unit, unless the instance has no recorded org context (full
+            # backward compatibility for modules that don't pass one).
+            if not UserOrgScopeService().covers(
+                    user.id, branch_id=instance.branch_id,
+                    business_unit_id=instance.business_unit_id):
+                raise NotEligibleApproverError(
+                    "You hold the approver role, but your organizational "
+                    "scope does not cover this transaction's branch/"
+                    "business unit.")
 
     def _record(self, instance, action, user, remarks=None) -> None:
         db.session.add(ApprovalAction(
@@ -76,7 +88,8 @@ class ApprovalEngine:
     # ---------- actions ----------
 
     def submit(self, document_type_code, reference_table, reference_id,
-               amount=None, user=None) -> ApprovalInstance:
+               amount=None, user=None, branch_id=None,
+               business_unit_id=None) -> ApprovalInstance:
         dt = self.doc_types.get_by_code(document_type_code)
         if dt is None:
             raise InvalidStateError(
@@ -85,6 +98,7 @@ class ApprovalEngine:
         instance = ApprovalInstance(
             document_type_id=dt.id, reference_table=reference_table,
             reference_id=reference_id, amount=amount,
+            branch_id=branch_id, business_unit_id=business_unit_id,
             submitted_by=user.id if user else None)
         db.session.add(instance)
         db.session.flush()
