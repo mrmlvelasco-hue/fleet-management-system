@@ -15,6 +15,15 @@ class ApprovalInstance(db.Model, BaseModel):
     reference_table = db.Column(db.String(100), nullable=False, index=True)
     reference_id = db.Column(db.Integer, nullable=False, index=True)
     amount = db.Column(db.Numeric(18, 2), nullable=True)
+    # Organizational context of the transaction being approved — supplied
+    # by the submitting module (same pattern as `amount`). NULL means "no
+    # org context recorded", in which case eligibility falls back to
+    # role-only matching for full backward compatibility.
+    branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
+                          nullable=True)
+    business_unit_id = db.Column(db.Integer,
+                                 db.ForeignKey("business_units.id"),
+                                 nullable=True)
     current_level = db.Column(db.Integer, default=0, nullable=False)
     # DRAFT | PENDING | APPROVED | REJECTED | RETURNED | CANCELLED
     status = db.Column(db.String(12), default="DRAFT", nullable=False, index=True)

@@ -60,6 +60,26 @@ class User(db.Model, BaseModel, UserMixin):
         return f"{self.first_name or ''} {self.last_name or ''}".strip() or self.username
 
 
+class UserOrgScope(db.Model, BaseModel):
+    """Organizational scope a user is authorized to act within for
+    approval purposes — independent of Role, since the same Role (e.g.
+    "Fleet Manager") may be held by different users in different branches.
+    A user can have multiple scope rows (multi-branch access)."""
+    __tablename__ = "user_org_scopes"
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    # BRANCH | BUSINESS_UNIT | COMPANY | GLOBAL
+    scope_type = db.Column(db.String(20), nullable=False)
+    branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
+                          nullable=True)
+    business_unit_id = db.Column(db.Integer,
+                                 db.ForeignKey("business_units.id"),
+                                 nullable=True)
+
+    user = db.relationship("User", backref="org_scopes")
+    branch = db.relationship("Branch")
+    business_unit = db.relationship("BusinessUnit")
+
+
 @login_manager.user_loader
 def load_user(user_id: str):
     return db.session.get(User, int(user_id))
