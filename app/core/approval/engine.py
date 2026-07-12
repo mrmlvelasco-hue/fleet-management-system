@@ -9,6 +9,7 @@ lives inside business modules.
 """
 from app.extensions import db
 from app.core.approval.models import ApprovalInstance, ApprovalAction
+from app.core.approval.task_service import ApprovalTaskService
 from app.modules.approval_config.service import ApprovalMatrixService
 from app.modules.document_config.repository import DocumentTypeRepository
 from app.modules.user_management.org_scope_service import UserOrgScopeService
@@ -33,6 +34,7 @@ class ApprovalEngine:
     def __init__(self):
         self.doc_types = DocumentTypeRepository()
         self.matrices = ApprovalMatrixService()
+        self.tasks = ApprovalTaskService()
 
     # ---------- events ----------
 
@@ -89,7 +91,7 @@ class ApprovalEngine:
 
     def submit(self, document_type_code, reference_table, reference_id,
                amount=None, user=None, branch_id=None,
-               business_unit_id=None) -> ApprovalInstance:
+               business_unit_id=None, document_number=None) -> ApprovalInstance:
         dt = self.doc_types.get_by_code(document_type_code)
         if dt is None:
             raise InvalidStateError(
@@ -117,6 +119,11 @@ class ApprovalEngine:
         instance.current_level = 1
         self._record(instance, "SUBMIT", user)
         db.session.commit()
+        level_1 = self._current_level_def(instance)
+        self.tasks.create_for_level(instance, level_1,
+                                    document_number=document_number,
+                                    requested_by=user.id if user else None)
+        db.session.commit()
         self._emit("submitted", instance)
         return instance
 
@@ -124,6 +131,7 @@ class ApprovalEngine:
         self._require_status(instance, "PENDING")
         self._check_eligible(instance, user)
         self._record(instance, "APPROVE", user, remarks)
+        self.tasks.complete_current(instance, user)
         max_level = max(l.level_number for l in instance.approval_path.levels)
         if instance.current_level >= max_level:
             instance.status = "APPROVED"
@@ -132,6 +140,10 @@ class ApprovalEngine:
         else:
             instance.current_level += 1
             db.session.commit()
+            next_level = self._current_level_def(instance)
+            self.tasks.create_for_level(
+                instance, next_level, requested_by=instance.submitted_by)
+            db.session.commit()
             self._emit("approved_level", instance)
         return instance
 
@@ -139,6 +151,7 @@ class ApprovalEngine:
         self._require_status(instance, "PENDING")
         self._check_eligible(instance, user)
         self._record(instance, "REJECT", user, remarks)
+        self.tasks.complete_current(instance, user)
         instance.status = "REJECTED"
         db.session.commit()
         self._emit("rejected", instance)
@@ -148,6 +161,7 @@ class ApprovalEngine:
         self._require_status(instance, "PENDING")
         self._check_eligible(instance, user)
         self._record(instance, "RETURN", user, remarks)
+        self.tasks.complete_current(instance, user)
         instance.status = "RETURNED"
         instance.current_level = 0
         db.session.commit()
@@ -160,12 +174,18 @@ class ApprovalEngine:
         instance.current_level = 1
         self._record(instance, "SUBMIT", user, remarks)
         db.session.commit()
+        level_1 = self._current_level_def(instance)
+        self.tasks.create_for_level(instance, level_1,
+                                    requested_by=instance.submitted_by)
+        db.session.commit()
         self._emit("resubmitted", instance)
         return instance
 
     def cancel(self, instance, user, remarks=None) -> ApprovalInstance:
         self._require_status(instance, "DRAFT", "PENDING", "RETURNED")
         self._record(instance, "CANCEL", user, remarks)
+        self.tasks.complete_current(instance, user, outcome_status="CANCELLED")
+        self.tasks.cancel_remaining(instance)
         instance.status = "CANCELLED"
         db.session.commit()
         self._emit("cancelled", instance)

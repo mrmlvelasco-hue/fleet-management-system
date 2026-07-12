@@ -43,7 +43,8 @@ class BaseTransactionService:
         instance = self.engine.submit(
             self.document_type_code, self.reference_table, record_id,
             amount=getattr(record, "amount", None), user=user,
-            branch_id=self._infer_branch_id(record))
+            branch_id=self._infer_branch_id(record),
+            document_number=getattr(record, "document_number", None))
         record.approval_instance_id = instance.id
         db.session.commit()
         return record
