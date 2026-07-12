@@ -23,12 +23,24 @@
       <option value="{{ mt.code }}">{{ mt.description }}</option>
       {% endfor %}
     </select></div>
+  <div class="col-md-6"><label class="form-label">Driver</label>
+    <select name="driver_id" id="vmDriverSelect" class="form-select">
+      <option value="">— Defaults from vehicle's assigned driver —</option>
+    </select>
+    <div class="form-text">Leave blank to use the vehicle's usual assigned driver; select one to override for this movement only.</div></div>
+  <div class="col-md-6"><label class="form-label">Employee Responsible (optional)</label>
+    <input type="text" name="employee_responsible" class="form-control"
+           placeholder="e.g. Supervisor authorizing/escorting the movement"></div>
+  <div class="col-md-6"><label class="form-label">Purpose of Movement</label>
+    <input type="text" name="purpose" class="form-control"></div>
   <div class="col-md-6"><label class="form-label">From Location</label>
     <input type="text" name="from_location" class="form-control" required></div>
   <div class="col-md-6"><label class="form-label">To Location</label>
     <input type="text" name="to_location" class="form-control" required></div>
-  <div class="col-md-6"><label class="form-label">Movement Date</label>
+  <div class="col-md-4"><label class="form-label">Movement Date</label>
     <input type="date" name="movement_date" class="form-control" required></div>
+  <div class="col-md-4"><label class="form-label">Movement Start Date/Time (optional)</label>
+    <input type="datetime-local" name="movement_start_datetime" class="form-control"></div>
   <div class="col-12"><label class="form-label">Remarks</label>
     <textarea name="remarks" class="form-control" rows="2"></textarea></div>
   <div class="col-12">
@@ -44,6 +56,8 @@
     jQuery(function () {
       initAjaxSelect("#vmVehicleSelect", "{{ url_for('api_search.search_vehicles') }}",
         { placeholder: "Type plate number, make, or model..." });
+      initAjaxSelect("#vmDriverSelect", "{{ url_for('api_search.search_drivers') }}",
+        { placeholder: "Type employee number or name...", allowClear: true });
       wireVehicleSearchModal("vmVehicleModalBtn", "vmVehicleSelect",
         "{{ url_for('api_search.search_vehicles_table') }}");
     });

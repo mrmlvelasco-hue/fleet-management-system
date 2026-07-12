@@ -357,6 +357,11 @@ def vehiclemovement_new():
                 to_location=f["to_location"],
                 movement_date=parse_form_date(f.get("movement_date"),
                                               "Movement Date", required=True),
+                driver_id=int(f["driver_id"]) if f.get("driver_id") else None,
+                employee_responsible=f.get("employee_responsible") or None,
+                purpose=f.get("purpose") or None,
+                movement_start_datetime=parse_form_datetime(
+                    f.get("movement_start_datetime"), "Movement Start Date/Time"),
                 remarks=f.get("remarks"), user=current_user)
             flash("Vehicle Movement created.", "success")
             return redirect(url_for("transactions.vehiclemovement_list"))
@@ -425,8 +430,14 @@ def vehiclemovement_start_transit(mid):
 @login_required
 @require_permission("vehiclemovement.update")
 def vehiclemovement_complete(mid):
-    VehicleMovementService().complete(mid)
-    flash("Vehicle Movement completed.", "success")
+    f = request.form
+    try:
+        VehicleMovementService().complete(
+            mid, movement_end_datetime=parse_form_datetime(
+                f.get("movement_end_datetime"), "Movement End Date/Time"))
+        flash("Vehicle Movement completed.", "success")
+    except (DateFormatError, RequiredFieldError) as e:
+        flash(str(e), "danger")
     return redirect(url_for("transactions.vehiclemovement_detail", mid=mid))
 
 
