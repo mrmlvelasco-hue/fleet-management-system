@@ -30,6 +30,12 @@ for _code, _desc in [
 def _populate_user_form(form: UserForm) -> None:
     form.roles.choices = [(r.id, r.name)
                           for r in RoleRepository().list()]
+    from app.modules.master_data.org.service import (
+        BranchService, DepartmentService)
+    form.branch_id.choices = [(0, "— None —")] + [
+        (b.id, f"{b.code} — {b.name}") for b in BranchService().list()]
+    form.department_id.choices = [(0, "— None —")] + [
+        (d.id, f"{d.code} — {d.name}") for d in DepartmentService().list()]
 
 
 def _populate_role_form(form: RoleForm) -> None:
@@ -79,6 +85,9 @@ def users_new():
                 password=form.password.data or "ChangeMe123!",
                 first_name=form.first_name.data, last_name=form.last_name.data,
                 role_ids=form.roles.data,
+                employee_id=form.employee_id.data or None,
+                branch_id=form.branch_id.data or None,
+                department_id=form.department_id.data or None,
                 must_change_password=form.must_change_password.data or not form.password.data)
             flash("User created.", "success")
             return redirect(url_for("user_management.users_list"))
@@ -102,10 +111,15 @@ def users_edit(user_id):
         UserService().update_user(
             user_id, email=form.email.data, first_name=form.first_name.data,
             last_name=form.last_name.data, role_ids=form.roles.data,
+            employee_id=form.employee_id.data or None,
+            branch_id=form.branch_id.data or None,
+            department_id=form.department_id.data or None,
             password=form.password.data or None)
         flash("User updated.", "success")
         return redirect(url_for("user_management.users_list"))
     form.roles.data = [r.id for r in user.roles]
+    form.branch_id.data = user.branch_id or 0
+    form.department_id.data = user.department_id or 0
     return render_template("user_management/user_form.html", form=form,
                            title=f"Edit User — {user.username}")
 

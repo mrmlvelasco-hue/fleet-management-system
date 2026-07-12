@@ -1,7 +1,8 @@
 """WTForms for user/role CRUD. Role/permission choices are populated in the
 route from the DB (Select2 multi-selects)."""
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SelectMultipleField, BooleanField
+from wtforms import (StringField, PasswordField, SelectMultipleField,
+                     BooleanField, SelectField)
 from wtforms.validators import DataRequired, Email, Length, Optional
 
 
@@ -10,6 +11,9 @@ class UserForm(FlaskForm):
     email = StringField("Email", validators=[DataRequired(), Email()])
     first_name = StringField("First name", validators=[Optional(), Length(max=80)])
     last_name = StringField("Last name", validators=[Optional(), Length(max=80)])
+    employee_id = StringField("Employee ID", validators=[Optional(), Length(max=40)])
+    branch_id = SelectField("Branch", coerce=int, validators=[Optional()])
+    department_id = SelectField("Department", coerce=int, validators=[Optional()])
     password = PasswordField("Password", validators=[Optional(), Length(min=8)])
     roles = SelectMultipleField("Roles", coerce=int)
     must_change_password = BooleanField("Require password change at next login")

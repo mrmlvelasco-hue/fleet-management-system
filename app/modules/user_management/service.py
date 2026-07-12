@@ -20,20 +20,24 @@ class UserService:
         self.roles = RoleRepository()
 
     def create_user(self, username, email, password, first_name=None,
-                    last_name=None, role_ids=None, must_change_password=False):
+                    last_name=None, role_ids=None, must_change_password=False,
+                    employee_id=None, branch_id=None, department_id=None):
         if self.users.get_by_username(username) is not None:
             raise DuplicateUsernameError(f"Username '{username}' already exists.")
         user = self.users.create(
             username=username, email=email,
             password_hash=hash_password(password),
             first_name=first_name, last_name=last_name,
+            employee_id=employee_id, branch_id=branch_id,
+            department_id=department_id,
             must_change_password=must_change_password)
         self._assign_roles(user, role_ids or [])
         db.session.commit()
         return user
 
     def update_user(self, user_id, *, email=None, first_name=None,
-                    last_name=None, role_ids=None, password=None):
+                    last_name=None, role_ids=None, password=None,
+                    employee_id=None, branch_id=None, department_id=None):
         user = self.users.get_by_id(user_id, include_inactive=True)
         if user is None:
             return None
@@ -43,6 +47,12 @@ class UserService:
             user.first_name = first_name
         if last_name is not None:
             user.last_name = last_name
+        if employee_id is not None:
+            user.employee_id = employee_id
+        if branch_id is not None:
+            user.branch_id = branch_id
+        if department_id is not None:
+            user.department_id = department_id
         if password:
             user.password_hash = hash_password(password)
         if role_ids is not None:
