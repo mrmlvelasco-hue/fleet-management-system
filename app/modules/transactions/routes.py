@@ -13,6 +13,7 @@ from app.core.approval.engine import (
     NotEligibleApproverError, InvalidStateError)
 from app.core.validation.date_utils import (
     parse_form_date, parse_form_datetime, DateFormatError, RequiredFieldError)
+from app.modules.transactions.base_service import NotVisibleError
 from app.extensions import db
 
 from app.modules.master_data.vehicle.service import VehicleService
@@ -174,7 +175,7 @@ def tripticket_cancel(tid):
     try:
         TripTicketService().cancel(tid, user=current_user)
         flash("Trip Ticket cancelled.", "info")
-    except InvalidStateError as e:
+    except (InvalidStateError, NotVisibleError) as e:
         _flash_engine_error(e)
     return redirect(url_for("transactions.tripticket_detail", tid=tid))
 
@@ -319,7 +320,7 @@ def atd_cancel(aid):
     try:
         ATDService().cancel(aid, user=current_user)
         flash("ATD cancelled.", "info")
-    except InvalidStateError as e:
+    except (InvalidStateError, NotVisibleError) as e:
         _flash_engine_error(e)
     return redirect(url_for("transactions.atd_detail", aid=aid))
 
@@ -419,7 +420,7 @@ def vehiclemovement_cancel(mid):
     try:
         VehicleMovementService().cancel(mid, user=current_user)
         flash("Vehicle Movement cancelled.", "info")
-    except InvalidStateError as e:
+    except (InvalidStateError, NotVisibleError) as e:
         _flash_engine_error(e)
     return redirect(url_for("transactions.vehiclemovement_detail", mid=mid))
 
@@ -574,7 +575,7 @@ def maintenanceorder_cancel(oid):
     try:
         MaintenanceOrderService().cancel(oid, user=current_user)
         flash("Maintenance Order cancelled.", "info")
-    except InvalidStateError as e:
+    except (InvalidStateError, NotVisibleError) as e:
         _flash_engine_error(e)
     return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
 
@@ -854,7 +855,7 @@ def purchaserequest_cancel(pid):
     try:
         PurchaseRequestService().cancel(pid, user=current_user)
         flash("Purchase Request cancelled.", "info")
-    except InvalidStateError as e:
+    except (InvalidStateError, NotVisibleError) as e:
         _flash_engine_error(e)
     return redirect(url_for("transactions.purchaserequest_detail", pid=pid))
 
@@ -954,7 +955,7 @@ def vehicleregistration_cancel(rid):
     try:
         VehicleRegistrationService().cancel(rid, user=current_user)
         flash("Vehicle Registration cancelled.", "info")
-    except InvalidStateError as e:
+    except (InvalidStateError, NotVisibleError) as e:
         _flash_engine_error(e)
     return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
 

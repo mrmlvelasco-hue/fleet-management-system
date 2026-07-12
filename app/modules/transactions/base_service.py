@@ -11,6 +11,16 @@ from app.extensions import db
 from app.core.approval.engine import ApprovalEngine
 
 
+class NotVisibleError(Exception):
+    """Raised when a user attempts to act on a record outside their
+    organizational scope and who isn't its own requester. Distinct from
+    NotEligibleApproverError (which governs approval actions specifically,
+    already enforced by the ApprovalEngine's own eligibility check) — this
+    guards the actions that had no scope protection at all: submit,
+    resubmit, cancel."""
+    pass
+
+
 class BaseTransactionService:
     model = None              # subclass sets: the SQLAlchemy model
     document_type_code = None  # subclass sets: e.g. "TT", "ATD", "VM"
@@ -40,6 +50,9 @@ class BaseTransactionService:
     def submit(self, record_id: int, user):
         """Submit a DRAFT record through the Approval Engine."""
         record = db.session.get(self.model, record_id)
+        if user is not None and not self._visible_to(record, user):
+            raise NotVisibleError(
+                "You do not have access to this record.")
         instance = self.engine.submit(
             self.document_type_code, self.reference_table, record_id,
             amount=getattr(record, "amount", None), user=user,
@@ -69,12 +82,18 @@ class BaseTransactionService:
 
     def resubmit(self, record_id: int, user, remarks=None):
         record = db.session.get(self.model, record_id)
+        if user is not None and not self._visible_to(record, user):
+            raise NotVisibleError(
+                "You do not have access to this record.")
         self.engine.resubmit(record.approval_instance, user, remarks)
         db.session.commit()
         return record
 
     def cancel(self, record_id: int, user, remarks=None):
         record = db.session.get(self.model, record_id)
+        if user is not None and not self._visible_to(record, user):
+            raise NotVisibleError(
+                "You do not have access to this record.")
         if record.approval_instance_id:
             self.engine.cancel(record.approval_instance, user, remarks)
         record.status = "CANCELLED"
