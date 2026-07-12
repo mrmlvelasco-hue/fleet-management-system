@@ -3,7 +3,8 @@ Vehicle Movement. Thin controllers — all business logic lives in the
 per-module services / the shared ApprovalEngine."""
 from datetime import date, datetime
 
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask import (Blueprint, render_template, redirect, url_for, flash,
+                   request, abort)
 from flask_login import login_required, current_user
 
 from app.core.security.decorators import require_permission
@@ -64,7 +65,7 @@ def _flash_engine_error(exc):
 @login_required
 @require_permission("tripticket.view")
 def tripticket_list():
-    items = TripTicketService().list()
+    items = TripTicketService().list(user=current_user)
     return render_template("transactions/tripticket_list.html", items=items)
 
 
@@ -97,7 +98,9 @@ def tripticket_new():
 @login_required
 @require_permission("tripticket.view")
 def tripticket_detail(tid):
-    item = db.session.get(TripTicket, tid)
+    item = TripTicketService().get_visible(tid, current_user)
+    if item is None:
+        abort(403)
     return render_template("transactions/tripticket_detail.html", item=item)
 
 
@@ -210,7 +213,7 @@ def tripticket_complete(tid):
 @login_required
 @require_permission("atd.view")
 def atd_list():
-    items = ATDService().list()
+    items = ATDService().list(user=current_user)
     return render_template("transactions/atd_list.html", items=items)
 
 
@@ -240,7 +243,9 @@ def atd_new():
 @login_required
 @require_permission("atd.view")
 def atd_detail(aid):
-    item = db.session.get(AuthorityToDrive, aid)
+    item = ATDService().get_visible(aid, current_user)
+    if item is None:
+        abort(403)
     return render_template("transactions/atd_detail.html", item=item)
 
 
@@ -337,7 +342,7 @@ def atd_activate(aid):
 @login_required
 @require_permission("vehiclemovement.view")
 def vehiclemovement_list():
-    items = VehicleMovementService().list()
+    items = VehicleMovementService().list(user=current_user)
     return render_template("transactions/vehiclemovement_list.html", items=items)
 
 
@@ -377,7 +382,9 @@ def vehiclemovement_new():
 @login_required
 @require_permission("vehiclemovement.view")
 def vehiclemovement_detail(mid):
-    item = db.session.get(VehicleMovement, mid)
+    item = VehicleMovementService().get_visible(mid, current_user)
+    if item is None:
+        abort(403)
     return render_template("transactions/vehiclemovement_detail.html", item=item)
 
 
@@ -447,7 +454,7 @@ def vehiclemovement_complete(mid):
 @login_required
 @require_permission("maintenanceorder.view")
 def maintenanceorder_list():
-    items = MaintenanceOrderService().list()
+    items = MaintenanceOrderService().list(user=current_user)
     return render_template("transactions/maintenanceorder_list.html", items=items)
 
 
@@ -491,7 +498,9 @@ def maintenanceorder_new():
 @login_required
 @require_permission("maintenanceorder.view")
 def maintenanceorder_detail(oid):
-    item = db.session.get(MaintenanceOrder, oid)
+    item = MaintenanceOrderService().get_visible(oid, current_user)
+    if item is None:
+        abort(403)
     return render_template("transactions/maintenanceorder_detail.html", item=item)
 
 
@@ -615,7 +624,7 @@ def maintenanceorder_complete(oid):
 @login_required
 @require_permission("tiretxn.view")
 def tiretxn_list():
-    items = TireTransactionService().list()
+    items = TireTransactionService().list(user=current_user)
     return render_template("transactions/tiretxn_list.html", items=items)
 
 
@@ -649,7 +658,9 @@ def tiretxn_new():
 @login_required
 @require_permission("tiretxn.view")
 def tiretxn_detail(tid):
-    item = db.session.get(TireTransaction, tid)
+    item = TireTransactionService().get_visible(tid, current_user)
+    if item is None:
+        abort(403)
     return render_template("transactions/tiretxn_detail.html", item=item)
 
 
@@ -671,7 +682,7 @@ def tiretxn_print(tid):
 @login_required
 @require_permission("batterytxn.view")
 def batterytxn_list():
-    items = BatteryTransactionService().list()
+    items = BatteryTransactionService().list(user=current_user)
     return render_template("transactions/batterytxn_list.html", items=items)
 
 
@@ -705,7 +716,9 @@ def batterytxn_new():
 @login_required
 @require_permission("batterytxn.view")
 def batterytxn_detail(bid):
-    item = db.session.get(BatteryTransaction, bid)
+    item = BatteryTransactionService().get_visible(bid, current_user)
+    if item is None:
+        abort(403)
     return render_template("transactions/batterytxn_detail.html", item=item)
 
 
@@ -727,7 +740,7 @@ def batterytxn_print(bid):
 @login_required
 @require_permission("purchaserequest.view")
 def purchaserequest_list():
-    items = PurchaseRequestService().list()
+    items = PurchaseRequestService().list(user=current_user)
     return render_template("transactions/purchaserequest_list.html", items=items)
 
 
@@ -765,7 +778,9 @@ def purchaserequest_new():
 @login_required
 @require_permission("purchaserequest.view")
 def purchaserequest_detail(pid):
-    item = db.session.get(PurchaseRequest, pid)
+    item = PurchaseRequestService().get_visible(pid, current_user)
+    if item is None:
+        abort(403)
     return render_template("transactions/purchaserequest_detail.html", item=item)
 
 
@@ -868,7 +883,7 @@ def purchaserequest_mark_received(pid):
 @login_required
 @require_permission("vehicleregistration.view")
 def vehicleregistration_list():
-    items = VehicleRegistrationService().list()
+    items = VehicleRegistrationService().list(user=current_user)
     return render_template("transactions/vehicleregistration_list.html",
                            items=items)
 
@@ -901,7 +916,9 @@ def vehicleregistration_new():
 @login_required
 @require_permission("vehicleregistration.view")
 def vehicleregistration_detail(rid):
-    item = db.session.get(VehicleRegistration, rid)
+    item = VehicleRegistrationService().get_visible(rid, current_user)
+    if item is None:
+        abort(403)
     return render_template("transactions/vehicleregistration_detail.html",
                            item=item)
 
