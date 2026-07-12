@@ -1,6 +1,30 @@
-"""Vendor master model."""
+"""Vendor master model.
+
+Vendors are deliberately NOT restricted to a single branch like
+Vehicle/Driver/Tire/Battery — a vendor (e.g. a repair shop) can
+legitimately serve several branches or business units that are close
+enough to be practical (e.g. a Laguna shop also covering Manila, ~1.5hrs
+away), so this is a many-to-many relationship rather than a single
+branch_id column.
+"""
 from app.extensions import db
 from app.core.models.base import BaseModel
+
+vendor_branches = db.Table(
+    "vendor_branches",
+    db.Column("vendor_id", db.Integer, db.ForeignKey("vendors.id"),
+              primary_key=True),
+    db.Column("branch_id", db.Integer, db.ForeignKey("branches.id"),
+              primary_key=True),
+)
+
+vendor_business_units = db.Table(
+    "vendor_business_units",
+    db.Column("vendor_id", db.Integer, db.ForeignKey("vendors.id"),
+              primary_key=True),
+    db.Column("business_unit_id", db.Integer,
+              db.ForeignKey("business_units.id"), primary_key=True),
+)
 
 
 class Vendor(db.Model, BaseModel):
@@ -15,3 +39,12 @@ class Vendor(db.Model, BaseModel):
     contact_person = db.Column(db.String(120))
     # GOODS | SERVICES | BOTH
     vendor_type = db.Column(db.String(10), nullable=False, default="GOODS")
+
+    # No branches/BUs assigned at all = serves everyone (e.g. a nationwide
+    # supplier) — same "no org context = unrestricted" convention used
+    # elsewhere. Assign one or more to scope it to specific branches/BUs.
+    branches = db.relationship("Branch", secondary=vendor_branches,
+                               backref="vendors")
+    business_units = db.relationship("BusinessUnit",
+                                     secondary=vendor_business_units,
+                                     backref="vendors")
