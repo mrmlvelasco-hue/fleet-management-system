@@ -81,11 +81,41 @@ class BaseTransactionService:
         db.session.commit()
         return record
 
-    def list(self, include_inactive: bool = True):
+    def _visible_to(self, record, user) -> bool:
+        """Does `user` have visibility into this record?
+        - No user passed → no filtering (backward compatible).
+        - The record's own requester always sees it, regardless of scope.
+        - No org context on the record, or the user has no scope rows
+          assigned (not yet opted into org-scoping) → visible (same
+          rollout-safety rule as F1's approval eligibility).
+        - Otherwise, visible only if the user's UserOrgScope covers the
+          record's inferred branch."""
+        if user is None:
+            return True
+        if getattr(record, "requested_by", None) == getattr(user, "id", None):
+            return True
+        from app.modules.user_management.org_scope_service import (
+            UserOrgScopeService)
+        branch_id = self._infer_branch_id(record)
+        return UserOrgScopeService().covers(user.id, branch_id=branch_id)
+
+    def list(self, include_inactive: bool = True, user=None):
         query = db.session.query(self.model)
         if not include_inactive:
             query = query.filter(self.model.is_active.is_(True))
-        return query.order_by(self.model.id.desc()).all()
+        records = query.order_by(self.model.id.desc()).all()
+        if user is None:
+            return records
+        return [r for r in records if self._visible_to(r, user)]
+
+    def get_visible(self, record_id: int, user):
+        """Like get(), but returns None if `user` doesn't have visibility
+        into this record per organizational scope — used by detail/edit
+        routes so direct-URL access respects the same scoping as list()."""
+        record = db.session.get(self.model, record_id)
+        if record is None or not self._visible_to(record, user):
+            return None
+        return record
 
     def get(self, record_id: int):
         return db.session.get(self.model, record_id)
