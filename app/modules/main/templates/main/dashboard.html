@@ -19,4 +19,41 @@
   {% endfor %}
 </div>
 <p class="text-muted mt-4 small">KPI data will be populated in Phase 4 (Dashboard).</p>
+
+<div class="row g-3 mt-1">
+  <div class="col-12 col-xl-8">
+    <div class="card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <span class="fw-semibold">For My Action</span>
+        <span class="badge text-bg-danger rounded-pill">{{ for_my_action|length }}</span>
+      </div>
+      <div class="list-group list-group-flush">
+        {% if for_my_action %}
+          {% for item in for_my_action %}
+          {% if item.url %}
+          <a href="{{ item.url }}" class="list-group-item list-group-item-action">
+          {% else %}
+          <div class="list-group-item">
+          {% endif %}
+            <div class="d-flex justify-content-between">
+              <div>
+                <span class="fw-semibold">{{ item.document_number }}</span>
+                <span class="text-muted"> : {{ item.document_type }}</span>
+              </div>
+              <span class="text-muted small">By {{ item.requester }}</span>
+            </div>
+            <div class="small text-muted">
+              Level {{ item.level_number }} — {{ item.aging }}
+            </div>
+          {% if item.url %}</a>{% else %}</div>{% endif %}
+          {% endfor %}
+        {% else %}
+        <div class="list-group-item text-muted text-center py-4">
+          Nothing waiting for your action right now.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
