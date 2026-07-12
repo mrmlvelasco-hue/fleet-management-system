@@ -74,6 +74,13 @@ def register_audit_listeners():
         for obj in session.new:
             if obj.__tablename__ in _EXCLUDED_TABLES or isinstance(obj, AuditLog):
                 continue
+            # Auto-populate created_by/updated_by on every model that has
+            # these columns (BaseModel) — zero per-module code, same
+            # cross-cutting pattern as the audit log itself.
+            if hasattr(obj, "created_by") and obj.created_by is None:
+                obj.created_by = uid
+            if hasattr(obj, "updated_by") and obj.updated_by is None:
+                obj.updated_by = uid
             entries.append(AuditLog(table_name=obj.__tablename__, action="CREATE",
                                     new_values=_row_values(obj),
                                     user_id=uid, ip_address=ip))
@@ -83,6 +90,8 @@ def register_audit_listeners():
                 continue
             if not session.is_modified(obj, include_collections=False):
                 continue
+            if hasattr(obj, "updated_by"):
+                obj.updated_by = uid
             old, new = _changed_values(obj)
             entries.append(AuditLog(table_name=obj.__tablename__, action="UPDATE",
                                     record_id=obj.id, old_values=old,
