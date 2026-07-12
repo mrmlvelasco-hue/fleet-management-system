@@ -9,6 +9,7 @@ from app.extensions import db
 from app.core.numbering.numbering_service import AutoNumberingService
 from app.modules.transactions.base_service import BaseTransactionService
 from app.modules.transactions.vehicle_movement.models import VehicleMovement
+from app.modules.master_data.vehicle.models import Vehicle
 
 
 class InvalidMovementTypeError(Exception):
@@ -21,7 +22,9 @@ class VehicleMovementService(BaseTransactionService):
     reference_table = "vehicle_movements"
 
     def create(self, *, vehicle_id, movement_type, from_location,
-               to_location, movement_date, user, remarks=None):
+               to_location, movement_date, user, remarks=None,
+               driver_id=None, employee_responsible=None, purpose=None,
+               movement_start_datetime=None):
         from app.modules.system_admin.services.lookup_service import (
             LookupService, registry as lookup_registry)
         valid_types = {i.code for i in
@@ -36,6 +39,12 @@ class VehicleMovementService(BaseTransactionService):
                 f"'{movement_type}' is not a valid movement type. "
                 f"Must be one of: {', '.join(sorted(valid_types))}.")
 
+        # Default the driver from the vehicle's own assignment unless the
+        # caller explicitly specifies one for this particular movement.
+        if driver_id is None:
+            vehicle = db.session.get(Vehicle, vehicle_id)
+            driver_id = vehicle.assigned_driver_id if vehicle else None
+
         numbering = AutoNumberingService()
         try:
             doc_number = numbering.generate(self.document_type_code)
@@ -44,8 +53,11 @@ class VehicleMovementService(BaseTransactionService):
 
         mv = VehicleMovement(
             document_number=doc_number, vehicle_id=vehicle_id,
-            movement_type=movement_type, from_location=from_location,
-            to_location=to_location, movement_date=movement_date,
+            driver_id=driver_id, employee_responsible=employee_responsible,
+            purpose=purpose, movement_type=movement_type,
+            from_location=from_location, to_location=to_location,
+            movement_date=movement_date,
+            movement_start_datetime=movement_start_datetime,
             remarks=remarks, status="DRAFT",
             requested_by=user.id if user else None)
         db.session.add(mv)
@@ -58,8 +70,10 @@ class VehicleMovementService(BaseTransactionService):
         db.session.commit()
         return mv
 
-    def complete(self, movement_id: int):
+    def complete(self, movement_id: int, movement_end_datetime=None):
         mv = db.session.get(VehicleMovement, movement_id)
         mv.status = "COMPLETED"
+        if movement_end_datetime is not None:
+            mv.movement_end_datetime = movement_end_datetime
         db.session.commit()
         return mv
