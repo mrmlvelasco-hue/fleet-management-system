@@ -38,7 +38,10 @@ class Role(db.Model, BaseModel):
 class User(db.Model, BaseModel, UserMixin):
     __tablename__ = "users"
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
-    email = db.Column(db.String(255), unique=True, nullable=False)
+    # Not unique: login is by username, not email — duplicate emails are
+    # harmless here (e.g. shared test accounts, multiple placeholder
+    # addresses) and previously caused an unhandled IntegrityError crash.
+    email = db.Column(db.String(255), nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     first_name = db.Column(db.String(80))
     last_name = db.Column(db.String(80))
