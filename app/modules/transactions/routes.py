@@ -10,6 +10,8 @@ from app.core.security.decorators import require_permission
 from app.core.security.registry import registry
 from app.core.approval.engine import (
     NotEligibleApproverError, InvalidStateError)
+from app.core.validation.date_utils import (
+    parse_form_date, parse_form_datetime, DateFormatError, RequiredFieldError)
 from app.extensions import db
 
 from app.modules.master_data.vehicle.service import VehicleService
@@ -78,12 +80,14 @@ def tripticket_new():
                 driver_id=int(f["driver_id"]) if f.get("driver_id") else None,
                 driver_name_manual=f.get("driver_name_manual") or None,
                 destination=f["destination"], purpose=f["purpose"],
-                departure_datetime=datetime.fromisoformat(f["departure_datetime"]),
+                departure_datetime=parse_form_datetime(
+                    f.get("departure_datetime"), "Departure Date/Time",
+                    required=True),
                 odometer_out=int(f["odometer_out"]) if f.get("odometer_out") else None,
                 passengers=f.get("passengers"), user=current_user)
             flash("Trip Ticket created.", "success")
             return redirect(url_for("transactions.tripticket_list"))
-        except DriverRequiredError as e:
+        except (DriverRequiredError, DateFormatError, RequiredFieldError) as e:
             flash(str(e), "danger")
     return render_template("transactions/tripticket_form.html",
                            title="New Trip Ticket")
@@ -189,10 +193,14 @@ def tripticket_release(tid):
 @require_permission("tripticket.update")
 def tripticket_complete(tid):
     f = request.form
-    TripTicketService().complete(
-        tid, odometer_in=int(f["odometer_in"]),
-        return_datetime=datetime.fromisoformat(f["return_datetime"]))
-    flash("Trip Ticket marked complete.", "success")
+    try:
+        TripTicketService().complete(
+            tid, odometer_in=int(f["odometer_in"]),
+            return_datetime=parse_form_datetime(
+                f.get("return_datetime"), "Return Date/Time", required=True))
+        flash("Trip Ticket marked complete.", "success")
+    except (DateFormatError, RequiredFieldError) as e:
+        flash(str(e), "danger")
     return redirect(url_for("transactions.tripticket_detail", tid=tid))
 
 
@@ -212,13 +220,18 @@ def atd_list():
 def atd_new():
     if request.method == "POST":
         f = request.form
-        ATDService().create(
-            vehicle_id=int(f["vehicle_id"]), driver_id=int(f["driver_id"]),
-            purpose=f["purpose"],
-            valid_from=date.fromisoformat(f["valid_from"]),
-            valid_to=date.fromisoformat(f["valid_to"]), user=current_user)
-        flash("Authority To Drive created.", "success")
-        return redirect(url_for("transactions.atd_list"))
+        try:
+            ATDService().create(
+                vehicle_id=int(f["vehicle_id"]), driver_id=int(f["driver_id"]),
+                purpose=f["purpose"],
+                valid_from=parse_form_date(f.get("valid_from"), "Valid From",
+                                           required=True),
+                valid_to=parse_form_date(f.get("valid_to"), "Valid To",
+                                         required=True), user=current_user)
+            flash("Authority To Drive created.", "success")
+            return redirect(url_for("transactions.atd_list"))
+        except (DateFormatError, RequiredFieldError) as e:
+            flash(str(e), "danger")
     return render_template("transactions/atd_form.html",
                            title="New Authority To Drive")
 
@@ -342,11 +355,13 @@ def vehiclemovement_new():
                 movement_type=f["movement_type"],
                 from_location=f["from_location"],
                 to_location=f["to_location"],
-                movement_date=date.fromisoformat(f["movement_date"]),
+                movement_date=parse_form_date(f.get("movement_date"),
+                                              "Movement Date", required=True),
                 remarks=f.get("remarks"), user=current_user)
             flash("Vehicle Movement created.", "success")
             return redirect(url_for("transactions.vehiclemovement_list"))
-        except InvalidMovementTypeError as e:
+        except (InvalidMovementTypeError, DateFormatError,
+                RequiredFieldError) as e:
             flash(str(e), "danger")
     return render_template("transactions/vehiclemovement_form.html",
                            movement_types=movement_types,
@@ -438,19 +453,23 @@ def maintenanceorder_new():
 
     if request.method == "POST":
         f = request.form
-        MaintenanceOrderService().create(
-            vehicle_id=int(f["vehicle_id"]),
-            maintenance_type_id=int(f["maintenance_type_id"]),
-            scope_template_id=int(f["scope_template_id"]) if f.get("scope_template_id") else None,
-            scheduled_date=date.fromisoformat(f["scheduled_date"]),
-            odometer_at_service=int(f["odometer_at_service"]) if f.get("odometer_at_service") else None,
-            description=f.get("description"),
-            assigned_mechanic=f.get("assigned_mechanic"),
-            vendor_id=int(f["vendor_id"]) if f.get("vendor_id") else None,
-            estimated_cost=f.get("estimated_cost") or None,
-            user=current_user)
-        flash("Maintenance Order created.", "success")
-        return redirect(url_for("transactions.maintenanceorder_list"))
+        try:
+            MaintenanceOrderService().create(
+                vehicle_id=int(f["vehicle_id"]),
+                maintenance_type_id=int(f["maintenance_type_id"]),
+                scope_template_id=int(f["scope_template_id"]) if f.get("scope_template_id") else None,
+                scheduled_date=parse_form_date(f.get("scheduled_date"),
+                                               "Scheduled Date", required=True),
+                odometer_at_service=int(f["odometer_at_service"]) if f.get("odometer_at_service") else None,
+                description=f.get("description"),
+                assigned_mechanic=f.get("assigned_mechanic"),
+                vendor_id=int(f["vendor_id"]) if f.get("vendor_id") else None,
+                estimated_cost=f.get("estimated_cost") or None,
+                user=current_user)
+            flash("Maintenance Order created.", "success")
+            return redirect(url_for("transactions.maintenanceorder_list"))
+        except (DateFormatError, RequiredFieldError) as e:
+            flash(str(e), "danger")
     return render_template("transactions/maintenanceorder_form.html",
                            maintenance_types=maintenance_types,
                            scope_templates=scope_templates,
@@ -571,9 +590,10 @@ def maintenanceorder_complete(oid):
     try:
         MaintenanceOrderService().complete(
             oid, actual_cost=f.get("actual_cost") or None,
-            completed_date=date.fromisoformat(f["completed_date"]))
+            completed_date=parse_form_date(f.get("completed_date"),
+                                           "Completed Date", required=True))
         flash("Maintenance Order marked complete.", "success")
-    except IncompleteChecklistError as e:
+    except (IncompleteChecklistError, DateFormatError, RequiredFieldError) as e:
         flash(str(e), "danger")
     return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
 
@@ -601,12 +621,14 @@ def tiretxn_new():
                 tire_id=int(f["tire_id"]),
                 vehicle_id=int(f["vehicle_id"]) if f.get("vehicle_id") else None,
                 action=f["action"],
-                transaction_date=date.fromisoformat(f["transaction_date"]),
+                transaction_date=parse_form_date(f.get("transaction_date"),
+                                                 "Transaction Date", required=True),
                 odometer_at_service=int(f["odometer_at_service"]) if f.get("odometer_at_service") else None,
                 remarks=f.get("remarks"), user=current_user)
             flash("Tire Transaction recorded.", "success")
             return redirect(url_for("transactions.tiretxn_list"))
-        except InvalidTireActionError as e:
+        except (InvalidTireActionError, DateFormatError,
+                RequiredFieldError) as e:
             flash(str(e), "danger")
     return render_template("transactions/tiretxn_form.html", tires=tires,
                            title="New Tire Transaction")
@@ -655,11 +677,13 @@ def batterytxn_new():
                 battery_id=int(f["battery_id"]),
                 vehicle_id=int(f["vehicle_id"]) if f.get("vehicle_id") else None,
                 action=f["action"],
-                transaction_date=date.fromisoformat(f["transaction_date"]),
+                transaction_date=parse_form_date(f.get("transaction_date"),
+                                                 "Transaction Date", required=True),
                 remarks=f.get("remarks"), user=current_user)
             flash("Battery Transaction recorded.", "success")
             return redirect(url_for("transactions.batterytxn_list"))
-        except InvalidBatteryActionError as e:
+        except (InvalidBatteryActionError, DateFormatError,
+                RequiredFieldError) as e:
             flash(str(e), "danger")
     return render_template("transactions/batterytxn_form.html",
                            batteries=batteries,
@@ -704,19 +728,23 @@ def purchaserequest_new():
     departments = DepartmentService().list()
     if request.method == "POST":
         f = request.form
-        descs = f.getlist("item_description")
-        qtys = f.getlist("quantity")
-        costs = f.getlist("unit_cost")
-        lines = [{"item_description": d, "quantity": float(q), "unit_cost": float(c)}
-                 for d, q, c in zip(descs, qtys, costs) if d and q and c]
-        PurchaseRequestService().create(
-            description=f["description"], user=current_user, lines=lines,
-            department_id=int(f["department_id"]) if f.get("department_id") else None,
-            vendor_id=int(f["vendor_id"]) if f.get("vendor_id") else None,
-            justification=f.get("justification"),
-            needed_by_date=date.fromisoformat(f["needed_by_date"]) if f.get("needed_by_date") else None)
-        flash("Purchase Request created.", "success")
-        return redirect(url_for("transactions.purchaserequest_list"))
+        try:
+            descs = f.getlist("item_description")
+            qtys = f.getlist("quantity")
+            costs = f.getlist("unit_cost")
+            lines = [{"item_description": d, "quantity": float(q), "unit_cost": float(c)}
+                     for d, q, c in zip(descs, qtys, costs) if d and q and c]
+            PurchaseRequestService().create(
+                description=f["description"], user=current_user, lines=lines,
+                department_id=int(f["department_id"]) if f.get("department_id") else None,
+                vendor_id=int(f["vendor_id"]) if f.get("vendor_id") else None,
+                justification=f.get("justification"),
+                needed_by_date=parse_form_date(f.get("needed_by_date"),
+                                               "Needed By Date"))
+            flash("Purchase Request created.", "success")
+            return redirect(url_for("transactions.purchaserequest_list"))
+        except (DateFormatError, RequiredFieldError) as e:
+            flash(str(e), "danger")
     return render_template("transactions/purchaserequest_form.html",
                            departments=departments,
                            title="New Purchase Request")
@@ -844,12 +872,15 @@ def vehicleregistration_new():
             VehicleRegistrationService().create(
                 vehicle_id=int(f["vehicle_id"]),
                 registration_type=f["registration_type"],
-                registration_date=date.fromisoformat(f["registration_date"]),
+                registration_date=parse_form_date(f.get("registration_date"),
+                                                  "Registration Date",
+                                                  required=True),
                 or_cr_cost=f.get("or_cr_cost") or None, user=current_user)
             flash("Vehicle Registration created.", "success")
             return redirect(url_for("transactions.vehicleregistration_list"))
         except (DuplicateActiveRegistrationError,
-                NoExistingRegistrationError) as e:
+                NoExistingRegistrationError, DateFormatError,
+                RequiredFieldError) as e:
             flash(str(e), "danger")
     return render_template("transactions/vehicleregistration_form.html",
                            title="New Vehicle Registration")
