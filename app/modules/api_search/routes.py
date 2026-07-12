@@ -1,11 +1,16 @@
 """Generic /api/search/<module> blueprint — powers AJAX-backed Select2
 smart selectors across the system. Each module registers a SearchableService
-subclass; the route is permission-gated on that module's existing `.view`
-permission (no new permissions needed)."""
+subclass. These endpoints are intentionally gated by @login_required only,
+not a per-module `.view` permission: they're shared reference-data lookups
+used to populate dropdowns inside many *other* forms and permissions (e.g.
+Maintenance Order needs the Vehicle and Vendor lookups without requiring
+`vehicle.view`/`vendor.view`). Gating them behind the "owning" module's
+management permission broke every other module that references that data —
+Select2 showed a generic "The results could not be loaded" on any 403.
+"""
 from flask import Blueprint, request, jsonify
 from flask_login import login_required
 
-from app.core.security.decorators import require_permission
 from app.core.search.searchable_service import SearchableService
 from app.modules.master_data.vehicle.models import Vehicle
 from app.modules.master_data.driver.models import Driver
@@ -79,14 +84,12 @@ def _search_params():
 
 @bp.route("/vehicles")
 @login_required
-@require_permission("vehicle.view")
 def search_vehicles():
     return jsonify(VehicleSearchService().to_select2_response(**_search_params()))
 
 
 @bp.route("/vehicles/table")
 @login_required
-@require_permission("vehicle.view")
 def search_vehicles_table():
     """Table-mode endpoint for the Search Modal: sortable, filterable,
     paginated — used when a dataset is large enough that a dropdown alone
@@ -105,35 +108,30 @@ def search_vehicles_table():
 
 @bp.route("/drivers")
 @login_required
-@require_permission("driver.view")
 def search_drivers():
     return jsonify(DriverSearchService().to_select2_response(**_search_params()))
 
 
 @bp.route("/users")
 @login_required
-@require_permission("user.view")
 def search_users():
     return jsonify(UserSearchService().to_select2_response(**_search_params()))
 
 
 @bp.route("/vendors")
 @login_required
-@require_permission("vendor.view")
 def search_vendors():
     return jsonify(VendorSearchService().to_select2_response(**_search_params()))
 
 
 @bp.route("/branches")
 @login_required
-@require_permission("branch.view")
 def search_branches():
     return jsonify(BranchSearchService().to_select2_response(**_search_params()))
 
 
 @bp.route("/vehicle-models")
 @login_required
-@require_permission("vehicle.view")
 def search_vehicle_models():
     """Cascading Model list for a given Brand — powers the Vehicle master
     form's Brand→Model selector (Model options depend on the selected

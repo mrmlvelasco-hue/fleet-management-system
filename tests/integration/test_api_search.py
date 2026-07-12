@@ -25,10 +25,13 @@ def _login(client, db, *, codes=()):
     return u
 
 
-def test_vehicle_search_requires_permission(client, db):
+def test_vehicle_search_available_to_any_logged_in_user(client, db):
+    """Regression: this endpoint used to require vehicle.view, breaking
+    every OTHER form (e.g. Maintenance Order) that needs the Vehicle
+    lookup without the caller holding vehicle-management permissions."""
     _login(client, db)
     resp = client.get("/api/search/vehicles?q=ABC")
-    assert resp.status_code == 403
+    assert resp.status_code == 200
 
 
 def test_vehicle_search_returns_select2_shape(client, db):

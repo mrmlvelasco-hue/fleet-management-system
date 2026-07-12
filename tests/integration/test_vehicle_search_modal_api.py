@@ -21,10 +21,10 @@ def _login(client, db, *, codes=()):
     return u
 
 
-def test_vehicle_table_endpoint_requires_permission(client, db):
+def test_vehicle_table_endpoint_available_to_any_logged_in_user(client, db):
     _login(client, db)
     resp = client.get("/api/search/vehicles/table")
-    assert resp.status_code == 403
+    assert resp.status_code == 200
 
 
 def test_vehicle_table_response_shape(client, db):
