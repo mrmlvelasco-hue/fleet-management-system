@@ -753,7 +753,7 @@ def _vehicle_fields(include_conduction=True):
 @login_required
 @require_permission("driver.view")
 def driver_list():
-    items = DriverService().list(include_inactive=True)
+    items = DriverService().list(include_inactive=True, user=current_user)
     return render_template("master_data/driver_list.html", items=items,
                            today=date.today())
 
@@ -762,7 +762,9 @@ def driver_list():
 @login_required
 @require_permission("driver.view")
 def driver_detail(did):
-    item = db.session.get(Driver, did)
+    item = DriverService().get_visible(did, current_user)
+    if item is None:
+        abort(403)
     attachments = _attachment_rows("drivers", did)
     return render_template("master_data/driver_detail.html",
                            item=item, driver=item, attachments=attachments,

@@ -41,13 +41,37 @@ class DriverService:
     def get(self, record_id, include_inactive=True):
         return db.session.get(Driver, record_id)
 
-    def list(self, include_inactive=False, branch_id=None):
+    def get_visible(self, record_id, user):
+        """Like get(), but returns None if `user` doesn't have visibility
+        into this driver per organizational scope."""
+        obj = db.session.get(Driver, record_id)
+        if obj is None:
+            return None
+        if user is None:
+            return obj
+        if obj.created_by == getattr(user, "id", None):
+            return obj
+        from app.modules.user_management.org_scope_service import (
+            UserOrgScopeService)
+        if UserOrgScopeService().covers(user.id, branch_id=obj.branch_id):
+            return obj
+        return None
+
+    def list(self, include_inactive=False, branch_id=None, user=None):
         q = Driver.query
         if not include_inactive:
             q = q.filter_by(is_active=True)
         if branch_id:
             q = q.filter_by(branch_id=branch_id)
-        return q.order_by(Driver.last_name, Driver.first_name).all()
+        records = q.order_by(Driver.last_name, Driver.first_name).all()
+        if user is None:
+            return records
+        from app.modules.user_management.org_scope_service import (
+            UserOrgScopeService)
+        scope_svc = UserOrgScopeService()
+        return [d for d in records
+               if d.created_by == getattr(user, "id", None)
+               or scope_svc.covers(user.id, branch_id=d.branch_id)]
 
     def get_expiring_licenses(self, days=30):
         """Drivers whose license expires within `days` days."""
