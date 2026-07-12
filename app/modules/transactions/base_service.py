@@ -19,12 +19,31 @@ class BaseTransactionService:
     def __init__(self):
         self.engine = ApprovalEngine()
 
+    def _infer_branch_id(self, record):
+        """Best-effort organizational context for F1 org-scoped approval:
+        checks common attribute paths so most transaction modules get
+        branch-scoped approval eligibility for free, with no code changes
+        of their own. Returns None if none of these paths apply — the
+        engine then falls back to role-only eligibility (unchanged
+        behavior) for that instance."""
+        for path in ("vehicle.branch_id", "branch_id", "department.branch_id"):
+            obj = record
+            try:
+                for attr in path.split("."):
+                    obj = getattr(obj, attr)
+                if obj is not None:
+                    return obj
+            except AttributeError:
+                continue
+        return None
+
     def submit(self, record_id: int, user):
         """Submit a DRAFT record through the Approval Engine."""
         record = db.session.get(self.model, record_id)
         instance = self.engine.submit(
             self.document_type_code, self.reference_table, record_id,
-            amount=getattr(record, "amount", None), user=user)
+            amount=getattr(record, "amount", None), user=user,
+            branch_id=self._infer_branch_id(record))
         record.approval_instance_id = instance.id
         db.session.commit()
         return record

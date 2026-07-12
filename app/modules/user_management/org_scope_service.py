@@ -49,13 +49,24 @@ class UserOrgScopeService:
     def covers(self, user_id: int, branch_id: int = None,
               business_unit_id: int = None) -> bool:
         """Does this user hold a scope that covers the given branch/BU?
+
         No branch/BU passed at all → nothing to check → True (backward
-        compatibility for approval instances with no recorded org context).
+        compatibility for approval instances with no recorded org
+        context).
+
+        User has been assigned NO scope rows at all → treated as not yet
+        opted into org-scoping → True (backward compatibility: rolling out
+        F1 must not silently lock out every existing approver who hasn't
+        been explicitly assigned a scope yet — only users an admin has
+        actually configured a UserOrgScope for become restricted to it).
         """
         if branch_id is None and business_unit_id is None:
             return True
 
         scopes = self.list_for_user(user_id)
+        if not scopes:
+            return True
+
         for scope in scopes:
             if scope.scope_type in ("GLOBAL", "COMPANY"):
                 return True

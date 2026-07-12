@@ -30,6 +30,16 @@ user must match; a BUSINESS_UNIT-scoped user must match). If
 `instance.branch_id` is None, scope is not checked (legacy/no-context
 transactions still resolve by role alone).
 
+**Critical rollout-safety rule**: a user with **zero** UserOrgScope rows
+assigned is treated as *not yet opted into org-scoping* and passes any
+coverage check (same as before F1). Only once an admin has assigned that
+user at least one scope row does strict matching kick in. Without this
+rule, deploying F1 would silently lock every existing approver out of
+every branch-scoped transaction the moment auto-inference (below) starts
+supplying a branch_id, since none of them would yet have a UserOrgScope
+row — a severe, silent regression on upgrade. This was caught by the full
+test suite during implementation and fixed before merge.
+
 **Auto-inference**: `BaseTransactionService` (used by most transaction
 modules) automatically infers `branch_id` from the record being submitted
 — checking `record.vehicle.branch_id`, then `record.branch_id`, then

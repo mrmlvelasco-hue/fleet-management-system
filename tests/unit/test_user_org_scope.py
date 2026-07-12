@@ -84,10 +84,23 @@ def test_covers_returns_true_when_no_context_requested(db, env):
     assert svc.covers(user_a.id, branch_id=None, business_unit_id=None) is True
 
 
-def test_covers_false_when_user_has_no_scopes_at_all(db, env):
+def test_covers_true_when_user_has_no_scopes_at_all(db, env):
+    """Design decision: a user with zero UserOrgScope rows hasn't been
+    opted into org-scoping yet — treated as unrestricted (legacy/backward
+    compatible) rather than restricted-to-nothing, so rolling out F1 never
+    silently locks out every existing approver on upgrade."""
     branch_a, branch_b, bu, role, user_a = env
     svc = UserOrgScopeService()
-    assert svc.covers(user_a.id, branch_id=branch_a.id) is False
+    assert svc.covers(user_a.id, branch_id=branch_a.id) is True
+
+
+def test_covers_false_once_user_has_a_non_matching_scope(db, env):
+    """Once an admin HAS assigned at least one scope, it becomes strict —
+    a Branch-A-only user does not also cover Branch B."""
+    branch_a, branch_b, bu, role, user_a = env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="BRANCH", branch_id=branch_a.id)
+    assert svc.covers(user_a.id, branch_id=branch_b.id) is False
 
 
 def test_remove_scope(db, env):
