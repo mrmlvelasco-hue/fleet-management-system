@@ -856,7 +856,7 @@ def _driver_fields():
 @login_required
 @require_permission("tire.view")
 def tire_list():
-    items = TireService().list(include_inactive=True)
+    items = TireService().list(include_inactive=True, user=current_user)
     return render_template("master_data/tire_list.html", items=items)
 
 
@@ -875,7 +875,8 @@ def tire_new():
                 purchase_date=parse_form_date(
                     request.form.get("purchase_date"), "Purchase Date"),
                 purchase_cost=request.form.get("purchase_cost") or None,
-                vendor_id=int(request.form["vendor_id"]) if request.form.get("vendor_id") else None)
+                vendor_id=int(request.form["vendor_id"]) if request.form.get("vendor_id") else None,
+                branch_id=int(request.form["branch_id"]) if request.form.get("branch_id") else None)
             flash("Tire created.", "success")
             return redirect(url_for("master_data.tire_list"))
         except (DuplicateSerialError, DateFormatError,
@@ -901,7 +902,7 @@ def tire_deactivate(tid):
 @login_required
 @require_permission("battery.view")
 def battery_list():
-    items = BatteryService().list(include_inactive=True)
+    items = BatteryService().list(include_inactive=True, user=current_user)
     return render_template("master_data/battery_list.html", items=items)
 
 
@@ -919,7 +920,8 @@ def battery_new():
                 purchase_date=parse_form_date(
                     request.form.get("purchase_date"), "Purchase Date"),
                 purchase_cost=request.form.get("purchase_cost") or None,
-                vendor_id=int(request.form["vendor_id"]) if request.form.get("vendor_id") else None)
+                vendor_id=int(request.form["vendor_id"]) if request.form.get("vendor_id") else None,
+                branch_id=int(request.form["branch_id"]) if request.form.get("branch_id") else None)
             flash("Battery created.", "success")
             return redirect(url_for("master_data.battery_list"))
         except Exception as e:

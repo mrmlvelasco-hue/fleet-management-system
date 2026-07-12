@@ -18,6 +18,11 @@ class Battery(db.Model, BaseModel):
     status = db.Column(db.String(12), default="IN_STOCK", nullable=False)
     vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"),
                            nullable=True)
+    # Which branch's warehouse/stock this battery belongs to — same
+    # rationale as Tire.branch_id.
+    branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
+                          nullable=True)
 
     vendor = db.relationship("Vendor")
     vehicle = db.relationship("Vehicle")
+    branch = db.relationship("Branch")

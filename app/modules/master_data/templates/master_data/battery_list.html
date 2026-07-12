@@ -11,7 +11,7 @@
 </div>
 <div class="card"><div class="card-body">
 <table class="table table-striped fms-datatable">
-  <thead><tr><th>Serial</th><th>Brand</th><th>Capacity (Ah)</th><th>Voltage</th><th>Status</th><th>Active</th><th></th></tr></thead>
+  <thead><tr><th>Serial</th><th>Brand</th><th>Capacity (Ah)</th><th>Voltage</th><th>Branch</th><th>Status</th><th>Active</th><th></th></tr></thead>
   <tbody>
   {% for item in items %}
     <tr>
@@ -19,6 +19,7 @@
       <td>{{ item.brand or '—' }}</td>
       <td>{{ item.capacity_ah or '—' }}</td>
       <td>{{ item.voltage or '—' }}</td>
+      <td>{{ item.branch.name if item.branch else '—' }}</td>
       <td>{{ item.status or '—' }}</td>
       <td>{% if item.is_active %}<span class="badge text-bg-success">Yes</span>
           {% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>

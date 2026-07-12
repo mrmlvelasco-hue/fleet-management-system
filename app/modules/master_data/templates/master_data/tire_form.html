@@ -41,6 +41,14 @@
       <option value="">— Type vendor code or name —</option>
       {% endif %}
     </select></div>
+  <div class="col-md-6"><label class="form-label">Branch (warehouse/stock location)</label>
+    <select name="branch_id" id="tireBranchSelect" class="form-select">
+      {% if item and item.branch %}
+      <option value="{{ item.branch.id }}" selected>{{ item.branch.code }} — {{ item.branch.name }}</option>
+      {% else %}
+      <option value="">— Type branch code or name —</option>
+      {% endif %}
+    </select></div>
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Save</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('master_data.tire_list') }}">Cancel</a>
@@ -59,6 +67,8 @@
     jQuery(function () {
       initAjaxSelect("#tireVendorSelect", "{{ url_for('api_search.search_vendors') }}",
         { placeholder: "Type vendor code or name...", allowClear: true });
+      initAjaxSelect("#tireBranchSelect", "{{ url_for('api_search.search_branches') }}",
+        { placeholder: "Type branch code or name...", allowClear: true });
     });
   }
 </script>

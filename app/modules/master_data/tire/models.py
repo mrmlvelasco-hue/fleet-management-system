@@ -20,6 +20,12 @@ class Tire(db.Model, BaseModel):
     vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"),
                            nullable=True)  # set when mounted
     wheel_position = db.Column(db.String(20), nullable=True)
+    # Which branch's warehouse/stock this tire belongs to — independent of
+    # vehicle_id, since a tire spends most of its life IN_STOCK (unmounted)
+    # and still needs an organizational home for scope-based visibility.
+    branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
+                          nullable=True)
 
     vendor = db.relationship("Vendor")
     vehicle = db.relationship("Vehicle")
+    branch = db.relationship("Branch")
