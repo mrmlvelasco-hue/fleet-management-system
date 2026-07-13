@@ -106,8 +106,31 @@ class VehicleService:
             conduction_number=conduction_number,
             plate_number=plate_number, **kwargs)
         db.session.add(obj)
-        db.session.commit()
+        self._commit_or_raise_friendly(conduction_number, plate_number)
         return obj
+
+    def _commit_or_raise_friendly(self, conduction_number, plate_number):
+        """Commits, translating any unique-constraint violation the
+        pre-check couldn't catch (e.g. a race between two near-
+        simultaneous requests) into the same friendly DuplicateVehicleError
+        — a technical database error must never reach the end user."""
+        from sqlalchemy.exc import IntegrityError
+        try:
+            db.session.commit()
+        except IntegrityError as exc:
+            db.session.rollback()
+            message = str(getattr(exc, "orig", exc)).lower()
+            if plate_number and "plate_number" in message:
+                raise DuplicateVehicleError(
+                    f"Plate number '{plate_number}' already exists.")
+            if conduction_number and "conduction_number" in message:
+                raise DuplicateVehicleError(
+                    f"Conduction number '{conduction_number}' already exists.")
+            raise DuplicateVehicleError(
+                "This vehicle could not be saved because one of its unique "
+                "fields (Plate Number, Conduction Number, Chassis Number, "
+                "or Engine Number) is already used by another vehicle. "
+                "Please check and correct the highlighted field.")
 
     def update(self, record_id, strict=False, **kwargs):
         obj = db.session.get(Vehicle, record_id)
@@ -120,7 +143,8 @@ class VehicleService:
                 obj.model = model
             for k, v in kwargs.items():
                 setattr(obj, k, v)
-            db.session.commit()
+            self._commit_or_raise_friendly(
+                kwargs.get("conduction_number"), kwargs.get("plate_number"))
         return obj
 
     def assign_plate(self, vehicle_id, plate_number):
