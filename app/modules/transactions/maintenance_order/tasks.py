@@ -48,6 +48,24 @@ def auto_generate_due_maintenance_orders() -> int:
         schedule = entry["schedule"]
         maintenance_type_id = schedule.maintenance_type_id
 
+        # Notifications fire regardless of generation policy — visibility
+        # (dashboard + notification) is independent of whether the system
+        # auto-creates a document. This always ran before creating the
+        # order; keep it unconditional now that order-creation is
+        # conditional.
+        event_code = "pm_overdue" if entry["status"] == "OVERDUE" else "pm_due_soon"
+
+        # PMS-3: MANUAL and AUTO_SCHEDULE (the new recommended default)
+        # never auto-create a Maintenance Order — only AUTO_MO does, which
+        # preserves the system's original (not recommended) behavior for
+        # anyone who explicitly wants it.
+        if schedule.next_pms_generation != "AUTO_MO":
+            context = _PMNotificationContext(
+                document_type_code="MO", reference_table="vehicles",
+                reference_id=vehicle.id)
+            notif_engine.dispatch(event_code, context)
+            continue
+
         existing_open = (MaintenanceOrder.query
                          .filter_by(vehicle_id=vehicle.id,
                                    maintenance_type_id=maintenance_type_id)
@@ -67,7 +85,6 @@ def auto_generate_due_maintenance_orders() -> int:
             odometer_at_service=vehicle.current_odometer, user=None)
         created += 1
 
-        event_code = "pm_overdue" if entry["status"] == "OVERDUE" else "pm_due_soon"
         context = _PMNotificationContext(
             document_type_code="MO", reference_table="maintenance_orders",
             reference_id=order.id)

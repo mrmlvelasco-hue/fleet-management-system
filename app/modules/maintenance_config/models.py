@@ -55,6 +55,26 @@ class PMSchedule(db.Model, BaseModel):
     notify_before_days = db.Column(db.Integer, nullable=True)
     escalate_if_overdue = db.Column(db.Boolean, default=True, nullable=False)
 
+    # PMS-3: what the automatic scheduler does once this template's
+    # vehicle becomes due. MANUAL = do nothing automatic (notify only,
+    # fleet staff create the order by hand). AUTO_SCHEDULE (default,
+    # recommended) = still just notifies — "the next occurrence" is
+    # already implicit in this recurring template, nothing extra to
+    # generate; a Maintenance Order is created only when a user acts.
+    # AUTO_MO = immediately auto-create a DRAFT Maintenance Order (the
+    # system's original, not-recommended default before PMS-3).
+    next_pms_generation = db.Column(db.String(15), nullable=False,
+                                    default="AUTO_SCHEDULE")
+    # ACTUAL_COMPLETION (default, recommended) = next due is calculated
+    # from when the PM was actually completed. ORIGINAL_SCHEDULE = next
+    # due stays locked to multiples of the original interval, ignoring
+    # how late/early the actual completion was. ADMIN_CHOICE = falls back
+    # to ACTUAL_COMPLETION for unattended/background calculation (there's
+    # no human present to choose at that point); intended for future use
+    # once completion-time UI can prompt for it.
+    next_due_calculation_method = db.Column(db.String(20), nullable=False,
+                                            default="ACTUAL_COMPLETION")
+
     vehicle_type = db.relationship("VehicleType")
     vehicle_brand = db.relationship("VehicleBrand")
     vehicle_model_ref = db.relationship("VehicleModel")

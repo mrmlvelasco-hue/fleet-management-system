@@ -30,6 +30,8 @@ class PMScheduleService:
                transmission=None, model_year_from=None, model_year_to=None,
                profile_code=None, profile_description=None,
                effective_date=None, sequence_position=None,
+               next_pms_generation="AUTO_SCHEDULE",
+               next_due_calculation_method="ACTUAL_COMPLETION",
                interval_km=None, interval_days=None, priority="MEDIUM",
                notify_before_km=None, notify_before_days=None,
                escalate_if_overdue=True):
@@ -46,6 +48,8 @@ class PMScheduleService:
             profile_description=profile_description,
             effective_date=effective_date,
             sequence_position=sequence_position,
+            next_pms_generation=next_pms_generation,
+            next_due_calculation_method=next_due_calculation_method,
             maintenance_type_id=maintenance_type_id,
             trigger_mode=trigger_mode, interval_km=interval_km,
             interval_days=interval_days, priority=priority,

@@ -145,7 +145,14 @@ class PMDueCalculationService:
         status = "GOOD"
 
         if schedule.trigger_mode in ("KM", "HYBRID") and schedule.interval_km:
-            next_due_km = last_km + schedule.interval_km
+            if schedule.next_due_calculation_method == "ORIGINAL_SCHEDULE":
+                # Rounds up to the next whole multiple of the interval,
+                # ignoring how far past/before the actual completion point
+                # was — e.g. completed at 5,280km on a 5,000km interval
+                # still schedules the next one at 10,000km, not 10,280km.
+                next_due_km = ((last_km // schedule.interval_km) + 1) * schedule.interval_km
+            else:  # ACTUAL_COMPLETION (default) / ADMIN_CHOICE (falls back)
+                next_due_km = last_km + schedule.interval_km
             current_km = vehicle.current_odometer or 0
             if current_km >= next_due_km:
                 status = _worse(status, "OVERDUE")
