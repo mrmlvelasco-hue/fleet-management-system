@@ -1,12 +1,15 @@
-"""Landing dashboard. KPI cards are placeholders until Phase 4; the "For
-My Action" widget (F2/F3) is live — the generic Approval Task inbox."""
+"""Landing dashboard — Phase 4. KPI cards show real, org-scope-aware
+counts; the "For My Action" widget (F2/F3) is the generic Approval Task
+inbox; the "Vehicles Due for Maintenance" widget surfaces PM due/overdue
+vehicles, also org-scope aware."""
 from datetime import datetime, timezone
 
-from flask import Blueprint, render_template
+from flask import Blueprint, render_template, url_for
 from flask_login import login_required, current_user
 
 from app.core.approval.task_service import ApprovalTaskService
 from app.core.approval.task_url_resolver import resolve_task_url
+from app.core.dashboard_service import DashboardService
 
 bp = Blueprint("main", __name__, template_folder="templates")
 
@@ -24,17 +27,54 @@ def _aging_label(created_at) -> str:
     return "Just now"
 
 
+_DEFAULT_WIDGET_CODES = {"FLEET", "MAINTENANCE", "APPROVALS", "REGISTRATIONS",
+                        "TIRES", "BATTERIES"}
+
+
+def _visible_widget_codes(user) -> set:
+    """A widget is shown unless the user has an explicit is_visible=False
+    config row for it — falls back to DashboardWidget.default_visible when
+    no per-user config exists (same "unconfigured = default" convention
+    used throughout this project). If `flask seed all` hasn't run yet
+    (DashboardWidget table empty), falls back to the code-registered
+    defaults so the dashboard never renders blank on a fresh install."""
+    from app.modules.system_admin.models import DashboardWidget, UserDashboardConfig
+    widgets = DashboardWidget.query.order_by(DashboardWidget.sort_order).all()
+    if not widgets:
+        return set(_DEFAULT_WIDGET_CODES)
+    configs = {c.widget_code: c.is_visible
+              for c in UserDashboardConfig.query.filter_by(user_id=user.id).all()}
+    return {w.code for w in widgets
+           if configs.get(w.code, w.default_visible)}
+
+
 @bp.route("/")
 @login_required
 def dashboard():
-    placeholder_cards = [
-        {"title": "Fleet", "icon": "bi-truck", "value": "—"},
-        {"title": "Maintenance", "icon": "bi-wrench", "value": "—"},
-        {"title": "Approvals", "icon": "bi-check2-square", "value": "—"},
-        {"title": "Registrations", "icon": "bi-card-checklist", "value": "—"},
-        {"title": "Tires", "icon": "bi-circle", "value": "—"},
-        {"title": "Batteries", "icon": "bi-battery-half", "value": "—"},
+    dash = DashboardService()
+    visible_codes = _visible_widget_codes(current_user)
+
+    all_cards = [
+        {"code": "FLEET", "title": "Fleet", "icon": "bi-truck",
+         "value": dash.fleet_count(user=current_user),
+         "url": url_for("master_data.vehicle_list")},
+        {"code": "MAINTENANCE", "title": "Maintenance", "icon": "bi-wrench",
+         "value": dash.maintenance_due_count(user=current_user),
+         "url": url_for("transactions.maintenanceorder_list")},
+        {"code": "APPROVALS", "title": "Approvals", "icon": "bi-check2-square",
+         "value": dash.approvals_pending_count(current_user),
+         "url": "#for-my-action"},
+        {"code": "REGISTRATIONS", "title": "Registrations", "icon": "bi-card-checklist",
+         "value": dash.registrations_expiring_count(user=current_user),
+         "url": url_for("transactions.vehicleregistration_list")},
+        {"code": "TIRES", "title": "Tires", "icon": "bi-circle",
+         "value": dash.tire_stock_count(user=current_user),
+         "url": url_for("master_data.tire_list")},
+        {"code": "BATTERIES", "title": "Batteries", "icon": "bi-battery-half",
+         "value": dash.battery_stock_count(user=current_user),
+         "url": url_for("master_data.battery_list")},
     ]
+    cards = [c for c in all_cards if c["code"] in visible_codes]
 
     my_tasks = ApprovalTaskService().list_for_user(current_user)
     for_my_action = [{
@@ -47,5 +87,25 @@ def dashboard():
         "url": resolve_task_url(t),
     } for t in my_tasks]
 
-    return render_template("main/dashboard.html", cards=placeholder_cards,
-                           for_my_action=for_my_action)
+    due_vehicles = []
+    if "MAINTENANCE" in visible_codes:
+        from app.core.maintenance.due_calculation_service import (
+            PMDueCalculationService)
+        from app.modules.user_management.org_scope_service import (
+            UserOrgScopeService)
+        scope_svc = UserOrgScopeService()
+        for d in PMDueCalculationService().get_all_due_vehicles():
+            vehicle = d["vehicle"]
+            if not scope_svc.covers(current_user.id, branch_id=vehicle.branch_id):
+                continue
+            due_vehicles.append({
+                "vehicle": vehicle,
+                "status": d["status"],
+                "next_due_km": d["next_due_km"],
+                "next_due_date": d["next_due_date"],
+                "url": url_for("master_data.vehicle_detail", vid=vehicle.id),
+            })
+
+    return render_template("main/dashboard.html", cards=cards,
+                           for_my_action=for_my_action,
+                           due_vehicles=due_vehicles)
