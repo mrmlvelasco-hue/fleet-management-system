@@ -10,12 +10,22 @@
 <form method="post" class="row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-4"><label class="form-label">Conduction Number</label>
-    <input type="text" name="conduction_number" class="form-control text-uppercase"
-           value="{{ item.conduction_number if item else '' }}"></div>
+    <input type="text" name="conduction_number"
+           class="form-control text-uppercase {{ 'is-invalid' if error_field=='conduction_number' }}"
+           value="{{ item.conduction_number if item else '' }}">
+    {% if error_field=='conduction_number' %}
+    <div class="invalid-feedback">This Conduction Number is already used by another vehicle.</div>
+    {% endif %}
+  </div>
   <div class="col-md-4"><label class="form-label">Plate Number</label>
-    <input type="text" name="plate_number" class="form-control text-uppercase"
+    <input type="text" name="plate_number"
+           class="form-control text-uppercase {{ 'is-invalid' if error_field=='plate_number' }}"
            value="{{ item.plate_number if item else '' }}">
-    <div class="form-text">Leave blank until LTO plate is assigned.</div></div>
+    <div class="form-text">Leave blank until LTO plate is assigned.</div>
+    {% if error_field=='plate_number' %}
+    <div class="invalid-feedback">This Plate Number is already used by another vehicle.</div>
+    {% endif %}
+  </div>
   <div class="col-md-4"><label class="form-label">Chassis Number</label>
     <input type="text" name="chassis_number" class="form-control"
            value="{{ item.chassis_number if item else '' }}"></div>

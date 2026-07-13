@@ -705,6 +705,8 @@ def vehicle_deactivate(vid):
 
 _ERROR_FIELD_HINTS = [
     ("acquisition date", "acquisition_date"),
+    ("plate number", "plate_number"),
+    ("conduction number", "conduction_number"),
     ("brand", "brand"),
     ("model", "model"),
     ("license expiry", "license_expiry"),
