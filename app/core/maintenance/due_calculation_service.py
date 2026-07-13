@@ -46,12 +46,31 @@ class PMDueCalculationService:
             self.default_due_soon_km = DEFAULT_DUE_SOON_KM
             self.default_due_soon_days = DEFAULT_DUE_SOON_DAYS
 
+    def _resolve_vehicle_brand_model_ids(self, vehicle):
+        """Resolve a Vehicle's free-text brand/model strings to the real
+        VehicleBrand/VehicleModel master IDs, for FK-based PM Template
+        matching (PMS-1). Returns (brand_id, model_id), either possibly
+        None if no matching master record exists."""
+        from app.modules.master_data.vehicle_brand.models import (
+            VehicleBrand, VehicleModel)
+        brand = VehicleBrand.query.filter(
+            db.func.lower(VehicleBrand.name) == (vehicle.brand or "").strip().lower()
+        ).first()
+        if not brand:
+            return None, None
+        model = VehicleModel.query.filter(
+            VehicleModel.brand_id == brand.id,
+            db.func.lower(VehicleModel.name) == (vehicle.model or "").strip().lower()
+        ).first()
+        return brand.id, (model.id if model else None)
+
     def _applicable_schedules(self, vehicle: Vehicle, maintenance_type_id=None):
         """Matching precedence (most to least specific):
         1. Vehicle's directly assigned PM template (pm_schedule_id)
-        2. Exact vehicle_make + vehicle_model match (case-insensitive)
-        3. vehicle_type_id match
-        4. Global schedule (vehicle_type_id AND make/model all NULL)
+        2. Real FK Brand+Model match (vehicle_brand_id/vehicle_model_id)
+        3. Exact vehicle_make + vehicle_model free-text match (case-insensitive)
+        4. vehicle_type_id match
+        5. Global schedule (vehicle_type_id AND make/model all NULL)
         """
         if vehicle.pm_schedule_id:
             sched = db.session.get(PMSchedule, vehicle.pm_schedule_id)
@@ -64,6 +83,13 @@ class PMDueCalculationService:
         if maintenance_type_id:
             base_query = base_query.filter_by(
                 maintenance_type_id=maintenance_type_id)
+
+        brand_id, model_id = self._resolve_vehicle_brand_model_ids(vehicle)
+        if brand_id and model_id:
+            fk_matches = base_query.filter_by(
+                vehicle_brand_id=brand_id, vehicle_model_id=model_id).all()
+            if fk_matches:
+                return fk_matches
 
         make = (vehicle.brand or "").strip().lower()
         model = (vehicle.model or "").strip().lower()

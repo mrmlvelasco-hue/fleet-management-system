@@ -18,6 +18,12 @@ class Vehicle(db.Model, BaseModel):
     brand = db.Column(db.String(80), nullable=False)
     model = db.Column(db.String(80), nullable=False)
     year = db.Column(db.Integer, nullable=False)
+    # PMS Master matching dimensions (all optional — narrows PM Template
+    # matching further when set; see maintenance_config PMS-1).
+    variant = db.Column(db.String(80), nullable=True)
+    engine_type = db.Column(db.String(80), nullable=True)
+    transmission = db.Column(db.String(40), nullable=True)
+    current_engine_hours = db.Column(db.Integer, nullable=True)
     color = db.Column(db.String(50))
     fuel_type = db.Column(db.String(20))          # from Lookup FUEL_TYPE
     branch_id = db.Column(db.Integer,
