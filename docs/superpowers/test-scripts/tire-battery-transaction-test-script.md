@@ -171,16 +171,35 @@ small, well-understood addition following the same pattern.
 
 ---
 
-## Step 6 — Optional: Approval-Gated Tire/Battery Transactions
+## Step 6 — Approval-Gated Tire/Battery Transactions
 
-By default TIR/BAT document types don't require approval. If your actual
-process requires sign-off (e.g. for high-cost tire replacements), you can
-flip "Requires Approval" on for TIR/BAT in Document Types, then set up an
-Approval Path + Approval Matrix the same way as Maintenance Orders. The
-Tire/Battery Transaction service already supports the full submit → approve
-→ reject → return → cancel lifecycle via the shared Approval Engine — it's
-just not exercised by default since these are typically low-risk,
-frequent transactions.
+By default TIR/BAT document types don't require approval — a transaction
+completes immediately on creation, and the Tire/Battery master's status
+updates right away. If your actual process requires sign-off (e.g. for
+high-cost tire replacements), do this:
+
+1. Sidebar → Document Types → edit TIR (or BAT) → check "Requires
+   Approval" → Save
+2. Sidebar → Approval Paths → create a path with at least one level
+   (Role-based or specific User)
+3. Sidebar → Approval Matrix → link that Document Type + Path (leave
+   amount range blank to apply to all amounts)
+4. Create a new Tire/Battery Transaction as normal — it now saves as
+   **DRAFT** instead of immediately completing, and the Tire/Battery
+   master's status does **not** change yet
+5. Open the transaction's detail page → click **Submit**
+6. Log in as a user holding the approver role → open the same
+   transaction → **Approve** / **Reject** / **Return** buttons appear
+7. On **Approve**: the transaction becomes COMPLETED and *only now* does
+   the Tire/Battery master's status actually update (MOUNTED/IN_STOCK/
+   etc.) — the physical action is treated as not having taken effect
+   until sign-off
+8. On **Reject**: the Tire/Battery master's status is left unchanged
+
+This mirrors exactly how Maintenance Orders and every other approval-
+gated module work — Tire/Battery Transactions were the only two modules
+where this flag existed in the UI but was silently not honored; that's
+now fixed.
 
 ---
 
@@ -188,6 +207,21 @@ frequent transactions.
 
 - No dedicated "Tire History" / "Battery History" tab on the Vehicle detail
   page yet (only Maintenance + Registration history exist)
-- No dashboard KPI for tire/battery stock levels yet (Phase 4 — Dashboard)
+- No dashboard KPI for tire/battery stock levels yet (now built — see
+  Phase 4 Dashboard test guide)
 - Tire tread-depth tracking over time (initial vs. current) exists on the
   Tire master record but isn't yet surfaced as a wear-trend chart anywhere
+
+## Clarifying "Draft" vs. Instant-Complete
+
+If you see a Battery/Tire Transaction with status **Draft**, that means
+"Requires Approval" is turned ON for that document type (Step 6 above) —
+by default it isn't, and transactions complete instantly. If you're not
+sure which document type you're looking at, check Sidebar → Document
+Types → the "Requires Approval" column tells you at a glance.
+
+For comparison: **Maintenance Order** always starts as DRAFT regardless
+of the approval setting (Submit → Approve → Start Work → Complete is its
+normal multi-step lifecycle) — Tire/Battery Transactions are the only two
+modules where DRAFT is conditional on the approval setting rather than
+always the starting state.
