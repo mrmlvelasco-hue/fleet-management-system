@@ -95,6 +95,9 @@ def pmschedule_new():
                 profile_code=f.get("profile_code") or None,
                 profile_description=f.get("profile_description") or None,
                 effective_date=parse_form_date(f.get("effective_date"), "Effective Date"),
+                next_pms_generation=f.get("next_pms_generation", "AUTO_SCHEDULE"),
+                next_due_calculation_method=f.get(
+                    "next_due_calculation_method", "ACTUAL_COMPLETION"),
                 maintenance_type_id=int(f["maintenance_type_id"]),
                 trigger_mode=f["trigger_mode"],
                 interval_km=int(f["interval_km"]) if f.get("interval_km") else None,

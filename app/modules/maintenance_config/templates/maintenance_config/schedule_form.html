@@ -105,6 +105,20 @@
   <div class="col-md-6"><label class="form-label">Trigger Days</label>
     <input type="number" name="interval_days" class="form-control" placeholder="e.g. 180 (~6 months)"></div>
 
+  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Scheduling Policy</h6></div>
+  <div class="col-md-6"><label class="form-label">Next PMS Generation</label>
+    <select name="next_pms_generation" class="form-select">
+      <option value="MANUAL">Manual — fleet staff create the next schedule by hand</option>
+      <option value="AUTO_SCHEDULE" selected>Auto Generate Schedule (Recommended) — notifies only, no Maintenance Order created yet</option>
+      <option value="AUTO_MO">Auto Generate Maintenance Order — creates a DRAFT order immediately (not recommended)</option>
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Next Due Calculation Method</label>
+    <select name="next_due_calculation_method" class="form-select">
+      <option value="ACTUAL_COMPLETION" selected>Based on Actual Completion (Recommended)</option>
+      <option value="ORIGINAL_SCHEDULE">Based on Original Schedule</option>
+      <option value="ADMIN_CHOICE">Administrator Selection (falls back to Actual Completion for now)</option>
+    </select></div>
+
   <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Alert Setup</h6></div>
   <div class="col-md-4"><label class="form-label">Notify Before (KM)</label>
     <input type="number" name="notify_before_km" class="form-control" placeholder="Default: 500">
