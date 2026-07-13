@@ -29,7 +29,7 @@ class PMScheduleService:
                variant=None, engine_type=None, fuel_type=None,
                transmission=None, model_year_from=None, model_year_to=None,
                profile_code=None, profile_description=None,
-               effective_date=None,
+               effective_date=None, sequence_position=None,
                interval_km=None, interval_days=None, priority="MEDIUM",
                notify_before_km=None, notify_before_days=None,
                escalate_if_overdue=True):
@@ -45,6 +45,7 @@ class PMScheduleService:
             model_year_to=model_year_to, profile_code=profile_code,
             profile_description=profile_description,
             effective_date=effective_date,
+            sequence_position=sequence_position,
             maintenance_type_id=maintenance_type_id,
             trigger_mode=trigger_mode, interval_km=interval_km,
             interval_days=interval_days, priority=priority,
@@ -88,6 +89,39 @@ class PMScheduleService:
 
     def get_by_id(self, schedule_id):
         return db.session.get(PMSchedule, schedule_id)
+
+
+class PMSProfileService:
+    """PMS-2: a 'Profile' is simply the group of PMSchedule rows (packages)
+    sharing the same profile_code — no separate parent table. Each package
+    keeps its own independent recurring interval and is due-calculated
+    exactly like any other PMSchedule (PMDueCalculationService needs zero
+    changes for this); Profile grouping is purely an organizational/display
+    concern layered on top."""
+
+    def list_profiles(self) -> list:
+        rows = (PMSchedule.query
+               .filter(PMSchedule.profile_code.isnot(None))
+               .filter_by(is_active=True)
+               .all())
+        grouped = {}
+        for r in rows:
+            g = grouped.setdefault(r.profile_code, {
+                "profile_code": r.profile_code,
+                "description": r.profile_description,
+                "vehicle_brand": r.vehicle_brand,
+                "vehicle_model_ref": r.vehicle_model_ref,
+                "package_count": 0,
+            })
+            g["package_count"] += 1
+        return list(grouped.values())
+
+    def get_profile(self, profile_code: str) -> list:
+        return (PMSchedule.query
+               .filter_by(profile_code=profile_code, is_active=True)
+               .order_by(PMSchedule.sequence_position.asc().nullslast(),
+                        PMSchedule.interval_km.asc().nullslast())
+               .all())
 
 
 class PMScopeTemplateService:

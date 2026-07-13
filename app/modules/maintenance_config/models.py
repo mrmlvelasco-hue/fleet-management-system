@@ -32,11 +32,14 @@ class PMSchedule(db.Model, BaseModel):
     transmission = db.Column(db.String(40), nullable=True)
     model_year_from = db.Column(db.Integer, nullable=True)
     model_year_to = db.Column(db.Integer, nullable=True)
-    # Human-facing PMS Profile identification.
-    profile_code = db.Column(db.String(40), unique=True, nullable=True)
+    # Human-facing PMS Profile identification. profile_code is NOT unique —
+    # multiple PMSchedule rows (packages) share the same profile_code to
+    # form one PMS Profile's cycle (PMS-2). sequence_position orders them
+    # for display within that profile (e.g. 1=Minor, 2=Medium, 3=Major).
+    profile_code = db.Column(db.String(40), nullable=True, index=True)
     profile_description = db.Column(db.String(255), nullable=True)
     effective_date = db.Column(db.Date, nullable=True)
-
+    sequence_position = db.Column(db.Integer, nullable=True)
     maintenance_type_id = db.Column(db.Integer,
                                     db.ForeignKey("maintenance_types.id"),
                                     nullable=False)
