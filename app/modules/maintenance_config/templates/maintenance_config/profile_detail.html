@@ -1,0 +1,35 @@
+{% extends "layout/base.html" %}
+{% block title %}PMS Profile — {{ profile_code }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.pmsprofile_list') }}">PMS Profiles</a></li>
+<li class="breadcrumb-item active">{{ profile_code }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-1">PMS Profile — <code>{{ profile_code }}</code></h1>
+<p class="text-muted">
+  {{ packages[0].profile_description or '' }}
+  {% if packages[0].vehicle_brand %}— {{ packages[0].vehicle_brand.name }}
+  {{ packages[0].vehicle_model_ref.name if packages[0].vehicle_model_ref else '' }}{% endif %}
+</p>
+
+<div class="card"><div class="card-body">
+<table class="table table-striped">
+  <thead><tr>
+    <th>#</th><th>Maintenance Type</th><th>Trigger</th><th>Interval KM</th>
+    <th>Interval Days</th><th>Priority</th>
+  </tr></thead>
+  <tbody>
+  {% for pkg in packages %}
+    <tr>
+      <td>{{ pkg.sequence_position or loop.index }}</td>
+      <td>{{ pkg.maintenance_type.name if pkg.maintenance_type else '—' }}</td>
+      <td><span class="badge text-bg-secondary">{{ pkg.trigger_mode }}</span></td>
+      <td>{{ "{:,}".format(pkg.interval_km) if pkg.interval_km else '—' }}</td>
+      <td>{{ pkg.interval_days or '—' }}</td>
+      <td>{{ pkg.priority }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

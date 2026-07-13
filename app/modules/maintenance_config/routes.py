@@ -6,7 +6,7 @@ from flask_login import login_required
 from app.core.security.decorators import require_permission
 from app.core.security.registry import registry
 from app.modules.maintenance_config.service import (
-    PMScheduleService, PMScopeTemplateService,
+    PMScheduleService, PMScopeTemplateService, PMSProfileService,
     InvalidScheduleError, InvalidScopeError)
 from app.modules.maintenance_config.import_service import (
     PMScheduleImportService, PMScopeImportService)
@@ -25,6 +25,7 @@ for _code, _desc in [
     ("pmscopetemplate.create", "Create PM scope templates"),
     ("pmscopetemplate.update", "Update PM scope templates"),
     ("pmscopetemplate.delete", "Deactivate PM scope templates"),
+    ("pmprofile.view", "View PMS Profiles"),
 ]:
     _m, _a = _code.split(".")
     registry.register(_code, _m, _a, _desc)
@@ -38,6 +39,29 @@ for _code, _desc in [
 def pmschedule_list():
     items = PMScheduleService().list(include_inactive=True)
     return render_template("maintenance_config/schedule_list.html", items=items)
+
+
+# ── PMS Profiles (PMS-2: grouped view of packages sharing a profile_code) ──
+
+@bp.route("/pms-profiles")
+@login_required
+@require_permission("pmprofile.view")
+def pmsprofile_list():
+    profiles = PMSProfileService().list_profiles()
+    return render_template("maintenance_config/profile_list.html",
+                           profiles=profiles)
+
+
+@bp.route("/pms-profiles/<profile_code>")
+@login_required
+@require_permission("pmprofile.view")
+def pmsprofile_detail(profile_code):
+    packages = PMSProfileService().get_profile(profile_code)
+    if not packages:
+        flash("No PMS Profile found with that code.", "warning")
+        return redirect(url_for("maintenance_config.pmsprofile_list"))
+    return render_template("maintenance_config/profile_detail.html",
+                           profile_code=profile_code, packages=packages)
 
 
 @bp.route("/pm-schedules/new", methods=["GET", "POST"])

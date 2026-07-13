@@ -189,6 +189,10 @@
         <li><a href="{{ url_for('maintenance_config.pmschedule_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmschedule_') }}">
           <i class="bi bi-calendar-check me-2"></i><span class="sidebar-label">PM Templates</span></a></li>
         {% endif %}
+        {% if current_user.has_permission('pmprofile.view') %}
+        <li><a href="{{ url_for('maintenance_config.pmsprofile_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmsprofile_') }}">
+          <i class="bi bi-collection me-2"></i><span class="sidebar-label">PMS Profiles</span></a></li>
+        {% endif %}
         {% if current_user.has_permission('pmscopetemplate.view') %}
         <li><a href="{{ url_for('maintenance_config.pmscope_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmscope_') }}">
           <i class="bi bi-list-check me-2"></i><span class="sidebar-label">PM Scope Templates</span></a></li>

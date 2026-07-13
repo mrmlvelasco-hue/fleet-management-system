@@ -1,0 +1,48 @@
+{% extends "layout/base.html" %}
+{% block title %}PMS Profiles{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.pmschedule_list') }}">PM Templates</a></li>
+<li class="breadcrumb-item active">PMS Profiles</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">PMS Profiles</h1>
+  <a class="btn btn-outline-secondary" href="{{ url_for('maintenance_config.pmschedule_list') }}">
+    <i class="bi bi-list-ul me-1"></i>View Individual Packages</a>
+</div>
+<p class="text-muted">
+  A PMS Profile groups the full set of maintenance packages for one vehicle
+  configuration (e.g. Toyota Hilux 2.8L Diesel) — Initial, Minor, Major,
+  Overhaul, etc. — each with its own recurring interval and checklist.
+  This is a grouped view; each package underneath is still an independent
+  PM Template on the "Individual Packages" screen.
+</p>
+<div class="card"><div class="card-body">
+<table class="table table-striped fms-datatable">
+  <thead><tr>
+    <th>Profile Code</th><th>Description</th><th>Brand</th><th>Model</th><th>Packages</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for p in profiles %}
+    <tr>
+      <td><code>{{ p.profile_code }}</code></td>
+      <td>{{ p.description or '—' }}</td>
+      <td>{{ p.vehicle_brand.name if p.vehicle_brand else '—' }}</td>
+      <td>{{ p.vehicle_model_ref.name if p.vehicle_model_ref else '—' }}</td>
+      <td><span class="badge text-bg-info">{{ p.package_count }}</span></td>
+      <td>
+        <a class="btn btn-sm btn-outline-primary"
+           href="{{ url_for('maintenance_config.pmsprofile_detail', profile_code=p.profile_code) }}">
+          <i class="bi bi-eye"></i></a>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="text-center text-muted py-4">
+      No PMS Profiles yet — assign a Profile Code when creating PM
+      Templates to group them here.
+    </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}
