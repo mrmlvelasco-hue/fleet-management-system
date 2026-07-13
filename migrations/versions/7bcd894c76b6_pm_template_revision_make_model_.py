@@ -23,7 +23,10 @@ def upgrade():
         batch_op.add_column(sa.Column('vehicle_model', sa.String(length=80), nullable=True))
         batch_op.add_column(sa.Column('notify_before_km', sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column('notify_before_days', sa.Integer(), nullable=True))
-        batch_op.add_column(sa.Column('escalate_if_overdue', sa.Boolean(), nullable=False))
+        batch_op.add_column(sa.Column('escalate_if_overdue', sa.Boolean(),
+                                      nullable=False, server_default=sa.true()))
+    with op.batch_alter_table('pm_schedules', schema=None) as batch_op:
+        batch_op.alter_column('escalate_if_overdue', server_default=None)
 
     with op.batch_alter_table('pm_scope_templates', schema=None) as batch_op:
         batch_op.add_column(sa.Column('pm_schedule_id', sa.Integer(), nullable=True))
