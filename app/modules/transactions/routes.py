@@ -665,6 +665,69 @@ def tiretxn_detail(tid):
     return render_template("transactions/tiretxn_detail.html", item=item)
 
 
+@bp.route("/tire-transactions/<int:tid>/submit", methods=["POST"])
+@login_required
+@require_permission("tiretxn.update")
+def tiretxn_submit(tid):
+    try:
+        TireTransactionService().submit(tid, user=current_user)
+        flash("Tire Transaction submitted.", "success")
+    except Exception as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.tiretxn_detail", tid=tid))
+
+
+@bp.route("/tire-transactions/<int:tid>/approve", methods=["POST"])
+@login_required
+@require_permission("tiretxn.view")
+def tiretxn_approve(tid):
+    try:
+        TireTransactionService().approve(tid, user=current_user,
+                                         remarks=request.form.get("remarks"))
+        flash("Tire Transaction approved.", "success")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.tiretxn_detail", tid=tid))
+
+
+@bp.route("/tire-transactions/<int:tid>/reject", methods=["POST"])
+@login_required
+@require_permission("tiretxn.view")
+def tiretxn_reject(tid):
+    try:
+        TireTransactionService().reject(tid, user=current_user,
+                                        remarks=request.form.get("remarks"))
+        flash("Tire Transaction rejected.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.tiretxn_detail", tid=tid))
+
+
+@bp.route("/tire-transactions/<int:tid>/return", methods=["POST"])
+@login_required
+@require_permission("tiretxn.view")
+def tiretxn_return(tid):
+    try:
+        TireTransactionService().return_document(
+            tid, user=current_user, remarks=request.form.get("remarks"))
+        flash("Tire Transaction returned to requester.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.tiretxn_detail", tid=tid))
+
+
+@bp.route("/tire-transactions/<int:tid>/cancel", methods=["POST"])
+@login_required
+@require_permission("tiretxn.update")
+def tiretxn_cancel(tid):
+    try:
+        TireTransactionService().cancel(tid, user=current_user)
+        flash("Tire Transaction cancelled.", "info")
+    except (InvalidStateError, NotVisibleError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.tiretxn_detail", tid=tid))
+
+
 @bp.route("/tire-transactions/<int:tid>/print")
 @login_required
 @require_permission("tiretxn.print")
@@ -721,6 +784,69 @@ def batterytxn_detail(bid):
     if item is None:
         abort(403)
     return render_template("transactions/batterytxn_detail.html", item=item)
+
+
+@bp.route("/battery-transactions/<int:bid>/submit", methods=["POST"])
+@login_required
+@require_permission("batterytxn.update")
+def batterytxn_submit(bid):
+    try:
+        BatteryTransactionService().submit(bid, user=current_user)
+        flash("Battery Transaction submitted.", "success")
+    except Exception as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.batterytxn_detail", bid=bid))
+
+
+@bp.route("/battery-transactions/<int:bid>/approve", methods=["POST"])
+@login_required
+@require_permission("batterytxn.view")
+def batterytxn_approve(bid):
+    try:
+        BatteryTransactionService().approve(bid, user=current_user,
+                                            remarks=request.form.get("remarks"))
+        flash("Battery Transaction approved.", "success")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.batterytxn_detail", bid=bid))
+
+
+@bp.route("/battery-transactions/<int:bid>/reject", methods=["POST"])
+@login_required
+@require_permission("batterytxn.view")
+def batterytxn_reject(bid):
+    try:
+        BatteryTransactionService().reject(bid, user=current_user,
+                                           remarks=request.form.get("remarks"))
+        flash("Battery Transaction rejected.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.batterytxn_detail", bid=bid))
+
+
+@bp.route("/battery-transactions/<int:bid>/return", methods=["POST"])
+@login_required
+@require_permission("batterytxn.view")
+def batterytxn_return(bid):
+    try:
+        BatteryTransactionService().return_document(
+            bid, user=current_user, remarks=request.form.get("remarks"))
+        flash("Battery Transaction returned to requester.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.batterytxn_detail", bid=bid))
+
+
+@bp.route("/battery-transactions/<int:bid>/cancel", methods=["POST"])
+@login_required
+@require_permission("batterytxn.update")
+def batterytxn_cancel(bid):
+    try:
+        BatteryTransactionService().cancel(bid, user=current_user)
+        flash("Battery Transaction cancelled.", "info")
+    except (InvalidStateError, NotVisibleError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.batterytxn_detail", bid=bid))
 
 
 @bp.route("/battery-transactions/<int:bid>/print")

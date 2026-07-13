@@ -13,17 +13,60 @@
     <i class="bi bi-printer me-1"></i>Print</a>
   {% endif %}
 </div>
-<div class="card"><div class="card-body">
-  <dl class="row mb-0">
-    <dt class="col-sm-3">Tire</dt><dd class="col-sm-9">{{ item.tire.serial_number }} — {{ item.tire.brand }} {{ item.tire.size }}</dd>
-    <dt class="col-sm-3">Vehicle</dt><dd class="col-sm-9">{{ item.vehicle.plate_number or item.vehicle.conduction_number if item.vehicle else '—' }}</dd>
-    <dt class="col-sm-3">Action</dt><dd class="col-sm-9"><span class="badge text-bg-info">{{ item.action }}</span></dd>
-    <dt class="col-sm-3">Date</dt><dd class="col-sm-9">{{ item.transaction_date }}</dd>
-    <dt class="col-sm-3">Odometer</dt><dd class="col-sm-9">{{ item.odometer_at_service or '—' }}</dd>
-    <dt class="col-sm-3">Remarks</dt><dd class="col-sm-9">{{ item.remarks or '—' }}</dd>
-    <dt class="col-sm-3">Status</dt><dd class="col-sm-9">{{ item.status }}</dd>
-  </dl>
-</div></div>
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-4">Tire</dt><dd class="col-sm-8">{{ item.tire.serial_number }} — {{ item.tire.brand }} {{ item.tire.size }}</dd>
+        <dt class="col-sm-4">Vehicle</dt><dd class="col-sm-8">{{ item.vehicle.plate_number or item.vehicle.conduction_number if item.vehicle else '—' }}</dd>
+        <dt class="col-sm-4">Action</dt><dd class="col-sm-8"><span class="badge text-bg-info">{{ item.action }}</span></dd>
+        <dt class="col-sm-4">Date</dt><dd class="col-sm-8">{{ item.transaction_date }}</dd>
+        <dt class="col-sm-4">Odometer</dt><dd class="col-sm-8">{{ item.odometer_at_service or '—' }}</dd>
+        <dt class="col-sm-4">Remarks</dt><dd class="col-sm-8">{{ item.remarks or '—' }}</dd>
+      </dl>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Status & Actions</div>
+    <div class="card-body">
+      <p><strong>Physical Status:</strong>
+        <span class="badge text-bg-{{ 'success' if item.status=='COMPLETED' else 'danger' if item.status=='CANCELLED' else 'secondary' }}">{{ item.status }}</span></p>
+      <p><strong>Approval Status:</strong>
+        {% if item.approval_instance %}
+        <span class="badge text-bg-{{ 'success' if item.approval_instance.status=='APPROVED' else 'warning' if item.approval_instance.status=='PENDING' else 'danger' }}">{{ item.approval_instance.status }}</span>
+        {% else %}<span class="text-muted">Not required / not submitted</span>{% endif %}</p>
+
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        {% if item.status == 'DRAFT' and not item.approval_instance and current_user.has_permission('tiretxn.update') %}
+        <form method="post" action="{{ url_for('transactions.tiretxn_submit', tid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-sm">Submit</button>
+        </form>
+        {% endif %}
+        {% if item.approval_instance and item.approval_instance.status == 'PENDING' %}
+        <form method="post" action="{{ url_for('transactions.tiretxn_approve', tid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-success btn-sm">Approve</button>
+        </form>
+        <form method="post" action="{{ url_for('transactions.tiretxn_reject', tid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-sm">Reject</button>
+        </form>
+        <form method="post" action="{{ url_for('transactions.tiretxn_return', tid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-warning btn-sm">Return</button>
+        </form>
+        {% endif %}
+        {% if item.status not in ['COMPLETED', 'CANCELLED'] and current_user.has_permission('tiretxn.update') %}
+        <form method="post" action="{{ url_for('transactions.tiretxn_cancel', tid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-danger btn-sm">Cancel</button>
+        </form>
+        {% endif %}
+      </div>
+    </div></div>
+  </div>
+</div>
 {% set reference_table = "tire_transactions" %}
 {% set reference_id = item.id %}
 {% include "layout/_requestor_info.html" %}
