@@ -45,9 +45,14 @@ def pmschedule_list():
 @require_permission("pmschedule.create")
 def pmschedule_new():
     from app.modules.system_admin.services.lookup_service import LookupService
+    from app.modules.master_data.vehicle_brand.service import VehicleBrandService
+    from app.core.validation.date_utils import (
+        parse_form_date, DateFormatError, RequiredFieldError)
     vehicle_types = VehicleTypeService().list()
     maintenance_types = MaintenanceTypeService().list()
     priorities = LookupService().get_by_type_with_fallback("PM_PRIORITY")
+    fuel_types = LookupService().get_by_type_with_fallback("FUEL_TYPE")
+    vehicle_brands = VehicleBrandService().list()
     if request.method == "POST":
         f = request.form
         try:
@@ -55,6 +60,17 @@ def pmschedule_new():
                 vehicle_type_id=int(f["vehicle_type_id"]) if f.get("vehicle_type_id") else None,
                 vehicle_make=f.get("vehicle_make"),
                 vehicle_model=f.get("vehicle_model"),
+                vehicle_brand_id=int(f["vehicle_brand_id"]) if f.get("vehicle_brand_id") else None,
+                vehicle_model_id=int(f["vehicle_model_id"]) if f.get("vehicle_model_id") else None,
+                variant=f.get("variant") or None,
+                engine_type=f.get("engine_type") or None,
+                fuel_type=f.get("fuel_type") or None,
+                transmission=f.get("transmission") or None,
+                model_year_from=int(f["model_year_from"]) if f.get("model_year_from") else None,
+                model_year_to=int(f["model_year_to"]) if f.get("model_year_to") else None,
+                profile_code=f.get("profile_code") or None,
+                profile_description=f.get("profile_description") or None,
+                effective_date=parse_form_date(f.get("effective_date"), "Effective Date"),
                 maintenance_type_id=int(f["maintenance_type_id"]),
                 trigger_mode=f["trigger_mode"],
                 interval_km=int(f["interval_km"]) if f.get("interval_km") else None,
@@ -65,12 +81,14 @@ def pmschedule_new():
                 escalate_if_overdue=f.get("escalate_if_overdue") == "on")
             flash("PM Template created.", "success")
             return redirect(url_for("maintenance_config.pmschedule_list"))
-        except InvalidScheduleError as e:
+        except (InvalidScheduleError, DateFormatError, RequiredFieldError) as e:
             flash(str(e), "danger")
     return render_template("maintenance_config/schedule_form.html",
                            vehicle_types=vehicle_types,
                            maintenance_types=maintenance_types,
                            priorities=priorities,
+                           fuel_types=fuel_types,
+                           vehicle_brands=vehicle_brands,
                            title="New PM Template")
 
 

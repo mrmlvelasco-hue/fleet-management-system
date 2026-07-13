@@ -16,13 +16,19 @@
 <div class="card"><div class="card-body">
 <table class="table table-striped fms-datatable">
   <thead><tr>
-    <th>Make / Model</th><th>Vehicle Type</th><th>Maintenance Type</th><th>Trigger</th>
+    <th>Profile</th><th>Make / Model</th><th>Vehicle Type</th><th>Maintenance Type</th><th>Trigger</th>
     <th>Interval KM</th><th>Interval Days</th><th>Priority</th><th>Active</th><th></th>
   </tr></thead>
   <tbody>
   {% for s in items %}
     <tr>
-      <td>{% if s.vehicle_make %}{{ s.vehicle_make }} {{ s.vehicle_model }}{% else %}<span class="text-muted">Any</span>{% endif %}</td>
+      <td>{% if s.profile_code %}<code>{{ s.profile_code }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+      <td>
+        {% if s.vehicle_brand %}{{ s.vehicle_brand.name }} {{ s.vehicle_model_ref.name if s.vehicle_model_ref else '' }}
+        {% if s.variant %}<span class="text-muted small">({{ s.variant }})</span>{% endif %}
+        {% elif s.vehicle_make %}{{ s.vehicle_make }} {{ s.vehicle_model }}
+        {% else %}<span class="text-muted">Any</span>{% endif %}
+      </td>
       <td>{{ s.vehicle_type.name if s.vehicle_type else 'All Types' }}</td>
       <td>{{ s.maintenance_type.name }}</td>
       <td><span class="badge text-bg-info">{{ s.trigger_mode }}</span></td>

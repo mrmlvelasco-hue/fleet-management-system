@@ -11,16 +11,68 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <div class="col-12"><h6 class="text-muted text-uppercase small">Match Criteria</h6></div>
-  <div class="col-md-4"><label class="form-label">Make</label>
-    <input type="text" name="vehicle_make" class="form-control" placeholder="e.g. Toyota">
-    <div class="form-text">Leave Make/Model blank to match by Vehicle Type or all vehicles instead.</div></div>
+  <div class="col-md-4"><label class="form-label">Brand</label>
+    <select name="vehicle_brand_id" id="pmBrandSelect" class="form-select">
+      <option value="">— Select a Brand —</option>
+      {% for b in vehicle_brands %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+    </select>
+    <div class="form-text">Leave Brand/Model blank to match by Vehicle Type or all vehicles instead.</div>
+    {% if not vehicle_brands %}
+    <div class="alert alert-warning py-2 px-3 mt-1 mb-0 small">
+      No Vehicle Brands yet — <a href="{{ url_for('master_data.vehiclebrand_new') }}">create one first</a>,
+      or use the legacy free-text Make/Model fields below.
+    </div>
+    {% endif %}</div>
   <div class="col-md-4"><label class="form-label">Model</label>
-    <input type="text" name="vehicle_model" class="form-control" placeholder="e.g. Hilux"></div>
+    <select name="vehicle_model_id" id="pmModelSelect" class="form-select">
+      <option value="">— Select a Brand first —</option>
+    </select></div>
   <div class="col-md-4"><label class="form-label">Vehicle Type (fallback match)</label>
     <select name="vehicle_type_id" class="form-select fms-select2">
       <option value="">— All vehicle types —</option>
       {% for vt in vehicle_types %}<option value="{{ vt.id }}">{{ vt.code }} — {{ vt.name }}</option>{% endfor %}
     </select></div>
+
+  <div class="col-12">
+    <a class="small" data-bs-toggle="collapse" href="#legacyMakeModel" role="button">
+      Or use legacy free-text Make/Model instead ▾</a>
+    <div class="collapse" id="legacyMakeModel">
+      <div class="row g-3 mt-1">
+        <div class="col-md-6"><label class="form-label">Make (free text)</label>
+          <input type="text" name="vehicle_make" class="form-control" placeholder="e.g. Toyota"></div>
+        <div class="col-md-6"><label class="form-label">Model (free text)</label>
+          <input type="text" name="vehicle_model" class="form-control" placeholder="e.g. Hilux"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Vehicle Profile Details (optional)</h6></div>
+  <div class="col-md-3"><label class="form-label">Variant</label>
+    <input type="text" name="variant" class="form-control" placeholder="e.g. 2.8 D-4D"></div>
+  <div class="col-md-3"><label class="form-label">Engine Type</label>
+    <input type="text" name="engine_type" class="form-control" placeholder="e.g. 1GD-FTV"></div>
+  <div class="col-md-3"><label class="form-label">Fuel Type</label>
+    <select name="fuel_type" class="form-select">
+      <option value="">— Any —</option>
+      {% for ft in fuel_types %}<option value="{{ ft.code }}">{{ ft.description }}</option>{% endfor %}
+    </select></div>
+  <div class="col-md-3"><label class="form-label">Transmission</label>
+    <select name="transmission" class="form-select">
+      <option value="">— Any —</option>
+      <option value="MANUAL">Manual</option>
+      <option value="AUTOMATIC">Automatic</option>
+      <option value="CVT">CVT</option>
+    </select></div>
+  <div class="col-md-3"><label class="form-label">Model Year From</label>
+    <input type="number" name="model_year_from" class="form-control" placeholder="e.g. 2020"></div>
+  <div class="col-md-3"><label class="form-label">Model Year To</label>
+    <input type="number" name="model_year_to" class="form-control" placeholder="e.g. 2025"></div>
+  <div class="col-md-3"><label class="form-label">Profile Code</label>
+    <input type="text" name="profile_code" class="form-control" placeholder="e.g. HILUX-DIESEL"></div>
+  <div class="col-md-3"><label class="form-label">Effective Date</label>
+    <input type="date" name="effective_date" class="form-control"></div>
+  <div class="col-12"><label class="form-label">Profile Description</label>
+    <input type="text" name="profile_description" class="form-control" placeholder="e.g. Toyota Hilux 2.8L Diesel PMS Profile"></div>
 
   <div class="col-12"><hr><h6 class="text-muted text-uppercase small">PM Type & Trigger</h6></div>
   <div class="col-md-6"><label class="form-label">Maintenance Type</label>
@@ -71,4 +123,34 @@
   </div>
 </form>
 </div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var brandSelect = document.getElementById("pmBrandSelect");
+  var modelSelect = document.getElementById("pmModelSelect");
+
+  function loadModels(brandId) {
+    if (!brandId) {
+      modelSelect.innerHTML = '<option value="">— Select a Brand first —</option>';
+      return;
+    }
+    fetch("{{ url_for('api_search.search_vehicle_models') }}?brand_id=" + brandId)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.results.length) {
+          modelSelect.innerHTML = '<option value="">— No models yet for this Brand —</option>';
+          return;
+        }
+        modelSelect.innerHTML = data.results.map(function (m) {
+          return '<option value="' + m.id + '">' + m.name + "</option>";
+        }).join("");
+      });
+  }
+
+  brandSelect.addEventListener("change", function () {
+    loadModels(brandSelect.value);
+  });
+})();
+</script>
 {% endblock %}

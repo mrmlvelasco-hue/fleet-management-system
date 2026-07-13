@@ -24,6 +24,10 @@
         <dt class="col-sm-5">Type</dt><dd class="col-sm-7">{{ vehicle.vehicle_type.name if vehicle.vehicle_type else '—' }}</dd>
         <dt class="col-sm-5">Fuel</dt><dd class="col-sm-7">{{ vehicle.fuel_type or '—' }}</dd>
         <dt class="col-sm-5">Color</dt><dd class="col-sm-7">{{ vehicle.color or '—' }}</dd>
+        <dt class="col-sm-5">Variant</dt><dd class="col-sm-7">{{ vehicle.variant or '—' }}</dd>
+        <dt class="col-sm-5">Engine Type</dt><dd class="col-sm-7">{{ vehicle.engine_type or '—' }}</dd>
+        <dt class="col-sm-5">Transmission</dt><dd class="col-sm-7">{{ vehicle.transmission or '—' }}</dd>
+        <dt class="col-sm-5">Engine Hours</dt><dd class="col-sm-7">{{ vehicle.current_engine_hours if vehicle.current_engine_hours else '—' }}</dd>
       </dl>
     </div></div>
   </div>

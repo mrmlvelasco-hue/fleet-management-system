@@ -60,6 +60,25 @@
   <div class="col-md-2"><label class="form-label">Year</label>
     <input type="number" name="year" class="form-control"
            value="{{ item.year if item else '' }}" required></div>
+  <div class="col-md-3"><label class="form-label">Variant</label>
+    <input type="text" name="variant" class="form-control"
+           placeholder="e.g. 2.8 D-4D"
+           value="{{ item.variant if item and item.variant else '' }}"></div>
+  <div class="col-md-3"><label class="form-label">Engine Type</label>
+    <input type="text" name="engine_type" class="form-control"
+           placeholder="e.g. 1GD-FTV"
+           value="{{ item.engine_type if item and item.engine_type else '' }}"></div>
+  <div class="col-md-3"><label class="form-label">Transmission</label>
+    <select name="transmission" class="form-select">
+      <option value="">— Not specified —</option>
+      {% for t in ['MANUAL', 'AUTOMATIC', 'CVT'] %}
+      <option value="{{ t }}" {{ 'selected' if item and item.transmission==t }}>{{ t|title }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-3"><label class="form-label">Current Engine Hours</label>
+    <input type="number" name="current_engine_hours" class="form-control"
+           placeholder="Optional"
+           value="{{ item.current_engine_hours if item and item.current_engine_hours else '' }}"></div>
   <div class="col-md-3"><label class="form-label">Color</label>
     <input type="text" name="color" class="form-control"
            value="{{ item.color if item else '' }}"></div>
