@@ -1,5 +1,9 @@
 """Battery Transaction service: mount/dismount/dispose events that keep
-the Battery master's status and vehicle link in sync."""
+the Battery master's status and vehicle link in sync.
+
+Same approval-gating behavior as TireTransactionService — see that
+module's docstring for the full rationale.
+"""
 from app.extensions import db
 from app.core.numbering.numbering_service import AutoNumberingService
 from app.modules.transactions.base_service import BaseTransactionService
@@ -18,6 +22,21 @@ class BatteryTransactionService(BaseTransactionService):
     document_type_code = "BAT"
     reference_table = "battery_transactions"
 
+    def _document_requires_approval(self) -> bool:
+        from app.modules.document_config.repository import DocumentTypeRepository
+        dt = DocumentTypeRepository().get_by_code(self.document_type_code)
+        return bool(dt and dt.requires_approval)
+
+    def _apply_physical_effect(self, txn) -> None:
+        battery = db.session.get(Battery, txn.battery_id)
+        if txn.action == "MOUNT":
+            battery.status = "MOUNTED"
+        elif txn.action == "DISMOUNT":
+            battery.status = "IN_STOCK"
+        elif txn.action == "DISPOSE":
+            battery.status = "DISPOSED"
+            battery.is_active = False
+
     def create(self, *, battery_id, action, transaction_date, user,
                vehicle_id=None, remarks=None):
         if action not in VALID_ACTIONS:
@@ -31,21 +50,27 @@ class BatteryTransactionService(BaseTransactionService):
         except Exception:
             doc_number = None
 
+        requires_approval = self._document_requires_approval()
+
         txn = BatteryTransaction(
             document_number=doc_number, battery_id=battery_id,
             vehicle_id=vehicle_id, action=action,
             transaction_date=transaction_date, remarks=remarks,
-            status="COMPLETED", requested_by=user.id if user else None)
+            status="DRAFT" if requires_approval else "COMPLETED",
+            requested_by=user.id if user else None)
         db.session.add(txn)
+        db.session.flush()
 
-        battery = db.session.get(Battery, battery_id)
-        if action == "MOUNT":
-            battery.status = "MOUNTED"
-        elif action == "DISMOUNT":
-            battery.status = "IN_STOCK"
-        elif action == "DISPOSE":
-            battery.status = "DISPOSED"
-            battery.is_active = False
+        if not requires_approval:
+            self._apply_physical_effect(txn)
 
         db.session.commit()
         return txn
+
+    def approve(self, record_id: int, user, remarks=None):
+        record = super().approve(record_id, user, remarks)
+        if record.approval_instance and record.approval_instance.status == "APPROVED":
+            self._apply_physical_effect(record)
+            record.status = "COMPLETED"
+            db.session.commit()
+        return record
