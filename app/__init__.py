@@ -4,6 +4,7 @@ import os
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask
+from flask_login import current_user
 
 from app.config import CONFIG_MAP
 from app.extensions import db, migrate, login_manager, csrf
@@ -103,6 +104,25 @@ def create_app(config_name: str | None = None) -> Flask:
             return None
         from app.modules.user_management.models import User
         return db.session.get(User, user_id)
+
+    @app.template_global()
+    def is_eligible_approver(approval_instance):
+        """Whether the currently logged-in user can act on this
+        instance's current pending level — used to decide whether to
+        show Approve/Reject/Return buttons at all, rather than showing
+        them to everyone and only failing with an error after they
+        click."""
+        from app.core.approval.engine import ApprovalEngine
+        return ApprovalEngine().is_eligible_approver(approval_instance, current_user)
+
+    @app.template_global()
+    def approval_chain(approval_instance):
+        """The full approval line for this instance — every level, its
+        status, and who acted — for display on any transaction's detail
+        page (the Requestor Information panel's counterpart for
+        approvals)."""
+        from app.core.approval.engine import ApprovalEngine
+        return ApprovalEngine().get_approval_chain(approval_instance)
 
     return app
 
