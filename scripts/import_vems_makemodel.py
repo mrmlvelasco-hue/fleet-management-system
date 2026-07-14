@@ -32,8 +32,7 @@ def import_make_model(xlsx_path: str, dry_run: bool = False) -> dict:
             continue
 
         key = make_name.lower()
-        brand = brand_cache.get(key)
-        if brand is None:
+        if key not in brand_cache:
             brand = brand_svc.get_by_name(make_name)
             if brand:
                 brands_existing += 1
@@ -41,6 +40,7 @@ def import_make_model(xlsx_path: str, dry_run: bool = False) -> dict:
                 brand = None if dry_run else brand_svc.create(name=make_name)
                 brands_created += 1
             brand_cache[key] = brand
+        brand = brand_cache[key]
 
         if brand is None:  # dry-run and brand doesn't exist yet
             models_created += 1

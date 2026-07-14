@@ -190,7 +190,9 @@ def import_pms(xlsx_path: str, dry_run: bool = True, limit_groups: int = None) -
                         name=f"{task_description} — Package {seq_pos}"[:120],
                         description=str(task_description),
                         pm_schedule_id=sched.id, items=items)
-                    stats["scope_items_created"] += len(items)
+            # Counted whether or not we're actually writing — dry-run
+            # should preview exactly what a real run would produce.
+            stats["scope_items_created"] += len(activity_texts)
             stats["packages_created"] += 1
 
         stats["groups_processed"] += 1
