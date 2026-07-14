@@ -109,5 +109,20 @@ def _seed_lookups() -> None:
     sync_lookups()
 
 
+pm_cli = AppGroup("pm", help="Preventive Maintenance testing/ops commands.")
+
+
+@pm_cli.command("run-due-check")
+def pm_run_due_check():
+    """Manually run the same due/overdue scan Celery beat would run daily
+    — fires notifications and (only for AUTO_MO-policy templates) creates
+    Maintenance Orders. Safe to run repeatedly; idempotent."""
+    from app.modules.transactions.maintenance_order.tasks import (
+        auto_generate_due_maintenance_orders)
+    created = auto_generate_due_maintenance_orders()
+    click.echo(f"Due/overdue scan complete. Maintenance Orders created: {created}")
+
+
 def register_cli(app):
     app.cli.add_command(seed_cli)
+    app.cli.add_command(pm_cli)
