@@ -1,8 +1,24 @@
+{% set sysadmin_prefixes = ['user_management.', 'document_config.', 'approval_config.', 'system_admin.'] %}
+{% set masterdata_prefixes = ['master_data.', 'maintenance_config.'] %}
+{% set transactions_prefixes = ['transactions.'] %}
+{% set ep = request.endpoint or '' %}
+{# Jinja2's `set` inside a `for` loop doesn't persist to the outer scope,
+   so a plain boolean accumulator wouldn't actually update — namespace()
+   is required here to make the flag stick after the loop. #}
+{% set ns = namespace(sysadmin_active=false, masterdata_active=false, transactions_active=false) %}
+{% for p in sysadmin_prefixes %}{% if ep.startswith(p) %}{% set ns.sysadmin_active = true %}{% endif %}{% endfor %}
+{% for p in masterdata_prefixes %}{% if ep.startswith(p) %}{% set ns.masterdata_active = true %}{% endif %}{% endfor %}
+{% for p in transactions_prefixes %}{% if ep.startswith(p) %}{% set ns.transactions_active = true %}{% endif %}{% endfor %}
+{% set sysadmin_active = ns.sysadmin_active %}
+{% set masterdata_active = ns.masterdata_active %}
+{% set transactions_active = ns.transactions_active %}
+
 <aside class="fms-sidebar d-flex flex-column p-3" id="fmsSidebar">
   <a href="{{ url_for('main.dashboard') }}" class="d-flex align-items-center mb-3 text-decoration-none fs-5 fw-semibold sidebar-brand">
     <i class="bi bi-truck-front me-2"></i><span class="sidebar-label">FMS</span>
   </a>
-  <ul class="nav nav-pills flex-column mb-auto">
+  <div class="fms-sidebar-scroll flex-grow-1">
+  <ul class="nav nav-pills flex-column mb-2">
     <li class="nav-item">
       <a href="{{ url_for('main.dashboard') }}" class="nav-link {{ 'active' if request.endpoint == 'main.dashboard' }}">
         <i class="bi bi-speedometer2 me-2"></i><span class="sidebar-label">Dashboard</span>
@@ -13,11 +29,12 @@
   {# ── System Administration (collapsible group) ── #}
   <div class="sidebar-group">
     <button class="btn sidebar-group-toggle w-100 d-flex justify-content-between align-items-center text-uppercase small sidebar-section"
-            type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupSysAdmin">
+            type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupSysAdmin"
+            aria-expanded="{{ 'true' if sysadmin_active else 'false' }}">
       <span class="sidebar-label">System Administration</span>
       <i class="bi bi-chevron-down sidebar-label sidebar-chevron"></i>
     </button>
-    <div class="collapse show" id="sbGroupSysAdmin">
+    <div class="collapse {{ 'show' if sysadmin_active }}" id="sbGroupSysAdmin">
       <ul class="nav nav-pills flex-column">
         {% if current_user.has_permission('user.view') %}
         <li><a href="{{ url_for('user_management.users_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('user_management.users') }}">
@@ -87,14 +104,16 @@
     </div>
   </div>
 
-  {# ── Master Data (collapsible group) ── #}
+  {# ── Master Data (collapsible group) — includes PM config, since these
+       are configuration/master records, not day-to-day transactions ── #}
   <div class="sidebar-group">
     <button class="btn sidebar-group-toggle w-100 d-flex justify-content-between align-items-center text-uppercase small sidebar-section"
-            type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupMasterData">
+            type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupMasterData"
+            aria-expanded="{{ 'true' if masterdata_active else 'false' }}">
       <span class="sidebar-label">Master Data</span>
       <i class="bi bi-chevron-down sidebar-label sidebar-chevron"></i>
     </button>
-    <div class="collapse show" id="sbGroupMasterData">
+    <div class="collapse {{ 'show' if masterdata_active }}" id="sbGroupMasterData">
       <ul class="nav nav-pills flex-column">
         {% if current_user.has_permission('vehicle.view') %}
         <li><a href="{{ url_for('master_data.vehicle_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vehicle_') }}">
@@ -140,6 +159,18 @@
         <li><a href="{{ url_for('master_data.maintenancetype_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.maintenancetype_') }}">
           <i class="bi bi-wrench-adjustable me-2"></i><span class="sidebar-label">Maintenance Types</span></a></li>
         {% endif %}
+        {% if current_user.has_permission('pmschedule.view') %}
+        <li><a href="{{ url_for('maintenance_config.pmschedule_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmschedule_') }}">
+          <i class="bi bi-calendar-check me-2"></i><span class="sidebar-label">PM Templates</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('pmprofile.view') %}
+        <li><a href="{{ url_for('maintenance_config.pmsprofile_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmsprofile_') }}">
+          <i class="bi bi-collection me-2"></i><span class="sidebar-label">PMS Profiles</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('pmscopetemplate.view') %}
+        <li><a href="{{ url_for('maintenance_config.pmscope_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmscope_') }}">
+          <i class="bi bi-list-check me-2"></i><span class="sidebar-label">PM Scope Templates</span></a></li>
+        {% endif %}
       </ul>
     </div>
   </div>
@@ -147,11 +178,12 @@
   {# ── Transactions (collapsible group) ── #}
   <div class="sidebar-group">
     <button class="btn sidebar-group-toggle w-100 d-flex justify-content-between align-items-center text-uppercase small sidebar-section"
-            type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupTransactions">
+            type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupTransactions"
+            aria-expanded="{{ 'true' if transactions_active else 'false' }}">
       <span class="sidebar-label">Transactions</span>
       <i class="bi bi-chevron-down sidebar-label sidebar-chevron"></i>
     </button>
-    <div class="collapse show" id="sbGroupTransactions">
+    <div class="collapse {{ 'show' if transactions_active }}" id="sbGroupTransactions">
       <ul class="nav nav-pills flex-column">
         {% if current_user.has_permission('tripticket.view') %}
         <li><a href="{{ url_for('transactions.tripticket_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.tripticket_') }}">
@@ -185,19 +217,8 @@
         <li><a href="{{ url_for('transactions.vehicleregistration_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.vehicleregistration_') }}">
           <i class="bi bi-card-checklist me-2"></i><span class="sidebar-label">Vehicle Registration</span></a></li>
         {% endif %}
-        {% if current_user.has_permission('pmschedule.view') %}
-        <li><a href="{{ url_for('maintenance_config.pmschedule_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmschedule_') }}">
-          <i class="bi bi-calendar-check me-2"></i><span class="sidebar-label">PM Templates</span></a></li>
-        {% endif %}
-        {% if current_user.has_permission('pmprofile.view') %}
-        <li><a href="{{ url_for('maintenance_config.pmsprofile_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmsprofile_') }}">
-          <i class="bi bi-collection me-2"></i><span class="sidebar-label">PMS Profiles</span></a></li>
-        {% endif %}
-        {% if current_user.has_permission('pmscopetemplate.view') %}
-        <li><a href="{{ url_for('maintenance_config.pmscope_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmscope_') }}">
-          <i class="bi bi-list-check me-2"></i><span class="sidebar-label">PM Scope Templates</span></a></li>
-        {% endif %}
       </ul>
     </div>
+  </div>
   </div>
 </aside>

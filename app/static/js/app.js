@@ -36,7 +36,11 @@
     });
   }
 
-  // Sidebar category groups: remember collapsed/expanded state per group
+  // Sidebar category groups: the server renders the group containing the
+  // current page as expanded and the others collapsed by default: this
+  // cookie layer only overrides that default once a person has manually
+  // toggled a group, so their preference sticks across page loads within
+  // the same section, without fighting the auto-expand-active-group logic.
   document.querySelectorAll(".sidebar-group-toggle").forEach(function (btn) {
     var targetId = btn.getAttribute("data-bs-target");
     var target = document.querySelector(targetId);
@@ -45,10 +49,15 @@
     var saved = getCookie(stateKey);
     if (saved === "collapsed") {
       target.classList.remove("show");
-      btn.setAttribute("aria-expanded", "false");
-    } else {
-      btn.setAttribute("aria-expanded", "true");
+    } else if (saved === "expanded") {
+      target.classList.add("show");
     }
+    // Reflect whatever the actual resulting state is, rather than
+    // assuming — this keeps the chevron direction and screen-reader
+    // state correct regardless of whether the server default or a
+    // cookie override won.
+    btn.setAttribute("aria-expanded", target.classList.contains("show") ? "true" : "false");
+
     target.addEventListener("shown.bs.collapse", function () {
       setCookie(stateKey, "expanded");
       btn.setAttribute("aria-expanded", "true");

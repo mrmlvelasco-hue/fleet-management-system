@@ -8,9 +8,21 @@
 }
 #fms-wrapper.sidebar-collapsed .fms-sidebar { width: 64px; }
 #fms-wrapper.sidebar-collapsed .sidebar-label { display: none; }
-.fms-sidebar .nav-link { color: var(--bs-body-color); }
+.fms-sidebar-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* leaves room for the brand header above without the whole page
+     needing to scroll just to reach a lower module group */
+  max-height: calc(100vh - 4rem);
+}
+.fms-sidebar .nav-link {
+  color: var(--bs-body-color);
+  padding: .4rem .6rem;
+  border-radius: .375rem;
+}
 .fms-sidebar .nav-link.active { background: var(--bs-primary); color: #fff; }
 .sidebar-section { color: var(--bs-secondary-color); letter-spacing: .05em; }
+.sidebar-group { border-top: 1px solid var(--bs-border-color-translucent); padding-top: .25rem; }
 .sidebar-group-toggle {
   color: var(--bs-secondary-color);
   border: none;
