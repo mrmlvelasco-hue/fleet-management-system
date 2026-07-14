@@ -402,6 +402,7 @@ def vehiclemovement_print(mid):
 
 
 @bp.route("/vehicle-movements/<int:mid>/submit", methods=["POST"])
+@bp.route("/vehicle-movements/<int:mid>/submit", methods=["POST"])
 @login_required
 @require_permission("vehiclemovement.update")
 def vehiclemovement_submit(mid):
@@ -409,6 +410,45 @@ def vehiclemovement_submit(mid):
         VehicleMovementService().submit(mid, user=current_user)
         flash("Vehicle Movement submitted.", "success")
     except Exception as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.vehiclemovement_detail", mid=mid))
+
+
+@bp.route("/vehicle-movements/<int:mid>/approve", methods=["POST"])
+@login_required
+@require_permission("vehiclemovement.view")
+def vehiclemovement_approve(mid):
+    try:
+        VehicleMovementService().approve(mid, user=current_user,
+                                         remarks=request.form.get("remarks"))
+        flash("Vehicle Movement approved.", "success")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.vehiclemovement_detail", mid=mid))
+
+
+@bp.route("/vehicle-movements/<int:mid>/reject", methods=["POST"])
+@login_required
+@require_permission("vehiclemovement.view")
+def vehiclemovement_reject(mid):
+    try:
+        VehicleMovementService().reject(mid, user=current_user,
+                                        remarks=request.form.get("remarks"))
+        flash("Vehicle Movement rejected.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.vehiclemovement_detail", mid=mid))
+
+
+@bp.route("/vehicle-movements/<int:mid>/return", methods=["POST"])
+@login_required
+@require_permission("vehiclemovement.view")
+def vehiclemovement_return(mid):
+    try:
+        VehicleMovementService().return_document(
+            mid, user=current_user, remarks=request.form.get("remarks"))
+        flash("Vehicle Movement returned to requester.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
         _flash_engine_error(e)
     return redirect(url_for("transactions.vehiclemovement_detail", mid=mid))
 
@@ -1087,6 +1127,45 @@ def vehicleregistration_submit(rid):
         VehicleRegistrationService().submit(rid, user=current_user)
         flash("Vehicle Registration submitted.", "success")
     except Exception as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
+
+
+@bp.route("/vehicle-registrations/<int:rid>/approve", methods=["POST"])
+@login_required
+@require_permission("vehicleregistration.view")
+def vehicleregistration_approve(rid):
+    try:
+        VehicleRegistrationService().approve(rid, user=current_user,
+                                             remarks=request.form.get("remarks"))
+        flash("Vehicle Registration approved.", "success")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
+
+
+@bp.route("/vehicle-registrations/<int:rid>/reject", methods=["POST"])
+@login_required
+@require_permission("vehicleregistration.view")
+def vehicleregistration_reject(rid):
+    try:
+        VehicleRegistrationService().reject(rid, user=current_user,
+                                            remarks=request.form.get("remarks"))
+        flash("Vehicle Registration rejected.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
+
+
+@bp.route("/vehicle-registrations/<int:rid>/return", methods=["POST"])
+@login_required
+@require_permission("vehicleregistration.view")
+def vehicleregistration_return(rid):
+    try:
+        VehicleRegistrationService().return_document(
+            rid, user=current_user, remarks=request.form.get("remarks"))
+        flash("Vehicle Registration returned to requester.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
         _flash_engine_error(e)
     return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
 

@@ -37,10 +37,6 @@
     <div class="card-body">
       <p><strong>Physical Status:</strong>
         <span class="badge text-bg-{{ 'success' if item.status=='COMPLETED' else 'info' if item.status=='IN_TRANSIT' else 'danger' if item.status=='CANCELLED' else 'secondary' }}">{{ item.status }}</span></p>
-      <p><strong>Approval Status:</strong>
-        {% if item.approval_instance %}
-        <span class="badge text-bg-{{ 'success' if item.approval_instance.status=='APPROVED' else 'warning' if item.approval_instance.status=='PENDING' else 'danger' }}">{{ item.approval_instance.status }}</span>
-        {% else %}<span class="text-muted">Not submitted</span>{% endif %}</p>
 
       <div class="d-flex flex-wrap gap-2 mt-3">
         {% if not item.approval_instance and current_user.has_permission('vehiclemovement.update') %}
@@ -77,6 +73,10 @@
 </div>
 {% set reference_table = "vehicle_movements" %}
 {% set reference_id = item.id %}
+{% set approve_url = url_for('transactions.vehiclemovement_approve', mid=item.id) %}
+{% set reject_url = url_for('transactions.vehiclemovement_reject', mid=item.id) %}
+{% set return_url = url_for('transactions.vehiclemovement_return', mid=item.id) %}
+{% include "layout/_approval_line.html" %}
 {% include "layout/_requestor_info.html" %}
 {% include "master_data/_attachment_panel.html" %}
 {% endblock %}

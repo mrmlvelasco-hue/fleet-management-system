@@ -67,14 +67,22 @@ def test_battery_transaction_full_approval_flow_via_http(client, db):
     assert b"Battery Transaction submitted" in resp.data
 
     detail_resp = client.get(f"/transactions/battery-transactions/{txn.id}")
-    assert b"Approve" in detail_resp.data
-    assert b"Reject" in detail_resp.data
+    # The requester is not the eligible approver for this level — they
+    # should see the approval line but NOT actionable buttons.
+    assert b"Approval Line" in detail_resp.data
+    assert b">Approve<" not in detail_resp.data
+    assert b">Reject<" not in detail_resp.data
+    assert b"Waiting on" in detail_resp.data
 
     client.get("/logout")
 
-    # Approver approves — physical effect now applies
+    # Approver sees the buttons and approves — physical effect now applies
     client.post("/login", data={"username": "batt_flow_approver",
                                 "password": "pw123456"})
+    approver_view = client.get(f"/transactions/battery-transactions/{txn.id}")
+    assert b">Approve<" in approver_view.data
+    assert b">Reject<" in approver_view.data
+
     resp = client.post(f"/transactions/battery-transactions/{txn.id}/approve",
                        follow_redirects=True)
     assert resp.status_code == 200

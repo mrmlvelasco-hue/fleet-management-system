@@ -30,30 +30,12 @@
     <div class="card-body">
       <p><strong>Physical Status:</strong>
         <span class="badge text-bg-{{ 'success' if item.status=='COMPLETED' else 'danger' if item.status=='CANCELLED' else 'secondary' }}">{{ item.status }}</span></p>
-      <p><strong>Approval Status:</strong>
-        {% if item.approval_instance %}
-        <span class="badge text-bg-{{ 'success' if item.approval_instance.status=='APPROVED' else 'warning' if item.approval_instance.status=='PENDING' else 'danger' }}">{{ item.approval_instance.status }}</span>
-        {% else %}<span class="text-muted">Not required / not submitted</span>{% endif %}</p>
 
       <div class="d-flex flex-wrap gap-2 mt-3">
         {% if item.status == 'DRAFT' and not item.approval_instance and current_user.has_permission('batterytxn.update') %}
         <form method="post" action="{{ url_for('transactions.batterytxn_submit', bid=item.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-primary btn-sm">Submit</button>
-        </form>
-        {% endif %}
-        {% if item.approval_instance and item.approval_instance.status == 'PENDING' %}
-        <form method="post" action="{{ url_for('transactions.batterytxn_approve', bid=item.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-success btn-sm">Approve</button>
-        </form>
-        <form method="post" action="{{ url_for('transactions.batterytxn_reject', bid=item.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-danger btn-sm">Reject</button>
-        </form>
-        <form method="post" action="{{ url_for('transactions.batterytxn_return', bid=item.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-warning btn-sm">Return</button>
         </form>
         {% endif %}
         {% if item.status not in ['COMPLETED', 'CANCELLED'] and current_user.has_permission('batterytxn.update') %}
@@ -68,6 +50,10 @@
 </div>
 {% set reference_table = "battery_transactions" %}
 {% set reference_id = item.id %}
+{% set approve_url = url_for('transactions.batterytxn_approve', bid=item.id) %}
+{% set reject_url = url_for('transactions.batterytxn_reject', bid=item.id) %}
+{% set return_url = url_for('transactions.batterytxn_return', bid=item.id) %}
+{% include "layout/_approval_line.html" %}
 {% include "layout/_requestor_info.html" %}
 {% include "master_data/_attachment_panel.html" %}
 {% endblock %}
