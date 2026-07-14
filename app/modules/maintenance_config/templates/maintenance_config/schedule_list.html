@@ -37,6 +37,16 @@
       <td>{{ s.priority }}</td>
       <td>{% if s.is_active %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
       <td class="text-end">
+        {% if current_user.has_permission('pmschedule.view') %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('maintenance_config.pmschedule_detail', sid=s.id) }}">
+          <i class="bi bi-eye"></i></a>
+        {% endif %}
+        {% if current_user.has_permission('pmschedule.update') %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('maintenance_config.pmschedule_edit', sid=s.id) }}">
+          <i class="bi bi-pencil"></i></a>
+        {% endif %}
         {% if current_user.has_permission('pmschedule.delete') and s.is_active %}
         <form method="post" class="d-inline fms-confirm" data-confirm="Deactivate this template?"
               action="{{ url_for('maintenance_config.pmschedule_deactivate', sid=s.id) }}">

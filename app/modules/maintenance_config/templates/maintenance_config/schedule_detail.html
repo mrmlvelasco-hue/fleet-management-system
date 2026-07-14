@@ -1,0 +1,75 @@
+{% extends "layout/base.html" %}
+{% block title %}PM Template — {{ item.maintenance_type.name }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.pmschedule_list') }}">PM Templates</a></li>
+<li class="breadcrumb-item active">{{ item.maintenance_type.name }}</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">{{ item.maintenance_type.name }}</h1>
+  {% if current_user.has_permission('pmschedule.update') %}
+  <a class="btn btn-outline-primary"
+     href="{{ url_for('maintenance_config.pmschedule_edit', sid=item.id) }}">
+    <i class="bi bi-pencil me-1"></i>Edit</a>
+  {% endif %}
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Match Criteria</div><div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-5">Brand / Model</dt>
+        <dd class="col-sm-7">
+          {% if item.vehicle_brand %}{{ item.vehicle_brand.name }} {{ item.vehicle_model_ref.name if item.vehicle_model_ref else '' }}
+          {% elif item.vehicle_make %}{{ item.vehicle_make }} {{ item.vehicle_model }} <span class="badge text-bg-secondary">legacy free-text</span>
+          {% else %}<span class="text-muted">Any</span>{% endif %}</dd>
+        <dt class="col-sm-5">Vehicle Type</dt>
+        <dd class="col-sm-7">{{ item.vehicle_type.name if item.vehicle_type else 'All Types' }}</dd>
+        <dt class="col-sm-5">Variant</dt><dd class="col-sm-7">{{ item.variant or '—' }}</dd>
+        <dt class="col-sm-5">Engine Type</dt><dd class="col-sm-7">{{ item.engine_type or '—' }}</dd>
+        <dt class="col-sm-5">Fuel Type</dt><dd class="col-sm-7">{{ item.fuel_type or '—' }}</dd>
+        <dt class="col-sm-5">Transmission</dt><dd class="col-sm-7">{{ item.transmission or '—' }}</dd>
+        <dt class="col-sm-5">Model Year Range</dt>
+        <dd class="col-sm-7">{{ item.model_year_from or '—' }} – {{ item.model_year_to or '—' }}</dd>
+        <dt class="col-sm-5">Profile Code</dt>
+        <dd class="col-sm-7">{% if item.profile_code %}<code>{{ item.profile_code }}</code>
+          <a href="{{ url_for('maintenance_config.pmsprofile_detail', profile_code=item.profile_code) }}">(view profile)</a>
+          {% else %}—{% endif %}</dd>
+        <dt class="col-sm-5">Effective Date</dt><dd class="col-sm-7">{{ item.effective_date or '—' }}</dd>
+      </dl>
+    </div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-header">Trigger & Policy</div><div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-5">Trigger Mode</dt>
+        <dd class="col-sm-7"><span class="badge text-bg-info">{{ item.trigger_mode }}</span></dd>
+        <dt class="col-sm-5">Interval KM</dt><dd class="col-sm-7">{{ "{:,}".format(item.interval_km) if item.interval_km else '—' }}</dd>
+        <dt class="col-sm-5">Interval Days</dt><dd class="col-sm-7">{{ item.interval_days or '—' }}</dd>
+        <dt class="col-sm-5">Priority</dt><dd class="col-sm-7">{{ item.priority }}</dd>
+        <dt class="col-sm-5">Next PMS Generation</dt><dd class="col-sm-7">{{ item.next_pms_generation }}</dd>
+        <dt class="col-sm-5">Due Calculation Method</dt><dd class="col-sm-7">{{ item.next_due_calculation_method }}</dd>
+        <dt class="col-sm-5">Notify Before</dt>
+        <dd class="col-sm-7">{{ item.notify_before_km or 'default' }} km / {{ item.notify_before_days or 'default' }} days</dd>
+        <dt class="col-sm-5">Escalate if Overdue</dt>
+        <dd class="col-sm-7">{{ 'Yes' if item.escalate_if_overdue else 'No' }}</dd>
+        <dt class="col-sm-5">Active</dt>
+        <dd class="col-sm-7">{% if item.is_active %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="badge text-bg-danger">No</span>{% endif %}</dd>
+      </dl>
+    </div></div>
+  </div>
+</div>
+
+{% if item.scope_templates %}
+<div class="card mt-3"><div class="card-header">Linked Scope Templates</div>
+  <div class="list-group list-group-flush">
+    {% for st in item.scope_templates %}
+    <a class="list-group-item list-group-item-action"
+       href="{{ url_for('maintenance_config.pmscope_detail', tid=st.id) }}">
+      {{ st.name }} <span class="text-muted small">({{ st.items|length }} activities)</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

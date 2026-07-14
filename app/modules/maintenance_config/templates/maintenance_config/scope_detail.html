@@ -1,0 +1,55 @@
+{% extends "layout/base.html" %}
+{% block title %}PM Scope Template — {{ item.name }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.pmscope_list') }}">PM Scope Templates</a></li>
+<li class="breadcrumb-item active">{{ item.name }}</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">{{ item.name }}</h1>
+  {% if current_user.has_permission('pmscopetemplate.update') %}
+  <a class="btn btn-outline-primary"
+     href="{{ url_for('maintenance_config.pmscope_edit', tid=item.id) }}">
+    <i class="bi bi-pencil me-1"></i>Edit</a>
+  {% endif %}
+</div>
+
+<div class="card mb-3"><div class="card-body">
+  <dl class="row mb-0">
+    <dt class="col-sm-2">Maintenance Type</dt><dd class="col-sm-10">{{ item.maintenance_type.name }}</dd>
+    <dt class="col-sm-2">Linked PM Template</dt>
+    <dd class="col-sm-10">
+      {% if item.pm_schedule %}
+      <a href="{{ url_for('maintenance_config.pmschedule_detail', sid=item.pm_schedule.id) }}">
+        {% if item.pm_schedule.vehicle_brand %}{{ item.pm_schedule.vehicle_brand.name }} {{ item.pm_schedule.vehicle_model_ref.name if item.pm_schedule.vehicle_model_ref else '' }}
+        {% elif item.pm_schedule.vehicle_make %}{{ item.pm_schedule.vehicle_make }} {{ item.pm_schedule.vehicle_model }}
+        {% else %}{{ item.pm_schedule.vehicle_type.name if item.pm_schedule.vehicle_type else 'All Vehicles' }}{% endif %}
+        — {{ item.pm_schedule.maintenance_type.name }}
+      </a>
+      {% else %}<span class="text-muted">Generic (any vehicle with this Maintenance Type)</span>{% endif %}
+    </dd>
+    <dt class="col-sm-2">Description</dt><dd class="col-sm-10">{{ item.description or '—' }}</dd>
+    <dt class="col-sm-2">Active</dt>
+    <dd class="col-sm-10">{% if item.is_active %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="badge text-bg-danger">No</span>{% endif %}</dd>
+  </dl>
+</div></div>
+
+<div class="card"><div class="card-header">Activities ({{ item.items|length }})</div>
+<table class="table table-striped mb-0">
+  <thead><tr><th>#</th><th>Code</th><th>Description</th><th>Labor Hours</th>
+    <th>Est. Cost</th><th>Required Parts</th></tr></thead>
+  <tbody>
+  {% for i in item.items|sort(attribute='sort_order') %}
+    <tr>
+      <td>{{ i.sort_order }}</td>
+      <td><span class="badge text-bg-secondary">{{ i.activity_code }}</span></td>
+      <td>{{ i.activity_description }}</td>
+      <td>{{ i.standard_labor_hours or '—' }}</td>
+      <td>{{ "{:,.2f}".format(i.estimated_cost) if i.estimated_cost else '—' }}</td>
+      <td>{{ i.required_parts or '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

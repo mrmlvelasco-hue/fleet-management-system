@@ -11,12 +11,15 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-8"><label class="form-label">Name</label>
     <input type="text" name="name" class="form-control" required
-           placeholder="e.g. 5,000 KM PMS Scope"></div>
+           placeholder="e.g. 5,000 KM PMS Scope"
+           value="{{ item.name if item else '' }}"></div>
   <div class="col-md-4"><label class="form-label">Maintenance Type</label>
     {% if maintenance_types %}
     <select name="maintenance_type_id" class="form-select fms-select2" required>
       <option value="">— Select —</option>
-      {% for mt in maintenance_types %}<option value="{{ mt.id }}">{{ mt.code }} — {{ mt.name }}</option>{% endfor %}
+      {% for mt in maintenance_types %}
+      <option value="{{ mt.id }}" {{ 'selected' if item and item.maintenance_type_id==mt.id }}>{{ mt.code }} — {{ mt.name }}</option>
+      {% endfor %}
     </select>
     {% else %}
     <div class="alert alert-warning py-2 px-3 mb-0 small">
@@ -28,7 +31,7 @@
     <select name="pm_schedule_id" class="form-select fms-select2">
       <option value="">— Generic (any vehicle with this Maintenance Type) —</option>
       {% for s in pm_schedules %}
-      <option value="{{ s.id }}">
+      <option value="{{ s.id }}" {{ 'selected' if item and item.pm_schedule_id==s.id }}>
         {% if s.vehicle_make %}{{ s.vehicle_make }} {{ s.vehicle_model }}{% else %}{{ s.vehicle_type.name if s.vehicle_type else 'All Vehicles' }}{% endif %}
         — {{ s.maintenance_type.name }} ({{ s.interval_km or s.interval_days }}{{ 'km' if s.interval_km else 'd' }})
       </option>
@@ -36,7 +39,8 @@
     </select>
     <div class="form-text">Leave blank for a generic checklist shared across all vehicles with this Maintenance Type.</div></div>
   <div class="col-12"><label class="form-label">Description</label>
-    <input type="text" name="description" class="form-control"></div>
+    <input type="text" name="description" class="form-control"
+           value="{{ item.description if item and item.description else '' }}"></div>
 
   <div class="col-12">
     <label class="form-label">Scope Activities (checklist items)</label>
@@ -54,7 +58,15 @@
 {% endblock %}
 {% block scripts %}
 <script>
-function addScopeRow() {
+var existingItems = [
+  {% if item %}
+  {% for i in item.items|sort(attribute='sort_order') %}
+  { code: {{ i.activity_code|tojson }}, description: {{ i.activity_description|tojson }} },
+  {% endfor %}
+  {% endif %}
+];
+
+function addScopeRow(code, description) {
   var div = document.createElement("div");
   div.className = "row g-2 mb-2 align-items-center";
   div.innerHTML =
@@ -62,9 +74,16 @@ function addScopeRow() {
     '<div class="col-md-7"><input type="text" name="activity_description" class="form-control form-control-sm" placeholder="Description e.g. Change Engine Oil" required></div>' +
     '<div class="col-md-2"><button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button></div>';
   document.getElementById("scopeRows").appendChild(div);
+  if (code) { div.querySelector('[name="activity_code"]').value = code; }
+  if (description) { div.querySelector('[name="activity_description"]').value = description; }
   div.querySelector(".remove-row").addEventListener("click", function () { div.remove(); });
 }
-document.getElementById("addScopeRow").addEventListener("click", addScopeRow);
-addScopeRow(); addScopeRow();  // start with two rows
+
+if (existingItems.length) {
+  existingItems.forEach(function (it) { addScopeRow(it.code, it.description); });
+} else {
+  addScopeRow(); addScopeRow();  // start with two empty rows for new templates
+}
+document.getElementById("addScopeRow").addEventListener("click", function () { addScopeRow(); });
 </script>
 {% endblock %}

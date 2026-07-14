@@ -25,6 +25,16 @@
       <td>{% for i in t.items %}<span class="badge text-bg-secondary">{{ i.activity_code }}</span> {% endfor %}</td>
       <td>{% if t.is_active %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
       <td class="text-end">
+        {% if current_user.has_permission('pmscopetemplate.view') %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('maintenance_config.pmscope_detail', tid=t.id) }}">
+          <i class="bi bi-eye"></i></a>
+        {% endif %}
+        {% if current_user.has_permission('pmscopetemplate.update') %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('maintenance_config.pmscope_edit', tid=t.id) }}">
+          <i class="bi bi-pencil"></i></a>
+        {% endif %}
         {% if current_user.has_permission('pmscopetemplate.delete') and t.is_active %}
         <form method="post" class="d-inline fms-confirm" data-confirm="Deactivate this template?"
               action="{{ url_for('maintenance_config.pmscope_deactivate', tid=t.id) }}">
