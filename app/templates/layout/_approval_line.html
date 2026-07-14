@@ -1,0 +1,55 @@
+{# Shared Approval Line — include on any transaction detail page that has
+   approval enabled. Expects: `item` (with `.approval_instance`),
+   `approve_url`, `reject_url`, `return_url` (pre-built via url_for in the
+   including template, since route names differ per module). #}
+{% if item.approval_instance and item.approval_instance.approval_path %}
+<div class="card mt-3">
+  <div class="card-header"><i class="bi bi-diagram-3 me-1"></i>Approval Line</div>
+  <div class="card-body">
+    <table class="table table-sm mb-3">
+      <thead><tr><th>Level</th><th>Approver</th><th>Status</th><th>Acted By</th><th>Date</th></tr></thead>
+      <tbody>
+      {% set chain = approval_chain(item.approval_instance) %}
+      {% for lvl in chain %}
+        <tr class="{{ 'table-active' if lvl.status == 'CURRENT' }}">
+          <td>{{ lvl.level_number }}</td>
+          <td>{{ lvl.approver_label }}</td>
+          <td>
+            <span class="badge text-bg-{{ 'success' if lvl.status=='APPROVED' else 'danger' if lvl.status=='REJECTED' else 'warning' if lvl.status in ['RETURNED', 'CURRENT'] else 'secondary' }}">
+              {{ lvl.status }}</span>
+          </td>
+          <td>{{ lvl.acted_by_name or '—' }}</td>
+          <td>{{ lvl.acted_at.strftime('%Y-%m-%d %H:%M') if lvl.acted_at else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    {% if item.approval_instance.status == 'PENDING' %}
+      {% if is_eligible_approver(item.approval_instance) %}
+      <div class="d-flex flex-wrap gap-2">
+        <form method="post" action="{{ approve_url }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-success btn-sm"><i class="bi bi-check-lg me-1"></i>Approve</button>
+        </form>
+        <form method="post" action="{{ reject_url }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-sm"><i class="bi bi-x-lg me-1"></i>Reject</button>
+        </form>
+        <form method="post" action="{{ return_url }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-warning btn-sm"><i class="bi bi-arrow-counterclockwise me-1"></i>Return</button>
+        </form>
+      </div>
+      {% else %}
+      {% set current_lvl = chain | selectattr('status', 'equalto', 'CURRENT') | first %}
+      <div class="alert alert-info py-2 px-3 mb-0 small d-flex align-items-center">
+        <i class="bi bi-hourglass-split me-2"></i>
+        <span>Waiting on <strong>{{ current_lvl.approver_label if current_lvl else 'the next approver' }}</strong>
+          — you don't hold the approver role for this level, so no action is available to you here.</span>
+      </div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
