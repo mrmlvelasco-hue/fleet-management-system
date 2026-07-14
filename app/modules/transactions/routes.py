@@ -464,11 +464,27 @@ def maintenanceorder_list():
 @require_permission("maintenanceorder.create")
 def maintenanceorder_new():
     from app.modules.master_data.reference.service import MaintenanceTypeService
+    from app.modules.master_data.vehicle.service import VehicleService
     from app.modules.maintenance_config.service import (
         PMScheduleService, PMScopeTemplateService)
 
     maintenance_types = MaintenanceTypeService().list()
     scope_templates = PMScopeTemplateService().list()
+
+    # Optional pre-fill via query params — used by the Dashboard's
+    # "Vehicles Due for Maintenance" widget so clicking a due item goes
+    # straight into a ready-to-submit order instead of just the vehicle's
+    # detail page.
+    prefill_vehicle = None
+    if request.method == "GET" and request.args.get("vehicle_id"):
+        prefill_vehicle = VehicleService().get(int(request.args["vehicle_id"]))
+    prefill = {
+        "vehicle_id": request.args.get("vehicle_id", type=int),
+        "maintenance_type_id": request.args.get("maintenance_type_id", type=int),
+        "scope_template_id": request.args.get("scope_template_id", type=int),
+        "odometer_at_service": request.args.get("odometer_at_service", type=int),
+        "scheduled_date": request.args.get("scheduled_date"),
+    }
 
     if request.method == "POST":
         f = request.form
@@ -492,6 +508,7 @@ def maintenanceorder_new():
     return render_template("transactions/maintenanceorder_form.html",
                            maintenance_types=maintenance_types,
                            scope_templates=scope_templates,
+                           prefill_vehicle=prefill_vehicle, prefill=prefill,
                            title="New Maintenance Order")
 
 

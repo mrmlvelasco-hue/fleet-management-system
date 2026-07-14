@@ -12,7 +12,13 @@
   <div class="col-md-6"><label class="form-label">Vehicle</label>
     <div class="input-group">
       <select name="vehicle_id" id="moVehicleSelect" class="form-select" required>
+        {% if prefill_vehicle %}
+        <option value="{{ prefill_vehicle.id }}" selected>
+          {{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number }} — {{ prefill_vehicle.brand }} {{ prefill_vehicle.model }}
+        </option>
+        {% else %}
         <option value="">— Type plate number, make, or model —</option>
+        {% endif %}
       </select>
       <button type="button" class="btn btn-outline-secondary" id="moVehicleModalBtn" title="Advanced search">
         <i class="bi bi-search"></i></button>
@@ -21,22 +27,24 @@
     <select name="maintenance_type_id" class="form-select fms-select2" required>
       <option value="">— Select —</option>
       {% for mt in maintenance_types %}
-      <option value="{{ mt.id }}">{{ mt.code }} — {{ mt.name }} ({{ mt.category }})</option>
+      <option value="{{ mt.id }}" {{ 'selected' if prefill.maintenance_type_id==mt.id }}>{{ mt.code }} — {{ mt.name }} ({{ mt.category }})</option>
       {% endfor %}
     </select></div>
   <div class="col-md-6"><label class="form-label">PM Scope Template (optional — generates checklist)</label>
     <select name="scope_template_id" class="form-select fms-select2">
       <option value="">— None (Corrective / unscheduled) —</option>
-      {% for st in scope_templates %}<option value="{{ st.id }}">{{ st.name }}</option>{% endfor %}
+      {% for st in scope_templates %}<option value="{{ st.id }}" {{ 'selected' if prefill.scope_template_id==st.id }}>{{ st.name }}</option>{% endfor %}
     </select></div>
   <div class="col-md-6"><label class="form-label">Vendor (optional)</label>
     <select name="vendor_id" id="moVendorSelect" class="form-select">
       <option value="">— Type vendor code or name —</option>
     </select></div>
   <div class="col-md-4"><label class="form-label">Scheduled Date</label>
-    <input type="date" name="scheduled_date" class="form-control" required></div>
+    <input type="date" name="scheduled_date" class="form-control" required
+           value="{{ prefill.scheduled_date or '' }}"></div>
   <div class="col-md-4"><label class="form-label">Odometer at Service</label>
-    <input type="number" name="odometer_at_service" class="form-control"></div>
+    <input type="number" name="odometer_at_service" class="form-control"
+           value="{{ prefill.odometer_at_service or '' }}"></div>
   <div class="col-md-4"><label class="form-label">Estimated Cost</label>
     <input type="number" step="0.01" name="estimated_cost" class="form-control"></div>
   <div class="col-md-6"><label class="form-label">Assigned Mechanic</label>

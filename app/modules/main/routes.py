@@ -94,16 +94,30 @@ def dashboard():
         from app.modules.user_management.org_scope_service import (
             UserOrgScopeService)
         scope_svc = UserOrgScopeService()
+        can_create_mo = current_user.has_permission("maintenanceorder.create")
         for d in PMDueCalculationService().get_all_due_vehicles():
             vehicle = d["vehicle"]
             if not scope_svc.covers(current_user.id, branch_id=vehicle.branch_id):
                 continue
+            if can_create_mo:
+                # Link straight into a ready-to-submit Maintenance Order
+                # instead of just the vehicle's detail page — the vehicle,
+                # matched maintenance type, and current odometer are all
+                # already known, so pre-fill them.
+                link_url = url_for(
+                    "transactions.maintenanceorder_new",
+                    vehicle_id=vehicle.id,
+                    maintenance_type_id=d["schedule"].maintenance_type_id,
+                    odometer_at_service=vehicle.current_odometer,
+                    scheduled_date=datetime.now().date().isoformat())
+            else:
+                link_url = url_for("master_data.vehicle_detail", vid=vehicle.id)
             due_vehicles.append({
                 "vehicle": vehicle,
                 "status": d["status"],
                 "next_due_km": d["next_due_km"],
                 "next_due_date": d["next_due_date"],
-                "url": url_for("master_data.vehicle_detail", vid=vehicle.id),
+                "url": link_url,
             })
 
     return render_template("main/dashboard.html", cards=cards,
