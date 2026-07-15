@@ -11,7 +11,7 @@ class Vehicle(db.Model, BaseModel):
     conduction_number = db.Column(db.String(30), unique=True, nullable=True,
                                   index=True)
     chassis_number = db.Column(db.String(50), unique=True, nullable=True)
-    engine_number = db.Column(db.String(50), nullable=True)
+    engine_number = db.Column(db.String(50), unique=True, nullable=True)
     vehicle_type_id = db.Column(db.Integer,
                                 db.ForeignKey("vehicle_types.id"),
                                 nullable=False)
@@ -35,9 +35,66 @@ class Vehicle(db.Model, BaseModel):
                                  nullable=True)
     assigned_driver_id = db.Column(db.Integer, db.ForeignKey("drivers.id"),
                                    nullable=True)
+    # "Purchase Date" in the UI — column name kept as acquisition_date for
+    # backward compatibility with existing data/reports.
     acquisition_date = db.Column(db.Date, nullable=True)
     acquisition_cost = db.Column(db.Numeric(18, 2), nullable=True)
     current_odometer = db.Column(db.Integer, default=0, nullable=False)
+
+    # ── Vehicle Master enhancement (identifiers) ──────────────────────
+    far_number = db.Column(db.String(60), nullable=True)
+    cr_number = db.Column(db.String(60), nullable=True)
+    mv_file_number = db.Column(db.String(60), nullable=True)
+    remarks = db.Column(db.Text, nullable=True)
+
+    # ── Classification lookups/free-text ──────────────────────────────
+    vehicle_body_type = db.Column(db.String(40), nullable=True)  # Lookup VEHICLE_BODY_TYPE
+    displacement = db.Column(db.String(40), nullable=True)
+    component_group = db.Column(db.String(40), nullable=True)  # Lookup COMPONENT_GROUP
+    supplier = db.Column(db.String(120), nullable=True)
+    leasing_company = db.Column(db.String(120), nullable=True)
+
+    # ── Financials ──────────────────────────────────────────────────
+    top_up_amount = db.Column(db.Numeric(18, 2), nullable=True)  # VAT exclusive
+    assured_value_current_year = db.Column(db.Numeric(18, 2), nullable=True)
+
+    # ── Delivery / contract dates ──────────────────────────────────
+    delivery_date = db.Column(db.Date, nullable=True)
+    start_date = db.Column(db.Date, nullable=True)
+    end_date = db.Column(db.Date, nullable=True)
+
+    # ── Insurance ──────────────────────────────────────────────────
+    insurance_reference_number = db.Column(db.String(60), nullable=True)
+    comprehensive_policy_number = db.Column(db.String(60), nullable=True)
+    comprehensive_insurance_provider = db.Column(db.String(120), nullable=True)
+    ctpl_policy_number = db.Column(db.String(60), nullable=True)
+    ctpl_insurance_provider = db.Column(db.String(120), nullable=True)
+    lto_office = db.Column(db.String(120), nullable=True)
+
+    has_ctpl = db.Column(db.Boolean, default=False, nullable=False)
+    ctpl_from_date = db.Column(db.Date, nullable=True)
+    ctpl_to_date = db.Column(db.Date, nullable=True)
+    has_od_theft_aon = db.Column(db.Boolean, default=False, nullable=False)
+    od_theft_aon_from_date = db.Column(db.Date, nullable=True)
+    od_theft_aon_to_date = db.Column(db.Date, nullable=True)
+    has_vtpl_pd = db.Column(db.Boolean, default=False, nullable=False)
+    vtpl_pd_from_date = db.Column(db.Date, nullable=True)
+    vtpl_pd_to_date = db.Column(db.Date, nullable=True)
+    has_vtpl_bi = db.Column(db.Boolean, default=False, nullable=False)
+    vtpl_bi_from_date = db.Column(db.Date, nullable=True)
+    vtpl_bi_to_date = db.Column(db.Date, nullable=True)
+    has_inland_marine = db.Column(db.Boolean, default=False, nullable=False)
+
+    # ── Assignment classification ──────────────────────────────────
+    # PRIMARY | SECONDARY
+    assignment = db.Column(db.String(10), nullable=True)
+    # CAR_PLAN | COMPANY_OWNED | OTHERS
+    assignment_group_classification = db.Column(db.String(20), nullable=True)
+    # SALES | NON_SALES
+    vehicle_usage = db.Column(db.String(12), nullable=True)
+    mr_eds = db.Column(db.Boolean, nullable=True)
+    with_vehicle_contract = db.Column(db.Boolean, nullable=True)
+
     # Assigned PM Template — direct link to the specific PM interval that
     # applies to this vehicle (set at registration/edit). When set, this
     # takes precedence over any make/model or vehicle-type PM matching in

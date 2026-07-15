@@ -25,6 +25,10 @@ class DuplicateVehicleError(Exception):
     pass
 
 
+class InvalidVehicleDataError(Exception):
+    pass
+
+
 class BrandRequiredError(Exception):
     pass
 
@@ -87,6 +91,32 @@ def _resolve_brand_model(brand: str, model: str, strict: bool) -> tuple[str, str
     return brand_row.name, model_row.name
 
 
+def _validate_business_rules(data: dict) -> None:
+    """Cross-field validations that apply on both create() and update() —
+    checked against the merged field set (existing values + incoming
+    kwargs), since update() may only pass a subset of fields."""
+    cost = data.get("acquisition_cost")
+    if cost is not None and cost <= 0:
+        raise InvalidVehicleDataError("Acquisition Cost must be greater than zero.")
+
+    purchase = data.get("acquisition_date")
+    delivery = data.get("delivery_date")
+    if purchase and delivery and purchase > delivery:
+        raise InvalidVehicleDataError(
+            "Purchase Date cannot be later than Delivery Date.")
+
+    for label, from_field, to_field in [
+        ("CTPL", "ctpl_from_date", "ctpl_to_date"),
+        ("OD/THEFT/AON", "od_theft_aon_from_date", "od_theft_aon_to_date"),
+        ("VTPL/PD", "vtpl_pd_from_date", "vtpl_pd_to_date"),
+        ("VTPL/BI", "vtpl_bi_from_date", "vtpl_bi_to_date"),
+    ]:
+        from_date, to_date = data.get(from_field), data.get(to_field)
+        if from_date and to_date and from_date >= to_date:
+            raise InvalidVehicleDataError(
+                f"{label} 'From Date' must be earlier than 'To Date'.")
+
+
 class VehicleService:
     def create(self, vehicle_type_id, brand, model, year,
                branch_id, conduction_number=None, plate_number=None,
@@ -99,6 +129,12 @@ class VehicleService:
                 plate_number=plate_number).first():
             raise DuplicateVehicleError(
                 f"Plate number '{plate_number}' already exists.")
+        engine_number = kwargs.get("engine_number")
+        if engine_number and Vehicle.query.filter_by(
+                engine_number=engine_number).first():
+            raise DuplicateVehicleError(
+                f"Engine number '{engine_number}' already exists.")
+        _validate_business_rules(kwargs)
         brand, model = _resolve_brand_model(brand, model, strict)
         obj = Vehicle(
             vehicle_type_id=vehicle_type_id, brand=brand, model=model,
@@ -106,10 +142,12 @@ class VehicleService:
             conduction_number=conduction_number,
             plate_number=plate_number, **kwargs)
         db.session.add(obj)
-        self._commit_or_raise_friendly(conduction_number, plate_number)
+        self._commit_or_raise_friendly(conduction_number, plate_number,
+                                       engine_number)
         return obj
 
-    def _commit_or_raise_friendly(self, conduction_number, plate_number):
+    def _commit_or_raise_friendly(self, conduction_number, plate_number,
+                                  engine_number=None):
         """Commits, translating any unique-constraint violation the
         pre-check couldn't catch (e.g. a race between two near-
         simultaneous requests) into the same friendly DuplicateVehicleError
@@ -126,6 +164,9 @@ class VehicleService:
             if conduction_number and "conduction_number" in message:
                 raise DuplicateVehicleError(
                     f"Conduction number '{conduction_number}' already exists.")
+            if engine_number and "engine_number" in message:
+                raise DuplicateVehicleError(
+                    f"Engine number '{engine_number}' already exists.")
             raise DuplicateVehicleError(
                 "This vehicle could not be saved because one of its unique "
                 "fields (Plate Number, Conduction Number, Chassis Number, "
@@ -135,6 +176,27 @@ class VehicleService:
     def update(self, record_id, strict=False, **kwargs):
         obj = db.session.get(Vehicle, record_id)
         if obj:
+            engine_number = kwargs.get("engine_number")
+            if engine_number and engine_number != obj.engine_number:
+                existing = Vehicle.query.filter_by(
+                    engine_number=engine_number).first()
+                if existing and existing.id != obj.id:
+                    raise DuplicateVehicleError(
+                        f"Engine number '{engine_number}' already exists.")
+            merged = {
+                "acquisition_cost": kwargs.get("acquisition_cost", obj.acquisition_cost),
+                "acquisition_date": kwargs.get("acquisition_date", obj.acquisition_date),
+                "delivery_date": kwargs.get("delivery_date", obj.delivery_date),
+                "ctpl_from_date": kwargs.get("ctpl_from_date", obj.ctpl_from_date),
+                "ctpl_to_date": kwargs.get("ctpl_to_date", obj.ctpl_to_date),
+                "od_theft_aon_from_date": kwargs.get("od_theft_aon_from_date", obj.od_theft_aon_from_date),
+                "od_theft_aon_to_date": kwargs.get("od_theft_aon_to_date", obj.od_theft_aon_to_date),
+                "vtpl_pd_from_date": kwargs.get("vtpl_pd_from_date", obj.vtpl_pd_from_date),
+                "vtpl_pd_to_date": kwargs.get("vtpl_pd_to_date", obj.vtpl_pd_to_date),
+                "vtpl_bi_from_date": kwargs.get("vtpl_bi_from_date", obj.vtpl_bi_from_date),
+                "vtpl_bi_to_date": kwargs.get("vtpl_bi_to_date", obj.vtpl_bi_to_date),
+            }
+            _validate_business_rules(merged)
             if "brand" in kwargs or "model" in kwargs:
                 brand = kwargs.pop("brand", obj.brand)
                 model = kwargs.pop("model", obj.model)
@@ -144,8 +206,23 @@ class VehicleService:
             for k, v in kwargs.items():
                 setattr(obj, k, v)
             self._commit_or_raise_friendly(
-                kwargs.get("conduction_number"), kwargs.get("plate_number"))
+                kwargs.get("conduction_number"), kwargs.get("plate_number"),
+                engine_number)
         return obj
+
+    def get_clone_data(self, record_id) -> dict:
+        """Returns a dict of this vehicle's field values suitable for
+        pre-filling a NEW vehicle form — every unique identifier (plate,
+        conduction, chassis, engine numbers) is deliberately excluded so
+        the clone can't collide with the original."""
+        obj = db.session.get(Vehicle, record_id)
+        if obj is None:
+            return {}
+        exclude = {"id", "plate_number", "conduction_number",
+                  "chassis_number", "engine_number", "created_at",
+                  "updated_at", "created_by", "updated_by"}
+        return {c.name: getattr(obj, c.name)
+               for c in obj.__table__.columns if c.name not in exclude}
 
     def assign_plate(self, vehicle_id, plate_number):
         obj = db.session.get(Vehicle, vehicle_id)
