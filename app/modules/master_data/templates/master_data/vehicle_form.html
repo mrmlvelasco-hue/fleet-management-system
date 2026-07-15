@@ -7,7 +7,8 @@
 {% block content %}
 <h1 class="h3 mb-4">{{ title }}</h1>
 <div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post" class="row g-3"
+      action="{{ url_for('master_data.vehicle_edit', vid=item.id) if item and item.id else url_for('master_data.vehicle_new') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-4"><label class="form-label">Conduction Number</label>
     <input type="text" name="conduction_number"

@@ -23,7 +23,7 @@ from app.modules.master_data.reference.service import (
     VehicleTypeService, MaintenanceTypeService)
 from app.modules.master_data.vehicle.models import Vehicle
 from app.modules.master_data.vehicle.service import (
-    VehicleService, DuplicateVehicleError,
+    VehicleService, DuplicateVehicleError, InvalidVehicleDataError,
     BrandRequiredError, ModelRequiredError, InvalidBrandError,
     InvalidModelError, ModelBrandMismatchError)
 from app.modules.master_data.vehicle_brand.models import (
@@ -610,6 +610,36 @@ def vehicle_detail(vid):
                            registration_history=registration_history)
 
 
+@bp.route("/vehicles/<int:vid>/clone")
+@login_required
+@require_permission("vehicle.create")
+def vehicle_clone(vid):
+    """Pre-fills the New Vehicle form with an existing vehicle's data —
+    unique identifiers (plate/conduction/chassis/engine numbers) are
+    deliberately left blank so the clone can't collide with the original."""
+    from app.modules.maintenance_config.service import PMScheduleService
+    from app.modules.master_data.vehicle_brand.service import VehicleBrandService
+    from app.core.validation.form_echo import FormEcho
+    clone_data = VehicleService().get_clone_data(vid)
+    if not clone_data:
+        abort(404)
+    branch = (db.session.get(Branch, clone_data["branch_id"])
+             if clone_data.get("branch_id") else None)
+    item = FormEcho(clone_data, branch=branch)
+    flash("Reviewing a clone of this vehicle — unique fields (Plate, "
+         "Conduction, Chassis, Engine numbers) have been cleared; fill "
+         "in new ones before saving.", "info")
+    return render_template(
+        "master_data/vehicle_form.html", item=item,
+        vtypes=VehicleTypeService().list(), vehicle_types=VehicleTypeService().list(),
+        departments=DepartmentService().list(), bus=BusinessUnitService().list(),
+        fuel_types=LookupService().get_by_type("FUEL_TYPE"),
+        pm_schedules=PMScheduleService().list(),
+        vehicle_brands=VehicleBrandService().list(),
+        brand_ids_by_name={b.name: b.id for b in VehicleBrandService().list()},
+        error_field=None, title="New Vehicle (Cloned)")
+
+
 @bp.route("/vehicles/new", methods=["GET", "POST"])
 @login_required
 @require_permission("vehicle.create")
@@ -631,7 +661,8 @@ def vehicle_new():
             VehicleService().create(**_vehicle_fields(), strict=True)
             flash("Vehicle created.", "success")
             return redirect(url_for("master_data.vehicle_list"))
-        except (DuplicateVehicleError, DateFormatError, RequiredFieldError,
+        except (DuplicateVehicleError, InvalidVehicleDataError,
+                DateFormatError, RequiredFieldError,
                 BrandRequiredError, ModelRequiredError, InvalidBrandError,
                 InvalidModelError, ModelBrandMismatchError) as e:
             flash(str(e), "danger")
@@ -674,9 +705,9 @@ def vehicle_edit(vid):
                                     strict=True)
             flash("Vehicle updated.", "success")
             return redirect(url_for("master_data.vehicle_detail", vid=vid))
-        except (DateFormatError, RequiredFieldError, BrandRequiredError,
-                ModelRequiredError, InvalidBrandError, InvalidModelError,
-                ModelBrandMismatchError) as e:
+        except (InvalidVehicleDataError, DateFormatError, RequiredFieldError,
+                BrandRequiredError, ModelRequiredError, InvalidBrandError,
+                InvalidModelError, ModelBrandMismatchError) as e:
             flash(str(e), "danger")
             error_field = _guess_error_field(e)
             # Show what the user just typed, not the stale saved values —
@@ -713,7 +744,7 @@ _ERROR_FIELD_HINTS = [
     ("registration date", "registration_date"),
     ("valid from", "valid_from"),
     ("valid to", "valid_to"),
-    ("purchase date", "purchase_date"),
+    ("purchase date", "acquisition_date"),
 ]
 
 
@@ -749,12 +780,52 @@ def _vehicle_fields(include_conduction=True):
         engine_number=f.get("engine_number") or None,
         plate_number=f.get("plate_number") or None,
         acquisition_date=parse_form_date(f.get("acquisition_date"),
-                                         "Acquisition Date"),
+                                         "Purchase Date"),
         acquisition_cost=f.get("acquisition_cost") or None,
         current_odometer=int(f.get("current_odometer") or 0),
         pm_schedule_id=int(f["pm_schedule_id"]) if f.get("pm_schedule_id") else None,
         assigned_driver_id=int(f["assigned_driver_id"]) if f.get("assigned_driver_id") else None,
-        notes=f.get("notes", ""))
+        notes=f.get("notes", ""),
+        # ── Vehicle Master enhancement ──
+        far_number=f.get("far_number") or None,
+        cr_number=f.get("cr_number") or None,
+        mv_file_number=f.get("mv_file_number") or None,
+        remarks=f.get("remarks") or None,
+        vehicle_body_type=f.get("vehicle_body_type") or None,
+        displacement=f.get("displacement") or None,
+        component_group=f.get("component_group") or None,
+        supplier=f.get("supplier") or None,
+        leasing_company=f.get("leasing_company") or None,
+        top_up_amount=f.get("top_up_amount") or None,
+        assured_value_current_year=f.get("assured_value_current_year") or None,
+        delivery_date=parse_form_date(f.get("delivery_date"), "Delivery Date"),
+        start_date=parse_form_date(f.get("start_date"), "Start Date"),
+        end_date=parse_form_date(f.get("end_date"), "End Date"),
+        insurance_reference_number=f.get("insurance_reference_number") or None,
+        comprehensive_policy_number=f.get("comprehensive_policy_number") or None,
+        comprehensive_insurance_provider=f.get("comprehensive_insurance_provider") or None,
+        ctpl_policy_number=f.get("ctpl_policy_number") or None,
+        ctpl_insurance_provider=f.get("ctpl_insurance_provider") or None,
+        lto_office=f.get("lto_office") or None,
+        has_ctpl=f.get("has_ctpl") == "on",
+        ctpl_from_date=parse_form_date(f.get("ctpl_from_date"), "CTPL From Date"),
+        ctpl_to_date=parse_form_date(f.get("ctpl_to_date"), "CTPL To Date"),
+        has_od_theft_aon=f.get("has_od_theft_aon") == "on",
+        od_theft_aon_from_date=parse_form_date(f.get("od_theft_aon_from_date"), "OD/THEFT/AON From Date"),
+        od_theft_aon_to_date=parse_form_date(f.get("od_theft_aon_to_date"), "OD/THEFT/AON To Date"),
+        has_vtpl_pd=f.get("has_vtpl_pd") == "on",
+        vtpl_pd_from_date=parse_form_date(f.get("vtpl_pd_from_date"), "VTPL/PD From Date"),
+        vtpl_pd_to_date=parse_form_date(f.get("vtpl_pd_to_date"), "VTPL/PD To Date"),
+        has_vtpl_bi=f.get("has_vtpl_bi") == "on",
+        vtpl_bi_from_date=parse_form_date(f.get("vtpl_bi_from_date"), "VTPL/BI From Date"),
+        vtpl_bi_to_date=parse_form_date(f.get("vtpl_bi_to_date"), "VTPL/BI To Date"),
+        has_inland_marine=f.get("has_inland_marine") == "on",
+        assignment=f.get("assignment") or None,
+        assignment_group_classification=f.get("assignment_group_classification") or None,
+        vehicle_usage=f.get("vehicle_usage") or None,
+        mr_eds=(f.get("mr_eds") == "YES") if f.get("mr_eds") else None,
+        with_vehicle_contract=(f.get("with_vehicle_contract") == "YES") if f.get("with_vehicle_contract") else None,
+    )
     if include_conduction:
         d["conduction_number"] = f.get("conduction_number") or None
     return d
