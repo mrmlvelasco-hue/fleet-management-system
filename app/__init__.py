@@ -62,6 +62,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.transactions.routes import bp as transactions_bp
     from app.modules.maintenance_config.routes import bp as maintenance_config_bp
     from app.modules.api_search.routes import bp as api_search_bp
+    from app.core.comments.routes import bp as comments_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(user_mgmt_bp)
@@ -72,6 +73,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(transactions_bp)
     app.register_blueprint(maintenance_config_bp)
     app.register_blueprint(api_search_bp)
+    app.register_blueprint(comments_bp)
 
     from app.modules.system_admin.services.notification_engine import (
         register_notification_hooks)
@@ -123,6 +125,19 @@ def create_app(config_name: str | None = None) -> Flask:
         approvals)."""
         from app.core.approval.engine import ApprovalEngine
         return ApprovalEngine().get_approval_chain(approval_instance)
+
+    @app.template_global()
+    def comment_thread(reference_table, reference_id):
+        """All comments posted on a document, oldest first — the
+        discussion thread shown alongside the Approval Line."""
+        from app.core.comments.comment_service import CommentService
+        return CommentService().list_for(reference_table, reference_id)
+
+    @app.template_global()
+    def comment_attachments(comment_id):
+        """Files attached to a specific comment."""
+        from app.core.attachments.attachment_service import AttachmentService
+        return AttachmentService().list_for("document_comments", comment_id)
 
     return app
 
