@@ -100,6 +100,6 @@ def test_approval_line_table_shows_the_level(client, db, env):
     client.post("/login", data={"username": "apline_l1", "password": "pw123456"})
     resp = client.get(f"/transactions/maintenance-orders/{order.id}")
     assert resp.status_code == 200
-    assert b"Approval Line" in resp.data
+    assert b"Initiator / Reviewer / Approver" in resp.data
     assert b"Level1 Approver" in resp.data
-    assert b"CURRENT" in resp.data
+    assert b"Pending with" in resp.data

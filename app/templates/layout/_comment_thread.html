@@ -1,0 +1,58 @@
+{# Shared Comment/Discussion thread — include on any transaction detail
+   page. Expects `reference_table` and `reference_id` to already be set
+   (the same variables used by _attachment_panel.html on these pages). #}
+<div class="card mt-3">
+  <div class="card-header"><i class="bi bi-chat-square-text me-1"></i>Comment / Attachment</div>
+  <div class="card-body">
+    <form method="post"
+          action="{{ url_for('comments.post_comment', reference_table=reference_table, reference_id=reference_id) }}"
+          enctype="multipart/form-data" class="mb-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <div class="mb-2">
+        <select name="recipient_id" id="commentRecipientSelect_{{ reference_id }}" class="form-select">
+          <option value="">Recipient (Optional)</option>
+        </select>
+      </div>
+      <textarea name="body" class="form-control mb-2" rows="3"
+                placeholder="Post a new comment..." required></textarea>
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <label class="btn btn-outline-secondary btn-sm mb-0">
+            <i class="bi bi-paperclip me-1"></i>Attach File
+            <input type="file" name="attachment" class="d-none commentFileInput">
+          </label>
+          <span class="small text-muted ms-1 commentFileLabel">0 file(s)</span>
+        </div>
+        <button class="btn btn-primary btn-sm"><i class="bi bi-send me-1"></i>Submit Comment</button>
+      </div>
+    </form>
+
+    {% set comments = comment_thread(reference_table, reference_id) %}
+    {% if comments %}
+    <div class="list-group list-group-flush">
+      {% for c in comments %}
+      <div class="list-group-item px-0 py-3 border-top">
+        <div class="d-flex justify-content-between flex-wrap">
+          <div>
+            <i class="bi bi-person-circle me-1 text-secondary"></i>
+            <strong>{{ c.author.full_name if c.author else 'Unknown' }}</strong>
+            {% if c.recipient %}<span class="text-muted small"> → {{ c.recipient.full_name }}</span>{% endif %}
+          </div>
+          <span class="text-muted small">{{ c.created_at.strftime('%b %d, %Y %I:%M %p') if c.created_at else '' }}</span>
+        </div>
+        <div class="mt-1" style="white-space: pre-wrap;">{{ c.body }}</div>
+        {% for a in comment_attachments(c.id) %}
+        <div class="small mt-1">
+          <i class="bi bi-paperclip"></i>
+          <a href="{{ url_for('master_data.attachment_download', att_id=a.id) }}">{{ a.original_filename }}</a>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted small mb-0">No comments yet — start the discussion above.</p>
+    {% endif %}
+  </div>
+</div>

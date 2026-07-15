@@ -1,29 +1,51 @@
 {# Shared Approval Line — include on any transaction detail page that has
-   approval enabled. Expects: `item` (with `.approval_instance`),
-   `approve_url`, `reject_url`, `return_url` (pre-built via url_for in the
-   including template, since route names differ per module). #}
+   approval enabled. Expects: `item` (with `.approval_instance` and
+   `.requester`), `approve_url`, `reject_url`, `return_url` (pre-built via
+   url_for in the including template, since route names differ per
+   module). Styled as a status trail + personnel list rather than a plain
+   table. #}
 {% if item.approval_instance and item.approval_instance.approval_path %}
+{% set chain = approval_chain(item.approval_instance) %}
 <div class="card mt-3">
-  <div class="card-header"><i class="bi bi-diagram-3 me-1"></i>Approval Line</div>
   <div class="card-body">
-    <table class="table table-sm mb-3">
-      <thead><tr><th>Level</th><th>Approver</th><th>Status</th><th>Acted By</th><th>Date</th></tr></thead>
-      <tbody>
-      {% set chain = approval_chain(item.approval_instance) %}
+    <div class="mb-3 small">
+      <strong class="text-primary"><i class="bi bi-signpost-split me-1"></i>Status:</strong>
+      <span>Initiator</span>
       {% for lvl in chain %}
-        <tr class="{{ 'table-active' if lvl.status == 'CURRENT' }}">
-          <td>{{ lvl.level_number }}</td>
-          <td>{{ lvl.approver_label }}</td>
-          <td>
-            <span class="badge text-bg-{{ 'success' if lvl.status=='APPROVED' else 'danger' if lvl.status=='REJECTED' else 'warning' if lvl.status in ['RETURNED', 'CURRENT'] else 'secondary' }}">
-              {{ lvl.status }}</span>
-          </td>
-          <td>{{ lvl.acted_by_name or '—' }}</td>
-          <td>{{ lvl.acted_at.strftime('%Y-%m-%d %H:%M') if lvl.acted_at else '—' }}</td>
-        </tr>
+      <span class="text-muted">&raquo;</span>
+      <span class="{{ 'fw-bold text-primary' if lvl.status == 'CURRENT' else 'text-muted' if lvl.status == 'WAITING' }}">
+        {{ lvl.approver_label.split(': ', 1)[-1] }}</span>
       {% endfor %}
-      </tbody>
-    </table>
+    </div>
+
+    <h6 class="text-primary mb-2"><i class="bi bi-people-fill me-1"></i>Initiator / Reviewer / Approver</h6>
+    <div class="mb-3">
+      {% if item.requester %}
+      <div class="py-1">
+        <i class="bi bi-person-fill me-2 text-secondary"></i>{{ item.requester.full_name }}
+        {%- if item.requester.branch %} — {{ item.requester.branch.name }}{% endif %} (Initiator)
+        {% if item.created_at %}<span class="text-muted small"> — {{ item.created_at.strftime('%b %d %Y %I:%M:%S %p') }}</span>{% endif %}
+      </div>
+      {% endif %}
+      {% for lvl in chain %}
+        {% if lvl.acted_by_name %}
+        <div class="py-1">
+          <i class="bi bi-person-fill me-2 text-secondary"></i>{{ lvl.acted_by_name }}
+          — {{ lvl.approver_label.split(': ', 1)[-1] }}
+          <span class="badge text-bg-{{ 'success' if lvl.status=='APPROVED' else 'danger' if lvl.status=='REJECTED' else 'warning' }} ms-1">{{ lvl.status }}</span>
+          <span class="text-muted small"> — {{ lvl.acted_at.strftime('%b %d %Y %I:%M:%S %p') if lvl.acted_at else '' }}</span>
+        </div>
+        {% elif lvl.status == 'CURRENT' %}
+        <div class="py-1 text-muted">
+          <i class="bi bi-hourglass-split me-2"></i>Pending with: {{ lvl.approver_label.split(': ', 1)[-1] }}
+        </div>
+        {% elif lvl.status == 'WAITING' %}
+        <div class="py-1 text-muted">
+          <i class="bi bi-circle me-2"></i>{{ lvl.approver_label.split(': ', 1)[-1] }} <span class="small">(not yet reached)</span>
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
 
     {% if item.approval_instance.status == 'PENDING' %}
       {% if is_eligible_approver(item.approval_instance) %}

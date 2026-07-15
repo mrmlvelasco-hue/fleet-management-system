@@ -69,7 +69,7 @@ def test_battery_transaction_full_approval_flow_via_http(client, db):
     detail_resp = client.get(f"/transactions/battery-transactions/{txn.id}")
     # The requester is not the eligible approver for this level — they
     # should see the approval line but NOT actionable buttons.
-    assert b"Approval Line" in detail_resp.data
+    assert b"Initiator / Reviewer / Approver" in detail_resp.data
     assert b">Approve<" not in detail_resp.data
     assert b">Reject<" not in detail_resp.data
     assert b"Waiting on" in detail_resp.data
