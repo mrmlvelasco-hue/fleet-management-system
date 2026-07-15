@@ -28,7 +28,8 @@ class VehicleRegistrationService(BaseTransactionService):
     reference_table = "vehicle_registrations"
 
     def create(self, *, vehicle_id, registration_type, registration_date,
-               user, validity_years=None, or_cr_cost=None):
+               user, validity_years=None, or_cr_cost=None,
+               odometer_at_registration=None):
         existing = (VehicleRegistration.query
                    .filter_by(vehicle_id=vehicle_id)
                    .filter(VehicleRegistration.status != "CANCELLED")
@@ -63,8 +64,9 @@ class VehicleRegistrationService(BaseTransactionService):
             registration_type=registration_type,
             registration_date=registration_date,
             validity_years=validity_years, expiry_date=expiry_date,
-            or_cr_cost=or_cr_cost, status="DRAFT",
-            requested_by=user.id if user else None)
+            or_cr_cost=or_cr_cost,
+            odometer_at_registration=odometer_at_registration,
+            status="DRAFT", requested_by=user.id if user else None)
         db.session.add(reg)
         db.session.commit()
         return reg

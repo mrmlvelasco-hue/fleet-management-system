@@ -130,12 +130,17 @@
       <option value="">— Auto-match by Make/Model or Vehicle Type —</option>
       {% for s in pm_schedules %}
       <option value="{{ s.id }}" {{ 'selected' if item and item.pm_schedule_id==s.id }}>
-        {% if s.vehicle_make %}{{ s.vehicle_make }} {{ s.vehicle_model }}{% else %}{{ s.vehicle_type.name if s.vehicle_type else 'All Vehicles' }}{% endif %}
+        {% if s.vehicle_brand %}{{ s.vehicle_brand.name }} {{ s.vehicle_model_ref.name if s.vehicle_model_ref else '' }}
+        {% elif s.vehicle_make %}{{ s.vehicle_make }} {{ s.vehicle_model }}
+        {% else %}{{ s.vehicle_type.name if s.vehicle_type else 'All Vehicles' }}{% endif %}
         — {{ s.maintenance_type.name }}
+        {%- if s.profile_code %} [{{ s.profile_code }}{% if s.sequence_position %} #{{ s.sequence_position }}{% endif %}]{% endif %}
+        {%- if s.interval_km %} — {{ "{:,}".format(s.interval_km) }} km{% endif %}
+        {%- if s.interval_days %} / {{ s.interval_days }} days{% endif %}
       </option>
       {% endfor %}
     </select>
-    <div class="form-text">Optional — explicitly pins this vehicle to one PM Template, overriding automatic Make/Model matching.</div></div>
+    <div class="form-text">Optional — explicitly pins this vehicle to one PM Template, overriding automatic Make/Model matching. If several packages exist for the same vehicle (e.g. from an imported profile), each is now labeled with its interval so they're no longer indistinguishable.</div></div>
   <div class="col-md-8"><label class="form-label">Assigned Driver</label>
     <select name="assigned_driver_id" id="vehDriverSelect" class="form-select">
       {% if item and item.assigned_driver %}

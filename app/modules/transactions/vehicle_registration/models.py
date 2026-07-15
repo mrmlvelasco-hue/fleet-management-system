@@ -21,6 +21,7 @@ class VehicleRegistration(db.Model, BaseModel):
     validity_years = db.Column(db.Integer, nullable=False, default=3)
     expiry_date = db.Column(db.Date, nullable=True)
     or_cr_cost = db.Column(db.Numeric(18, 2), nullable=True)
+    odometer_at_registration = db.Column(db.Integer, nullable=True)
 
     # DRAFT | PENDING | APPROVED | COMPLETED | CANCELLED
     status = db.Column(db.String(12), default="DRAFT", nullable=False)

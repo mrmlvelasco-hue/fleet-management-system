@@ -21,6 +21,7 @@
         <dt class="col-sm-4">Vehicle</dt><dd class="col-sm-8">{{ item.vehicle.plate_number or item.vehicle.conduction_number }} — {{ item.vehicle.brand }} {{ item.vehicle.model }}</dd>
         <dt class="col-sm-4">Type</dt><dd class="col-sm-8"><span class="badge text-bg-info">{{ item.registration_type }}</span></dd>
         <dt class="col-sm-4">Registration Date</dt><dd class="col-sm-8">{{ item.registration_date }}</dd>
+        <dt class="col-sm-4">Current Odometer</dt><dd class="col-sm-8">{{ "{:,}".format(item.odometer_at_registration) + " km" if item.odometer_at_registration else '—' }}</dd>
         <dt class="col-sm-4">Validity</dt><dd class="col-sm-8">{{ item.validity_years }} year(s)</dd>
         <dt class="col-sm-4">Expiry Date</dt><dd class="col-sm-8">{{ item.expiry_date }}</dd>
         <dt class="col-sm-4">OR Number</dt><dd class="col-sm-8">{{ item.or_number or '—' }}</dd>

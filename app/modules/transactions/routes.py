@@ -1085,7 +1085,9 @@ def vehicleregistration_new():
                 registration_date=parse_form_date(f.get("registration_date"),
                                                   "Registration Date",
                                                   required=True),
-                or_cr_cost=f.get("or_cr_cost") or None, user=current_user)
+                or_cr_cost=f.get("or_cr_cost") or None,
+                odometer_at_registration=int(f["odometer_at_registration"]) if f.get("odometer_at_registration") else None,
+                user=current_user)
             flash("Vehicle Registration created.", "success")
             return redirect(url_for("transactions.vehicleregistration_list"))
         except (DuplicateActiveRegistrationError,
