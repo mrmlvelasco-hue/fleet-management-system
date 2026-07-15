@@ -77,6 +77,7 @@
 {% set reject_url = url_for('transactions.vehiclemovement_reject', mid=item.id) %}
 {% set return_url = url_for('transactions.vehiclemovement_return', mid=item.id) %}
 {% include "layout/_approval_line.html" %}
+{% include "layout/_comment_thread.html" %}
 {% include "layout/_requestor_info.html" %}
 {% include "master_data/_attachment_panel.html" %}
 {% endblock %}

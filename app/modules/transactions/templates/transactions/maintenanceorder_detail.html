@@ -104,6 +104,7 @@
 {% set reject_url = url_for('transactions.maintenanceorder_reject', oid=item.id) %}
 {% set return_url = url_for('transactions.maintenanceorder_return', oid=item.id) %}
 {% include "layout/_approval_line.html" %}
+{% include "layout/_comment_thread.html" %}
 {% include "layout/_requestor_info.html" %}
 {% include "master_data/_attachment_panel.html" %}
 {% endblock %}

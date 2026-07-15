@@ -418,4 +418,20 @@
           });
       });
   });
+
+  // Comment/Discussion thread (_comment_thread.html): auto-wires the
+  // Recipient AJAX select and the Attach File label on every page that
+  // includes the partial, so no per-page script block is needed.
+  document.querySelectorAll('select[id^="commentRecipientSelect_"]').forEach(function (el) {
+    if (window.initAjaxSelect) {
+      window.initAjaxSelect("#" + el.id, "/api/search/users",
+        { placeholder: "Type a name to notify (optional)...", allowClear: true });
+    }
+  });
+  document.querySelectorAll(".commentFileInput").forEach(function (input) {
+    input.addEventListener("change", function () {
+      var label = input.closest("form").querySelector(".commentFileLabel");
+      if (label) label.textContent = input.files.length + " file(s)";
+    });
+  });
 })();

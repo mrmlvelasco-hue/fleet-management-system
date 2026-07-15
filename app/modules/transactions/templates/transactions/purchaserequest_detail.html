@@ -78,6 +78,7 @@
 {% set reject_url = url_for('transactions.purchaserequest_reject', pid=item.id) %}
 {% set return_url = url_for('transactions.purchaserequest_return', pid=item.id) %}
 {% include "layout/_approval_line.html" %}
+{% include "layout/_comment_thread.html" %}
 {% include "layout/_requestor_info.html" %}
 {% include "master_data/_attachment_panel.html" %}
 {% endblock %}
