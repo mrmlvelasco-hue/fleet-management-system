@@ -1,5 +1,6 @@
 """Business rules for PM Schedule and PM Scope Template configuration."""
 from app.extensions import db
+from sqlalchemy.orm import joinedload, selectinload
 from app.modules.maintenance_config.models import (
     PMSchedule, PMScopeTemplate, PMScopeItem)
 
@@ -86,7 +87,11 @@ class PMScheduleService:
             db.session.commit()
 
     def list(self, include_inactive=False):
-        q = PMSchedule.query
+        q = PMSchedule.query.options(
+            joinedload(PMSchedule.vehicle_brand),
+            joinedload(PMSchedule.vehicle_model_ref),
+            joinedload(PMSchedule.vehicle_type),
+            joinedload(PMSchedule.maintenance_type))
         if not include_inactive:
             q = q.filter_by(is_active=True)
         return q.all()
@@ -172,7 +177,11 @@ class PMScopeTemplateService:
             db.session.commit()
 
     def list(self, include_inactive=False):
-        q = PMScopeTemplate.query
+        q = PMScopeTemplate.query.options(
+            joinedload(PMScopeTemplate.maintenance_type),
+            selectinload(PMScopeTemplate.items),
+            joinedload(PMScopeTemplate.pm_schedule).joinedload(
+                PMSchedule.vehicle_type))
         if not include_inactive:
             q = q.filter_by(is_active=True)
         return q.all()
