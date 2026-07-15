@@ -7,7 +7,7 @@ from app.core.models.base import BaseModel
 class PMSchedule(db.Model, BaseModel):
     __tablename__ = "pm_schedules"
     vehicle_type_id = db.Column(db.Integer, db.ForeignKey("vehicle_types.id"),
-                                nullable=True)  # NULL = applies to all types
+                                nullable=True, index=True)  # NULL = applies to all types
     # vehicle_make/vehicle_model: free-text match against Vehicle.brand/model
     # (case-insensitive). When set, takes precedence over vehicle_type_id —
     # this is what lets different manufacturers have different PM intervals
@@ -21,9 +21,9 @@ class PMSchedule(db.Model, BaseModel):
     # spelling-variation risk of free-text matching (e.g. "Toyota" vs
     # "TOYOTA").
     vehicle_brand_id = db.Column(db.Integer, db.ForeignKey("vehicle_brands.id"),
-                                 nullable=True)
+                                 nullable=True, index=True)
     vehicle_model_id = db.Column(db.Integer, db.ForeignKey("vehicle_models.id"),
-                                 nullable=True)
+                                 nullable=True, index=True)
     # Additional matching/identification dimensions (all optional —
     # narrows the match further when set, ignored when NULL).
     variant = db.Column(db.String(80), nullable=True)
@@ -42,7 +42,7 @@ class PMSchedule(db.Model, BaseModel):
     sequence_position = db.Column(db.Integer, nullable=True)
     maintenance_type_id = db.Column(db.Integer,
                                     db.ForeignKey("maintenance_types.id"),
-                                    nullable=False)
+                                    nullable=False, index=True)
     # KM | CALENDAR | HYBRID (whichever comes first)
     trigger_mode = db.Column(db.String(10), nullable=False, default="HYBRID")
     interval_km = db.Column(db.Integer, nullable=True)
@@ -87,14 +87,14 @@ class PMScopeTemplate(db.Model, BaseModel):
     __tablename__ = "pm_scope_templates"
     maintenance_type_id = db.Column(db.Integer,
                                     db.ForeignKey("maintenance_types.id"),
-                                    nullable=False)
+                                    nullable=False, index=True)
     # Optional direct link to one specific PM Template (PMSchedule) — lets
     # "Honda City 10,000 KM PMS" and "Toyota Hilux 10,000 KM PMS" have
     # different checklists even though both nominally share the same
     # maintenance_type. NULL = generic template matched by maintenance_type
     # only (backward-compatible fallback).
     pm_schedule_id = db.Column(db.Integer, db.ForeignKey("pm_schedules.id"),
-                               nullable=True)
+                               nullable=True, index=True)
     name = db.Column(db.String(120), nullable=False)
     description = db.Column(db.String(255))
 
@@ -107,7 +107,7 @@ class PMScopeTemplate(db.Model, BaseModel):
 class PMScopeItem(db.Model, BaseModel):
     __tablename__ = "pm_scope_items"
     template_id = db.Column(db.Integer, db.ForeignKey("pm_scope_templates.id"),
-                            nullable=False)
+                            nullable=False, index=True)
     activity_code = db.Column(db.String(40), nullable=False)
     activity_description = db.Column(db.String(255), nullable=False)
     standard_labor_hours = db.Column(db.Numeric(6, 2), nullable=True)

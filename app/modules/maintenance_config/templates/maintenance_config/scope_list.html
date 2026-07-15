@@ -22,7 +22,8 @@
       <td>{{ t.name }}</td>
       <td>{{ t.maintenance_type.name }}</td>
       <td>{% if t.pm_schedule %}{% if t.pm_schedule.vehicle_make %}{{ t.pm_schedule.vehicle_make }} {{ t.pm_schedule.vehicle_model }}{% else %}{{ t.pm_schedule.vehicle_type.name if t.pm_schedule.vehicle_type else 'All Vehicles' }}{% endif %}{% else %}<span class="text-muted">Generic</span>{% endif %}</td>
-      <td>{% for i in t.items %}<span class="badge text-bg-secondary">{{ i.activity_code }}</span> {% endfor %}</td>
+      <td>{% for i in t.items[:8] %}<span class="badge text-bg-secondary">{{ i.activity_code }}</span> {% endfor %}
+        {% if t.items|length > 8 %}<span class="badge text-bg-light text-dark border">+{{ t.items|length - 8 }} more</span>{% endif %}</td>
       <td>{% if t.is_active %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
       <td class="text-end">
         {% if current_user.has_permission('pmscopetemplate.view') %}
