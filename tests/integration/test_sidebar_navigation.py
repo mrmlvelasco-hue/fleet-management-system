@@ -3,8 +3,7 @@ from app.modules.user_management.models import User, Role, Permission
 
 
 def _login_full_access(client, db):
-    """A user with permissions spanning all three sidebar groups, so we
-    can tell which group the server chose to expand by default."""
+    """A user with permissions spanning all three sidebar groups."""
     role = Role(name="SidebarTestRole")
     codes = ["user.view", "vehicle.view", "tripticket.view", "pmschedule.view"]
     for code in codes:
@@ -23,78 +22,58 @@ def _login_full_access(client, db):
     return u
 
 
-def test_dashboard_expands_no_group_by_default(client, db):
-    """On Dashboard (no group matches), all three groups should render
-    collapsed — the reported bug was that every group was ALWAYS
-    expanded regardless of context, forcing a long scroll to reach
-    lower groups like Transactions."""
+def _group_is_shown(html, group_id):
+    idx = html.find(f'id="{group_id}"')
+    assert idx != -1
+    snippet = html[max(0, idx - 60):idx]
+    return "show" in snippet
+
+
+def test_all_groups_expanded_by_default_on_dashboard(client, db):
+    """Per explicit request: every group stays open regardless of which
+    page is active — opening/viewing one module must never collapse
+    another. The sidebar itself scrolls independently within the
+    viewport (theme.css's sticky + overflow-y:auto on .fms-sidebar)
+    rather than restricting which groups are visible."""
     _login_full_access(client, db)
     resp = client.get("/")
     assert resp.status_code == 200
-    assert b'id="sbGroupSysAdmin" class="collapse "' in resp.data or \
-           b'id="sbGroupSysAdmin"' in resp.data
-    # None of the three collapse divs should carry the "show" class here.
     html = resp.data.decode()
     for group_id in ["sbGroupSysAdmin", "sbGroupMasterData", "sbGroupTransactions"]:
-        # Find the div and confirm it doesn't have 'show' in its class list
-        idx = html.find(f'id="{group_id}"')
-        assert idx != -1
-        snippet = html[max(0, idx - 60):idx]
-        assert "show" not in snippet
+        assert _group_is_shown(html, group_id), f"{group_id} should be expanded"
 
 
-def test_master_data_page_expands_only_master_data_group(client, db):
+def test_all_groups_still_expanded_on_a_master_data_page(client, db):
     _login_full_access(client, db)
     resp = client.get("/master/vehicles")
     assert resp.status_code == 200
     html = resp.data.decode()
-
-    md_idx = html.find('id="sbGroupMasterData"')
-    md_snippet = html[max(0, md_idx - 60):md_idx]
-    assert "show" in md_snippet
-
-    tx_idx = html.find('id="sbGroupTransactions"')
-    tx_snippet = html[max(0, tx_idx - 60):tx_idx]
-    assert "show" not in tx_snippet
+    for group_id in ["sbGroupSysAdmin", "sbGroupMasterData", "sbGroupTransactions"]:
+        assert _group_is_shown(html, group_id), f"{group_id} should be expanded"
 
 
-def test_transactions_page_expands_only_transactions_group(client, db):
+def test_all_groups_still_expanded_on_a_transactions_page(client, db):
+    """Confirms viewing a Transactions page does NOT collapse Master
+    Data or System Administration — this is the exact behavior that was
+    reported as unwanted."""
     _login_full_access(client, db)
     resp = client.get("/transactions/trip-tickets")
     assert resp.status_code == 200
     html = resp.data.decode()
-
-    tx_idx = html.find('id="sbGroupTransactions"')
-    tx_snippet = html[max(0, tx_idx - 60):tx_idx]
-    assert "show" in tx_snippet
-
-    md_idx = html.find('id="sbGroupMasterData"')
-    md_snippet = html[max(0, md_idx - 60):md_idx]
-    assert "show" not in md_snippet
+    for group_id in ["sbGroupSysAdmin", "sbGroupMasterData", "sbGroupTransactions"]:
+        assert _group_is_shown(html, group_id), f"{group_id} should be expanded"
 
 
-def test_pm_schedule_page_expands_master_data_not_transactions(client, db):
-    """PM Templates moved into Master Data — viewing it should expand
-    Master Data, not Transactions, and should NOT force scrolling past
-    an expanded Transactions group to get back to it."""
+def test_all_groups_still_expanded_on_a_pm_template_page(client, db):
     _login_full_access(client, db)
     resp = client.get("/admin/pm-schedules")
     assert resp.status_code == 200
     html = resp.data.decode()
-
-    md_idx = html.find('id="sbGroupMasterData"')
-    md_snippet = html[max(0, md_idx - 60):md_idx]
-    assert "show" in md_snippet
-
-    tx_idx = html.find('id="sbGroupTransactions"')
-    tx_snippet = html[max(0, tx_idx - 60):tx_idx]
-    assert "show" not in tx_snippet
+    for group_id in ["sbGroupSysAdmin", "sbGroupMasterData", "sbGroupTransactions"]:
+        assert _group_is_shown(html, group_id), f"{group_id} should be expanded"
 
 
-def test_sidebar_still_lists_every_permitted_module_when_collapsed(client, db):
-    """Collapsing by default must not hide modules from the DOM — they
-    should still be present (just visually collapsed via CSS/JS), so a
-    person can still reach everything they have access to."""
+def test_sidebar_lists_every_permitted_module(client, db):
     _login_full_access(client, db)
     resp = client.get("/")
     assert resp.status_code == 200
@@ -102,3 +81,12 @@ def test_sidebar_still_lists_every_permitted_module_when_collapsed(client, db):
     assert b"Vehicles" in resp.data
     assert b"Users" in resp.data
     assert b"PM Templates" in resp.data
+
+
+def test_sidebar_toggle_buttons_have_no_accordion_parent_linkage(client, db):
+    """Confirms there's no Bootstrap data-bs-parent tying the three
+    groups together — opening one must never auto-close another."""
+    _login_full_access(client, db)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert b"data-bs-parent" not in resp.data

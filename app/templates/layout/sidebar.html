@@ -1,17 +1,3 @@
-{% set sysadmin_prefixes = ['user_management.', 'document_config.', 'approval_config.', 'system_admin.'] %}
-{% set masterdata_prefixes = ['master_data.', 'maintenance_config.'] %}
-{% set transactions_prefixes = ['transactions.'] %}
-{% set ep = request.endpoint or '' %}
-{# Jinja2's `set` inside a `for` loop doesn't persist to the outer scope,
-   so a plain boolean accumulator wouldn't actually update — namespace()
-   is required here to make the flag stick after the loop. #}
-{% set ns = namespace(sysadmin_active=false, masterdata_active=false, transactions_active=false) %}
-{% for p in sysadmin_prefixes %}{% if ep.startswith(p) %}{% set ns.sysadmin_active = true %}{% endif %}{% endfor %}
-{% for p in masterdata_prefixes %}{% if ep.startswith(p) %}{% set ns.masterdata_active = true %}{% endif %}{% endfor %}
-{% for p in transactions_prefixes %}{% if ep.startswith(p) %}{% set ns.transactions_active = true %}{% endif %}{% endfor %}
-{% set sysadmin_active = ns.sysadmin_active %}
-{% set masterdata_active = ns.masterdata_active %}
-{% set transactions_active = ns.transactions_active %}
 
 <aside class="fms-sidebar d-flex flex-column" id="fmsSidebar">
   <a href="{{ url_for('main.dashboard') }}" class="fms-sidebar__brand text-decoration-none">
@@ -31,11 +17,11 @@
   <div class="sidebar-group">
     <button class="btn sidebar-group-toggle w-100 d-flex justify-content-between align-items-center text-uppercase small sidebar-section"
             type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupSysAdmin"
-            aria-expanded="{{ 'true' if sysadmin_active else 'false' }}">
+            aria-expanded="true">
       <span class="sidebar-label">System Administration</span>
       <i class="bi bi-chevron-down sidebar-label sidebar-chevron"></i>
     </button>
-    <div class="collapse {{ 'show' if sysadmin_active }}" id="sbGroupSysAdmin">
+    <div class="collapse show" id="sbGroupSysAdmin">
       <ul class="nav nav-pills flex-column">
         {% if current_user.has_permission('user.view') %}
         <li><a href="{{ url_for('user_management.users_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('user_management.users') }}">
@@ -110,11 +96,11 @@
   <div class="sidebar-group">
     <button class="btn sidebar-group-toggle w-100 d-flex justify-content-between align-items-center text-uppercase small sidebar-section"
             type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupMasterData"
-            aria-expanded="{{ 'true' if masterdata_active else 'false' }}">
+            aria-expanded="true">
       <span class="sidebar-label">Master Data</span>
       <i class="bi bi-chevron-down sidebar-label sidebar-chevron"></i>
     </button>
-    <div class="collapse {{ 'show' if masterdata_active }}" id="sbGroupMasterData">
+    <div class="collapse show" id="sbGroupMasterData">
       <ul class="nav nav-pills flex-column">
         {% if current_user.has_permission('vehicle.view') %}
         <li><a href="{{ url_for('master_data.vehicle_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.vehicle_') }}">
@@ -180,11 +166,11 @@
   <div class="sidebar-group">
     <button class="btn sidebar-group-toggle w-100 d-flex justify-content-between align-items-center text-uppercase small sidebar-section"
             type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupTransactions"
-            aria-expanded="{{ 'true' if transactions_active else 'false' }}">
+            aria-expanded="true">
       <span class="sidebar-label">Transactions</span>
       <i class="bi bi-chevron-down sidebar-label sidebar-chevron"></i>
     </button>
-    <div class="collapse {{ 'show' if transactions_active }}" id="sbGroupTransactions">
+    <div class="collapse show" id="sbGroupTransactions">
       <ul class="nav nav-pills flex-column">
         {% if current_user.has_permission('tripticket.view') %}
         <li><a href="{{ url_for('transactions.tripticket_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('transactions.tripticket_') }}">

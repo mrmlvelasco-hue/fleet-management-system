@@ -1,10 +1,16 @@
 /* FMS shell styling: sidebar, dark mode, dashboard cards.
    Sidebar visual identity (navy background, brand mark, .fms-nav-link
-   styling) comes from theme.css (Ocean Depths) — these rules only cover
-   the functional bits theme.css doesn't know about: our collapsible
-   section groups (org-scope-aware auto-expand) and the whole-sidebar
-   icon-only collapse mode. Colors here are chosen for contrast against
-   the navy background, not the light-mode --bs-* tokens. */
+   styling) AND the viewport-height sticky positioning with its own
+   overflow-y:auto come from theme.css's .fms-sidebar rule — that's the
+   single scroll mechanism for the whole sidebar ("fit to the side of
+   the screen": the sidebar itself is pinned to the viewport height and
+   scrolls independently of the page, rather than the page needing to
+   scroll to reach a lower module). These rules only add what theme.css
+   doesn't know about: our section-group toggle buttons and the
+   whole-sidebar icon-only collapse mode. All three groups default to
+   expanded — opening/collapsing one never affects the others (no
+   Bootstrap accordion linkage), and a person's manual collapse choice
+   persists via cookie across page loads. */
 .fms-sidebar {
   width: var(--sidebar-w, 264px);
   flex-shrink: 0;
@@ -12,11 +18,6 @@
 }
 #fms-wrapper.sidebar-collapsed .fms-sidebar { width: 64px; }
 #fms-wrapper.sidebar-collapsed .sidebar-label { display: none; }
-.fms-sidebar-scroll {
-  overflow-y: auto;
-  overflow-x: hidden;
-  max-height: calc(100vh - var(--topbar-h, 62px));
-}
 .sidebar-section { color: #6f8494; letter-spacing: .05em; }
 .sidebar-group { border-top: 1px solid rgba(255,255,255,.06); padding-top: .25rem; }
 .sidebar-group-toggle {
