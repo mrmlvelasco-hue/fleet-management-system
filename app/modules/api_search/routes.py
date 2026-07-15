@@ -9,7 +9,7 @@ management permission broke every other module that references that data —
 Select2 showed a generic "The results could not be loaded" on any 403.
 """
 from flask import Blueprint, request, jsonify
-from flask_login import login_required
+from flask_login import login_required, current_user
 
 from app.core.search.searchable_service import SearchableService
 from app.modules.master_data.vehicle.models import Vehicle
@@ -86,7 +86,8 @@ def _search_params():
 @bp.route("/vehicles")
 @login_required
 def search_vehicles():
-    return jsonify(VehicleSearchService().to_select2_response(**_search_params()))
+    return jsonify(VehicleSearchService().to_select2_response(
+        user=current_user, **_search_params()))
 
 
 @bp.route("/vehicles/table")
@@ -104,13 +105,15 @@ def search_vehicles_table():
         params["branch_id"] = int(branch_id)
     if status:
         params["status"] = status
-    return jsonify(VehicleSearchService().to_table_response(**params))
+    return jsonify(VehicleSearchService().to_table_response(
+        user=current_user, **params))
 
 
 @bp.route("/drivers")
 @login_required
 def search_drivers():
-    return jsonify(DriverSearchService().to_select2_response(**_search_params()))
+    return jsonify(DriverSearchService().to_select2_response(
+        user=current_user, **_search_params()))
 
 
 @bp.route("/users")
