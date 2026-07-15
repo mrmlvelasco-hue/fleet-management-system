@@ -38,7 +38,7 @@ def test_dashboard_shows_real_fleet_count_not_placeholder(client, db):
     assert resp.status_code == 200
     assert b"Fleet" in resp.data
     # No longer showing the raw placeholder dash for the count
-    assert b'<div class="fs-4 fw-semibold">\xe2\x80\x94</div>' not in resp.data
+    assert b'<div class="fms-kpi-card__value">\xe2\x80\x94</div>' not in resp.data
 
 
 def test_dashboard_fleet_count_respects_org_scope(client, db):
@@ -59,7 +59,7 @@ def test_dashboard_fleet_count_respects_org_scope(client, db):
     resp = client.get("/")
     assert resp.status_code == 200
     # Fleet card should show 1 (only their branch's vehicle), not 2
-    assert b'<div class="fs-4 fw-semibold">1</div>' in resp.data
+    assert b'<div class="fms-kpi-card__value">1</div>' in resp.data
 
 
 def test_hidden_widget_does_not_render(client, db):

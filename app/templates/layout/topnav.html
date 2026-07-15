@@ -1,12 +1,13 @@
-<nav class="navbar border-bottom px-3 fms-topnav">
-  <button class="btn btn-outline-secondary btn-sm" id="sidebarToggle" type="button" title="Toggle sidebar">
+<nav class="fms-topbar px-0">
+  <button class="fms-iconbtn" id="sidebarToggle" type="button" title="Toggle sidebar">
     <i class="bi bi-list"></i>
   </button>
-  <div class="d-flex align-items-center gap-3 ms-auto">
-    <button class="btn btn-outline-secondary btn-sm" id="darkModeToggle" type="button" title="Toggle dark mode">
+  <div class="fms-topbar__spacer"></div>
+  <div class="d-flex align-items-center gap-2">
+    <button class="fms-iconbtn" id="darkModeToggle" type="button" title="Toggle dark mode">
       <i class="bi bi-moon"></i>
     </button>
-    <button class="btn btn-outline-secondary btn-sm position-relative" type="button"
+    <button class="fms-iconbtn position-relative" type="button"
             id="notifBell" title="Notifications" data-bs-toggle="dropdown">
       <i class="bi bi-bell"></i>
       <span class="badge text-bg-danger position-absolute top-0 start-100 translate-middle rounded-pill d-none" id="notifBadge"></span>
@@ -19,8 +20,9 @@
       <li id="notifItems"><li class="px-3 py-2 text-muted small">Loading...</li></li>
     </ul>
     <div class="dropdown">
-      <a class="d-flex align-items-center text-decoration-none dropdown-toggle" data-bs-toggle="dropdown" href="#">
-        <i class="bi bi-person-circle me-2 fs-5"></i>{{ current_user.full_name }}
+      <a class="d-flex align-items-center gap-2 text-decoration-none dropdown-toggle" data-bs-toggle="dropdown" href="#">
+        <span class="fms-avatar">{{ (current_user.full_name or current_user.username)[:2]|upper }}</span>
+        <span class="text-body">{{ current_user.full_name }}</span>
       </a>
       <ul class="dropdown-menu dropdown-menu-end">
         <li><a class="dropdown-item" href="{{ url_for('auth.change_password') }}">Change password</a></li>

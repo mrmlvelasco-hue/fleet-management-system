@@ -13,15 +13,16 @@
 {% set masterdata_active = ns.masterdata_active %}
 {% set transactions_active = ns.transactions_active %}
 
-<aside class="fms-sidebar d-flex flex-column p-3" id="fmsSidebar">
-  <a href="{{ url_for('main.dashboard') }}" class="d-flex align-items-center mb-3 text-decoration-none fs-5 fw-semibold sidebar-brand">
-    <i class="bi bi-truck-front me-2"></i><span class="sidebar-label">FMS</span>
+<aside class="fms-sidebar d-flex flex-column" id="fmsSidebar">
+  <a href="{{ url_for('main.dashboard') }}" class="fms-sidebar__brand text-decoration-none">
+    <span class="fms-sidebar__mark"><i class="bi bi-truck-front"></i></span>
+    <span class="fms-sidebar__wordmark sidebar-label">FMS<small>Fleet Management</small></span>
   </a>
-  <div class="fms-sidebar-scroll flex-grow-1">
+  <div class="fms-sidebar-scroll fms-sidebar__nav flex-grow-1">
   <ul class="nav nav-pills flex-column mb-2">
     <li class="nav-item">
-      <a href="{{ url_for('main.dashboard') }}" class="nav-link {{ 'active' if request.endpoint == 'main.dashboard' }}">
-        <i class="bi bi-speedometer2 me-2"></i><span class="sidebar-label">Dashboard</span>
+      <a href="{{ url_for('main.dashboard') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'main.dashboard' }}">
+        <i class="fms-nav-link__icon bi bi-speedometer2"></i><span class="sidebar-label">Dashboard</span>
       </a>
     </li>
   </ul>
@@ -37,68 +38,68 @@
     <div class="collapse {{ 'show' if sysadmin_active }}" id="sbGroupSysAdmin">
       <ul class="nav nav-pills flex-column">
         {% if current_user.has_permission('user.view') %}
-        <li><a href="{{ url_for('user_management.users_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('user_management.users') }}">
-          <i class="bi bi-people me-2"></i><span class="sidebar-label">Users</span></a></li>
+        <li><a href="{{ url_for('user_management.users_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('user_management.users') }}">
+          <i class="fms-nav-link__icon bi bi-people"></i><span class="sidebar-label">Users</span></a></li>
         {% endif %}
         {% if current_user.has_permission('role.view') %}
-        <li><a href="{{ url_for('user_management.roles_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('user_management.roles') }}">
-          <i class="bi bi-person-badge me-2"></i><span class="sidebar-label">Roles</span></a></li>
+        <li><a href="{{ url_for('user_management.roles_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('user_management.roles') }}">
+          <i class="fms-nav-link__icon bi bi-person-badge"></i><span class="sidebar-label">Roles</span></a></li>
         {% endif %}
         {% if current_user.has_permission('permission.view') %}
-        <li><a href="{{ url_for('user_management.permissions_list') }}" class="nav-link {{ 'active' if request.endpoint == 'user_management.permissions_list' }}">
-          <i class="bi bi-shield-lock me-2"></i><span class="sidebar-label">Permissions</span></a></li>
+        <li><a href="{{ url_for('user_management.permissions_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'user_management.permissions_list' }}">
+          <i class="fms-nav-link__icon bi bi-shield-lock"></i><span class="sidebar-label">Permissions</span></a></li>
         {% endif %}
         {% if current_user.has_permission('doctype.view') %}
-        <li><a href="{{ url_for('document_config.doctypes_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('document_config.doctypes') }}">
-          <i class="bi bi-file-earmark-text me-2"></i><span class="sidebar-label">Document Types</span></a></li>
+        <li><a href="{{ url_for('document_config.doctypes_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('document_config.doctypes') }}">
+          <i class="fms-nav-link__icon bi bi-file-earmark-text"></i><span class="sidebar-label">Document Types</span></a></li>
         {% endif %}
         {% if current_user.has_permission('numbering.view') %}
-        <li><a href="{{ url_for('document_config.schemes_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('document_config.schemes') }}">
-          <i class="bi bi-123 me-2"></i><span class="sidebar-label">Numbering</span></a></li>
+        <li><a href="{{ url_for('document_config.schemes_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('document_config.schemes') }}">
+          <i class="fms-nav-link__icon bi bi-123"></i><span class="sidebar-label">Numbering</span></a></li>
         {% endif %}
         {% if current_user.has_permission('approvalpath.view') %}
-        <li><a href="{{ url_for('approval_config.paths_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('approval_config.paths') }}">
-          <i class="bi bi-diagram-3 me-2"></i><span class="sidebar-label">Approval Paths</span></a></li>
+        <li><a href="{{ url_for('approval_config.paths_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('approval_config.paths') }}">
+          <i class="fms-nav-link__icon bi bi-diagram-3"></i><span class="sidebar-label">Approval Paths</span></a></li>
         {% endif %}
         {% if current_user.has_permission('approvalmatrix.view') %}
-        <li><a href="{{ url_for('approval_config.matrix_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('approval_config.matrix') }}">
-          <i class="bi bi-grid-3x3 me-2"></i><span class="sidebar-label">Approval Matrix</span></a></li>
+        <li><a href="{{ url_for('approval_config.matrix_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('approval_config.matrix') }}">
+          <i class="fms-nav-link__icon bi bi-grid-3x3"></i><span class="sidebar-label">Approval Matrix</span></a></li>
         {% endif %}
         {% if current_user.has_permission('sysparam.view') %}
-        <li><a href="{{ url_for('system_admin.sysparam_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('system_admin.sysparam_') }}">
-          <i class="bi bi-sliders me-2"></i><span class="sidebar-label">System Parameters</span></a></li>
+        <li><a href="{{ url_for('system_admin.sysparam_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.sysparam_') }}">
+          <i class="fms-nav-link__icon bi bi-sliders"></i><span class="sidebar-label">System Parameters</span></a></li>
         {% endif %}
         {% if current_user.has_permission('lookup.view') %}
-        <li><a href="{{ url_for('system_admin.lookup_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('system_admin.lookup_') }}">
-          <i class="bi bi-card-list me-2"></i><span class="sidebar-label">Lookups</span></a></li>
+        <li><a href="{{ url_for('system_admin.lookup_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.lookup_') }}">
+          <i class="fms-nav-link__icon bi bi-card-list"></i><span class="sidebar-label">Lookups</span></a></li>
         {% endif %}
         {% if current_user.has_permission('company.view') %}
-        <li><a href="{{ url_for('system_admin.company_profile') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.company_profile' }}">
-          <i class="bi bi-building me-2"></i><span class="sidebar-label">Company Profile</span></a></li>
+        <li><a href="{{ url_for('system_admin.company_profile') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'system_admin.company_profile' }}">
+          <i class="fms-nav-link__icon bi bi-building"></i><span class="sidebar-label">Company Profile</span></a></li>
         {% endif %}
         {% if current_user.has_permission('emailtemplate.view') %}
-        <li><a href="{{ url_for('system_admin.email_template_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('system_admin.email_template_') }}">
-          <i class="bi bi-envelope me-2"></i><span class="sidebar-label">Email Templates</span></a></li>
+        <li><a href="{{ url_for('system_admin.email_template_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.email_template_') }}">
+          <i class="fms-nav-link__icon bi bi-envelope"></i><span class="sidebar-label">Email Templates</span></a></li>
         {% endif %}
         {% if current_user.has_permission('notificationrule.view') %}
-        <li><a href="{{ url_for('system_admin.notification_rule_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('system_admin.notification_rule_') }}">
-          <i class="bi bi-bell me-2"></i><span class="sidebar-label">Notification Rules</span></a></li>
+        <li><a href="{{ url_for('system_admin.notification_rule_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.notification_rule_') }}">
+          <i class="fms-nav-link__icon bi bi-bell"></i><span class="sidebar-label">Notification Rules</span></a></li>
         {% endif %}
         {% if current_user.has_permission('audittrail.view') %}
-        <li><a href="{{ url_for('system_admin.audit_trail') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.audit_trail' }}">
-          <i class="bi bi-journal-text me-2"></i><span class="sidebar-label">Audit Trail</span></a></li>
+        <li><a href="{{ url_for('system_admin.audit_trail') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'system_admin.audit_trail' }}">
+          <i class="fms-nav-link__icon bi bi-journal-text"></i><span class="sidebar-label">Audit Trail</span></a></li>
         {% endif %}
         {% if current_user.has_permission('dashboardconfig.view') %}
-        <li><a href="{{ url_for('system_admin.dashboard_config') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.dashboard_config' }}">
-          <i class="bi bi-layout-wtf me-2"></i><span class="sidebar-label">Dashboard Config</span></a></li>
+        <li><a href="{{ url_for('system_admin.dashboard_config') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'system_admin.dashboard_config' }}">
+          <i class="fms-nav-link__icon bi bi-layout-wtf"></i><span class="sidebar-label">Dashboard Config</span></a></li>
         {% endif %}
         {% if current_user.has_permission('backupconfig.view') %}
-        <li><a href="{{ url_for('system_admin.backup_config') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.backup_config' }}">
-          <i class="bi bi-hdd me-2"></i><span class="sidebar-label">Backup Config</span></a></li>
+        <li><a href="{{ url_for('system_admin.backup_config') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'system_admin.backup_config' }}">
+          <i class="fms-nav-link__icon bi bi-hdd"></i><span class="sidebar-label">Backup Config</span></a></li>
         {% endif %}
         {% if current_user.has_permission('reportconfig.view') %}
-        <li><a href="{{ url_for('system_admin.report_config_list') }}" class="nav-link {{ 'active' if request.endpoint == 'system_admin.report_config_list' }}">
-          <i class="bi bi-bar-chart me-2"></i><span class="sidebar-label">Report Config</span></a></li>
+        <li><a href="{{ url_for('system_admin.report_config_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'system_admin.report_config_list' }}">
+          <i class="fms-nav-link__icon bi bi-bar-chart"></i><span class="sidebar-label">Report Config</span></a></li>
         {% endif %}
       </ul>
     </div>
@@ -116,60 +117,60 @@
     <div class="collapse {{ 'show' if masterdata_active }}" id="sbGroupMasterData">
       <ul class="nav nav-pills flex-column">
         {% if current_user.has_permission('vehicle.view') %}
-        <li><a href="{{ url_for('master_data.vehicle_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vehicle_') }}">
-          <i class="bi bi-truck me-2"></i><span class="sidebar-label">Vehicles</span></a></li>
+        <li><a href="{{ url_for('master_data.vehicle_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.vehicle_') }}">
+          <i class="fms-nav-link__icon bi bi-truck"></i><span class="sidebar-label">Vehicles</span></a></li>
         {% endif %}
         {% if current_user.has_permission('driver.view') %}
-        <li><a href="{{ url_for('master_data.driver_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.driver_') }}">
-          <i class="bi bi-person-badge me-2"></i><span class="sidebar-label">Drivers</span></a></li>
+        <li><a href="{{ url_for('master_data.driver_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.driver_') }}">
+          <i class="fms-nav-link__icon bi bi-person-badge"></i><span class="sidebar-label">Drivers</span></a></li>
         {% endif %}
         {% if current_user.has_permission('tire.view') %}
-        <li><a href="{{ url_for('master_data.tire_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.tire_') }}">
-          <i class="bi bi-circle me-2"></i><span class="sidebar-label">Tires</span></a></li>
+        <li><a href="{{ url_for('master_data.tire_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.tire_') }}">
+          <i class="fms-nav-link__icon bi bi-circle"></i><span class="sidebar-label">Tires</span></a></li>
         {% endif %}
         {% if current_user.has_permission('battery.view') %}
-        <li><a href="{{ url_for('master_data.battery_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.battery_') }}">
-          <i class="bi bi-battery-half me-2"></i><span class="sidebar-label">Batteries</span></a></li>
+        <li><a href="{{ url_for('master_data.battery_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.battery_') }}">
+          <i class="fms-nav-link__icon bi bi-battery-half"></i><span class="sidebar-label">Batteries</span></a></li>
         {% endif %}
         {% if current_user.has_permission('vendor.view') %}
-        <li><a href="{{ url_for('master_data.vendor_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vendor_') }}">
-          <i class="bi bi-shop me-2"></i><span class="sidebar-label">Vendors</span></a></li>
+        <li><a href="{{ url_for('master_data.vendor_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.vendor_') }}">
+          <i class="fms-nav-link__icon bi bi-shop"></i><span class="sidebar-label">Vendors</span></a></li>
         {% endif %}
         {% if current_user.has_permission('branch.view') %}
-        <li><a href="{{ url_for('master_data.branch_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.branch_') }}">
-          <i class="bi bi-building me-2"></i><span class="sidebar-label">Branches</span></a></li>
+        <li><a href="{{ url_for('master_data.branch_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.branch_') }}">
+          <i class="fms-nav-link__icon bi bi-building"></i><span class="sidebar-label">Branches</span></a></li>
         {% endif %}
         {% if current_user.has_permission('department.view') %}
-        <li><a href="{{ url_for('master_data.department_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.department_') }}">
-          <i class="bi bi-diagram-2 me-2"></i><span class="sidebar-label">Departments</span></a></li>
+        <li><a href="{{ url_for('master_data.department_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.department_') }}">
+          <i class="fms-nav-link__icon bi bi-diagram-2"></i><span class="sidebar-label">Departments</span></a></li>
         {% endif %}
         {% if current_user.has_permission('vehicletype.view') %}
-        <li><a href="{{ url_for('master_data.vehicletype_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vehicletype_') }}">
-          <i class="bi bi-tags me-2"></i><span class="sidebar-label">Vehicle Types</span></a></li>
+        <li><a href="{{ url_for('master_data.vehicletype_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.vehicletype_') }}">
+          <i class="fms-nav-link__icon bi bi-tags"></i><span class="sidebar-label">Vehicle Types</span></a></li>
         {% endif %}
         {% if current_user.has_permission('vehiclebrand.view') %}
-        <li><a href="{{ url_for('master_data.vehiclebrand_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vehiclebrand_') }}">
-          <i class="bi bi-award me-2"></i><span class="sidebar-label">Vehicle Brands</span></a></li>
+        <li><a href="{{ url_for('master_data.vehiclebrand_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.vehiclebrand_') }}">
+          <i class="fms-nav-link__icon bi bi-award"></i><span class="sidebar-label">Vehicle Brands</span></a></li>
         {% endif %}
         {% if current_user.has_permission('vehiclemodel.view') %}
-        <li><a href="{{ url_for('master_data.vehiclemodel_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.vehiclemodel_') }}">
-          <i class="bi bi-tag me-2"></i><span class="sidebar-label">Vehicle Models</span></a></li>
+        <li><a href="{{ url_for('master_data.vehiclemodel_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.vehiclemodel_') }}">
+          <i class="fms-nav-link__icon bi bi-tag"></i><span class="sidebar-label">Vehicle Models</span></a></li>
         {% endif %}
         {% if current_user.has_permission('maintenancetype.view') %}
-        <li><a href="{{ url_for('master_data.maintenancetype_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('master_data.maintenancetype_') }}">
-          <i class="bi bi-wrench-adjustable me-2"></i><span class="sidebar-label">Maintenance Types</span></a></li>
+        <li><a href="{{ url_for('master_data.maintenancetype_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.maintenancetype_') }}">
+          <i class="fms-nav-link__icon bi bi-wrench-adjustable"></i><span class="sidebar-label">Maintenance Types</span></a></li>
         {% endif %}
         {% if current_user.has_permission('pmschedule.view') %}
-        <li><a href="{{ url_for('maintenance_config.pmschedule_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmschedule_') }}">
-          <i class="bi bi-calendar-check me-2"></i><span class="sidebar-label">PM Templates</span></a></li>
+        <li><a href="{{ url_for('maintenance_config.pmschedule_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmschedule_') }}">
+          <i class="fms-nav-link__icon bi bi-calendar-check"></i><span class="sidebar-label">PM Templates</span></a></li>
         {% endif %}
         {% if current_user.has_permission('pmprofile.view') %}
-        <li><a href="{{ url_for('maintenance_config.pmsprofile_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmsprofile_') }}">
-          <i class="bi bi-collection me-2"></i><span class="sidebar-label">PMS Profiles</span></a></li>
+        <li><a href="{{ url_for('maintenance_config.pmsprofile_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmsprofile_') }}">
+          <i class="fms-nav-link__icon bi bi-collection"></i><span class="sidebar-label">PMS Profiles</span></a></li>
         {% endif %}
         {% if current_user.has_permission('pmscopetemplate.view') %}
-        <li><a href="{{ url_for('maintenance_config.pmscope_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmscope_') }}">
-          <i class="bi bi-list-check me-2"></i><span class="sidebar-label">PM Scope Templates</span></a></li>
+        <li><a href="{{ url_for('maintenance_config.pmscope_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmscope_') }}">
+          <i class="fms-nav-link__icon bi bi-list-check"></i><span class="sidebar-label">PM Scope Templates</span></a></li>
         {% endif %}
       </ul>
     </div>
@@ -186,36 +187,36 @@
     <div class="collapse {{ 'show' if transactions_active }}" id="sbGroupTransactions">
       <ul class="nav nav-pills flex-column">
         {% if current_user.has_permission('tripticket.view') %}
-        <li><a href="{{ url_for('transactions.tripticket_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.tripticket_') }}">
-          <i class="bi bi-ticket-perforated me-2"></i><span class="sidebar-label">Trip Tickets</span></a></li>
+        <li><a href="{{ url_for('transactions.tripticket_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('transactions.tripticket_') }}">
+          <i class="fms-nav-link__icon bi bi-ticket-perforated"></i><span class="sidebar-label">Trip Tickets</span></a></li>
         {% endif %}
         {% if current_user.has_permission('atd.view') %}
-        <li><a href="{{ url_for('transactions.atd_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.atd') }}">
-          <i class="bi bi-file-earmark-check me-2"></i><span class="sidebar-label">Authority To Drive</span></a></li>
+        <li><a href="{{ url_for('transactions.atd_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('transactions.atd') }}">
+          <i class="fms-nav-link__icon bi bi-file-earmark-check"></i><span class="sidebar-label">Authority To Drive</span></a></li>
         {% endif %}
         {% if current_user.has_permission('vehiclemovement.view') %}
-        <li><a href="{{ url_for('transactions.vehiclemovement_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.vehiclemovement_') }}">
-          <i class="bi bi-arrow-left-right me-2"></i><span class="sidebar-label">Vehicle Movement</span></a></li>
+        <li><a href="{{ url_for('transactions.vehiclemovement_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('transactions.vehiclemovement_') }}">
+          <i class="fms-nav-link__icon bi bi-arrow-left-right"></i><span class="sidebar-label">Vehicle Movement</span></a></li>
         {% endif %}
         {% if current_user.has_permission('maintenanceorder.view') %}
-        <li><a href="{{ url_for('transactions.maintenanceorder_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.maintenanceorder_') }}">
-          <i class="bi bi-tools me-2"></i><span class="sidebar-label">Maintenance Orders</span></a></li>
+        <li><a href="{{ url_for('transactions.maintenanceorder_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('transactions.maintenanceorder_') }}">
+          <i class="fms-nav-link__icon bi bi-tools"></i><span class="sidebar-label">Maintenance Orders</span></a></li>
         {% endif %}
         {% if current_user.has_permission('tiretxn.view') %}
-        <li><a href="{{ url_for('transactions.tiretxn_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.tiretxn_') }}">
-          <i class="bi bi-circle me-2"></i><span class="sidebar-label">Tire Transactions</span></a></li>
+        <li><a href="{{ url_for('transactions.tiretxn_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('transactions.tiretxn_') }}">
+          <i class="fms-nav-link__icon bi bi-circle"></i><span class="sidebar-label">Tire Transactions</span></a></li>
         {% endif %}
         {% if current_user.has_permission('batterytxn.view') %}
-        <li><a href="{{ url_for('transactions.batterytxn_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.batterytxn_') }}">
-          <i class="bi bi-battery-half me-2"></i><span class="sidebar-label">Battery Transactions</span></a></li>
+        <li><a href="{{ url_for('transactions.batterytxn_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('transactions.batterytxn_') }}">
+          <i class="fms-nav-link__icon bi bi-battery-half"></i><span class="sidebar-label">Battery Transactions</span></a></li>
         {% endif %}
         {% if current_user.has_permission('purchaserequest.view') %}
-        <li><a href="{{ url_for('transactions.purchaserequest_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.purchaserequest_') }}">
-          <i class="bi bi-cart me-2"></i><span class="sidebar-label">Purchase Requests</span></a></li>
+        <li><a href="{{ url_for('transactions.purchaserequest_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('transactions.purchaserequest_') }}">
+          <i class="fms-nav-link__icon bi bi-cart"></i><span class="sidebar-label">Purchase Requests</span></a></li>
         {% endif %}
         {% if current_user.has_permission('vehicleregistration.view') %}
-        <li><a href="{{ url_for('transactions.vehicleregistration_list') }}" class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('transactions.vehicleregistration_') }}">
-          <i class="bi bi-card-checklist me-2"></i><span class="sidebar-label">Vehicle Registration</span></a></li>
+        <li><a href="{{ url_for('transactions.vehicleregistration_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('transactions.vehicleregistration_') }}">
+          <i class="fms-nav-link__icon bi bi-card-checklist"></i><span class="sidebar-label">Vehicle Registration</span></a></li>
         {% endif %}
       </ul>
     </div>

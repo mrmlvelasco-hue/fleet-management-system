@@ -1,9 +1,13 @@
-/* FMS shell styling: sidebar, dark mode, dashboard cards */
+/* FMS shell styling: sidebar, dark mode, dashboard cards.
+   Sidebar visual identity (navy background, brand mark, .fms-nav-link
+   styling) comes from theme.css (Ocean Depths) — these rules only cover
+   the functional bits theme.css doesn't know about: our collapsible
+   section groups (org-scope-aware auto-expand) and the whole-sidebar
+   icon-only collapse mode. Colors here are chosen for contrast against
+   the navy background, not the light-mode --bs-* tokens. */
 .fms-sidebar {
-  width: 240px;
-  min-height: 100vh;
-  background: var(--bs-tertiary-bg);
-  border-right: 1px solid var(--bs-border-color);
+  width: var(--sidebar-w, 264px);
+  flex-shrink: 0;
   transition: width .15s ease;
 }
 #fms-wrapper.sidebar-collapsed .fms-sidebar { width: 64px; }
@@ -11,26 +15,18 @@
 .fms-sidebar-scroll {
   overflow-y: auto;
   overflow-x: hidden;
-  /* leaves room for the brand header above without the whole page
-     needing to scroll just to reach a lower module group */
-  max-height: calc(100vh - 4rem);
+  max-height: calc(100vh - var(--topbar-h, 62px));
 }
-.fms-sidebar .nav-link {
-  color: var(--bs-body-color);
-  padding: .4rem .6rem;
-  border-radius: .375rem;
-}
-.fms-sidebar .nav-link.active { background: var(--bs-primary); color: #fff; }
-.sidebar-section { color: var(--bs-secondary-color); letter-spacing: .05em; }
-.sidebar-group { border-top: 1px solid var(--bs-border-color-translucent); padding-top: .25rem; }
+.sidebar-section { color: #6f8494; letter-spacing: .05em; }
+.sidebar-group { border-top: 1px solid rgba(255,255,255,.06); padding-top: .25rem; }
 .sidebar-group-toggle {
-  color: var(--bs-secondary-color);
+  color: #6f8494;
   border: none;
   background: none;
   padding: .5rem .25rem;
   margin-top: .5rem;
 }
-.sidebar-group-toggle:hover { color: var(--bs-body-color); }
+.sidebar-group-toggle:hover { color: var(--od-cream, #f1faee); }
 .sidebar-chevron { transition: transform .15s ease; font-size: .75rem; }
 .sidebar-group-toggle[aria-expanded="false"] .sidebar-chevron { transform: rotate(-90deg); }
 #fms-wrapper.sidebar-collapsed .sidebar-group-toggle { pointer-events: none; }
