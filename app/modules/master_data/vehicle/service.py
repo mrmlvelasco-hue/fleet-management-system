@@ -96,8 +96,13 @@ def _validate_business_rules(data: dict) -> None:
     checked against the merged field set (existing values + incoming
     kwargs), since update() may only pass a subset of fields."""
     cost = data.get("acquisition_cost")
-    if cost is not None and cost <= 0:
-        raise InvalidVehicleDataError("Acquisition Cost must be greater than zero.")
+    if cost is not None and cost != "":
+        try:
+            cost = float(cost)
+        except (TypeError, ValueError):
+            raise InvalidVehicleDataError("Acquisition Cost must be a valid number.")
+        if cost <= 0:
+            raise InvalidVehicleDataError("Acquisition Cost must be greater than zero.")
 
     purchase = data.get("acquisition_date")
     delivery = data.get("delivery_date")

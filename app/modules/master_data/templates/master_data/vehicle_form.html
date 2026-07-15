@@ -154,11 +154,174 @@
       {% endif %}
     </select>
     <div class="form-text">Optional — maintains accountability for this vehicle; only active drivers are selectable.</div></div>
+
+  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Identifiers</h6></div>
+  <div class="col-md-3"><label class="form-label">FAR No.</label>
+    <input type="text" name="far_number" class="form-control" value="{{ item.far_number if item and item.far_number else '' }}"></div>
+  <div class="col-md-3"><label class="form-label">CR No.</label>
+    <input type="text" name="cr_number" class="form-control" value="{{ item.cr_number if item and item.cr_number else '' }}"></div>
+  <div class="col-md-3"><label class="form-label">MV File No.</label>
+    <input type="text" name="mv_file_number" class="form-control" value="{{ item.mv_file_number if item and item.mv_file_number else '' }}"></div>
+  <div class="col-md-3"><label class="form-label">LTO Office</label>
+    <input type="text" name="lto_office" class="form-control" value="{{ item.lto_office if item and item.lto_office else '' }}"></div>
+
+  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Classification</h6></div>
+  <div class="col-md-4"><label class="form-label">Vehicle Body Type</label>
+    <select name="vehicle_body_type" class="form-select">
+      <option value="">— Select —</option>
+      {% for bt in vehicle_body_types %}
+      <option value="{{ bt.code }}" {{ 'selected' if item and item.vehicle_body_type==bt.code }}>{{ bt.description }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Displacement</label>
+    <input type="text" name="displacement" class="form-control" placeholder="e.g. 2.8L / 1500cc"
+           value="{{ item.displacement if item and item.displacement else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Component Group</label>
+    <select name="component_group" class="form-select">
+      <option value="">— Select —</option>
+      {% for cg in component_groups %}
+      <option value="{{ cg.code }}" {{ 'selected' if item and item.component_group==cg.code }}>{{ cg.description }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Supplier</label>
+    <input type="text" name="supplier" class="form-control" value="{{ item.supplier if item and item.supplier else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Leasing Company</label>
+    <input type="text" name="leasing_company" class="form-control" value="{{ item.leasing_company if item and item.leasing_company else '' }}"></div>
+
+  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Financials</h6></div>
+  <div class="col-md-4"><label class="form-label">Top-up Amount <span class="text-muted small">(VAT Exclusive)</span></label>
+    <input type="number" step="0.01" name="top_up_amount" class="form-control text-end"
+           value="{{ item.top_up_amount if item and item.top_up_amount else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Assured Value This Year</label>
+    <input type="number" step="0.01" name="assured_value_current_year" class="form-control text-end"
+           value="{{ item.assured_value_current_year if item and item.assured_value_current_year else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Delivery Date</label>
+    <input type="date" name="delivery_date" class="form-control"
+           value="{{ item.delivery_date if item and item.delivery_date else '' }}"></div>
+  <div class="col-md-3"><label class="form-label">Start Date</label>
+    <input type="date" name="start_date" class="form-control"
+           value="{{ item.start_date if item and item.start_date else '' }}"></div>
+  <div class="col-md-3"><label class="form-label">End Date</label>
+    <input type="date" name="end_date" class="form-control"
+           value="{{ item.end_date if item and item.end_date else '' }}"></div>
+
+  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Insurance</h6></div>
+  <div class="col-md-4"><label class="form-label">Insurance Reference No.</label>
+    <input type="text" name="insurance_reference_number" class="form-control" value="{{ item.insurance_reference_number if item and item.insurance_reference_number else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Comprehensive Policy No.</label>
+    <input type="text" name="comprehensive_policy_number" class="form-control" value="{{ item.comprehensive_policy_number if item and item.comprehensive_policy_number else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Comprehensive Insurance Provider</label>
+    <input type="text" name="comprehensive_insurance_provider" class="form-control" value="{{ item.comprehensive_insurance_provider if item and item.comprehensive_insurance_provider else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">CTPL Policy No.</label>
+    <input type="text" name="ctpl_policy_number" class="form-control" value="{{ item.ctpl_policy_number if item and item.ctpl_policy_number else '' }}"></div>
+  <div class="col-md-6"><label class="form-label">CTPL Insurance Provider</label>
+    <input type="text" name="ctpl_insurance_provider" class="form-control" value="{{ item.ctpl_insurance_provider if item and item.ctpl_insurance_provider else '' }}"></div>
+
+  <div class="col-12">
+    <div class="row g-2 align-items-end border rounded p-2 mx-0 mb-2">
+      <div class="col-auto"><div class="form-check">
+        <input type="checkbox" name="has_ctpl" class="form-check-input" id="hasCtpl" {{ 'checked' if not item or item.has_ctpl }}>
+        <label class="form-check-label" for="hasCtpl">CTPL</label></div></div>
+      <div class="col-md-3"><label class="form-label small">From Date</label>
+        <input type="date" name="ctpl_from_date" class="form-control form-control-sm" value="{{ item.ctpl_from_date if item and item.ctpl_from_date else '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">To Date</label>
+        <input type="date" name="ctpl_to_date" class="form-control form-control-sm" value="{{ item.ctpl_to_date if item and item.ctpl_to_date else '' }}"></div>
+    </div>
+    <div class="row g-2 align-items-end border rounded p-2 mx-0 mb-2">
+      <div class="col-auto"><div class="form-check">
+        <input type="checkbox" name="has_od_theft_aon" class="form-check-input" id="hasOdTheftAon" {{ 'checked' if not item or item.has_od_theft_aon }}>
+        <label class="form-check-label" for="hasOdTheftAon">OD/THEFT/AON</label></div></div>
+      <div class="col-md-3"><label class="form-label small">From Date</label>
+        <input type="date" name="od_theft_aon_from_date" class="form-control form-control-sm" value="{{ item.od_theft_aon_from_date if item and item.od_theft_aon_from_date else '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">To Date</label>
+        <input type="date" name="od_theft_aon_to_date" class="form-control form-control-sm" value="{{ item.od_theft_aon_to_date if item and item.od_theft_aon_to_date else '' }}"></div>
+    </div>
+    <div class="row g-2 align-items-end border rounded p-2 mx-0 mb-2">
+      <div class="col-auto"><div class="form-check">
+        <input type="checkbox" name="has_vtpl_pd" class="form-check-input" id="hasVtplPd" {{ 'checked' if not item or item.has_vtpl_pd }}>
+        <label class="form-check-label" for="hasVtplPd">VTPL/PD</label></div></div>
+      <div class="col-md-3"><label class="form-label small">From Date</label>
+        <input type="date" name="vtpl_pd_from_date" class="form-control form-control-sm" value="{{ item.vtpl_pd_from_date if item and item.vtpl_pd_from_date else '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">To Date</label>
+        <input type="date" name="vtpl_pd_to_date" class="form-control form-control-sm" value="{{ item.vtpl_pd_to_date if item and item.vtpl_pd_to_date else '' }}"></div>
+    </div>
+    <div class="row g-2 align-items-end border rounded p-2 mx-0 mb-2">
+      <div class="col-auto"><div class="form-check">
+        <input type="checkbox" name="has_vtpl_bi" class="form-check-input" id="hasVtplBi" {{ 'checked' if not item or item.has_vtpl_bi }}>
+        <label class="form-check-label" for="hasVtplBi">VTPL/BI</label></div></div>
+      <div class="col-md-3"><label class="form-label small">From Date</label>
+        <input type="date" name="vtpl_bi_from_date" class="form-control form-control-sm" value="{{ item.vtpl_bi_from_date if item and item.vtpl_bi_from_date else '' }}"></div>
+      <div class="col-md-3"><label class="form-label small">To Date</label>
+        <input type="date" name="vtpl_bi_to_date" class="form-control form-control-sm" value="{{ item.vtpl_bi_to_date if item and item.vtpl_bi_to_date else '' }}"></div>
+    </div>
+    <div class="form-check">
+      <input type="checkbox" name="has_inland_marine" class="form-check-input" id="hasInlandMarine" {{ 'checked' if item and item.has_inland_marine }}>
+      <label class="form-check-label" for="hasInlandMarine">Inland Marine</label>
+    </div>
+  </div>
+
+  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Assignment</h6></div>
+  <div class="col-md-6">
+    <label class="form-label d-block">Assignment</label>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="assignment" id="assignPrimary" value="PRIMARY" {{ 'checked' if not item or item.assignment=='PRIMARY' }}>
+      <label class="form-check-label" for="assignPrimary">Primary</label></div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="assignment" id="assignSecondary" value="SECONDARY" {{ 'checked' if item and item.assignment=='SECONDARY' }}>
+      <label class="form-check-label" for="assignSecondary">Secondary</label></div>
+  </div>
+  <div class="col-md-6">
+    <label class="form-label d-block">Assignment Group Classification</label>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="assignment_group_classification" id="agcCarPlan" value="CAR_PLAN" {{ 'checked' if item and item.assignment_group_classification=='CAR_PLAN' }}>
+      <label class="form-check-label" for="agcCarPlan">Car Plan</label></div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="assignment_group_classification" id="agcCompanyOwned" value="COMPANY_OWNED" {{ 'checked' if not item or item.assignment_group_classification=='COMPANY_OWNED' }}>
+      <label class="form-check-label" for="agcCompanyOwned">Company Owned</label></div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="assignment_group_classification" id="agcOthers" value="OTHERS" {{ 'checked' if item and item.assignment_group_classification=='OTHERS' }}>
+      <label class="form-check-label" for="agcOthers">Others</label></div>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label d-block">Vehicle Usage</label>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="vehicle_usage" id="usageSales" value="SALES" {{ 'checked' if item and item.vehicle_usage=='SALES' }}>
+      <label class="form-check-label" for="usageSales">Sales</label></div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="vehicle_usage" id="usageNonSales" value="NON_SALES" {{ 'checked' if not item or item.vehicle_usage=='NON_SALES' }}>
+      <label class="form-check-label" for="usageNonSales">Non-Sales</label></div>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label d-block">MR-EDS</label>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="mr_eds" id="mrEdsYes" value="YES" {{ 'checked' if item and item.mr_eds }}>
+      <label class="form-check-label" for="mrEdsYes">Yes</label></div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="mr_eds" id="mrEdsNo" value="NO" {{ 'checked' if not item or not item.mr_eds }}>
+      <label class="form-check-label" for="mrEdsNo">No</label></div>
+  </div>
+  <div class="col-md-4">
+    <label class="form-label d-block">With Vehicle Contract</label>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="with_vehicle_contract" id="wvcYes" value="YES" {{ 'checked' if item and item.with_vehicle_contract }}>
+      <label class="form-check-label" for="wvcYes">Yes</label></div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="with_vehicle_contract" id="wvcNo" value="NO" {{ 'checked' if not item or not item.with_vehicle_contract }}>
+      <label class="form-check-label" for="wvcNo">No</label></div>
+  </div>
+
+  <div class="col-12"><hr></div>
+  <div class="col-12"><label class="form-label">Remarks</label>
+    <textarea name="remarks" class="form-control" rows="2">{{ item.remarks if item and item.remarks else '' }}</textarea></div>
   <div class="col-12"><label class="form-label">Notes</label>
     <textarea name="notes" class="form-control" rows="2">{{ item.notes if item else '' }}</textarea></div>
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_list') }}">Cancel</a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_list') }}">Close</a>
+    {% if item and item.id %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_clone', vid=item.id) }}">
+      <i class="bi bi-copy me-1"></i>Clone</a>
+    {% endif %}
   </div>
 </form>
 </div></div>

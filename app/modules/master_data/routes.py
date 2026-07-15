@@ -67,6 +67,19 @@ for _code, _desc, _order in [
     lookup_registry.register("FUEL_TYPE", _code, _desc, _order)
 
 for _code, _desc, _order in [
+    ("SEDAN", "Sedan", 1), ("SUV", "SUV", 2), ("VAN", "Van", 3),
+    ("PICKUP", "Pickup", 4), ("TRUCK", "Truck", 5), ("MOTORCYCLE", "Motorcycle", 6),
+    ("BUS", "Bus", 7), ("OTHER", "Other", 8),
+]:
+    lookup_registry.register("VEHICLE_BODY_TYPE", _code, _desc, _order)
+
+for _code, _desc, _order in [
+    ("LIGHT_FLEET", "Light Fleet", 1), ("HEAVY_FLEET", "Heavy Fleet", 2),
+    ("EXECUTIVE", "Executive", 3), ("POOL", "Pool", 4), ("OTHER", "Other", 5),
+]:
+    lookup_registry.register("COMPONENT_GROUP", _code, _desc, _order)
+
+for _code, _desc, _order in [
     ("PROFESSIONAL", "Professional", 1),
     ("NON_PROFESSIONAL", "Non-Professional", 2),
     ("STUDENT_PERMIT", "Student Permit", 3),
@@ -634,6 +647,8 @@ def vehicle_clone(vid):
         vtypes=VehicleTypeService().list(), vehicle_types=VehicleTypeService().list(),
         departments=DepartmentService().list(), bus=BusinessUnitService().list(),
         fuel_types=LookupService().get_by_type("FUEL_TYPE"),
+        vehicle_body_types=LookupService().get_by_type_with_fallback("VEHICLE_BODY_TYPE"),
+        component_groups=LookupService().get_by_type_with_fallback("COMPONENT_GROUP"),
         pm_schedules=PMScheduleService().list(),
         vehicle_brands=VehicleBrandService().list(),
         brand_ids_by_name={b.name: b.id for b in VehicleBrandService().list()},
@@ -651,6 +666,8 @@ def vehicle_new():
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
+    vehicle_body_types = LookupService().get_by_type_with_fallback("VEHICLE_BODY_TYPE")
+    component_groups = LookupService().get_by_type_with_fallback("COMPONENT_GROUP")
     pm_schedules = PMScheduleService().list()
     vehicle_brands = VehicleBrandService().list()
     brand_ids_by_name = {b.name: b.id for b in vehicle_brands}
@@ -675,6 +692,8 @@ def vehicle_new():
                            item=item, vtypes=vtypes, vehicle_types=vtypes,
                            departments=departments,
                            bus=bus, fuel_types=fuel_types,
+                           vehicle_body_types=vehicle_body_types,
+                           component_groups=component_groups,
                            pm_schedules=pm_schedules,
                            vehicle_brands=vehicle_brands,
                            brand_ids_by_name=brand_ids_by_name,
@@ -695,6 +714,8 @@ def vehicle_edit(vid):
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
+    vehicle_body_types = LookupService().get_by_type_with_fallback("VEHICLE_BODY_TYPE")
+    component_groups = LookupService().get_by_type_with_fallback("COMPONENT_GROUP")
     pm_schedules = PMScheduleService().list()
     vehicle_brands = VehicleBrandService().list()
     brand_ids_by_name = {b.name: b.id for b in vehicle_brands}
@@ -718,6 +739,8 @@ def vehicle_edit(vid):
                            item=item, vtypes=vtypes, vehicle_types=vtypes,
                            departments=departments,
                            bus=bus, fuel_types=fuel_types,
+                           vehicle_body_types=vehicle_body_types,
+                           component_groups=component_groups,
                            pm_schedules=pm_schedules,
                            vehicle_brands=vehicle_brands,
                            brand_ids_by_name=brand_ids_by_name,
