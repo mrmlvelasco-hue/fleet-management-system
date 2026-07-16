@@ -126,11 +126,19 @@ class PMSProfileService:
         return list(grouped.values())
 
     def get_profile(self, profile_code: str) -> list:
-        return (PMSchedule.query
+        # Sorted in Python rather than via SQL's nullslast() — that
+        # construct has no native equivalent on MySQL (only PostgreSQL/
+        # Oracle support "NULLS LAST" directly), so it worked fine
+        # against our SQLite test database but risked a genuine SQL
+        # error on a real MySQL database. A profile's package count is
+        # always small (a handful, rarely more than a few dozen), so
+        # sorting after fetching is cheap and fully portable.
+        rows = (PMSchedule.query
                .filter_by(profile_code=profile_code, is_active=True)
-               .order_by(PMSchedule.sequence_position.asc().nullslast(),
-                        PMSchedule.interval_km.asc().nullslast())
                .all())
+        return sorted(rows, key=lambda r: (
+            r.sequence_position is None, r.sequence_position or 0,
+            r.interval_km is None, r.interval_km or 0))
 
 
 class PMScopeTemplateService:

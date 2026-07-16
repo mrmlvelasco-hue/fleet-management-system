@@ -187,7 +187,7 @@ def import_pms(xlsx_path: str, dry_run: bool = True, limit_groups: int = None) -
                     } for i, text in enumerate(activity_texts)]
                     PMScopeTemplateService().create(
                         maintenance_type_id=mtype.id,
-                        name=f"{task_description} — Package {seq_pos}"[:120],
+                        name=f"{task_description} - Package {seq_pos}"[:120],
                         description=str(task_description),
                         pm_schedule_id=sched.id, items=items)
             # Counted whether or not we're actually writing — dry-run

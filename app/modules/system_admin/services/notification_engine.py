@@ -58,7 +58,7 @@ class NotificationEngine:
     def _send_in_app(self, user: User, event_name: str, instance) -> None:
         title = f"Document {event_name.replace('_', ' ').title()}"
         message = (f"{instance.document_type.code} "
-                   f"#{instance.reference_id} — {event_name}")
+                   f"#{instance.reference_id} - {event_name}")
         notif = InAppNotification(
             user_id=user.id, title=title, message=message,
             event_code=event_name,
