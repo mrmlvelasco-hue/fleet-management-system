@@ -21,13 +21,15 @@ def _login(client, db, *, codes=()):
 def test_maintenancetype_form_uses_fixed_category_dropdown(client, db):
     """Regression: Category was a free-text input, subject to confusing
     browser autofill suggesting Vehicle Type's LIGHT/HEAVY/etc. values
-    (since both fields shared name="category")."""
+    (since both fields shared name="category"). Now it's a dropdown
+    driven by the admin-configurable MAINTENANCE_CATEGORY Lookup rather
+    than a hardcoded PREVENTIVE/CORRECTIVE/PREDICTIVE list."""
     _login(client, db, codes=["maintenancetype.view", "maintenancetype.create"])
     resp = client.get("/master/maintenance-types/new")
     assert resp.status_code == 200
     assert b'<select name="category"' in resp.data
-    assert b"PREVENTIVE" in resp.data
-    assert b"CORRECTIVE" in resp.data
+    assert b"Preventive Maintenance" in resp.data
+    assert b"Corrective Maintenance" in resp.data
     assert b'autocomplete="off"' in resp.data
 
 
@@ -48,10 +50,10 @@ def test_create_maintenancetype_without_interval_fields(client, db):
     _login(client, db, codes=["maintenancetype.view", "maintenancetype.create"])
     resp = client.post("/master/maintenance-types/new", data={
         "code": "PMS-REG", "name": "Regression Test PMS",
-        "category": "PREVENTIVE", "description": "test",
+        "category": "PM", "description": "test",
     }, follow_redirects=True)
     assert resp.status_code == 200
     from app.modules.master_data.reference.models import MaintenanceType
     mt = MaintenanceType.query.filter_by(code="PMS-REG").first()
     assert mt is not None
-    assert mt.category == "PREVENTIVE"
+    assert mt.category == "PM"

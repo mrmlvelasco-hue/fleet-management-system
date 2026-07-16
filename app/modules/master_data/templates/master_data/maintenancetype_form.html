@@ -17,11 +17,11 @@
            value="{{ item.name if item and item.name else '' }}"></div>
   <div class="col-md-6"><label class="form-label">Category</label>
     <select name="category" class="form-select">
-      <option value="PREVENTIVE" {{ 'selected' if item and item.category=='PREVENTIVE' }}>Preventive</option>
-      <option value="CORRECTIVE" {{ 'selected' if item and item.category=='CORRECTIVE' }}>Corrective</option>
-      <option value="PREDICTIVE" {{ 'selected' if item and item.category=='PREDICTIVE' }}>Predictive</option>
+      {% for c in categories %}
+      <option value="{{ c.code }}" {{ 'selected' if item and item.category==c.code }}>{{ c.description }}</option>
+      {% endfor %}
     </select>
-    <div class="form-text">Preventive orders require a completed checklist before closing; Corrective does not.</div></div>
+    <div class="form-text">Configurable via System Administration → Lookups (MAINTENANCE_CATEGORY). Preventive orders require a completed checklist before closing.</div></div>
   <div class="col-md-6"><label class="form-label">Description</label>
     <input type="text" name="description" class="form-control" autocomplete="off"
            value="{{ item.description if item and item.description else '' }}"></div>

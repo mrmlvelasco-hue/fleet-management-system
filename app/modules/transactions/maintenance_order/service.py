@@ -86,7 +86,12 @@ class MaintenanceOrderService(BaseTransactionService):
 
     def complete(self, order_id: int, actual_cost, completed_date):
         order = db.session.get(MaintenanceOrder, order_id)
-        if order.category == "PREVENTIVE" and order.checklist_items:
+        # "PM" is the current code for Preventive Maintenance (Category
+        # Lookup, admin-configurable) — "PREVENTIVE" is kept here too for
+        # any row that predates the category-code migration and wasn't
+        # translated for some reason, so the rule doesn't silently stop
+        # applying to it.
+        if order.category in ("PM", "PREVENTIVE") and order.checklist_items:
             incomplete = [i for i in order.checklist_items if not i.is_done]
             if incomplete:
                 raise IncompleteChecklistError(

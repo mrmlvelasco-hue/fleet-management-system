@@ -67,7 +67,7 @@ def _get_or_create_maintenance_type(code: str, name: str, cache: dict):
         cache[code] = existing
         return existing
     created = MaintenanceTypeService().create(code=code, name=name,
-                                               category="PREVENTIVE")
+                                               category="PM")
     cache[code] = created
     return created
 

@@ -20,7 +20,7 @@
       <dl class="row mb-0">
         <dt class="col-sm-4">Vehicle</dt><dd class="col-sm-8">{{ item.vehicle.plate_number or item.vehicle.conduction_number }} — {{ item.vehicle.brand }} {{ item.vehicle.model }}</dd>
         <dt class="col-sm-4">Maintenance Type</dt><dd class="col-sm-8">{{ item.maintenance_type.name }}</dd>
-        <dt class="col-sm-4">Category</dt><dd class="col-sm-8"><span class="badge text-bg-{{ 'info' if item.category=='PREVENTIVE' else 'warning' }}">{{ item.category }}</span></dd>
+        <dt class="col-sm-4">Category</dt><dd class="col-sm-8"><span class="badge text-bg-{{ 'info' if item.category in ['PM', 'PREVENTIVE'] else 'warning' }}">{{ item.category }}</span></dd>
         <dt class="col-sm-4">Scheduled</dt><dd class="col-sm-8">{{ item.scheduled_date }}</dd>
         <dt class="col-sm-4">Completed</dt><dd class="col-sm-8">{{ item.completed_date or '—' }}</dd>
         <dt class="col-sm-4">Odometer</dt><dd class="col-sm-8">{{ item.odometer_at_service or '—' }}</dd>

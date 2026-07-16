@@ -113,6 +113,13 @@ for _code, _desc, _order in [
 ]:
     lookup_registry.register("PM_PRIORITY", _code, _desc, _order)
 
+for _code, _desc, _order in [
+    ("PM", "Preventive Maintenance", 1), ("CM", "Corrective Maintenance", 2),
+    ("INSP", "Inspection", 3), ("AR", "Accident Repair", 4),
+    ("RC", "Recall Campaign", 5), ("PD", "Predictive Maintenance (Future)", 6),
+]:
+    lookup_registry.register("MAINTENANCE_CATEGORY", _code, _desc, _order)
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -361,6 +368,8 @@ def maintenancetype_list():
 @login_required
 @require_permission("maintenancetype.create")
 def maintenancetype_new():
+    from app.modules.system_admin.services.lookup_service import LookupService
+    categories = LookupService().get_by_type_with_fallback("MAINTENANCE_CATEGORY")
     if request.method == "POST":
         try:
             MaintenanceTypeService().create(
@@ -372,13 +381,16 @@ def maintenancetype_new():
         except DuplicateCodeError as e:
             flash(str(e), "danger")
     return render_template("master_data/maintenancetype_form.html",
-                           item=None, title="New Maintenance Type")
+                           item=None, categories=categories,
+                           title="New Maintenance Type")
 
 
 @bp.route("/maintenance-types/<int:mid>/edit", methods=["GET", "POST"])
 @login_required
 @require_permission("maintenancetype.update")
 def maintenancetype_edit(mid):
+    from app.modules.system_admin.services.lookup_service import LookupService
+    categories = LookupService().get_by_type_with_fallback("MAINTENANCE_CATEGORY")
     item = db.session.get(MaintenanceType, mid)
     if request.method == "POST":
         MaintenanceTypeService().update(
@@ -388,7 +400,8 @@ def maintenancetype_edit(mid):
         flash("Maintenance type updated.", "success")
         return redirect(url_for("master_data.maintenancetype_list"))
     return render_template("master_data/maintenancetype_form.html",
-                           item=item, title=f"Edit — {item.code}")
+                           item=item, categories=categories,
+                           title=f"Edit — {item.code}")
 
 
 @bp.route("/maintenance-types/<int:mid>/deactivate", methods=["POST"])
