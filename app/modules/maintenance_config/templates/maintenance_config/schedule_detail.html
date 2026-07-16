@@ -64,10 +64,34 @@
 <div class="card mt-3"><div class="card-header">Linked Scope Templates</div>
   <div class="list-group list-group-flush">
     {% for st in item.scope_templates %}
-    <a class="list-group-item list-group-item-action"
-       href="{{ url_for('maintenance_config.pmscope_detail', tid=st.id) }}">
-      {{ st.name }} <span class="text-muted small">({{ st.items|length }} activities)</span>
-    </a>
+    <div class="list-group-item p-0">
+      <button class="btn w-100 text-start d-flex justify-content-between align-items-center px-3 py-2"
+              type="button" data-bs-toggle="collapse" data-bs-target="#scopeInline{{ st.id }}"
+              aria-expanded="false">
+        <span>{{ st.name }} <span class="text-muted small">({{ st.items|length }} activities)</span></span>
+        <i class="bi bi-chevron-down small"></i>
+      </button>
+      <div class="collapse" id="scopeInline{{ st.id }}">
+        <div class="px-3 pb-3">
+          <table class="table table-sm mb-2">
+            <thead><tr><th>#</th><th>Code</th><th>Description</th><th>Labor Hrs</th><th>Parts</th></tr></thead>
+            <tbody>
+            {% for i in st.items|sort(attribute='sort_order') %}
+              <tr>
+                <td>{{ i.sort_order }}</td>
+                <td><span class="badge text-bg-secondary">{{ i.activity_code }}</span></td>
+                <td>{{ i.activity_description }}</td>
+                <td>{{ i.standard_labor_hours or '—' }}</td>
+                <td>{{ i.required_parts or '—' }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          <a class="small" href="{{ url_for('maintenance_config.pmscope_detail', tid=st.id) }}">
+            Open full page (edit, attachments) <i class="bi bi-box-arrow-up-right"></i></a>
+        </div>
+      </div>
+    </div>
     {% endfor %}
   </div>
 </div>
