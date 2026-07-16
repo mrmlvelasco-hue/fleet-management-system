@@ -85,6 +85,57 @@ Run this any time you want to simulate "a day has passed" during testing.
 
 ---
 
+## Part 2b — "Whichever Comes First" (HYBRID) Deep Dive
+
+A `HYBRID` PM Template (e.g. "5,000 KM **OR** 6 Months") computes the KM
+condition and the calendar condition **independently**, then reports
+whichever is more urgent. Neither one "blocks" the other — the vehicle
+becomes due the moment *either* threshold is crossed.
+
+### Test it directly via the UI
+1. **Master Data → Maintenance Types → New** — create one, category
+   `PREVENTIVE`
+2. **PM Templates → New Template** — Trigger Mode: `Hybrid (whichever
+   comes first)`, Trigger KM: `5000`, Trigger Days: `180` (~6 months),
+   Vehicle Type: any
+3. **Master Data → Vehicles → New** — create a test vehicle, Vehicle Type
+   matching the template, Current Odometer: `5200`
+4. **Transactions → Maintenance Orders → New** — create and Complete one
+   for this vehicle at odometer `0`, completed 60 days ago (backdate the
+   Completed Date field)
+5. **Dashboard** — this vehicle should now show `OVERDUE`, even though
+   only 60 of the 180 allowed days have passed — because the **KM**
+   condition (5,200 ≥ 5,000) tripped first
+6. Repeat with a second vehicle: odometer `800`, but complete its last
+   service **190 days ago** instead — this one goes `OVERDUE` too, but
+   this time because the **calendar** condition tripped first, even
+   though it's barely used 800 of its 5,000 km allowance
+
+### Executable version (flask shell)
+```python
+from datetime import date, timedelta
+from app.core.maintenance.due_calculation_service import PMDueCalculationService
+
+# After creating the vehicle/template pair and a COMPLETED Maintenance
+# Order as your "last service" baseline:
+status = PMDueCalculationService().get_due_status(vehicle)
+print(status["status"])        # OVERDUE / DUE_SOON / GOOD
+print(status["next_due_km"])   # the KM side of the calculation
+print(status["next_due_date"]) # the calendar side of the calculation
+```
+Both `next_due_km` and `next_due_date` are always computed and returned
+together for a HYBRID template — inspect both to see which one actually
+tripped the status, even when only one of them has crossed its threshold.
+
+A full working example with all 4 scenarios (KM-first, calendar-first,
+neither, both-at-once) is in
+`tests/unit/test_hybrid_whichever_comes_first_demo.py` — run it directly:
+```
+pytest tests/unit/test_hybrid_whichever_comes_first_demo.py -v
+```
+
+---
+
 ## Part 3 — Creating a Normal (Corrective/Unscheduled) Work Order
 
 Not every Maintenance Order comes from a PM trigger — a driver reporting
