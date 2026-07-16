@@ -1065,14 +1065,30 @@ def attachment_list_json():
 
 @bp.route("/attachments/upload", methods=["POST"])
 @login_required
-@require_permission("attachment.upload")
 def attachment_upload():
+    """Deliberately does NOT use @require_permission — that decorator's
+    abort(403) renders an HTML error page, which the frontend's
+    `r.json()` call can't parse, silently collapsing into a generic
+    "Upload failed. Please try again." with zero indication of the real
+    cause. Every failure path here returns real JSON instead, and
+    unexpected exceptions are logged in full server-side (for admins)
+    while the client only sees a safe, friendly message."""
+    if not current_user.has_permission("attachment.upload"):
+        return jsonify(ok=False,
+                       error="You don't have permission to upload attachments."), 403
     ref_table = request.form.get("reference_table")
     ref_id = request.form.get("reference_id")
     file = request.files.get("file")
+    if not ref_table or not ref_id:
+        return jsonify(ok=False,
+                       error="Missing reference information for this upload."), 400
     try:
-        att = AttachmentService().upload(
-            file, ref_table, int(ref_id), user=current_user)
+        ref_id = int(ref_id)
+    except (TypeError, ValueError):
+        return jsonify(ok=False, error="Invalid reference ID."), 400
+
+    try:
+        att = AttachmentService().upload(file, ref_table, ref_id, user=current_user)
         db.session.commit()
         return jsonify(ok=True, id=att.id,
                        filename=att.original_filename,
@@ -1086,6 +1102,17 @@ def attachment_upload():
                                             att_id=att.id))
     except AttachmentError as e:
         return jsonify(ok=False, error=str(e)), 400
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.exception(
+            "Unexpected error uploading attachment (reference_table=%s, "
+            "reference_id=%s, user=%s): %s",
+            ref_table, ref_id, current_user.id, e)
+        return jsonify(
+            ok=False,
+            error="The file could not be uploaded due to a server error. "
+                 "Please try again, or contact your administrator if this "
+                 "keeps happening."), 500
 
 
 @bp.route("/attachments/<int:att_id>/delete", methods=["POST"])

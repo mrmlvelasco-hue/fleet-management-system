@@ -373,7 +373,15 @@
         body: formData,
         headers: {"X-CSRFToken": getCsrfToken()}
       })
-        .then(function (r) { return r.json(); })
+        .then(function (r) {
+          return r.json().catch(function () {
+            // The server responded but not with JSON — a proxy/timeout
+            // page, or something outside our own error handling. Still
+            // give the person a real signal about what happened rather
+            // than a bare parse failure.
+            throw new Error("http_" + r.status);
+          });
+        })
         .then(function (data) {
           btn.disabled = false;
           spinner.classList.add("d-none");
@@ -388,11 +396,21 @@
           list.insertAdjacentHTML("beforeend", renderAttachmentRow(data));
           form.reset();
         })
-        .catch(function () {
+        .catch(function (err) {
           btn.disabled = false;
           spinner.classList.add("d-none");
           label.textContent = "Upload";
-          errorBox.textContent = "Upload failed. Please try again.";
+          var message = "Upload failed. Please try again.";
+          if (err && err.message === "http_401") {
+            message = "Your session has expired — please log in again.";
+          } else if (err && err.message === "http_413") {
+            message = "This file is too large to upload.";
+          } else if (err && /^http_5/.test(err.message)) {
+            message = "The server encountered an error uploading this file. Please try again or contact your administrator.";
+          } else if (!navigator.onLine) {
+            message = "You appear to be offline — check your connection and try again.";
+          }
+          errorBox.textContent = message;
           errorBox.classList.remove("d-none");
         });
     });
