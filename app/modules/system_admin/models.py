@@ -42,6 +42,22 @@ class CompanyProfile(db.Model, BaseModel):
     logo_filename = db.Column(db.String(255))
 
 
+class EmailConfig(db.Model, BaseModel):
+    """SMTP delivery settings — singleton row, same pattern as
+    CompanyProfile. Distinct from EmailTemplate (content) — this is the
+    transport configuration that actually sends mail."""
+    __tablename__ = "email_config"
+    smtp_host = db.Column(db.String(255), nullable=True)
+    smtp_port = db.Column(db.Integer, nullable=True, default=587)
+    smtp_username = db.Column(db.String(255), nullable=True)
+    smtp_password = db.Column(db.String(255), nullable=True)
+    use_tls = db.Column(db.Boolean, default=True, nullable=False)
+    from_email = db.Column(db.String(255), nullable=True)
+    from_name = db.Column(db.String(120), nullable=True,
+                          default="Fleet Management System")
+    is_enabled = db.Column(db.Boolean, default=False, nullable=False)
+
+
 class EmailTemplate(db.Model, BaseModel):
     __tablename__ = "email_templates"
     event_code = db.Column(db.String(80), unique=True, nullable=False, index=True)
