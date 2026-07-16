@@ -53,12 +53,17 @@
   <div class="card-header"><i class="bi bi-clock-history me-1"></i>Maintenance History</div>
   <div class="card-body p-0">
   <table class="table table-striped mb-0">
-    <thead><tr><th>Date</th><th>Work Order</th><th>PM Type</th><th>Cost</th><th>Vendor</th></tr></thead>
+    <thead><tr><th>Date</th><th>Work Order</th><th>Category</th><th>PM Type</th><th>Cost</th><th>Vendor</th></tr></thead>
     <tbody>
     {% for m in maintenance_history %}
       <tr>
         <td>{{ m.completed_date }}</td>
-        <td>{{ m.document_number }}</td>
+        <td>
+          {% if current_user.has_permission('maintenanceorder.view') %}
+          <a href="{{ url_for('transactions.maintenanceorder_detail', oid=m.id) }}">{{ m.document_number }}</a>
+          {% else %}{{ m.document_number }}{% endif %}
+        </td>
+        <td><span class="badge text-bg-{{ 'info' if m.category in ['PM', 'PREVENTIVE'] else 'warning' if m.category in ['CM', 'CORRECTIVE'] else 'secondary' }}">{{ m.category or '—' }}</span></td>
         <td>{{ m.maintenance_type.name }}</td>
         <td>{{ "{:,.2f}".format(m.actual_cost) if m.actual_cost else '—' }}</td>
         <td>{{ m.vendor.name if m.vendor else '—' }}</td>
@@ -79,7 +84,11 @@
     <tbody>
     {% for r in registration_history %}
       <tr>
-        <td>{{ r.document_number or '—' }}</td>
+        <td>
+          {% if current_user.has_permission('vehicleregistration.view') %}
+          <a href="{{ url_for('transactions.vehicleregistration_detail', rid=r.id) }}">{{ r.document_number or '—' }}</a>
+          {% else %}{{ r.document_number or '—' }}{% endif %}
+        </td>
         <td>{{ r.registration_type }}</td>
         <td>{{ r.registration_date or '—' }}</td>
         <td>{{ r.expiry_date or '—' }}</td>
