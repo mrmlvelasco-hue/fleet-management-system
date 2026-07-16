@@ -62,7 +62,7 @@
           <button class="btn btn-success btn-sm">Mark Received</button>
         </form>
         {% endif %}
-        {% if item.status not in ['RECEIVED', 'CANCELLED'] and current_user.has_permission('purchaserequest.update') %}
+        {% if item.status not in ['RECEIVED', 'CANCELLED'] and item.requester and item.requester.id == current_user.id %}
         <form method="post" action="{{ url_for('transactions.purchaserequest_cancel', pid=item.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-outline-danger btn-sm">Cancel</button>

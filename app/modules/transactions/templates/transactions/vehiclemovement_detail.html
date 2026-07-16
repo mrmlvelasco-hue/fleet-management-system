@@ -61,7 +61,7 @@
           <button class="btn btn-success btn-sm">Mark Completed</button>
         </form>
         {% endif %}
-        {% if item.status not in ['COMPLETED', 'CANCELLED'] and current_user.has_permission('vehiclemovement.update') %}
+        {% if item.status not in ['COMPLETED', 'CANCELLED'] and item.requester and item.requester.id == current_user.id %}
         <form method="post" action="{{ url_for('transactions.vehiclemovement_cancel', mid=item.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-outline-danger btn-sm">Cancel</button>

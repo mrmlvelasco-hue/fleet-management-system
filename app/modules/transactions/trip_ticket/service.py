@@ -70,5 +70,11 @@ class TripTicketService(BaseTransactionService):
         trip.odometer_in = odometer_in
         trip.return_datetime = return_datetime
         trip.status = "COMPLETED"
+        # Vehicle Master's Current Odometer priority (per the Vehicle
+        # Module enhancement spec): Latest Completed Trip Ticket first —
+        # same non-regressing safety check Maintenance Order already uses.
+        if trip.vehicle and (trip.vehicle.current_odometer is None or
+                             odometer_in > trip.vehicle.current_odometer):
+            trip.vehicle.current_odometer = odometer_in
         db.session.commit()
         return trip

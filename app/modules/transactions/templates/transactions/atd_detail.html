@@ -45,7 +45,7 @@
           <button class="btn btn-primary btn-sm">Activate</button>
         </form>
         {% endif %}
-        {% if item.status not in ['CANCELLED'] and current_user.has_permission('atd.update') %}
+        {% if item.status not in ['CANCELLED'] and item.requester and item.requester.id == current_user.id %}
         <form method="post" action="{{ url_for('transactions.atd_cancel', aid=item.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-outline-danger btn-sm">Cancel</button>
