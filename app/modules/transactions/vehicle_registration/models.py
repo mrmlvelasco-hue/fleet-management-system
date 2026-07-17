@@ -34,3 +34,27 @@ class VehicleRegistration(db.Model, BaseModel):
     vehicle = db.relationship("Vehicle")
     requester = db.relationship("User", foreign_keys=[requested_by])
     approval_instance = db.relationship("ApprovalInstance")
+    checklist_items = db.relationship(
+        "RegistrationTransactionChecklistItem", backref="registration",
+        order_by="RegistrationTransactionChecklistItem.sort_order",
+        cascade="all, delete-orphan")
+
+
+class RegistrationTransactionChecklistItem(db.Model, BaseModel):
+    """A snapshot of the matched RegistrationTemplate's checklist at the
+    time this registration was created — so later edits to the template
+    don't retroactively change what a specific past renewal was expected
+    to include (same reasoning as Maintenance Order's own checklist
+    snapshot)."""
+    __tablename__ = "registration_transaction_checklist_items"
+    registration_id = db.Column(db.Integer,
+                                db.ForeignKey("vehicle_registrations.id"),
+                                nullable=False)
+    activity_code = db.Column(db.String(40), nullable=False)
+    activity_description = db.Column(db.String(255), nullable=False)
+    is_done = db.Column(db.Boolean, default=False, nullable=False)
+    done_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    done_at = db.Column(db.DateTime, nullable=True)
+    sort_order = db.Column(db.Integer, default=0, nullable=False)
+
+    done_by_user = db.relationship("User")

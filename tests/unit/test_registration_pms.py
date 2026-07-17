@@ -8,7 +8,7 @@ from app.modules.master_data.vehicle.service import VehicleService
 from app.modules.master_data.reference.service import VehicleTypeService
 from app.modules.master_data.org.service import BranchService
 from app.modules.transactions.vehicle_registration.service import (
-    VehicleRegistrationService)
+    VehicleRegistrationService, InvalidRegistrationStateError)
 
 
 @pytest.fixture()
@@ -96,3 +96,61 @@ def test_never_registered_vehicle_has_no_due_status(db, env):
     RegistrationTemplateService().create(vehicle_type_id=vt.id, interval_years=3)
     status = RegistrationDueCalculationService().get_due_status(vehicle)
     assert status["status"] == "NO_RECORD"
+
+
+def test_new_registration_copies_matched_template_checklist(db, env):
+    branch, vt, vehicle = env
+    RegistrationTemplateService().create(
+        vehicle_type_id=vt.id, interval_years=3,
+        items=[
+            {"activity_code": "OR-CR", "activity_description": "Renew OR/CR", "sort_order": 1},
+            {"activity_code": "EMISSION", "activity_description": "Emission Test", "sort_order": 2},
+        ])
+    reg = VehicleRegistrationService().create(
+        vehicle_id=vehicle.id, registration_type="NEW",
+        registration_date=date.today(), user=None)
+    assert len(reg.checklist_items) == 2
+    assert reg.checklist_items[0].activity_code == "OR-CR"
+
+
+def test_registration_without_matched_template_has_no_checklist(db, env):
+    branch, vt, vehicle = env
+    reg = VehicleRegistrationService().create(
+        vehicle_id=vehicle.id, registration_type="NEW",
+        registration_date=date.today(), user=None)
+    assert reg.checklist_items == []
+
+
+def test_toggle_registration_checklist_item(db, env):
+    branch, vt, vehicle = env
+    RegistrationTemplateService().create(
+        vehicle_type_id=vt.id, interval_years=3,
+        items=[{"activity_code": "OR-CR", "activity_description": "Renew OR/CR",
+               "sort_order": 1}])
+    reg = VehicleRegistrationService().create(
+        vehicle_id=vehicle.id, registration_type="NEW",
+        registration_date=date.today(), user=None)
+    item = reg.checklist_items[0]
+    VehicleRegistrationService().toggle_checklist_item(item.id, True, user=None)
+
+    from app.modules.transactions.vehicle_registration.models import (
+        RegistrationTransactionChecklistItem)
+    updated = db.session.get(RegistrationTransactionChecklistItem, item.id)
+    assert updated.is_done is True
+
+
+def test_cannot_toggle_checklist_after_completion(db, env):
+    branch, vt, vehicle = env
+    RegistrationTemplateService().create(
+        vehicle_type_id=vt.id, interval_years=3,
+        items=[{"activity_code": "OR-CR", "activity_description": "Renew OR/CR",
+               "sort_order": 1}])
+    reg = VehicleRegistrationService().create(
+        vehicle_id=vehicle.id, registration_type="NEW",
+        registration_date=date.today(), user=None)
+    item = reg.checklist_items[0]
+    VehicleRegistrationService().complete(reg.id, or_number="OR-1", cr_number="CR-1",
+                                          plate_number="ABC 123")
+
+    with pytest.raises(InvalidRegistrationStateError):
+        VehicleRegistrationService().toggle_checklist_item(item.id, True, user=None)

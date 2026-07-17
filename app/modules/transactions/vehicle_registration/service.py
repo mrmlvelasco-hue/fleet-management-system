@@ -22,6 +22,10 @@ class NoExistingRegistrationError(Exception):
     pass
 
 
+class InvalidRegistrationStateError(Exception):
+    pass
+
+
 class VehicleRegistrationService(BaseTransactionService):
     model = VehicleRegistration
     document_type_code = "VR"
@@ -68,8 +72,39 @@ class VehicleRegistrationService(BaseTransactionService):
             odometer_at_registration=odometer_at_registration,
             status="DRAFT", requested_by=user.id if user else None)
         db.session.add(reg)
+        db.session.flush()
+
+        from app.modules.registration_config.service import (
+            RegistrationTemplateService)
+        from app.modules.transactions.vehicle_registration.models import (
+            RegistrationTransactionChecklistItem)
+        vehicle = VehicleService().get(vehicle_id)
+        template = (RegistrationTemplateService().find_applicable(vehicle)
+                   if vehicle else None)
+        if template and template.checklist_items:
+            for i in template.checklist_items:
+                db.session.add(RegistrationTransactionChecklistItem(
+                    registration_id=reg.id, activity_code=i.activity_code,
+                    activity_description=i.activity_description,
+                    sort_order=i.sort_order))
+
         db.session.commit()
         return reg
+
+    def toggle_checklist_item(self, item_id: int, done: bool, user):
+        from datetime import datetime, timezone
+        from app.modules.transactions.vehicle_registration.models import (
+            RegistrationTransactionChecklistItem)
+        item = db.session.get(RegistrationTransactionChecklistItem, item_id)
+        if item.registration.status == "COMPLETED":
+            raise InvalidRegistrationStateError(
+                "Checklist items can no longer be updated once the "
+                "registration is completed.")
+        item.is_done = done
+        item.done_by = user.id if done and user else None
+        item.done_at = datetime.now(timezone.utc) if done else None
+        db.session.commit()
+        return item
 
     def complete(self, registration_id: int, *, or_number, cr_number,
                 plate_number=None):
