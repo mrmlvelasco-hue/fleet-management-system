@@ -15,6 +15,17 @@ class AuthorityToDrive(db.Model, BaseModel):
     purpose = db.Column(db.String(255), nullable=False)
     valid_from = db.Column(db.Date, nullable=False)
     valid_to = db.Column(db.Date, nullable=False)
+    # Matches the reference "Authorization" slip's WO reference — when the
+    # pull-out is specifically for a maintenance visit, linking the real
+    # Maintenance Order lets the print report show its document number
+    # ("with WO no. ...") instead of relying on free text in Purpose.
+    maintenance_order_id = db.Column(db.Integer,
+                                     db.ForeignKey("maintenance_orders.id"),
+                                     nullable=True)
+    # Recorded when the vehicle leaves / returns — the gate guard's
+    # checkpoint fields on the printed slip.
+    odometer_out = db.Column(db.Integer, nullable=True)
+    odometer_in = db.Column(db.Integer, nullable=True)
 
     # DRAFT | ACTIVE | EXPIRED | CANCELLED — physical lifecycle, separate
     # from the linked ApprovalInstance.status (approval workflow state).
@@ -27,5 +38,6 @@ class AuthorityToDrive(db.Model, BaseModel):
 
     vehicle = db.relationship("Vehicle")
     driver = db.relationship("Driver")
+    maintenance_order = db.relationship("MaintenanceOrder")
     requester = db.relationship("User", foreign_keys=[requested_by])
     approval_instance = db.relationship("ApprovalInstance")

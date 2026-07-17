@@ -16,7 +16,7 @@ class ATDService(BaseTransactionService):
     reference_table = "authority_to_drives"
 
     def create(self, *, vehicle_id, driver_id, purpose, valid_from, valid_to,
-               user):
+               user, maintenance_order_id=None, odometer_out=None):
         numbering = AutoNumberingService()
         try:
             doc_number = numbering.generate(self.document_type_code)
@@ -26,9 +26,19 @@ class ATDService(BaseTransactionService):
         atd = AuthorityToDrive(
             document_number=doc_number, vehicle_id=vehicle_id,
             driver_id=driver_id, purpose=purpose, valid_from=valid_from,
-            valid_to=valid_to, status="DRAFT",
+            valid_to=valid_to, maintenance_order_id=maintenance_order_id,
+            odometer_out=odometer_out, status="DRAFT",
             requested_by=user.id if user else None)
         db.session.add(atd)
+        db.session.commit()
+        return atd
+
+    def record_odometer_in(self, atd_id: int, odometer_in: int):
+        """The gate guard's return checkpoint — recorded separately from
+        creation since it isn't known until the vehicle actually comes
+        back."""
+        atd = db.session.get(AuthorityToDrive, atd_id)
+        atd.odometer_in = odometer_in
         db.session.commit()
         return atd
 

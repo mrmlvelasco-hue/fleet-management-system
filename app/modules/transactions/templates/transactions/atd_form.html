@@ -12,7 +12,13 @@
   <div class="col-md-6"><label class="form-label">Vehicle</label>
     <div class="input-group">
       <select name="vehicle_id" id="atdVehicleSelect" class="form-select" required>
+        {% if prefill_vehicle %}
+        <option value="{{ prefill_vehicle.id }}" selected>
+          {{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number }} — {{ prefill_vehicle.brand }} {{ prefill_vehicle.model }}
+        </option>
+        {% else %}
         <option value="">— Type plate number, make, or model —</option>
+        {% endif %}
       </select>
       <button type="button" class="btn btn-outline-secondary" id="atdVehicleModalBtn" title="Advanced search">
         <i class="bi bi-search"></i></button>
@@ -22,11 +28,27 @@
       <option value="">— Type employee number or name —</option>
     </select></div>
   <div class="col-12"><label class="form-label">Purpose</label>
-    <input type="text" name="purpose" class="form-control" required></div>
+    <input type="text" name="purpose" class="form-control" required
+           value="{{ prefill.purpose or '' }}"></div>
+  {% if prefill_order %}
+  <input type="hidden" name="maintenance_order_id" value="{{ prefill_order.id }}">
+  <div class="col-12">
+    <div class="alert alert-info py-2 px-3 mb-0 small">
+      <i class="bi bi-link-45deg me-1"></i>Linked to Work Order
+      <strong>{{ prefill_order.document_number }}</strong> — this will show on the
+      printed authorization as "with WO no. {{ prefill_order.document_number }}"
+    </div>
+  </div>
+  {% endif %}
   <div class="col-md-6"><label class="form-label">Valid From</label>
-    <input type="date" name="valid_from" class="form-control" required></div>
+    <input type="date" name="valid_from" class="form-control" required
+           value="{{ prefill.valid_from or '' }}"></div>
   <div class="col-md-6"><label class="form-label">Valid To</label>
-    <input type="date" name="valid_to" class="form-control" required></div>
+    <input type="date" name="valid_to" class="form-control" required
+           value="{{ prefill.valid_to or '' }}"></div>
+  <div class="col-md-6"><label class="form-label">Odometer Reading (Out) <span class="text-muted small">(optional)</span></label>
+    <input type="number" name="odometer_out" class="form-control"
+           value="{{ prefill_vehicle.current_odometer if prefill_vehicle and prefill_vehicle.current_odometer else '' }}"></div>
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Save as Draft</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('transactions.atd_list') }}">Cancel</a>

@@ -227,6 +227,21 @@ def atd_list():
 @login_required
 @require_permission("atd.create")
 def atd_new():
+    from app.modules.master_data.vehicle.service import VehicleService as _VS
+    from app.modules.transactions.maintenance_order.models import MaintenanceOrder
+    prefill_vehicle = None
+    prefill_order = None
+    if request.method == "GET":
+        if request.args.get("vehicle_id"):
+            prefill_vehicle = _VS().get(int(request.args["vehicle_id"]))
+        if request.args.get("maintenance_order_id"):
+            prefill_order = db.session.get(
+                MaintenanceOrder, int(request.args["maintenance_order_id"]))
+    prefill = {
+        "purpose": request.args.get("purpose"),
+        "valid_from": request.args.get("valid_from"),
+        "valid_to": request.args.get("valid_to"),
+    }
     if request.method == "POST":
         f = request.form
         try:
@@ -236,13 +251,29 @@ def atd_new():
                 valid_from=parse_form_date(f.get("valid_from"), "Valid From",
                                            required=True),
                 valid_to=parse_form_date(f.get("valid_to"), "Valid To",
-                                         required=True), user=current_user)
+                                         required=True),
+                maintenance_order_id=int(f["maintenance_order_id"]) if f.get("maintenance_order_id") else None,
+                odometer_out=int(f["odometer_out"]) if f.get("odometer_out") else None,
+                user=current_user)
             flash("Authority To Drive created.", "success")
             return redirect(url_for("transactions.atd_list"))
         except (DateFormatError, RequiredFieldError) as e:
             flash(str(e), "danger")
     return render_template("transactions/atd_form.html",
+                           prefill_vehicle=prefill_vehicle,
+                           prefill_order=prefill_order, prefill=prefill,
                            title="New Authority To Drive")
+
+
+@bp.route("/atd/<int:aid>/record-odometer-in", methods=["POST"])
+@login_required
+@require_permission("atd.update")
+def atd_record_odometer_in(aid):
+    odometer_in = request.form.get("odometer_in")
+    if odometer_in:
+        ATDService().record_odometer_in(aid, odometer_in=int(odometer_in))
+        flash("Odometer (In) recorded.", "success")
+    return redirect(url_for("transactions.atd_detail", aid=aid))
 
 
 @bp.route("/atd/<int:aid>")
@@ -259,12 +290,18 @@ def atd_detail(aid):
 @login_required
 @require_permission("atd.print")
 def atd_print(aid):
+    from datetime import datetime
     from app.modules.system_admin.services.company_service import (
         CompanyProfileService)
+    from app.core.approval.engine import ApprovalEngine
     item = db.session.get(AuthorityToDrive, aid)
     company = CompanyProfileService().get()
+    approval_chain_data = (ApprovalEngine().get_approval_chain(item.approval_instance)
+                           if item.approval_instance else [])
     return render_template("transactions/atd_print.html", item=item,
-                           company=company)
+                           company=company,
+                           approval_chain_data=approval_chain_data,
+                           print_timestamp=datetime.now().strftime("%m/%d/%Y - %H:%M"))
 
 
 @bp.route("/atd/<int:aid>/submit", methods=["POST"])

@@ -21,8 +21,24 @@
         <dt class="col-sm-4">Vehicle</dt><dd class="col-sm-8">{{ item.vehicle.plate_number or item.vehicle.conduction_number }} — {{ item.vehicle.brand }} {{ item.vehicle.model }}</dd>
         <dt class="col-sm-4">Driver</dt><dd class="col-sm-8">{{ item.driver.full_name }}</dd>
         <dt class="col-sm-4">Purpose</dt><dd class="col-sm-8">{{ item.purpose }}</dd>
+        {% if item.maintenance_order %}
+        <dt class="col-sm-4">Work Order</dt>
+        <dd class="col-sm-8"><a href="{{ url_for('transactions.maintenanceorder_detail', oid=item.maintenance_order.id) }}">{{ item.maintenance_order.document_number }}</a></dd>
+        {% endif %}
         <dt class="col-sm-4">Valid From</dt><dd class="col-sm-8">{{ item.valid_from }}</dd>
         <dt class="col-sm-4">Valid To</dt><dd class="col-sm-8">{{ item.valid_to }}</dd>
+        <dt class="col-sm-4">Odometer (Out)</dt><dd class="col-sm-8">{{ item.odometer_out or '—' }}</dd>
+        <dt class="col-sm-4">Odometer (In)</dt>
+        <dd class="col-sm-8">
+          {{ item.odometer_in or '—' }}
+          {% if not item.odometer_in and item.status not in ['CANCELLED'] and current_user.has_permission('atd.update') %}
+          <form method="post" action="{{ url_for('transactions.atd_record_odometer_in', aid=item.id) }}" class="d-inline-flex gap-1 mt-1">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="number" name="odometer_in" class="form-control form-control-sm" style="width:120px;" placeholder="Reading">
+            <button class="btn btn-sm btn-outline-secondary">Record</button>
+          </form>
+          {% endif %}
+        </dd>
       </dl>
     </div></div>
   </div>

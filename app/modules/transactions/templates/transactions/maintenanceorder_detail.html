@@ -100,6 +100,24 @@
 
 <div class="card mt-3">
   <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-file-earmark-lock2 me-1"></i>Vehicle Pull-Out Authorization</span>
+    {% if current_user.has_permission('atd.create') %}
+    <a class="btn btn-sm btn-outline-primary"
+       href="{{ url_for('transactions.atd_new', vehicle_id=item.vehicle_id, maintenance_order_id=item.id, purpose='Assigned unit is due for ' ~ item.maintenance_type.name|lower ~ '.', valid_from=item.scheduled_date.isoformat() if item.scheduled_date else '', valid_to=item.scheduled_date.isoformat() if item.scheduled_date else '') }}">
+      <i class="bi bi-plus-lg me-1"></i>New Authorization to Gate Guard</a>
+    {% endif %}
+  </div>
+  <div class="card-body p-0">
+    <p class="text-muted p-3 mb-0 small">
+      Creates a gate-pass authorization for this vehicle to leave the premises for this
+      work order, addressed to the Gate Guard — matching the printed slip format
+      (Authorization No., Plate/Make-Model, Odometer Out/In, multiple signatures).
+    </p>
+  </div>
+</div>
+
+<div class="card mt-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
     <span><i class="bi bi-receipt me-1"></i>Invoices & Actual Expense</span>
     {% if item.status in ['COMPLETED', 'IN_PROGRESS'] and current_user.has_permission('maintenanceinvoice.create') %}
     <a class="btn btn-sm btn-primary" href="{{ url_for('transactions.maintenanceinvoice_new', oid=item.id) }}">
