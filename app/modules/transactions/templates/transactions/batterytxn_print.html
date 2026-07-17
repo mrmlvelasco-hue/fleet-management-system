@@ -1,25 +1,113 @@
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Battery Transaction {{ item.document_number }}</title>
-<style>
-  body { font-family: Arial, sans-serif; margin: 40px; }
-  .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
-  .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
-  table.info { width: 100%; border-collapse: collapse; }
-  table.info td { padding: 6px 8px; border: 1px solid #999; }
-  table.info td.label { font-weight: bold; width: 30%; background: #f2f2f2; }
-  .no-print { text-align: center; margin-bottom: 20px; }
-  @media print { .no-print { display: none; } }
-</style></head>
+<head>
+  <meta charset="utf-8">
+  <title>Battery Transaction {{ item.document_number }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #111; font-size: 13px; position: relative; }
+    .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
+    .letterhead h1 { font-size: 18px; margin: 0; }
+    .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
+    .qr-block { position: absolute; top: 40px; right: 40px; text-align: center; }
+    .qr-block canvas { width: 80px; height: 80px; }
+    .qr-block .url { font-size: 9px; color: #666; max-width: 90px; word-break: break-all; }
+    .watermark {
+      position: fixed; top: 40%; left: 10%; font-size: 90px; font-weight: bold;
+      color: rgba(200, 0, 0, 0.12); transform: rotate(-30deg); z-index: -1; pointer-events: none;
+    }
+    h6.section { text-transform: uppercase; font-size: 11px; letter-spacing: .05em; color: #555;
+                border-bottom: 1px solid #ccc; padding-bottom: 3px; margin: 18px 0 8px; }
+    table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    table.info td { padding: 5px 8px; border: 1px solid #999; }
+    table.info td.label { font-weight: bold; width: 28%; background: #f2f2f2; }
+    table.grid { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    table.grid th, table.grid td { padding: 5px 7px; border: 1px solid #999; text-align: left; }
+    table.grid th { background: #f2f2f2; }
+    .remarks-box { border: 1px solid #999; min-height: 60px; padding: 8px; }
+    .signatures { display: flex; justify-content: space-between; margin-top: 40px; flex-wrap: wrap; }
+    .sig-block { text-align: center; width: 30%; margin-bottom: 20px; }
+    .sig-line { border-top: 1px solid #333; margin-top: 45px; padding-top: 4px; }
+    .sig-name { font-weight: bold; margin-top: 4px; }
+    .sig-date { font-size: 11px; color: #555; }
+    .no-print { text-align: center; margin-bottom: 20px; }
+    @media print { .no-print { display: none; } }
+  </style>
+</head>
 <body>
   <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
-  <div class="letterhead"><h1>{{ company.company_name if company else 'Company Name' }}</h1></div>
+
+  {% if item.status in ['DRAFT'] %}<div class="watermark">DRAFT</div>{% endif %}
+  {% if item.status == 'CANCELLED' %}<div class="watermark">CANCELLED</div>{% endif %}
+
+  <div class="qr-block">
+    <canvas id="qrCanvas"></canvas>
+    <div class="url">Scan for online record</div>
+  </div>
+
+  <div class="letterhead">
+    <h1>{{ company.company_name if company else 'Company Name' }}</h1>
+  </div>
   <div class="doc-title">BATTERY TRANSACTION — {{ item.document_number or 'DRAFT' }}</div>
+
+  <h6 class="section">Transaction Information</h6>
   <table class="info">
-    <tr><td class="label">Battery Serial</td><td>{{ item.battery.serial_number }}</td></tr>
-    <tr><td class="label">Vehicle</td><td>{{ item.vehicle.plate_number or item.vehicle.conduction_number if item.vehicle else '—' }}</td></tr>
-    <tr><td class="label">Action</td><td>{{ item.action }}</td></tr>
-    <tr><td class="label">Date</td><td>{{ item.transaction_date }}</td></tr>
+    <tr><td class="label">Battery Serial</td><td>{{ item.battery.serial_number }}</td>
+        <td class="label">Action</td><td>{{ item.action }}</td></tr>
+    <tr><td class="label">Vehicle</td><td>{{ item.vehicle.plate_number or item.vehicle.conduction_number if item.vehicle else '—' }}</td>
+        <td class="label">Date</td><td>{{ item.transaction_date }}</td></tr>
+    <tr><td class="label">Status</td><td>{{ item.status }}</td><td></td><td></td></tr>
   </table>
+
+  {% if attachments %}
+  <h6 class="section">Attachments</h6>
+  <table class="grid">
+    <tr><th>File Name</th><th>Uploaded By</th><th>Date</th></tr>
+    {% for a in attachments %}
+    <tr><td>{{ a.original_filename }}</td><td>{{ lookup_user(a.created_by).full_name if lookup_user(a.created_by) else '—' }}</td>
+        <td>{{ a.created_at.strftime('%Y-%m-%d') if a.created_at else '—' }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <h6 class="section">Remarks</h6>
+  <div class="remarks-box">{{ item.remarks or '' }}</div>
+
+  <h6 class="section">Signatures</h6>
+  <div class="signatures">
+    <div class="sig-block">
+      <div class="sig-line">Requested By</div>
+      <div class="sig-name">{{ item.requester.full_name if item.requester else '' }}</div>
+      <div class="sig-date">{{ item.created_at.strftime('%Y-%m-%d') if item.created_at else '' }}</div>
+    </div>
+    {% for lvl in approval_chain_data %}
+      {% if lvl.status == 'APPROVED' %}
+    <div class="sig-block">
+      <div class="sig-line">{{ lvl.approver_label.split(': ', 1)[-1] }}</div>
+      <div class="sig-name">{{ lvl.acted_by_name }}</div>
+      <div class="sig-date">{{ lvl.acted_at.strftime('%Y-%m-%d') if lvl.acted_at else '' }}</div>
+    </div>
+      {% endif %}
+    {% endfor %}
+    <div class="sig-block">
+      <div class="sig-line">Received By</div>
+    </div>
+  </div>
 </body>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script>
+  var qr = qrcode(0, 'M');
+  qr.addData(window.location.origin + "{{ url_for('transactions.batterytxn_detail', bid=item.id) }}");
+  qr.make();
+  var canvas = document.getElementById('qrCanvas');
+  var ctx = canvas.getContext('2d');
+  var size = qr.getModuleCount();
+  var cell = 4;
+  canvas.width = canvas.height = size * cell;
+  for (var row = 0; row < size; row++) {
+    for (var col = 0; col < size; col++) {
+      ctx.fillStyle = qr.isDark(row, col) ? '#000' : '#fff';
+      ctx.fillRect(col * cell, row * cell, cell, cell);
+    }
+  }
+</script>
 </html>

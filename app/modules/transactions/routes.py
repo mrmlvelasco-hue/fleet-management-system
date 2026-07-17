@@ -65,6 +65,27 @@ def _flash_engine_error(exc):
     flash(str(exc), "danger")
 
 
+def _print_report_context(item):
+    """Shared data every 'Dynamic Report' print template needs: company
+    letterhead, the real approval chain (for actual signature names/dates
+    instead of blank lines), attachments, and a print timestamp. Reused
+    across every transaction module's print route rather than duplicating
+    this fetch logic in each one."""
+    from datetime import datetime
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    from app.modules.master_data.routes import _attachment_rows
+    from app.core.approval.engine import ApprovalEngine
+    return {
+        "company": CompanyProfileService().get(),
+        "approval_chain_data": (ApprovalEngine().get_approval_chain(item.approval_instance)
+                               if item.approval_instance else []),
+        "attachments": (_attachment_rows(item.__tablename__, item.id)
+                        if item else []),
+        "print_timestamp": datetime.now().strftime("%m/%d/%Y - %H:%M"),
+    }
+
+
 # ── Trip Tickets ────────────────────────────────────────────────────────────
 
 @bp.route("/trip-tickets")
@@ -114,12 +135,9 @@ def tripticket_detail(tid):
 @login_required
 @require_permission("tripticket.print")
 def tripticket_print(tid):
-    from app.modules.system_admin.services.company_service import (
-        CompanyProfileService)
     item = db.session.get(TripTicket, tid)
-    company = CompanyProfileService().get()
     return render_template("transactions/tripticket_print.html", item=item,
-                           company=company)
+                           **_print_report_context(item))
 
 
 @bp.route("/trip-tickets/<int:tid>/submit", methods=["POST"])
@@ -435,15 +453,11 @@ def vehiclemovement_detail(mid):
 @login_required
 @require_permission("vehiclemovement.print")
 def vehiclemovement_print(mid):
-    from app.modules.system_admin.services.company_service import (
-        CompanyProfileService)
     item = db.session.get(VehicleMovement, mid)
-    company = CompanyProfileService().get()
     return render_template("transactions/vehiclemovement_print.html",
-                           item=item, company=company)
+                           item=item, **_print_report_context(item))
 
 
-@bp.route("/vehicle-movements/<int:mid>/submit", methods=["POST"])
 @bp.route("/vehicle-movements/<int:mid>/submit", methods=["POST"])
 @login_required
 @require_permission("vehiclemovement.update")
@@ -848,12 +862,9 @@ def tiretxn_cancel(tid):
 @login_required
 @require_permission("tiretxn.print")
 def tiretxn_print(tid):
-    from app.modules.system_admin.services.company_service import (
-        CompanyProfileService)
     item = db.session.get(TireTransaction, tid)
-    company = CompanyProfileService().get()
     return render_template("transactions/tiretxn_print.html", item=item,
-                           company=company)
+                           **_print_report_context(item))
 
 
 # ── Battery Transactions ─────────────────────────────────────────────────────
@@ -969,12 +980,9 @@ def batterytxn_cancel(bid):
 @login_required
 @require_permission("batterytxn.print")
 def batterytxn_print(bid):
-    from app.modules.system_admin.services.company_service import (
-        CompanyProfileService)
     item = db.session.get(BatteryTransaction, bid)
-    company = CompanyProfileService().get()
     return render_template("transactions/batterytxn_print.html", item=item,
-                           company=company)
+                           **_print_report_context(item))
 
 
 # ── Purchase Requests ────────────────────────────────────────────────────────
@@ -1031,12 +1039,9 @@ def purchaserequest_detail(pid):
 @login_required
 @require_permission("purchaserequest.print")
 def purchaserequest_print(pid):
-    from app.modules.system_admin.services.company_service import (
-        CompanyProfileService)
     item = db.session.get(PurchaseRequest, pid)
-    company = CompanyProfileService().get()
     return render_template("transactions/purchaserequest_print.html",
-                           item=item, company=company)
+                           item=item, **_print_report_context(item))
 
 
 @bp.route("/purchase-requests/<int:pid>/submit", methods=["POST"])
