@@ -142,6 +142,42 @@ class PMSProfileService:
 
 
 class PMScopeTemplateService:
+    def list_applicable_for_vehicle(self, vehicle, maintenance_type_id=None) -> list:
+        """The scope templates actually relevant to THIS vehicle — via
+        its matched PM Schedule(s) (Brand+Model, then Vehicle Type, then
+        global — same precedence as PMDueCalculationService), not the
+        entire global list. Fixes the reported bug where selecting a
+        Ford Escape on the Maintenance Order form showed an unrelated
+        Honda City template too."""
+        from app.core.maintenance.due_calculation_service import (
+            PMDueCalculationService)
+        schedules = PMDueCalculationService()._applicable_schedules(
+            vehicle, maintenance_type_id)
+        seen_ids = set()
+        results = []
+        for schedule in schedules:
+            for tmpl in schedule.scope_templates:
+                if tmpl.id not in seen_ids and tmpl.is_active:
+                    seen_ids.add(tmpl.id)
+                    results.append(tmpl)
+        return results
+
+    def get_next_due_scope_template(self, vehicle, maintenance_type_id=None):
+        """Among this vehicle's applicable schedules, whichever one the
+        due-calculation logic considers 'the' current schedule (the
+        specific package actually next due for THIS vehicle's mileage,
+        not just any package that generically applies to this Brand/
+        Model) — so a fleet admin creating an MO manually gets a sensible
+        default instead of an arbitrary first match."""
+        from app.core.maintenance.due_calculation_service import (
+            PMDueCalculationService)
+        status = PMDueCalculationService().get_due_status(
+            vehicle, maintenance_type_id=maintenance_type_id)
+        schedule = status.get("schedule")
+        if schedule is None or not schedule.scope_templates:
+            return None
+        return schedule.scope_templates[0]
+
     def create(self, *, maintenance_type_id, name, items,
                description=None, pm_schedule_id=None):
         if not items:
