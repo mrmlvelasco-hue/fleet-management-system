@@ -172,6 +172,32 @@ def get_vehicle_details(vehicle_id):
     })
 
 
+@bp.route("/pm-scope-template-details/<int:template_id>")
+@login_required
+def get_pm_scope_template_details(template_id):
+    """Powers the collapsed-by-default 'Scope Details' preview on the
+    Maintenance Order form — so a fleet manager can see exactly what
+    activities a PM Scope Template includes before saving, not just its
+    name."""
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+    tmpl = PMScopeTemplateService().get_by_id(template_id)
+    if tmpl is None:
+        return jsonify({"found": False})
+    items = sorted(tmpl.items, key=lambda i: i.sort_order)
+    return jsonify({
+        "found": True,
+        "name": tmpl.name,
+        "items": [{
+            "sort_order": i.sort_order,
+            "activity_code": i.activity_code,
+            "activity_description": i.activity_description,
+            "standard_labor_hours": (str(i.standard_labor_hours)
+                                    if i.standard_labor_hours else None),
+            "required_parts": i.required_parts,
+        } for i in items],
+    })
+
+
 @bp.route("/pm-scope-templates-for-vehicle")
 @login_required
 def search_pm_scope_templates_for_vehicle():

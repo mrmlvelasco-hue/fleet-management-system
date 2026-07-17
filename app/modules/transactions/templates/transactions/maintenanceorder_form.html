@@ -55,6 +55,21 @@
     </select>
     <div class="form-text" id="moScopeTemplateHint">
       {% if not prefill_vehicle %}Select a vehicle first to see its applicable PM packages.{% endif %}
+    </div>
+    <div class="mt-2" id="moScopeDetailsWrapper" style="display:none;">
+      <button class="btn btn-sm btn-outline-secondary" type="button"
+              data-bs-toggle="collapse" data-bs-target="#moScopeDetailsCollapse">
+        <i class="bi bi-list-check me-1"></i>View Scope Details
+      </button>
+      <div class="collapse mt-2" id="moScopeDetailsCollapse">
+        <div class="card card-body p-2">
+          <table class="table table-sm mb-0" id="moScopeDetailsTable">
+            <thead><tr><th>#</th><th>Code</th><th>Description</th>
+              <th>Labor Hrs</th><th>Parts</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
     </div></div>
   <div class="col-md-6"><label class="form-label">Vendor (optional)</label>
     <select name="vendor_id" id="moVendorSelect" class="form-select">
@@ -151,6 +166,41 @@
         refreshScopeTemplates();
       });
       $("#moMaintenanceTypeSelect").on("change", refreshScopeTemplates);
+
+      // Collapsed-by-default "View Scope Details" preview — lets a
+      // fleet manager see exactly which activities a PM Scope Template
+      // includes before saving, not just its name.
+      function refreshScopeDetails() {
+        var templateId = $("#moScopeTemplateSelect").val();
+        var $wrapper = $("#moScopeDetailsWrapper");
+        var $collapseEl = document.getElementById("moScopeDetailsCollapse");
+        if (!templateId) {
+          $wrapper.hide();
+          if (window.bootstrap) {
+            var inst = bootstrap.Collapse.getInstance($collapseEl);
+            if (inst) inst.hide();
+          }
+          return;
+        }
+        fetch("{{ url_for('api_search.get_pm_scope_template_details', template_id=0) }}".replace("0", templateId))
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.found) { $wrapper.hide(); return; }
+            var rows = data.items.map(function (i) {
+              return "<tr><td>" + i.sort_order + "</td>"
+                + '<td><span class="badge text-bg-secondary">' + i.activity_code + "</span></td>"
+                + "<td>" + i.activity_description + "</td>"
+                + "<td>" + (i.standard_labor_hours || "—") + "</td>"
+                + "<td>" + (i.required_parts || "—") + "</td></tr>";
+            }).join("");
+            $("#moScopeDetailsTable tbody").html(rows);
+            $wrapper.show();
+          });
+      }
+      $("#moScopeTemplateSelect").on("change", refreshScopeDetails);
+      // Initial state on page load, in case a scope template is already
+      // pre-selected (e.g. the auto-selected "next due" package).
+      refreshScopeDetails();
     });
   }
 </script>
