@@ -1,0 +1,95 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('registration_config.registrationtemplate_list') }}">Registration Templates</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="col-12"><h6 class="text-muted text-uppercase small">Match Criteria</h6></div>
+  <div class="col-md-4"><label class="form-label">Brand</label>
+    <select name="vehicle_brand_id" class="form-select">
+      <option value="">— Select a Brand —</option>
+      {% for b in vehicle_brands %}
+      <option value="{{ b.id }}" {{ 'selected' if item and item.vehicle_brand_id==b.id }}>{{ b.name }}</option>
+      {% endfor %}
+    </select>
+    <div class="form-text">Leave blank to match by Vehicle Type or all vehicles instead.</div></div>
+  <div class="col-md-4"><label class="form-label">Vehicle Type (fallback match)</label>
+    <select name="vehicle_type_id" class="form-select fms-select2">
+      <option value="">— All vehicle types —</option>
+      {% for vt in vehicle_types %}
+      <option value="{{ vt.id }}" {{ 'selected' if item and item.vehicle_type_id==vt.id }}>{{ vt.code }} — {{ vt.name }}</option>
+      {% endfor %}
+    </select></div>
+
+  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Renewal Cycle</h6></div>
+  <div class="col-md-3"><label class="form-label">Interval (Years)</label>
+    <input type="number" name="interval_years" class="form-control" value="{{ item.interval_years if item else 3 }}"></div>
+  <div class="col-md-3"><label class="form-label">Priority</label>
+    <select name="priority" class="form-select">
+      {% for p in ['LOW', 'MEDIUM', 'HIGH'] %}
+      <option value="{{ p }}" {{ 'selected' if (item and item.priority==p) or (not item and p=='MEDIUM') }}>{{ p|title }}</option>
+      {% endfor %}
+    </select></div>
+  <div class="col-md-3"><label class="form-label">Notify Before (Days)</label>
+    <input type="number" name="notify_before_days" class="form-control" placeholder="Default: 30"
+           value="{{ item.notify_before_days if item and item.notify_before_days else '' }}"></div>
+
+  <div class="col-md-6"><label class="form-label">Next Registration Generation</label>
+    <select name="next_generation_policy" class="form-select">
+      <option value="MANUAL" {{ 'selected' if item and item.next_generation_policy=='MANUAL' }}>Manual — fleet staff create the renewal by hand</option>
+      <option value="AUTO_SCHEDULE" {{ 'selected' if not item or item.next_generation_policy=='AUTO_SCHEDULE' }}>Auto Generate Schedule (Recommended) — notifies only</option>
+      <option value="AUTO_REGISTRATION" {{ 'selected' if item and item.next_generation_policy=='AUTO_REGISTRATION' }}>Auto Generate Registration — creates a DRAFT renewal immediately</option>
+    </select></div>
+
+  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Renewal Checklist</h6></div>
+  <div class="col-12">
+    <div id="regChecklistRows"></div>
+    <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="addRegChecklistRow">
+      <i class="bi bi-plus-lg"></i> Add Activity</button>
+  </div>
+
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('registration_config.registrationtemplate_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+var existingItems = [
+  {% if item %}
+  {% for i in item.checklist_items|sort(attribute='sort_order') %}
+  { code: {{ i.activity_code|tojson }}, description: {{ i.activity_description|tojson }} },
+  {% endfor %}
+  {% endif %}
+];
+
+function addRegChecklistRow(code, description) {
+  var div = document.createElement("div");
+  div.className = "row g-2 mb-2 align-items-center";
+  div.innerHTML =
+    '<div class="col-md-3"><input type="text" name="activity_code" class="form-control form-control-sm" placeholder="Code e.g. OR-CR" required></div>' +
+    '<div class="col-md-7"><input type="text" name="activity_description" class="form-control form-control-sm" placeholder="Description e.g. Renew OR/CR" required></div>' +
+    '<div class="col-md-2"><button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button></div>';
+  document.getElementById("regChecklistRows").appendChild(div);
+  if (code) { div.querySelector('[name="activity_code"]').value = code; }
+  if (description) { div.querySelector('[name="activity_description"]').value = description; }
+  div.querySelector(".remove-row").addEventListener("click", function () { div.remove(); });
+}
+
+if (existingItems.length) {
+  existingItems.forEach(function (it) { addRegChecklistRow(it.code, it.description); });
+} else {
+  addRegChecklistRow("OR-CR", "Renew OR/CR");
+  addRegChecklistRow("EMISSION", "Emission Test");
+}
+document.getElementById("addRegChecklistRow").addEventListener("click", function () { addRegChecklistRow(); });
+</script>
+{% endblock %}

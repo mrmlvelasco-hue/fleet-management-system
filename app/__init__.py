@@ -61,6 +61,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.master_data.routes import bp as master_data_bp
     from app.modules.transactions.routes import bp as transactions_bp
     from app.modules.maintenance_config.routes import bp as maintenance_config_bp
+    from app.modules.registration_config.routes import bp as registration_config_bp
     from app.modules.api_search.routes import bp as api_search_bp
     from app.core.comments.routes import bp as comments_bp
     app.register_blueprint(auth_bp)
@@ -72,6 +73,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(master_data_bp)
     app.register_blueprint(transactions_bp)
     app.register_blueprint(maintenance_config_bp)
+    app.register_blueprint(registration_config_bp)
     app.register_blueprint(api_search_bp)
     app.register_blueprint(comments_bp)
 

@@ -160,6 +160,10 @@
         <li><a href="{{ url_for('maintenance_config.pmscope_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('maintenance_config.pmscope_') }}">
           <i class="fms-nav-link__icon bi bi-list-check"></i><span class="sidebar-label">PM Scope Templates</span></a></li>
         {% endif %}
+        {% if current_user.has_permission('registrationtemplate.view') %}
+        <li><a href="{{ url_for('registration_config.registrationtemplate_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('registration_config.') }}">
+          <i class="fms-nav-link__icon bi bi-calendar2-check"></i><span class="sidebar-label">Registration Templates</span></a></li>
+        {% endif %}
       </ul>
     </div>
   </div>

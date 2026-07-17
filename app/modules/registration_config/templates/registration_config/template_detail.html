@@ -1,0 +1,42 @@
+{% extends "layout/base.html" %}
+{% block title %}Registration Template{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('registration_config.registrationtemplate_list') }}">Registration Templates</a></li>
+<li class="breadcrumb-item active">Detail</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">
+    {% if item.vehicle_brand %}{{ item.vehicle_brand.name }} {{ item.vehicle_model_ref.name if item.vehicle_model_ref else '' }}
+    {% else %}{{ item.vehicle_type.name if item.vehicle_type else 'All Vehicles' }}{% endif %}
+  </h1>
+  {% if current_user.has_permission('registrationtemplate.update') %}
+  <a class="btn btn-outline-primary" href="{{ url_for('registration_config.registrationtemplate_edit', tid=item.id) }}">
+    <i class="bi bi-pencil me-1"></i>Edit</a>
+  {% endif %}
+</div>
+
+<div class="card"><div class="card-body">
+  <dl class="row mb-0">
+    <dt class="col-sm-3">Interval</dt><dd class="col-sm-9">{{ item.interval_years }} year(s)</dd>
+    <dt class="col-sm-3">Next Registration Generation</dt><dd class="col-sm-9">{{ item.next_generation_policy }}</dd>
+    <dt class="col-sm-3">Notify Before</dt><dd class="col-sm-9">{{ item.notify_before_days or 'default' }} days</dd>
+    <dt class="col-sm-3">Priority</dt><dd class="col-sm-9">{{ item.priority }}</dd>
+    <dt class="col-sm-3">Active</dt>
+    <dd class="col-sm-9">{% if item.is_active %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="badge text-bg-danger">No</span>{% endif %}</dd>
+  </dl>
+</div></div>
+
+<div class="card mt-3"><div class="card-header">Renewal Checklist</div>
+<table class="table table-sm mb-0">
+  <thead><tr><th>#</th><th>Code</th><th>Description</th></tr></thead>
+  <tbody>
+  {% for i in item.checklist_items|sort(attribute='sort_order') %}
+    <tr><td>{{ i.sort_order }}</td>
+        <td><span class="badge text-bg-secondary">{{ i.activity_code }}</span></td>
+        <td>{{ i.activity_description }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

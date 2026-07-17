@@ -11,7 +11,7 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-4"><label class="form-label">Event Code</label>
     <select name="event_code" class="form-select" required>
-      {% for code in ['submitted','approved_level','approved_final','rejected','returned','resubmitted','cancelled'] %}
+      {% for code in ['submitted','approved_level','approved_final','rejected','returned','resubmitted','cancelled','pm_due_soon','pm_overdue','registration_due_soon','registration_overdue'] %}
       <option value="{{ code }}">{{ code }}</option>{% endfor %}
     </select></div>
   <div class="col-md-4"><label class="form-label">Channel</label>
