@@ -79,7 +79,7 @@
 
   {% if item.description %}
   <h6 class="section">Work Description</h6>
-  <div class="remarks-box">{{ item.description }}</div>
+  <div class="remarks-box">{{ item.description|pm_tokens(item.vehicle) }}</div>
   {% endif %}
 
   {% if item.checklist_items %}
@@ -87,7 +87,7 @@
   <table class="grid">
     <tr><th>Code</th><th>Activity</th><th style="width:60px;">Done</th></tr>
     {% for ci in item.checklist_items %}
-    <tr><td>{{ ci.activity_code }}</td><td>{{ ci.activity_description }}</td><td>{{ '✓' if ci.is_done else '—' }}</td></tr>
+    <tr><td>{{ ci.activity_code }}</td><td>{{ ci.activity_description|pm_tokens(item.vehicle) }}</td><td>{{ '✓' if ci.is_done else '—' }}</td></tr>
     {% endfor %}
   </table>
   {% endif %}

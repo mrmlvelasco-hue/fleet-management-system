@@ -141,6 +141,15 @@ def create_app(config_name: str | None = None) -> Flask:
         from app.core.attachments.attachment_service import AttachmentService
         return AttachmentService().list_for("document_comments", comment_id)
 
+    @app.template_filter("pm_tokens")
+    def pm_tokens_filter(text, vehicle=None):
+        """Jinja filter for print report templates: {{ text|pm_tokens(vehicle) }}
+        resolves any pm2-pm9 PM Parameter Mapping tokens embedded in the
+        text (e.g. imported checklist activity descriptions) using live
+        data about the given vehicle."""
+        from app.core.reporting.token_resolver import resolve_pm_tokens
+        return resolve_pm_tokens(text, vehicle=vehicle)
+
     return app
 
 
