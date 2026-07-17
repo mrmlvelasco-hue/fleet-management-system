@@ -1098,6 +1098,14 @@ def vehicleregistration_list():
 @login_required
 @require_permission("vehicleregistration.create")
 def vehicleregistration_new():
+    from app.modules.master_data.vehicle.service import VehicleService as _VS
+    prefill_vehicle = None
+    if request.method == "GET" and request.args.get("vehicle_id"):
+        prefill_vehicle = _VS().get(int(request.args["vehicle_id"]))
+    prefill = {
+        "registration_type": request.args.get("registration_type"),
+        "registration_date": request.args.get("registration_date"),
+    }
     if request.method == "POST":
         f = request.form
         try:
@@ -1117,6 +1125,7 @@ def vehicleregistration_new():
                 RequiredFieldError) as e:
             flash(str(e), "danger")
     return render_template("transactions/vehicleregistration_form.html",
+                           prefill_vehicle=prefill_vehicle, prefill=prefill,
                            title="New Vehicle Registration")
 
 

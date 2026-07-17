@@ -120,6 +120,35 @@ def dashboard():
                 "url": link_url,
             })
 
+    due_registrations = []
+    if "REGISTRATIONS" in visible_codes:
+        from app.modules.registration_config.service import (
+            RegistrationDueCalculationService)
+        from app.modules.user_management.org_scope_service import (
+            UserOrgScopeService)
+        scope_svc = UserOrgScopeService()
+        can_create_vr = current_user.has_permission("vehicleregistration.create")
+        for d in RegistrationDueCalculationService().get_all_due_vehicles():
+            vehicle = d["vehicle"]
+            if not scope_svc.covers(current_user.id, branch_id=vehicle.branch_id):
+                continue
+            if can_create_vr:
+                # Same pre-fill pattern as Maintenance's due-vehicles link
+                # — straight into a ready-to-submit renewal.
+                link_url = url_for(
+                    "transactions.vehicleregistration_new",
+                    vehicle_id=vehicle.id, registration_type="RENEWAL",
+                    registration_date=datetime.now().date().isoformat())
+            else:
+                link_url = url_for("master_data.vehicle_detail", vid=vehicle.id)
+            due_registrations.append({
+                "vehicle": vehicle,
+                "status": d["status"],
+                "next_due_date": d["next_due_date"],
+                "url": link_url,
+            })
+
     return render_template("main/dashboard.html", cards=cards,
                            for_my_action=for_my_action,
-                           due_vehicles=due_vehicles)
+                           due_vehicles=due_vehicles,
+                           due_registrations=due_registrations)

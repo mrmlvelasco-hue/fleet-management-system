@@ -12,18 +12,25 @@
   <div class="col-md-6"><label class="form-label">Vehicle</label>
     <div class="input-group">
       <select name="vehicle_id" id="vrVehicleSelect" class="form-select" required>
+        {% if prefill_vehicle %}
+        <option value="{{ prefill_vehicle.id }}" selected>
+          {{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number }} — {{ prefill_vehicle.brand }} {{ prefill_vehicle.model }}
+        </option>
+        {% else %}
         <option value="">— Type plate number, make, or model —</option>
+        {% endif %}
       </select>
       <button type="button" class="btn btn-outline-secondary" id="vrVehicleModalBtn" title="Advanced search">
         <i class="bi bi-search"></i></button>
     </div></div>
   <div class="col-md-6"><label class="form-label">Registration Type</label>
     <select name="registration_type" class="form-select" required>
-      <option value="NEW">New (3-year validity)</option>
-      <option value="RENEWAL">Renewal (1-year validity)</option>
+      <option value="NEW" {{ 'selected' if prefill.registration_type=='NEW' }}>New (3-year validity)</option>
+      <option value="RENEWAL" {{ 'selected' if prefill.registration_type=='RENEWAL' }}>Renewal (1-year validity)</option>
     </select></div>
   <div class="col-md-6"><label class="form-label">Registration Date</label>
-    <input type="date" name="registration_date" class="form-control" required></div>
+    <input type="date" name="registration_date" class="form-control" required
+           value="{{ prefill.registration_date or '' }}"></div>
   <div class="col-md-6"><label class="form-label">Current Odometer (optional)</label>
     <input type="number" name="odometer_at_registration" class="form-control"
            placeholder="e.g. 15000"></div>
