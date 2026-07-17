@@ -134,7 +134,11 @@ class RegistrationDueCalculationService:
         both the Dashboard widget and the auto-generation task."""
         from app.modules.master_data.vehicle.models import Vehicle
         results = []
-        for vehicle in Vehicle.query.filter_by(is_active=True).all():
+        # Same DISPOSED exclusion as Maintenance PMS — a disposed vehicle
+        # has no LTO registration to renew.
+        query = Vehicle.query.filter_by(is_active=True).filter(
+            Vehicle.status != "DISPOSED")
+        for vehicle in query.all():
             result = self.get_due_status(vehicle, as_of_date=as_of_date)
             if result["status"] in ("DUE_SOON", "OVERDUE"):
                 results.append({"vehicle": vehicle, **result})

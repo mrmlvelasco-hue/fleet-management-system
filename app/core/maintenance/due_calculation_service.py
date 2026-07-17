@@ -176,7 +176,11 @@ class PMDueCalculationService:
         """Return due-status entries for every active vehicle/schedule
         combination that is DUE_SOON or OVERDUE (GOOD entries omitted)."""
         results = []
-        vehicles = Vehicle.query.filter_by(is_active=True).all()
+        # DISPOSED vehicles are still real, non-deleted records
+        # (is_active stays True — disposal is a business status, not a
+        # soft-delete) but no longer need maintenance at all.
+        vehicles = Vehicle.query.filter_by(is_active=True).filter(
+            Vehicle.status != "DISPOSED").all()
         for vehicle in vehicles:
             schedules = self._applicable_schedules(vehicle)
             seen_types = set()
