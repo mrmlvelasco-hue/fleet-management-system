@@ -123,6 +123,23 @@ def pm_run_due_check():
     click.echo(f"Due/overdue scan complete. Maintenance Orders created: {created}")
 
 
+registration_cli = AppGroup("registration",
+                            help="Vehicle Registration renewal testing/ops commands.")
+
+
+@registration_cli.command("run-due-check")
+def registration_run_due_check():
+    """Manually run the same registration-renewal due/overdue scan
+    Celery beat would run daily — fires notifications and (only for
+    AUTO_REGISTRATION-policy templates) creates DRAFT renewal
+    registrations. Safe to run repeatedly; idempotent."""
+    from app.modules.transactions.vehicle_registration.tasks import (
+        auto_generate_due_registrations)
+    created = auto_generate_due_registrations()
+    click.echo(f"Due/overdue scan complete. Registrations created: {created}")
+
+
 def register_cli(app):
     app.cli.add_command(seed_cli)
     app.cli.add_command(pm_cli)
+    app.cli.add_command(registration_cli)
