@@ -66,6 +66,8 @@
         {% if current_user.has_permission('emailtemplate.view') %}
         <li><a href="{{ url_for('system_admin.email_template_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.email_template_') }}">
           <i class="fms-nav-link__icon bi bi-envelope"></i><span class="sidebar-label">Email Templates</span></a></li>
+        <li><a href="{{ url_for('system_admin.email_config') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'system_admin.email_config' }}">
+          <i class="fms-nav-link__icon bi bi-envelope-paper"></i><span class="sidebar-label">Email Configuration</span></a></li>
         {% endif %}
         {% if current_user.has_permission('notificationrule.view') %}
         <li><a href="{{ url_for('system_admin.notification_rule_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.notification_rule_') }}">

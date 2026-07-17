@@ -1,0 +1,93 @@
+{% extends "layout/base.html" %}
+{% block title %}Email Configuration{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('system_admin.email_template_list') }}">Email Templates</a></li>
+<li class="breadcrumb-item active">Email Configuration</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Email Configuration</h1>
+<p class="text-muted">
+  Configure SMTP delivery so Notification Rules set to "Email" or "Both"
+  actually send real messages — e.g. notifying the current approver by
+  email the moment a document reaches their level, not just via the
+  in-app bell icon.
+</p>
+
+<div class="card mb-3"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="col-12">
+    <div class="form-check form-switch">
+      <input type="checkbox" class="form-check-input" id="isEnabled" name="is_enabled"
+             {{ 'checked' if config.is_enabled }}>
+      <label class="form-check-label" for="isEnabled">
+        <strong>Enable Email Sending</strong>
+        <span class="text-muted small d-block">When off, notifications still work in-app — email is simply skipped, not an error.</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="col-md-6"><label class="form-label">SMTP Host</label>
+    <input type="text" name="smtp_host" class="form-control"
+           placeholder="e.g. smtp.gmail.com or smtp.office365.com"
+           value="{{ config.smtp_host or '' }}"></div>
+  <div class="col-md-3"><label class="form-label">SMTP Port</label>
+    <input type="number" name="smtp_port" class="form-control"
+           value="{{ config.smtp_port or 587 }}"></div>
+  <div class="col-md-3 d-flex align-items-end">
+    <div class="form-check">
+      <input type="checkbox" class="form-check-input" id="useTls" name="use_tls"
+             {{ 'checked' if config.use_tls }}>
+      <label class="form-check-label" for="useTls">Use TLS/STARTTLS</label>
+    </div></div>
+
+  <div class="col-md-6"><label class="form-label">SMTP Username</label>
+    <input type="text" name="smtp_username" class="form-control"
+           value="{{ config.smtp_username or '' }}"></div>
+  <div class="col-md-6"><label class="form-label">SMTP Password</label>
+    <input type="password" name="smtp_password" class="form-control"
+           placeholder="{{ '(unchanged — leave blank to keep current password)' if config.smtp_password else 'Enter password' }}">
+    <div class="form-text">Leave blank to keep the existing password when only changing another field.</div></div>
+
+  <div class="col-md-6"><label class="form-label">From Email</label>
+    <input type="email" name="from_email" class="form-control"
+           placeholder="fleet@yourcompany.com"
+           value="{{ config.from_email or '' }}"></div>
+  <div class="col-md-6"><label class="form-label">From Name</label>
+    <input type="text" name="from_name" class="form-control"
+           value="{{ config.from_name or '' }}"></div>
+
+  {% if current_user.has_permission('emailtemplate.update') %}
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+  </div>
+  {% endif %}
+</form>
+</div></div>
+
+{% if current_user.has_permission('emailtemplate.update') %}
+<div class="card"><div class="card-header">Confirm Setup — Send Test Email</div>
+  <div class="card-body">
+    <p class="text-muted small">
+      Sends a real test message using the settings above (save them first)
+      — the quickest way to confirm SMTP is actually working before relying
+      on it for approval notifications.
+    </p>
+    <form method="post" action="{{ url_for('system_admin.email_config_send_test') }}"
+          class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-6">
+        <label class="form-label">Send test to</label>
+        <input type="email" name="test_email" class="form-control"
+               placeholder="{{ current_user.email }}" value="{{ current_user.email }}">
+      </div>
+      <div class="col-md-3">
+        <button class="btn btn-outline-primary" type="submit">
+          <i class="bi bi-send me-1"></i>Send Test Email</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

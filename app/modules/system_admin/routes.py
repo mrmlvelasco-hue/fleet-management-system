@@ -3,7 +3,7 @@ Profile, Email Templates, Notification Rules, Audit Trail Viewer,
 Dashboard Config, Backup Config, Report Config, and the notification bell
 API endpoints. Thin controllers only — business logic in services."""
 from flask import (Blueprint, render_template, redirect, url_for, flash,
-                   request, jsonify)
+                   request, jsonify, current_app)
 from flask_login import login_required, current_user
 
 from app.core.security.decorators import require_permission
@@ -163,6 +163,64 @@ def company_profile():
         return redirect(url_for("system_admin.company_profile"))
     return render_template("system_admin/company_profile.html",
                            profile=profile)
+
+
+# ── Email Configuration (SMTP) ──────────────────────────────────────────────
+
+@bp.route("/email-config", methods=["GET", "POST"])
+@login_required
+@require_permission("emailtemplate.view")
+def email_config():
+    from app.modules.system_admin.services.email_config_service import (
+        EmailConfigService)
+    svc = EmailConfigService()
+    config = svc.get()
+    if request.method == "POST":
+        if not current_user.has_permission("emailtemplate.update"):
+            flash("You do not have permission to update email configuration.",
+                 "danger")
+            return redirect(url_for("system_admin.email_config"))
+        svc.update(
+            smtp_host=request.form.get("smtp_host") or None,
+            smtp_port=int(request.form["smtp_port"]) if request.form.get("smtp_port") else 587,
+            smtp_username=request.form.get("smtp_username") or None,
+            # Blank password field means "keep the existing one" — never
+            # force re-entering a working password just to change another
+            # field, and never round-trip the real secret back into the
+            # form for display.
+            smtp_password=(request.form.get("smtp_password") or config.smtp_password),
+            use_tls=request.form.get("use_tls") == "on",
+            from_email=request.form.get("from_email") or None,
+            from_name=request.form.get("from_name") or None,
+            is_enabled=request.form.get("is_enabled") == "on")
+        flash("Email configuration updated.", "success")
+        return redirect(url_for("system_admin.email_config"))
+    return render_template("system_admin/email_config.html", config=config)
+
+
+@bp.route("/email-config/send-test", methods=["POST"])
+@login_required
+@require_permission("emailtemplate.update")
+def email_config_send_test():
+    from app.modules.system_admin.services.email_config_service import (
+        EmailSenderService, EmailNotConfiguredError)
+    test_recipient = request.form.get("test_email") or current_user.email
+    try:
+        EmailSenderService().send(
+            to_email=test_recipient,
+            subject="Fleet Management System — Test Email",
+            body_html=(
+                "<p>This is a test email confirming your SMTP configuration "
+                "is working correctly.</p>"
+                f"<p>Sent to confirm delivery for: {test_recipient}</p>"),
+            body_text="This is a test email confirming your SMTP configuration is working correctly.")
+        flash(f"Test email sent successfully to {test_recipient}.", "success")
+    except EmailNotConfiguredError as e:
+        flash(str(e), "warning")
+    except Exception as e:
+        current_app.logger.exception("Test email failed to send: %s", e)
+        flash(f"Test email failed to send: {e}", "danger")
+    return redirect(url_for("system_admin.email_config"))
 
 
 # ── Email Templates ────────────────────────────────────────────────────────
