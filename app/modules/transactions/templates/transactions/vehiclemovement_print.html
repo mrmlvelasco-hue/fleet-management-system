@@ -57,7 +57,7 @@
     <tr><td class="label">From</td><td>{{ item.from_location }}</td>
         <td class="label">To</td><td>{{ item.to_location }}</td></tr>
     <tr><td class="label">Date</td><td>{{ item.movement_date }}</td>
-        <td class="label">Purpose</td><td>{{ item.purpose or '—' }}</td></tr>
+        <td class="label">Purpose</td><td>{{ (item.purpose or '—')|pm_tokens(item.vehicle) }}</td></tr>
     <tr><td class="label">Start</td><td>{{ item.movement_start_datetime or '—' }}</td>
         <td class="label">End</td><td>{{ item.movement_end_datetime or '—' }}</td></tr>
   </table>
@@ -82,7 +82,7 @@
   {% endif %}
 
   <h6 class="section">Remarks</h6>
-  <div class="remarks-box">{{ item.remarks or '' }}</div>
+  <div class="remarks-box">{{ (item.remarks or '')|pm_tokens(item.vehicle) }}</div>
 
   <h6 class="section">Signatures</h6>
   <div class="signatures">

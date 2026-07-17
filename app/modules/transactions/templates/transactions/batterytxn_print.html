@@ -70,7 +70,7 @@
   {% endif %}
 
   <h6 class="section">Remarks</h6>
-  <div class="remarks-box">{{ item.remarks or '' }}</div>
+  <div class="remarks-box">{{ (item.remarks or '')|pm_tokens(item.vehicle) }}</div>
 
   <h6 class="section">Signatures</h6>
   <div class="signatures">

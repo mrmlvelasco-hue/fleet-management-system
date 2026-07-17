@@ -53,7 +53,7 @@
 
   <h6 class="section">Request Information</h6>
   <table class="info">
-    <tr><td class="label">Description</td><td colspan="3">{{ item.description }}</td></tr>
+    <tr><td class="label">Description</td><td colspan="3">{{ item.description|pm_tokens(None) }}</td></tr>
     <tr><td class="label">Department</td><td>{{ item.department.name if item.department else '—' }}</td>
         <td class="label">Vendor</td><td>{{ item.vendor.name if item.vendor else '—' }}</td></tr>
     <tr><td class="label">Needed By</td><td>{{ item.needed_by_date or '—' }}</td>

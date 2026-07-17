@@ -50,7 +50,7 @@
       This is to authorize <u>{{ item.driver.full_name }}</u>
       {% if item.driver.department %}of <u>{{ item.driver.department.name }}</u>{% endif %}
       to pull-out vehicle with the following description:
-      <u>{{ item.purpose }}</u>
+      <u>{{ item.purpose|pm_tokens(item.vehicle) }}</u>
       {% if item.maintenance_order %}with WO no. <u>{{ item.maintenance_order.document_number }}</u>{% endif %}
     </div>
 

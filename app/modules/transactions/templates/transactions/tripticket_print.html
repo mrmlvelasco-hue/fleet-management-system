@@ -55,7 +55,7 @@
   <table class="info">
     <tr><td class="label">Destination</td><td>{{ item.destination }}</td>
         <td class="label">Status</td><td>{{ item.status }}</td></tr>
-    <tr><td class="label">Purpose</td><td>{{ item.purpose }}</td>
+    <tr><td class="label">Purpose</td><td>{{ item.purpose|pm_tokens(item.vehicle) }}</td>
         <td class="label">Passengers</td><td>{{ item.passengers or '—' }}</td></tr>
     <tr><td class="label">Departure</td><td>{{ item.departure_datetime }}</td>
         <td class="label">Expected/Actual Return</td><td>{{ item.return_datetime or '—' }}</td></tr>
