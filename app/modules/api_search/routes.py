@@ -147,3 +147,57 @@ def search_vehicle_models():
     models = VehicleModelService().list(brand_id=int(brand_id))
     return jsonify({"results": [{"id": m.id, "text": m.name, "name": m.name}
                                for m in models]})
+
+
+@bp.route("/vehicle-details/<int:vehicle_id>")
+@login_required
+def get_vehicle_details(vehicle_id):
+    """Powers the Maintenance Order form's Vehicle Info panel — same
+    fields shown in the print report header (Branch, Current Assignee +
+    Position), refreshed dynamically whenever the vehicle selection
+    changes, not just on the initial pre-filled page load."""
+    from app.modules.master_data.vehicle.service import VehicleService
+    vehicle = VehicleService().get(vehicle_id)
+    if vehicle is None:
+        return jsonify({"found": False})
+    driver = vehicle.assigned_driver
+    return jsonify({
+        "found": True,
+        "plate": vehicle.plate_number or vehicle.conduction_number,
+        "brand_model": f"{vehicle.brand} {vehicle.model}",
+        "branch": vehicle.branch.name if vehicle.branch else "—",
+        "assignee": driver.full_name if driver else "—",
+        "position": (driver.job_title or "—") if driver else "—",
+        "odometer": vehicle.current_odometer,
+    })
+
+
+@bp.route("/pm-scope-templates-for-vehicle")
+@login_required
+def search_pm_scope_templates_for_vehicle():
+    """Cascading PM Scope Template list for the Maintenance Order form —
+    filtered to only what actually applies to the selected Vehicle (by
+    Brand/Model, then Vehicle Type, then global — same precedence as the
+    Dashboard's due-status calculation), not the entire global list.
+    Fixes the reported bug where an unrelated vehicle's checklist showed
+    up as a selectable option."""
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+    vehicle_id = request.args.get("vehicle_id")
+    maintenance_type_id = request.args.get("maintenance_type_id")
+    if not vehicle_id:
+        return jsonify({"results": [], "due_template_id": None})
+
+    vehicle = VehicleService().get(int(vehicle_id))
+    if vehicle is None:
+        return jsonify({"results": [], "due_template_id": None})
+
+    mt_id = int(maintenance_type_id) if maintenance_type_id else None
+    templates = PMScopeTemplateService().list_applicable_for_vehicle(
+        vehicle, maintenance_type_id=mt_id)
+    due_template = PMScopeTemplateService().get_next_due_scope_template(
+        vehicle, maintenance_type_id=mt_id)
+    return jsonify({
+        "results": [{"id": t.id, "text": t.name} for t in templates],
+        "due_template_id": due_template.id if due_template else None,
+    })

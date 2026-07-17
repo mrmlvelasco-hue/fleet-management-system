@@ -565,7 +565,6 @@ def maintenanceorder_new():
         PMScheduleService, PMScopeTemplateService)
 
     maintenance_types = MaintenanceTypeService().list()
-    scope_templates = PMScopeTemplateService().list()
 
     # Optional pre-fill via query params — used by the Dashboard's
     # "Vehicles Due for Maintenance" widget so clicking a due item goes
@@ -581,6 +580,24 @@ def maintenanceorder_new():
         "odometer_at_service": request.args.get("odometer_at_service", type=int),
         "scheduled_date": request.args.get("scheduled_date"),
     }
+
+    # Scope Template list must only ever show what's actually applicable
+    # to the selected vehicle (Brand/Model, then Vehicle Type, then
+    # global) — never the entire system-wide list, which was the
+    # reported bug (an unrelated vehicle's checklist showing up as a
+    # selectable option). With no vehicle chosen yet, there's nothing
+    # to filter by, so the list starts empty and the page's own JS
+    # re-fetches it the moment a vehicle is picked.
+    scope_templates = []
+    due_scope_template_id = None
+    if prefill_vehicle:
+        scope_templates = PMScopeTemplateService().list_applicable_for_vehicle(
+            prefill_vehicle, maintenance_type_id=prefill["maintenance_type_id"])
+        due_template = PMScopeTemplateService().get_next_due_scope_template(
+            prefill_vehicle, maintenance_type_id=prefill["maintenance_type_id"])
+        due_scope_template_id = due_template.id if due_template else None
+        if not prefill.get("scope_template_id") and due_scope_template_id:
+            prefill["scope_template_id"] = due_scope_template_id
 
     if request.method == "POST":
         f = request.form
@@ -605,6 +622,7 @@ def maintenanceorder_new():
                            maintenance_types=maintenance_types,
                            scope_templates=scope_templates,
                            prefill_vehicle=prefill_vehicle, prefill=prefill,
+                           due_scope_template_id=due_scope_template_id,
                            title="New Maintenance Order")
 
 

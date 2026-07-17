@@ -6,6 +6,21 @@
 {% endblock %}
 {% block content %}
 <h1 class="h3 mb-4">{{ title }}</h1>
+
+<div class="card mb-3" id="moVehicleInfoPanel" style="{{ 'display:none;' if not prefill_vehicle }}">
+  <div class="card-header"><i class="bi bi-truck me-1"></i>Vehicle Information</div>
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-sm-2">Plate Number</dt><dd class="col-sm-4" id="moviPlate">{{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number if prefill_vehicle else '' }}</dd>
+      <dt class="col-sm-2">Brand / Model</dt><dd class="col-sm-4" id="moviBrandModel">{{ prefill_vehicle.brand ~ ' ' ~ prefill_vehicle.model if prefill_vehicle else '' }}</dd>
+      <dt class="col-sm-2">Branch / Sales Office</dt><dd class="col-sm-4" id="moviBranch">{{ prefill_vehicle.branch.name if prefill_vehicle and prefill_vehicle.branch else '' }}</dd>
+      <dt class="col-sm-2">Current Assignee</dt><dd class="col-sm-4" id="moviAssignee">{{ prefill_vehicle.assigned_driver.full_name if prefill_vehicle and prefill_vehicle.assigned_driver else '—' }}</dd>
+      <dt class="col-sm-2">Assignee Position</dt><dd class="col-sm-4" id="moviPosition">{{ (prefill_vehicle.assigned_driver.job_title or '—') if prefill_vehicle and prefill_vehicle.assigned_driver else '—' }}</dd>
+      <dt class="col-sm-2">Current Odometer</dt><dd class="col-sm-4" id="moviOdometer">{{ "{:,}".format(prefill_vehicle.current_odometer) if prefill_vehicle and prefill_vehicle.current_odometer else '—' }}</dd>
+    </dl>
+  </div>
+</div>
+
 <div class="card"><div class="card-body">
 <form method="post" class="row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -24,17 +39,23 @@
         <i class="bi bi-search"></i></button>
     </div></div>
   <div class="col-md-6"><label class="form-label">Maintenance Type</label>
-    <select name="maintenance_type_id" class="form-select fms-select2" required>
+    <select name="maintenance_type_id" id="moMaintenanceTypeSelect" class="form-select fms-select2" required>
       <option value="">— Select —</option>
       {% for mt in maintenance_types %}
       <option value="{{ mt.id }}" {{ 'selected' if prefill.maintenance_type_id==mt.id }}>{{ mt.code }} — {{ mt.name }} ({{ mt.category }})</option>
       {% endfor %}
     </select></div>
-  <div class="col-md-6"><label class="form-label">PM Scope Template (optional — generates checklist)</label>
-    <select name="scope_template_id" class="form-select fms-select2">
+  <div class="col-md-6"><label class="form-label">PM Scope Template <span class="text-muted small">(optional — generates checklist; filtered to this vehicle)</span></label>
+    <select name="scope_template_id" id="moScopeTemplateSelect" class="form-select fms-select2">
       <option value="">— None (Corrective / unscheduled) —</option>
-      {% for st in scope_templates %}<option value="{{ st.id }}" {{ 'selected' if prefill.scope_template_id==st.id }}>{{ st.name }}</option>{% endfor %}
-    </select></div>
+      {% for st in scope_templates %}
+      <option value="{{ st.id }}" {{ 'selected' if prefill.scope_template_id==st.id }}>
+        {{ st.name }}{{ ' (next due)' if st.id == due_scope_template_id else '' }}</option>
+      {% endfor %}
+    </select>
+    <div class="form-text" id="moScopeTemplateHint">
+      {% if not prefill_vehicle %}Select a vehicle first to see its applicable PM packages.{% endif %}
+    </div></div>
   <div class="col-md-6"><label class="form-label">Vendor (optional)</label>
     <select name="vendor_id" id="moVendorSelect" class="form-select">
       <option value="">— Type vendor code or name —</option>
@@ -61,13 +82,75 @@
 {% block scripts %}
 <script>
   if (window.jQuery) {
-    jQuery(function () {
+    jQuery(function ($) {
       initAjaxSelect("#moVehicleSelect", "{{ url_for('api_search.search_vehicles') }}",
         { placeholder: "Type plate number, make, or model..." });
       wireVehicleSearchModal("moVehicleModalBtn", "moVehicleSelect",
         "{{ url_for('api_search.search_vehicles_table') }}");
       initAjaxSelect("#moVendorSelect", "{{ url_for('api_search.search_vendors') }}",
         { placeholder: "Type vendor code or name...", allowClear: true });
+
+      function refreshVehicleInfoPanel(vehicleId) {
+        if (!vehicleId) {
+          $("#moVehicleInfoPanel").hide();
+          return;
+        }
+        fetch("{{ url_for('api_search.get_vehicle_details', vehicle_id=0) }}".replace("0", vehicleId))
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.found) { $("#moVehicleInfoPanel").hide(); return; }
+            $("#moviPlate").text(data.plate);
+            $("#moviBrandModel").text(data.brand_model);
+            $("#moviBranch").text(data.branch);
+            $("#moviAssignee").text(data.assignee);
+            $("#moviPosition").text(data.position);
+            $("#moviOdometer").text(data.odometer != null ? data.odometer.toLocaleString() : "—");
+            $("#moVehicleInfoPanel").show();
+            // Odometer at Service defaults to the vehicle's current
+            // reading if the field hasn't been touched yet.
+            var odoField = $('input[name="odometer_at_service"]');
+            if (!odoField.val() && data.odometer != null) {
+              odoField.val(data.odometer);
+            }
+          });
+      }
+
+      // Re-fetches the Scope Template dropdown filtered to whichever
+      // vehicle + maintenance type are currently selected — never the
+      // unfiltered global list. Fixes the reported bug where an
+      // unrelated vehicle's checklist showed up as a selectable option.
+      function refreshScopeTemplates() {
+        var vehicleId = $("#moVehicleSelect").val();
+        var mtId = $("#moMaintenanceTypeSelect").val();
+        var $scopeSelect = $("#moScopeTemplateSelect");
+        var $hint = $("#moScopeTemplateHint");
+        if (!vehicleId) {
+          $scopeSelect.html('<option value="">— None (Corrective / unscheduled) —</option>');
+          $hint.text("Select a vehicle first to see its applicable PM packages.");
+          return;
+        }
+        var url = "{{ url_for('api_search.search_pm_scope_templates_for_vehicle') }}"
+          + "?vehicle_id=" + encodeURIComponent(vehicleId)
+          + (mtId ? "&maintenance_type_id=" + encodeURIComponent(mtId) : "");
+        fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+          var options = '<option value="">— None (Corrective / unscheduled) —</option>';
+          data.results.forEach(function (r) {
+            var isDue = data.due_template_id === r.id;
+            options += '<option value="' + r.id + '"' + (isDue ? ' selected' : '') + '>'
+              + r.text + (isDue ? ' (next due)' : '') + '</option>';
+          });
+          $scopeSelect.html(options).trigger("change");
+          $hint.text(data.results.length
+            ? "Showing " + data.results.length + " package(s) applicable to this vehicle."
+            : "No PM packages configured for this vehicle's Make/Model or Vehicle Type yet.");
+        });
+      }
+
+      $("#moVehicleSelect").on("change", function () {
+        refreshVehicleInfoPanel($(this).val());
+        refreshScopeTemplates();
+      });
+      $("#moMaintenanceTypeSelect").on("change", refreshScopeTemplates);
     });
   }
 </script>
