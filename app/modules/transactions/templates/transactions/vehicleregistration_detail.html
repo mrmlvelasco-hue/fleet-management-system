@@ -70,6 +70,32 @@
     </div></div>
   </div>
 </div>
+{% if item.checklist_items %}
+<div class="card mt-3"><div class="card-header">Renewal Checklist</div>
+  <div class="list-group list-group-flush">
+  {% for ci in item.checklist_items|sort(attribute='sort_order') %}
+    <div class="list-group-item d-flex justify-content-between align-items-center">
+      <div>
+        <span class="badge text-bg-secondary me-2">{{ ci.activity_code }}</span>
+        {{ ci.activity_description }}
+        {% if ci.is_done %}<span class="text-muted small ms-2">— done by {{ ci.done_by_user.full_name if ci.done_by_user else '—' }} on {{ ci.done_at.strftime('%Y-%m-%d') if ci.done_at else '' }}</span>{% endif %}
+      </div>
+      {% if item.status != 'COMPLETED' and current_user.has_permission('vehicleregistration.update') %}
+      <form method="post" action="{{ url_for('transactions.vehicleregistration_checklist_toggle', rid=item.id, item_id=ci.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="done" value="{{ '0' if ci.is_done else '1' }}">
+        <button class="btn btn-sm btn-outline-{{ 'success' if ci.is_done else 'secondary' }}">
+          <i class="bi bi-{{ 'check-circle-fill' if ci.is_done else 'circle' }}"></i></button>
+      </form>
+      {% elif ci.is_done %}
+      <i class="bi bi-check-circle-fill text-success"></i>
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% set reference_table = "vehicle_registrations" %}
 {% set reference_id = item.id %}
 {% set approve_url = url_for('transactions.vehicleregistration_approve', rid=item.id) %}

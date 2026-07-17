@@ -46,7 +46,7 @@ from app.modules.transactions.purchase_request.service import (
 from app.modules.transactions.purchase_request.models import PurchaseRequest
 from app.modules.transactions.vehicle_registration.service import (
     VehicleRegistrationService, DuplicateActiveRegistrationError,
-    NoExistingRegistrationError)
+    NoExistingRegistrationError, InvalidRegistrationStateError)
 from app.modules.transactions.vehicle_registration.models import (
     VehicleRegistration)
 
@@ -1203,6 +1203,19 @@ def vehicleregistration_cancel(rid):
         flash("Vehicle Registration cancelled.", "info")
     except (InvalidStateError, NotVisibleError) as e:
         _flash_engine_error(e)
+    return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
+
+
+@bp.route("/vehicle-registrations/<int:rid>/checklist/<int:item_id>/toggle", methods=["POST"])
+@login_required
+@require_permission("vehicleregistration.update")
+def vehicleregistration_checklist_toggle(rid, item_id):
+    done = request.form.get("done") == "1"
+    try:
+        VehicleRegistrationService().toggle_checklist_item(
+            item_id, done=done, user=current_user)
+    except InvalidRegistrationStateError as e:
+        flash(str(e), "danger")
     return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
 
 
