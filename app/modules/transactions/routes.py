@@ -573,10 +573,27 @@ def maintenanceorder_detail(oid):
 def maintenanceorder_print(oid):
     from app.modules.system_admin.services.company_service import (
         CompanyProfileService)
+    from app.modules.master_data.routes import _attachment_rows
+    from app.core.approval.engine import ApprovalEngine
     item = db.session.get(MaintenanceOrder, oid)
     company = CompanyProfileService().get()
+    # PM8 — Last Completed Work Order: the most recent COMPLETED order for
+    # this same vehicle before this one, for the "PM Parameter Mapping"
+    # block the Dynamic PM Work Order Report spec calls for.
+    last_completed = (MaintenanceOrder.query
+                      .filter(MaintenanceOrder.vehicle_id == item.vehicle_id,
+                             MaintenanceOrder.id != item.id,
+                             MaintenanceOrder.status == "COMPLETED")
+                      .order_by(MaintenanceOrder.completed_date.desc())
+                      .first())
+    attachments = _attachment_rows("maintenance_orders", oid)
+    approval_chain_data = (ApprovalEngine().get_approval_chain(item.approval_instance)
+                           if item.approval_instance else [])
     return render_template("transactions/maintenanceorder_print.html",
-                           item=item, company=company)
+                           item=item, company=company,
+                           last_completed=last_completed,
+                           attachments=attachments,
+                           approval_chain_data=approval_chain_data)
 
 
 @bp.route("/maintenance-orders/<int:oid>/submit", methods=["POST"])

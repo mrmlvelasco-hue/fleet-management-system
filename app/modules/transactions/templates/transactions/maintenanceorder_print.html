@@ -4,52 +4,181 @@
   <meta charset="utf-8">
   <title>MO {{ item.document_number }}</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; color: #111; }
+    body { font-family: Arial, sans-serif; margin: 40px; color: #111; font-size: 13px; position: relative; }
     .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
     .letterhead h1 { font-size: 18px; margin: 0; }
     .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
-    table.info { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-    table.info td { padding: 6px 8px; border: 1px solid #999; }
-    table.info td.label { font-weight: bold; width: 30%; background: #f2f2f2; }
-    table.checklist { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-    table.checklist th, table.checklist td { padding: 6px 8px; border: 1px solid #999; text-align: left; }
-    .signatures { display: flex; justify-content: space-between; margin-top: 60px; }
-    .sig-block { text-align: center; width: 30%; }
-    .sig-line { border-top: 1px solid #333; margin-top: 50px; padding-top: 4px; }
+    .qr-block { position: absolute; top: 40px; right: 40px; text-align: center; }
+    .qr-block canvas { width: 80px; height: 80px; }
+    .qr-block .url { font-size: 9px; color: #666; max-width: 90px; word-break: break-all; }
+    .watermark {
+      position: fixed; top: 40%; left: 10%; font-size: 90px; font-weight: bold;
+      color: rgba(200, 0, 0, 0.12); transform: rotate(-30deg); z-index: -1; pointer-events: none;
+    }
+    h6.section { text-transform: uppercase; font-size: 11px; letter-spacing: .05em; color: #555;
+                border-bottom: 1px solid #ccc; padding-bottom: 3px; margin: 18px 0 8px; }
+    table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    table.info td { padding: 5px 8px; border: 1px solid #999; }
+    table.info td.label { font-weight: bold; width: 28%; background: #f2f2f2; }
+    table.grid { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    table.grid th, table.grid td { padding: 5px 7px; border: 1px solid #999; text-align: left; }
+    table.grid th { background: #f2f2f2; }
+    table.grid td.num, table.grid th.num { text-align: right; }
+    .remarks-box { border: 1px solid #999; min-height: 60px; padding: 8px; }
+    .signatures { display: flex; justify-content: space-between; margin-top: 40px; flex-wrap: wrap; }
+    .sig-block { text-align: center; width: 30%; margin-bottom: 20px; }
+    .sig-line { border-top: 1px solid #333; margin-top: 45px; padding-top: 4px; }
+    .sig-name { font-weight: bold; margin-top: 4px; }
+    .sig-date { font-size: 11px; color: #555; }
     .no-print { text-align: center; margin-bottom: 20px; }
     @media print { .no-print { display: none; } }
   </style>
 </head>
 <body>
-  <div class="no-print"><button onclick="window.print()">Print / Save as PDF</button></div>
+  <div class="no-print">
+    <button onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
+  {% if item.status in ['DRAFT'] %}<div class="watermark">DRAFT</div>{% endif %}
+  {% if item.status == 'CANCELLED' %}<div class="watermark">CANCELLED</div>{% endif %}
+
+  <div class="qr-block">
+    <canvas id="qrCanvas"></canvas>
+    <div class="url">Scan for online record</div>
+  </div>
+
   <div class="letterhead">
     <h1>{{ company.company_name if company else 'Company Name' }}</h1>
     <div>{{ company.address_line1 if company else '' }} {{ company.city if company else '' }}</div>
   </div>
   <div class="doc-title">MAINTENANCE ORDER — {{ item.document_number or 'DRAFT' }}</div>
+
+  <h6 class="section">Work Order Information</h6>
   <table class="info">
-    <tr><td class="label">Vehicle</td><td>{{ item.vehicle.plate_number or item.vehicle.conduction_number }} — {{ item.vehicle.brand }} {{ item.vehicle.model }}</td></tr>
-    <tr><td class="label">Maintenance Type</td><td>{{ item.maintenance_type.name }} ({{ item.category }})</td></tr>
-    <tr><td class="label">Scheduled Date</td><td>{{ item.scheduled_date }}</td></tr>
-    <tr><td class="label">Odometer</td><td>{{ item.odometer_at_service or '—' }}</td></tr>
-    <tr><td class="label">Assigned Mechanic</td><td>{{ item.assigned_mechanic or '—' }}</td></tr>
-    <tr><td class="label">Vendor</td><td>{{ item.vendor.name if item.vendor else '—' }}</td></tr>
-    <tr><td class="label">Estimated Cost</td><td>{{ item.estimated_cost or '—' }}</td></tr>
-    <tr><td class="label">Actual Cost</td><td>{{ item.actual_cost or '—' }}</td></tr>
-    <tr><td class="label">Status</td><td>{{ item.status }}</td></tr>
+    <tr><td class="label">Maintenance Type</td><td>{{ item.maintenance_type.name }} ({{ item.category }})</td>
+        <td class="label">Status</td><td>{{ item.status }}</td></tr>
+    <tr><td class="label">Scheduled Date</td><td>{{ item.scheduled_date }}</td>
+        <td class="label">Completed Date</td><td>{{ item.completed_date or '—' }}</td></tr>
+    <tr><td class="label">Last Completed WO</td>
+        <td colspan="3">{{ last_completed.document_number ~ ' (' ~ last_completed.completed_date|string ~ ')' if last_completed else 'None on record' }}</td></tr>
   </table>
+
+  <h6 class="section">Vehicle Information</h6>
+  <table class="info">
+    <tr><td class="label">Plate Number</td><td>{{ item.vehicle.plate_number or item.vehicle.conduction_number }}</td>
+        <td class="label">Brand / Model</td><td>{{ item.vehicle.brand }} {{ item.vehicle.model }}</td></tr>
+    <tr><td class="label">Odometer</td><td>{{ item.odometer_at_service or '—' }}</td>
+        <td class="label">Branch / Sales Office</td><td>{{ item.vehicle.branch.name if item.vehicle.branch else '—' }}</td></tr>
+    <tr><td class="label">Current Assignee</td>
+        <td>{{ item.vehicle.assigned_driver.full_name if item.vehicle.assigned_driver else '—' }}</td>
+        <td class="label">Assignee Position</td>
+        <td>{{ item.vehicle.assigned_driver.job_title if item.vehicle.assigned_driver and item.vehicle.assigned_driver.job_title else '—' }}</td></tr>
+    <tr><td class="label">Assigned Mechanic</td><td>{{ item.assigned_mechanic or '—' }}</td>
+        <td class="label">Vendor</td><td>{{ item.vendor.name if item.vendor else '—' }}</td></tr>
+  </table>
+
+  {% if item.description %}
+  <h6 class="section">Work Description</h6>
+  <div class="remarks-box">{{ item.description }}</div>
+  {% endif %}
+
   {% if item.checklist_items %}
-  <table class="checklist">
-    <tr><th>Code</th><th>Activity</th><th>Done</th></tr>
+  <h6 class="section">Checklist</h6>
+  <table class="grid">
+    <tr><th>Code</th><th>Activity</th><th style="width:60px;">Done</th></tr>
     {% for ci in item.checklist_items %}
     <tr><td>{{ ci.activity_code }}</td><td>{{ ci.activity_description }}</td><td>{{ '✓' if ci.is_done else '—' }}</td></tr>
     {% endfor %}
   </table>
   {% endif %}
+
+  {% set all_lines = item.invoices|selectattr('is_active')|map(attribute='line_items')|sum(start=[]) %}
+  {% if all_lines %}
+  <h6 class="section">Parts</h6>
+  <table class="grid">
+    <tr><th>Part</th><th>Spec</th><th class="num">Qty</th><th class="num">Unit Cost</th><th class="num">Total</th></tr>
+    {% for l in all_lines if l.expense_category in ['PARTS', 'TIRES', 'BATTERY', 'OIL', 'LUBRICANTS'] %}
+    <tr><td>{{ l.part_description }}</td><td>{{ l.specification or '—' }}</td>
+        <td class="num">{{ l.quantity }}</td><td class="num">{{ "{:,.2f}".format(l.unit_cost) }}</td>
+        <td class="num">{{ "{:,.2f}".format(l.total_amount) }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <h6 class="section">Labor</h6>
+  <table class="grid">
+    <tr><th>Description</th><th class="num">Qty</th><th class="num">Unit Cost</th><th class="num">Total</th></tr>
+    {% for l in all_lines if l.expense_category in ['LABOR', 'EXTERNAL_SERVICES', 'TOWING'] %}
+    <tr><td>{{ l.part_description }}</td>
+        <td class="num">{{ l.quantity }}</td><td class="num">{{ "{:,.2f}".format(l.unit_cost) }}</td>
+        <td class="num">{{ "{:,.2f}".format(l.total_amount) }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <h6 class="section">Invoice Summary</h6>
+  <table class="info">
+    <tr><td class="label">Total Parts Cost</td><td class="num">{{ "{:,.2f}".format(item.invoices|sum(attribute='total_parts_cost')) }}</td>
+        <td class="label">Total Labor Cost</td><td class="num">{{ "{:,.2f}".format(item.invoices|sum(attribute='total_labor_cost')) }}</td></tr>
+    <tr><td class="label">Total VAT</td><td class="num">{{ "{:,.2f}".format(item.invoices|sum(attribute='total_vat')) }}</td>
+        <td class="label">Total Invoice Amount</td><td class="num"><strong>{{ "{:,.2f}".format(item.invoices|sum(attribute='total_invoice_amount')) }}</strong></td></tr>
+  </table>
+  {% else %}
+  <h6 class="section">Cost Summary</h6>
+  <table class="info">
+    <tr><td class="label">Estimated Cost</td><td>{{ item.estimated_cost if item.estimated_cost else '—' }}</td>
+        <td class="label">Actual Cost</td><td>{{ item.actual_cost if item.actual_cost else '—' }}</td></tr>
+  </table>
+  {% endif %}
+
+  {% if attachments %}
+  <h6 class="section">Attachments</h6>
+  <table class="grid">
+    <tr><th>File Name</th><th>Uploaded By</th><th>Date</th></tr>
+    {% for a in attachments %}
+    <tr><td>{{ a.original_filename }}</td><td>{{ lookup_user(a.created_by).full_name if lookup_user(a.created_by) else '—' }}</td>
+        <td>{{ a.created_at.strftime('%Y-%m-%d') if a.created_at else '—' }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <h6 class="section">Remarks</h6>
+  <div class="remarks-box"></div>
+
+  <h6 class="section">Signatures</h6>
   <div class="signatures">
-    <div class="sig-block"><div class="sig-line">Requested By</div></div>
-    <div class="sig-block"><div class="sig-line">Approved By</div></div>
-    <div class="sig-block"><div class="sig-line">Mechanic's Signature</div></div>
+    <div class="sig-block">
+      <div class="sig-line">Requested By</div>
+      <div class="sig-name">{{ item.requester.full_name if item.requester else '' }}</div>
+      <div class="sig-date">{{ item.created_at.strftime('%Y-%m-%d') if item.created_at else '' }}</div>
+    </div>
+    {% for lvl in approval_chain_data %}
+      {% if lvl.status == 'APPROVED' %}
+    <div class="sig-block">
+      <div class="sig-line">{{ lvl.approver_label.split(': ', 1)[-1] }}</div>
+      <div class="sig-name">{{ lvl.acted_by_name }}</div>
+      <div class="sig-date">{{ lvl.acted_at.strftime('%Y-%m-%d') if lvl.acted_at else '' }}</div>
+    </div>
+      {% endif %}
+    {% endfor %}
+    <div class="sig-block">
+      <div class="sig-line">Mechanic's Signature</div>
+    </div>
   </div>
 </body>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script>
+  var qr = qrcode(0, 'M');
+  qr.addData(window.location.origin + "{{ url_for('transactions.maintenanceorder_detail', oid=item.id) }}");
+  qr.make();
+  var canvas = document.getElementById('qrCanvas');
+  var ctx = canvas.getContext('2d');
+  var size = qr.getModuleCount();
+  var cell = 4;
+  canvas.width = canvas.height = size * cell;
+  for (var row = 0; row < size; row++) {
+    for (var col = 0; col < size; col++) {
+      ctx.fillStyle = qr.isDark(row, col) ? '#000' : '#fff';
+      ctx.fillRect(col * cell, row * cell, cell, cell);
+    }
+  }
+</script>
 </html>

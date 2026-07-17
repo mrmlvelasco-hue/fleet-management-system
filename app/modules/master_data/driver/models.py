@@ -20,6 +20,9 @@ class Driver(db.Model, BaseModel):
                               nullable=True)
     phone = db.Column(db.String(50))
     email = db.Column(db.String(255))
+    # Needed for the Dynamic PM Work Order Report's "Assignee Position"
+    # field (PM7) — the person's job title, not their license type.
+    job_title = db.Column(db.String(100), nullable=True)
     # ACTIVE | INACTIVE | SUSPENDED
     status = db.Column(db.String(20), default="ACTIVE", nullable=False)
 

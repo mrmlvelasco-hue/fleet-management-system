@@ -947,6 +947,7 @@ def driver_edit(did):
                 license_type=request.form.get("license_type", ""),
                 phone=request.form.get("phone", ""),
                 email=request.form.get("email", ""),
+                job_title=request.form.get("job_title") or None,
                 branch_id=int(request.form["branch_id"]),
                 department_id=int(request.form["department_id"]) if request.form.get("department_id") else None)
             flash("Driver updated.", "success")
@@ -983,7 +984,8 @@ def _driver_fields():
         branch_id=int(f["branch_id"]),
         department_id=int(f["department_id"]) if f.get("department_id") else None,
         phone=f.get("phone", ""),
-        email=f.get("email", ""))
+        email=f.get("email", ""),
+        job_title=f.get("job_title") or None)
 
 
 # ── Tires ──────────────────────────────────────────────────────────────────
