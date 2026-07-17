@@ -1146,10 +1146,16 @@ def vehicleregistration_detail(rid):
 def vehicleregistration_print(rid):
     from app.modules.system_admin.services.company_service import (
         CompanyProfileService)
+    from app.modules.master_data.routes import _attachment_rows
+    from app.core.approval.engine import ApprovalEngine
     item = db.session.get(VehicleRegistration, rid)
     company = CompanyProfileService().get()
+    attachments = _attachment_rows("vehicle_registrations", rid)
+    approval_chain_data = (ApprovalEngine().get_approval_chain(item.approval_instance)
+                           if item.approval_instance else [])
     return render_template("transactions/vehicleregistration_print.html",
-                           item=item, company=company)
+                           item=item, company=company, attachments=attachments,
+                           approval_chain_data=approval_chain_data)
 
 
 @bp.route("/vehicle-registrations/<int:rid>/submit", methods=["POST"])
