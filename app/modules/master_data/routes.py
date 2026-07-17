@@ -120,6 +120,22 @@ for _code, _desc, _order in [
 ]:
     lookup_registry.register("MAINTENANCE_CATEGORY", _code, _desc, _order)
 
+for _code, _desc, _order in [
+    ("PARTS", "Parts", 1), ("LABOR", "Labor", 2), ("TIRES", "Tires", 3),
+    ("BATTERY", "Battery", 4), ("OIL", "Oil", 5), ("LUBRICANTS", "Lubricants", 6),
+    ("EXTERNAL_SERVICES", "External Services", 7), ("TOWING", "Towing", 8),
+    ("MISC", "Miscellaneous", 9),
+]:
+    lookup_registry.register("EXPENSE_CATEGORY", _code, _desc, _order)
+
+for _code, _desc, _order in [
+    ("COMPANY", "Company Expense", 1), ("DEPARTMENT", "Department Expense", 2),
+    ("EMPLOYEE", "Employee Charge", 3), ("INSURANCE_CLAIM", "Insurance Claim", 4),
+    ("WARRANTY_CLAIM", "Warranty Claim", 5), ("VENDOR_WARRANTY", "Vendor Warranty", 6),
+    ("ACCIDENT_CLAIM", "Accident Claim", 7), ("OTHERS", "Others", 8),
+]:
+    lookup_registry.register("CHARGE_TO", _code, _desc, _order)
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 

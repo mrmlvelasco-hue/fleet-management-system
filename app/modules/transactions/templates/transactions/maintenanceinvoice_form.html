@@ -1,0 +1,67 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.maintenanceorder_list') }}">Maintenance Orders</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.maintenanceorder_detail', oid=order.id) }}">{{ order.document_number }}</a></li>
+<li class="breadcrumb-item active">New Invoice</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-1">New Invoice</h1>
+<p class="text-muted">For Maintenance Order <strong>{{ order.document_number }}</strong> — {{ order.vehicle.plate_number or order.vehicle.conduction_number }}</p>
+
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="col-12"><h6 class="text-muted text-uppercase small">Invoice Header</h6></div>
+  <div class="col-md-6"><label class="form-label">Supplier / Vendor</label>
+    <select name="vendor_id" id="invoiceVendorSelect" class="form-select" required>
+      <option value="">— Type vendor name or code —</option>
+    </select></div>
+  <div class="col-md-3"><label class="form-label">Invoice Number</label>
+    <input type="text" name="invoice_number" class="form-control" required></div>
+  <div class="col-md-3"><label class="form-label">Invoice Date</label>
+    <input type="date" name="invoice_date" class="form-control" required></div>
+
+  <div class="col-md-4"><label class="form-label">OR Number</label>
+    <input type="text" name="or_number" class="form-control"></div>
+  <div class="col-md-4"><label class="form-label">PO Number <span class="text-muted small">(optional)</span></label>
+    <input type="text" name="po_number" class="form-control"></div>
+  <div class="col-md-4"><label class="form-label">DR/RR Number <span class="text-muted small">(optional)</span></label>
+    <input type="text" name="dr_number" class="form-control"></div>
+
+  <div class="col-md-4">
+    <label class="form-label d-block">VAT Type</label>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="vat_type" id="vatExclusive" value="VAT_EXCLUSIVE" checked>
+      <label class="form-check-label" for="vatExclusive">Exclusive</label></div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="vat_type" id="vatInclusive" value="VAT_INCLUSIVE">
+      <label class="form-check-label" for="vatInclusive">Inclusive</label></div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="radio" name="vat_type" id="vatNon" value="NON_VAT">
+      <label class="form-check-label" for="vatNon">Non-VAT</label></div>
+  </div>
+  <div class="col-md-2"><label class="form-label">VAT %</label>
+    <input type="number" step="0.01" name="vat_percentage" class="form-control text-end" value="12"></div>
+  <div class="col-md-2"><label class="form-label">Currency</label>
+    <input type="text" name="currency" class="form-control" value="PHP" maxlength="3"></div>
+
+  <div class="col-12 text-muted small">
+    Line items (Part Name, Quantity, Unit Cost, Expense Category, Charged To) are added on the
+    next screen once the invoice header is saved.
+  </div>
+
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save Invoice Header</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.maintenanceorder_detail', oid=order.id) }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+window.initAjaxSelect("#invoiceVendorSelect", "/api/search/vendors",
+  { placeholder: "Type vendor name or code..." });
+</script>
+{% endblock %}

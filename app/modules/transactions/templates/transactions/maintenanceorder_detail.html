@@ -98,6 +98,45 @@
 </div>
 {% endif %}
 
+<div class="card mt-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-receipt me-1"></i>Invoices & Actual Expense</span>
+    {% if item.status in ['COMPLETED', 'IN_PROGRESS'] and current_user.has_permission('maintenanceinvoice.create') %}
+    <a class="btn btn-sm btn-primary" href="{{ url_for('transactions.maintenanceinvoice_new', oid=item.id) }}">
+      <i class="bi bi-plus-lg me-1"></i>New Invoice</a>
+    {% endif %}
+  </div>
+  <div class="card-body p-0">
+    {% if item.invoices %}
+    <table class="table table-sm table-striped mb-0">
+      <thead><tr><th>Invoice #</th><th>Vendor</th><th>Date</th><th>Status</th><th class="text-end">Total Amount</th></tr></thead>
+      <tbody>
+      {% for inv in item.invoices|sort(attribute='id', reverse=True) %}
+        <tr>
+          <td><a href="{{ url_for('transactions.maintenanceinvoice_detail', iid=inv.id) }}">{{ inv.invoice_number }}</a></td>
+          <td>{{ inv.vendor.name }}</td>
+          <td>{{ inv.invoice_date }}</td>
+          <td><span class="badge text-bg-{{ 'success' if inv.status=='APPROVED' else 'danger' if inv.status=='CANCELLED' else 'warning' if inv.status=='DRAFT' else 'info' }}">{{ inv.status }}</span></td>
+          <td class="text-end">{{ "{:,.2f}".format(inv.total_invoice_amount) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      <tfoot><tr class="fw-bold">
+        <td colspan="4" class="text-end">Total (all invoices):</td>
+        <td class="text-end">{{ "{:,.2f}".format(item.invoices|sum(attribute='total_invoice_amount')) }}</td>
+      </tr></tfoot>
+    </table>
+    {% else %}
+    <p class="text-muted p-3 mb-0">
+      No invoices yet.
+      {% if item.status not in ['COMPLETED', 'IN_PROGRESS'] %}
+      Invoices can only be entered once the vehicle has returned from the service provider (work in progress or completed).
+      {% endif %}
+    </p>
+    {% endif %}
+  </div>
+</div>
+
 {% set reference_table = "maintenance_orders" %}
 {% set reference_id = item.id %}
 {% set approve_url = url_for('transactions.maintenanceorder_approve', oid=item.id) %}

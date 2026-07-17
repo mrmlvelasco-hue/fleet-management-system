@@ -95,6 +95,15 @@ class MaintenanceInvoiceService(BaseTransactionService):
             raise InvoiceLockedError(
                 "This invoice is approved and locked. Reopen it first "
                 "before adding line items.")
+        # Cast once here so both the stored raw fields AND the calculated
+        # fields are consistently Decimal — form data arrives as strings,
+        # and storing those directly (even though _calculate_line() casts
+        # its own local copies for the arithmetic) would leave e.g.
+        # discount as a literal string on the row, breaking any later
+        # arithmetic over it (like summing discounts across lines).
+        quantity = Decimal(str(quantity))
+        unit_cost = Decimal(str(unit_cost))
+        discount = Decimal(str(discount))
         line_amount, vat_amount, total_amount = self._calculate_line(
             invoice, quantity=quantity, unit_cost=unit_cost, discount=discount)
         if sort_order is None:

@@ -31,6 +31,10 @@ from app.modules.transactions.trip_ticket.models import TripTicket
 from app.modules.transactions.maintenance_order.service import (
     MaintenanceOrderService, IncompleteChecklistError, InvalidOrderStateError)
 from app.modules.transactions.maintenance_order.models import MaintenanceOrder
+from app.modules.transactions.maintenance_invoice.service import (
+    MaintenanceInvoiceService, InvoiceLockedError)
+from app.modules.transactions.maintenance_invoice.models import (
+    MaintenanceInvoice, MaintenanceInvoiceLine)
 from app.modules.transactions.tire_txn.service import (
     TireTransactionService, InvalidTireActionError)
 from app.modules.transactions.tire_txn.models import TireTransaction
@@ -50,7 +54,8 @@ bp = Blueprint("transactions", __name__, url_prefix="/transactions",
                template_folder="templates")
 
 for _mod in ["tripticket", "atd", "vehiclemovement", "maintenanceorder",
-             "tiretxn", "batterytxn", "purchaserequest", "vehicleregistration"]:
+             "tiretxn", "batterytxn", "purchaserequest", "vehicleregistration",
+             "maintenanceinvoice"]:
     for _act in ["view", "create", "update", "delete", "print"]:
         _code = f"{_mod}.{_act}"
         registry.register(_code, _mod, _act, f"{_act.title()} {_mod}")
@@ -1194,3 +1199,149 @@ def vehicleregistration_complete(rid):
         plate_number=f.get("plate_number") or None)
     flash("Vehicle Registration completed.", "success")
     return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
+
+
+# ── Maintenance Invoice & Actual Expense ────────────────────────────────────
+
+@bp.route("/maintenance-orders/<int:oid>/invoices/new", methods=["GET", "POST"])
+@login_required
+@require_permission("maintenanceinvoice.create")
+def maintenanceinvoice_new(oid):
+    order = db.session.get(MaintenanceOrder, oid)
+    if order is None:
+        abort(404)
+    if request.method == "POST":
+        f = request.form
+        try:
+            inv = MaintenanceInvoiceService().create(
+                maintenance_order_id=oid, vendor_id=int(f["vendor_id"]),
+                invoice_number=f["invoice_number"],
+                invoice_date=parse_form_date(f.get("invoice_date"),
+                                             "Invoice Date", required=True),
+                vat_type=f.get("vat_type", "VAT_EXCLUSIVE"),
+                vat_percentage=f.get("vat_percentage") or 12,
+                or_number=f.get("or_number") or None,
+                po_number=f.get("po_number") or None,
+                dr_number=f.get("dr_number") or None,
+                currency=f.get("currency", "PHP"), user=current_user)
+            flash("Invoice created. Add line items below.", "success")
+            return redirect(url_for("transactions.maintenanceinvoice_detail",
+                                    iid=inv.id))
+        except (DateFormatError, RequiredFieldError) as e:
+            flash(str(e), "danger")
+    return render_template("transactions/maintenanceinvoice_form.html",
+                           order=order, title="New Invoice")
+
+
+@bp.route("/invoices/<int:iid>")
+@login_required
+@require_permission("maintenanceinvoice.view")
+def maintenanceinvoice_detail(iid):
+    from app.modules.system_admin.services.lookup_service import LookupService
+    inv = MaintenanceInvoiceService().get_by_id(iid)
+    if inv is None:
+        abort(404)
+    categories = LookupService().get_by_type_with_fallback("EXPENSE_CATEGORY")
+    charge_tos = LookupService().get_by_type_with_fallback("CHARGE_TO")
+    return render_template("transactions/maintenanceinvoice_detail.html",
+                           item=inv, categories=categories, charge_tos=charge_tos)
+
+
+@bp.route("/invoices/<int:iid>/lines", methods=["POST"])
+@login_required
+@require_permission("maintenanceinvoice.update")
+def maintenanceinvoice_add_line(iid):
+    f = request.form
+    try:
+        MaintenanceInvoiceService().add_line(
+            iid, part_number=f.get("part_number") or None,
+            part_description=f["part_description"],
+            specification=f.get("specification") or None,
+            uom=f.get("uom") or None,
+            quantity=f.get("quantity") or 1,
+            unit_cost=f.get("unit_cost") or 0,
+            discount=f.get("discount") or 0,
+            expense_category=f["expense_category"],
+            charged_to=f["charged_to"])
+        flash("Line item added.", "success")
+    except InvoiceLockedError as e:
+        flash(str(e), "danger")
+    return redirect(url_for("transactions.maintenanceinvoice_detail", iid=iid))
+
+
+@bp.route("/invoices/<int:iid>/lines/<int:line_id>/delete", methods=["POST"])
+@login_required
+@require_permission("maintenanceinvoice.update")
+def maintenanceinvoice_remove_line(iid, line_id):
+    try:
+        MaintenanceInvoiceService().remove_line(line_id)
+        flash("Line item removed.", "info")
+    except InvoiceLockedError as e:
+        flash(str(e), "danger")
+    return redirect(url_for("transactions.maintenanceinvoice_detail", iid=iid))
+
+
+@bp.route("/invoices/<int:iid>/submit", methods=["POST"])
+@login_required
+@require_permission("maintenanceinvoice.update")
+def maintenanceinvoice_submit(iid):
+    try:
+        MaintenanceInvoiceService().submit(iid, user=current_user)
+        flash("Invoice submitted.", "success")
+    except Exception as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.maintenanceinvoice_detail", iid=iid))
+
+
+@bp.route("/invoices/<int:iid>/approve", methods=["POST"])
+@login_required
+@require_permission("maintenanceinvoice.view")
+def maintenanceinvoice_approve(iid):
+    try:
+        MaintenanceInvoiceService().approve(iid, user=current_user,
+                                            remarks=request.form.get("remarks"))
+        inv = MaintenanceInvoiceService().get_by_id(iid)
+        inv.status = "APPROVED"
+        db.session.commit()
+        flash("Invoice approved.", "success")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.maintenanceinvoice_detail", iid=iid))
+
+
+@bp.route("/invoices/<int:iid>/reject", methods=["POST"])
+@login_required
+@require_permission("maintenanceinvoice.view")
+def maintenanceinvoice_reject(iid):
+    try:
+        MaintenanceInvoiceService().reject(iid, user=current_user,
+                                           remarks=request.form.get("remarks"))
+        flash("Invoice rejected.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.maintenanceinvoice_detail", iid=iid))
+
+
+@bp.route("/invoices/<int:iid>/return", methods=["POST"])
+@login_required
+@require_permission("maintenanceinvoice.view")
+def maintenanceinvoice_return(iid):
+    try:
+        MaintenanceInvoiceService().return_document(
+            iid, user=current_user, remarks=request.form.get("remarks"))
+        flash("Invoice returned to requester.", "info")
+    except (NotEligibleApproverError, InvalidStateError) as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.maintenanceinvoice_detail", iid=iid))
+
+
+@bp.route("/invoices/<int:iid>/reopen", methods=["POST"])
+@login_required
+@require_permission("maintenanceinvoice.update")
+def maintenanceinvoice_reopen(iid):
+    """Explicit, authorized-only re-open of an APPROVED invoice for
+    editing, per the spec: 'Prevent invoice modifications after approval
+    unless reopened by an authorized user.'"""
+    MaintenanceInvoiceService().reopen(iid, user=current_user)
+    flash("Invoice reopened for editing.", "info")
+    return redirect(url_for("transactions.maintenanceinvoice_detail", iid=iid))
