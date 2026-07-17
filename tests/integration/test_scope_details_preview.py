@@ -55,3 +55,38 @@ def test_mo_form_has_collapsed_scope_details_panel(client, db):
     assert b"View Scope Details" in resp.data
     assert b'id="moScopeDetailsCollapse"' in resp.data
     assert b'class="collapse mt-2" id="moScopeDetailsCollapse"' in resp.data
+
+
+def test_registration_template_details_for_vehicle_endpoint(client, db):
+    from datetime import date
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.master_data.reference.service import VehicleTypeService
+    from app.modules.master_data.org.service import BranchService
+    from app.modules.registration_config.service import RegistrationTemplateService
+
+    _login(client, db, codes=["vehicleregistration.view"])
+    branch = BranchService().create(code="BR-REGCHECKLISTUI", name="Reg Checklist UI Branch")
+    vt = VehicleTypeService().create(code="LV-REGCHECKLISTUI", name="Light", category="LIGHT")
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Vios", year=2024,
+        branch_id=branch.id, conduction_number="REGCHECKLISTUI-000")
+    RegistrationTemplateService().create(
+        vehicle_type_id=vt.id, interval_years=3,
+        items=[{"activity_code": "OR-CR", "activity_description": "Renew OR/CR",
+               "sort_order": 1}])
+
+    resp = client.get(
+        f"/api/search/registration-template-details-for-vehicle?vehicle_id={vehicle.id}")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["found"] is True
+    assert data["items"][0]["activity_code"] == "OR-CR"
+
+
+def test_registration_form_has_collapsed_checklist_panel(client, db):
+    _login(client, db, codes=["vehicleregistration.view", "vehicleregistration.create"])
+    resp = client.get("/transactions/vehicle-registrations/new")
+    assert resp.status_code == 200
+    assert b"View Checklist Details" in resp.data
+    assert b'id="vrChecklistCollapse"' in resp.data
+    assert b'class="collapse mt-2" id="vrChecklistCollapse"' in resp.data

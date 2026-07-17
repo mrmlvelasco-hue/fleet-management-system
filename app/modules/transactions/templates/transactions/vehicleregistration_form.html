@@ -22,7 +22,22 @@
       </select>
       <button type="button" class="btn btn-outline-secondary" id="vrVehicleModalBtn" title="Advanced search">
         <i class="bi bi-search"></i></button>
-    </div></div>
+    </div>
+    <div class="mt-2" id="vrChecklistWrapper" style="display:none;">
+      <button class="btn btn-sm btn-outline-secondary" type="button"
+              data-bs-toggle="collapse" data-bs-target="#vrChecklistCollapse">
+        <i class="bi bi-list-check me-1"></i>View Checklist Details
+      </button>
+      <div class="collapse mt-2" id="vrChecklistCollapse">
+        <div class="card card-body p-2">
+          <table class="table table-sm mb-0" id="vrChecklistTable">
+            <thead><tr><th>#</th><th>Code</th><th>Description</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="col-md-6"><label class="form-label">Registration Type</label>
     <select name="registration_type" class="form-select" required>
       <option value="NEW" {{ 'selected' if prefill.registration_type=='NEW' }}>New (3-year validity)</option>
@@ -51,6 +66,38 @@
         { placeholder: "Type plate number, make, or model..." });
       wireVehicleSearchModal("vrVehicleModalBtn", "vrVehicleSelect",
         "{{ url_for('api_search.search_vehicles_table') }}");
+
+      // Collapsed-by-default "View Checklist Details" preview -- shows
+      // what the auto-matched Registration Template's checklist actually
+      // includes (before it's silently copied in on save), same purpose
+      // as the Maintenance Order form's scope preview.
+      function refreshRegistrationChecklistPreview() {
+        var vehicleId = jQuery("#vrVehicleSelect").val();
+        var $wrapper = jQuery("#vrChecklistWrapper");
+        var collapseEl = document.getElementById("vrChecklistCollapse");
+        if (!vehicleId) {
+          $wrapper.hide();
+          if (window.bootstrap) {
+            var inst = bootstrap.Collapse.getInstance(collapseEl);
+            if (inst) inst.hide();
+          }
+          return;
+        }
+        fetch("{{ url_for('api_search.get_registration_template_details_for_vehicle') }}?vehicle_id=" + vehicleId)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.found) { $wrapper.hide(); return; }
+            var rows = data.items.map(function (i) {
+              return "<tr><td>" + i.sort_order + "</td>"
+                + '<td><span class="badge text-bg-secondary">' + i.activity_code + "</span></td>"
+                + "<td>" + i.activity_description + "</td></tr>";
+            }).join("");
+            jQuery("#vrChecklistTable tbody").html(rows);
+            $wrapper.show();
+          });
+      }
+      jQuery("#vrVehicleSelect").on("change", refreshRegistrationChecklistPreview);
+      refreshRegistrationChecklistPreview();
     });
   }
 </script>

@@ -172,6 +172,35 @@ def get_vehicle_details(vehicle_id):
     })
 
 
+@bp.route("/registration-template-details-for-vehicle")
+@login_required
+def get_registration_template_details_for_vehicle():
+    """Powers the collapsed-by-default 'View Checklist Details' preview
+    on the New Vehicle Registration form — Registration doesn't have a
+    template dropdown (the matching Registration Template is found
+    automatically from the selected vehicle), so this shows what
+    checklist WOULD be copied in before the fleet manager actually
+    saves, same purpose as the Maintenance Order form's scope preview."""
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.registration_config.service import RegistrationTemplateService
+    vehicle_id = request.args.get("vehicle_id")
+    if not vehicle_id:
+        return jsonify({"found": False})
+    vehicle = VehicleService().get(int(vehicle_id))
+    if vehicle is None:
+        return jsonify({"found": False})
+    tmpl = RegistrationTemplateService().find_applicable(vehicle)
+    if tmpl is None or not tmpl.checklist_items:
+        return jsonify({"found": False})
+    items = sorted(tmpl.checklist_items, key=lambda i: i.sort_order)
+    return jsonify({
+        "found": True,
+        "items": [{"sort_order": i.sort_order, "activity_code": i.activity_code,
+                   "activity_description": i.activity_description}
+                 for i in items],
+    })
+
+
 @bp.route("/pm-scope-template-details/<int:template_id>")
 @login_required
 def get_pm_scope_template_details(template_id):
