@@ -33,7 +33,8 @@ from app.modules.master_data.vehicle_brand.service import (
     DuplicateBrandError, DuplicateModelError)
 from app.modules.master_data.driver.models import Driver
 from app.modules.master_data.driver.service import (
-    DriverService, DuplicateDriverError)
+    DriverService, DuplicateDriverError, InvalidAssigneeError,
+    EmergencyContactService)
 from app.modules.master_data.tire.models import Tire
 from app.modules.master_data.tire.service import TireService, DuplicateSerialError
 from app.modules.master_data.battery.models import Battery
@@ -976,18 +977,25 @@ def driver_detail(did):
 def driver_new():
     departments = DepartmentService().list()
     license_types = LookupService().get_by_type("LICENSE_TYPE")
+    assignee_types = LookupService().get_by_type_with_fallback("ASSIGNEE_TYPE")
+    employment_statuses = LookupService().get_by_type_with_fallback("EMPLOYMENT_STATUS")
+    employment_types = LookupService().get_by_type_with_fallback("EMPLOYMENT_TYPE")
     if request.method == "POST":
         try:
             DriverService().create(**_driver_fields())
             flash("Driver created.", "success")
             return redirect(url_for("master_data.driver_list"))
         except (DuplicateDriverError, DateFormatError,
-                RequiredFieldError) as e:
+                RequiredFieldError, InvalidAssigneeError) as e:
             flash(str(e), "danger")
     return render_template("master_data/driver_form.html",
                            item=None,
                            departments=departments,
-                           license_types=license_types, title="New Driver")
+                           license_types=license_types,
+                           assignee_types=assignee_types,
+                           employment_statuses=employment_statuses,
+                           employment_types=employment_types,
+                           title="New Driver")
 
 
 @bp.route("/drivers/<int:did>/edit", methods=["GET", "POST"])
@@ -997,22 +1005,45 @@ def driver_edit(did):
     item = db.session.get(Driver, did)
     departments = DepartmentService().list()
     license_types = LookupService().get_by_type("LICENSE_TYPE")
+    assignee_types = LookupService().get_by_type_with_fallback("ASSIGNEE_TYPE")
+    employment_statuses = LookupService().get_by_type_with_fallback("EMPLOYMENT_STATUS")
+    employment_types = LookupService().get_by_type_with_fallback("EMPLOYMENT_TYPE")
     if request.method == "POST":
+        f = request.form
+        assignee_type = f.get("assignee_type", "DRIVER")
+        is_driver = assignee_type == "DRIVER"
         try:
             DriverService().update(
                 did,
-                first_name=request.form.get("first_name", ""),
-                last_name=request.form.get("last_name", ""),
-                middle_name=request.form.get("middle_name", ""),
+                assignee_type=assignee_type,
+                first_name=f.get("first_name", ""),
+                last_name=f.get("last_name", ""),
+                middle_name=f.get("middle_name", ""),
+                suffix=f.get("suffix") or None,
+                nickname=f.get("nickname") or None,
+                license_number=f.get("license_number") or None,
                 license_expiry=parse_form_date(
-                    request.form.get("license_expiry"), "License Expiry",
-                    required=True),
-                license_type=request.form.get("license_type", ""),
-                phone=request.form.get("phone", ""),
-                email=request.form.get("email", ""),
-                job_title=request.form.get("job_title") or None,
-                branch_id=int(request.form["branch_id"]),
-                department_id=int(request.form["department_id"]) if request.form.get("department_id") else None)
+                    f.get("license_expiry"), "License Expiry",
+                    required=is_driver),
+                license_type=f.get("license_type") or None,
+                phone=f.get("phone", ""),
+                office_number=f.get("office_number") or None,
+                home_number=f.get("home_number") or None,
+                email=f.get("email", ""),
+                complete_address=f.get("complete_address") or None,
+                emergency_contact_person=f.get("emergency_contact_person") or None,
+                emergency_contact_number=f.get("emergency_contact_number") or None,
+                business_name=f.get("business_name") or None,
+                business_contact_no=f.get("business_contact_no") or None,
+                business_address=f.get("business_address") or None,
+                section=f.get("section") or None,
+                position=f.get("position") or None,
+                cost_center=f.get("cost_center") or None,
+                employment_status=f.get("employment_status") or None,
+                employment_type=f.get("employment_type") or None,
+                job_title=f.get("job_title") or None,
+                branch_id=int(f["branch_id"]),
+                department_id=int(f["department_id"]) if f.get("department_id") else None)
             flash("Driver updated.", "success")
             return redirect(url_for("master_data.driver_detail", did=did))
         except (DateFormatError, RequiredFieldError) as e:
@@ -1021,6 +1052,9 @@ def driver_edit(did):
                            item=item,
                            departments=departments,
                            license_types=license_types,
+                           assignee_types=assignee_types,
+                           employment_statuses=employment_statuses,
+                           employment_types=employment_types,
                            title=f"Edit — {item.full_name}")
 
 
@@ -1033,21 +1067,62 @@ def driver_deactivate(did):
     return redirect(url_for("master_data.driver_list"))
 
 
+@bp.route("/drivers/<int:did>/emergency-contacts", methods=["POST"])
+@login_required
+@require_permission("driver.update")
+def driver_emergency_contact_add(did):
+    f = request.form
+    if f.get("contact_name"):
+        EmergencyContactService().create(
+            person_record_id=did, contact_name=f["contact_name"],
+            relationship_type=f.get("relationship_type") or None,
+            contact_number=f.get("contact_number") or None)
+        flash("Emergency contact added.", "success")
+    return redirect(url_for("master_data.driver_edit", did=did))
+
+
+@bp.route("/drivers/<int:did>/emergency-contacts/<int:cid>/delete", methods=["POST"])
+@login_required
+@require_permission("driver.update")
+def driver_emergency_contact_delete(did, cid):
+    EmergencyContactService().delete(cid)
+    flash("Emergency contact removed.", "info")
+    return redirect(url_for("master_data.driver_edit", did=did))
+
+
 def _driver_fields():
     f = request.form
+    assignee_type = f.get("assignee_type", "DRIVER")
+    is_driver = assignee_type == "DRIVER"
     return dict(
         employee_number=f.get("employee_number", ""),
+        assignee_type=assignee_type,
         first_name=f.get("first_name", ""),
         last_name=f.get("last_name", ""),
         middle_name=f.get("middle_name", ""),
-        license_number=f.get("license_number", ""),
+        suffix=f.get("suffix") or None,
+        nickname=f.get("nickname") or None,
+        license_number=f.get("license_number") or None,
         license_expiry=parse_form_date(f.get("license_expiry"),
-                                       "License Expiry", required=True),
-        license_type=f.get("license_type", ""),
+                                       "License Expiry", required=is_driver),
+        license_type=f.get("license_type") or None,
         branch_id=int(f["branch_id"]),
         department_id=int(f["department_id"]) if f.get("department_id") else None,
+        section=f.get("section") or None,
+        position=f.get("position") or None,
+        cost_center=f.get("cost_center") or None,
+        employment_status=f.get("employment_status") or None,
+        employment_type=f.get("employment_type") or None,
         phone=f.get("phone", ""),
+        office_number=f.get("office_number") or None,
+        home_number=f.get("home_number") or None,
         email=f.get("email", ""),
+        complete_address=f.get("complete_address") or None,
+        emergency_contact_person=f.get("emergency_contact_person") or None,
+        emergency_contact_number=f.get("emergency_contact_number") or None,
+        business_name=f.get("business_name") or None,
+        business_contact_no=f.get("business_contact_no") or None,
+        business_address=f.get("business_address") or None,
         job_title=f.get("job_title") or None)
 
 

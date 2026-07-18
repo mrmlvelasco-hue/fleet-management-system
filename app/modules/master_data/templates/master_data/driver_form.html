@@ -1,69 +1,222 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
 {% block breadcrumbs %}
-<li class="breadcrumb-item"><a href="{{ url_for('master_data.driver_list') }}">Drivers</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.driver_list') }}">Employees / Assignees</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
 {% block content %}
 <h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-4"><label class="form-label">Employee Number</label>
-    <input type="text" name="employee_number" class="form-control"
-           value="{{ item.employee_number if item else '' }}" required></div>
-  <div class="col-md-4"><label class="form-label">Last Name</label>
-    <input type="text" name="last_name" class="form-control"
-           value="{{ item.last_name if item else '' }}" required></div>
-  <div class="col-md-4"><label class="form-label">First Name</label>
-    <input type="text" name="first_name" class="form-control"
-           value="{{ item.first_name if item else '' }}" required></div>
-  <div class="col-md-4"><label class="form-label">Middle Name</label>
-    <input type="text" name="middle_name" class="form-control"
-           value="{{ item.middle_name if item else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">License Number</label>
-    <input type="text" name="license_number" class="form-control"
-           value="{{ item.license_number if item else '' }}" required></div>
-  <div class="col-md-4"><label class="form-label">License Expiry</label>
-    <input type="date" name="license_expiry" class="form-control"
-           value="{{ item.license_expiry if item and item.license_expiry else '' }}" required></div>
-  <div class="col-md-4"><label class="form-label">License Type</label>
-    <select name="license_type" class="form-select fms-select2">
-      <option value="">— Select —</option>
-      {% for lt in license_types %}
-      <option value="{{ lt.code }}" {{ 'selected' if item and item.license_type==lt.code }}>{{ lt.description }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Branch</label>
-    <select name="branch_id" id="drvBranchSelect" class="form-select" required>
-      {% if item and item.branch %}
-      <option value="{{ item.branch.id }}" selected>{{ item.branch.code }} — {{ item.branch.name }}</option>
-      {% else %}
-      <option value="">— Type branch code or name —</option>
-      {% endif %}
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Status</label>
-    <select name="status" class="form-select">
-      {% for s in ['ACTIVE','INACTIVE','SUSPENDED'] %}
-      <option value="{{ s }}" {{ 'selected' if item and item.status==s }}>{{ s }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Phone</label>
-    <input type="text" name="phone" class="form-control"
-           value="{{ item.phone if item else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Email</label>
-    <input type="email" name="email" class="form-control"
-           value="{{ item.email if item else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Job Title / Position</label>
-    <input type="text" name="job_title" class="form-control" placeholder="e.g. Sales Representative"
-           value="{{ item.job_title if item and item.job_title else '' }}"></div>
-  <div class="col-12">
+
+  <div class="card mb-4 shadow-sm">
+    <div class="card-header bg-light py-3"><span class="text-primary small text-uppercase fw-bold">Basic Information</span></div>
+    <div class="card-body">
+      <div class="row g-3">
+        {% if item and item.person_id %}
+        <div class="col-md-3"><label class="form-label fw-semibold">Person ID</label>
+          <input type="text" class="form-control" value="{{ item.person_id }}" readonly></div>
+        {% endif %}
+        <div class="col-md-3"><label class="form-label fw-semibold">Employee Number</label>
+          <input type="text" name="employee_number" class="form-control"
+                 value="{{ item.employee_number if item else '' }}" required></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Assignee Type</label>
+          <select name="assignee_type" id="assigneeTypeSelect" class="form-select" required>
+            {% for at in assignee_types %}
+            <option value="{{ at.code }}" {{ 'selected' if item and item.assignee_type==at.code or (not item and at.code=='DRIVER') }}>{{ at.description }}</option>
+            {% endfor %}
+          </select></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Status</label>
+          <select name="status" class="form-select">
+            {% for s in ['ACTIVE','INACTIVE','SUSPENDED'] %}
+            <option value="{{ s }}" {{ 'selected' if item and item.status==s }}>{{ s }}</option>
+            {% endfor %}
+          </select></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">First Name</label>
+          <input type="text" name="first_name" class="form-control"
+                 value="{{ item.first_name if item else '' }}" required></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Middle Name</label>
+          <input type="text" name="middle_name" class="form-control"
+                 value="{{ item.middle_name if item else '' }}"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Last Name</label>
+          <input type="text" name="last_name" class="form-control"
+                 value="{{ item.last_name if item else '' }}" required></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Suffix</label>
+          <input type="text" name="suffix" class="form-control" placeholder="Jr., Sr., III"
+                 value="{{ item.suffix if item and item.suffix else '' }}"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Nickname <span class="text-muted small">(optional)</span></label>
+          <input type="text" name="nickname" class="form-control"
+                 value="{{ item.nickname if item and item.nickname else '' }}"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4 shadow-sm">
+    <div class="card-header bg-light py-3"><span class="text-primary small text-uppercase fw-bold">Organization Information</span></div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-3"><label class="form-label fw-semibold">Branch / Sales Office</label>
+          <select name="branch_id" id="drvBranchSelect" class="form-select" required>
+            {% if item and item.branch %}
+            <option value="{{ item.branch.id }}" selected>{{ item.branch.code }} — {{ item.branch.name }}</option>
+            {% else %}
+            <option value="">— Type branch code or name —</option>
+            {% endif %}
+          </select></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Department</label>
+          <select name="department_id" class="form-select fms-select2">
+            <option value="">— None —</option>
+            {% for d in departments %}
+            <option value="{{ d.id }}" {{ 'selected' if item and item.department_id==d.id }}>{{ d.name }}</option>
+            {% endfor %}
+          </select></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Section</label>
+          <input type="text" name="section" class="form-control"
+                 value="{{ item.section if item and item.section else '' }}"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Cost Center</label>
+          <input type="text" name="cost_center" class="form-control"
+                 value="{{ item.cost_center if item and item.cost_center else '' }}"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Position</label>
+          <input type="text" name="position" class="form-control"
+                 value="{{ item.position if item and item.position else '' }}"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Job Title</label>
+          <input type="text" name="job_title" class="form-control" placeholder="e.g. Sales Representative"
+                 value="{{ item.job_title if item and item.job_title else '' }}"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Employment Status</label>
+          <select name="employment_status" class="form-select">
+            <option value="">— None —</option>
+            {% for es in employment_statuses %}
+            <option value="{{ es.code }}" {{ 'selected' if item and item.employment_status==es.code }}>{{ es.description }}</option>
+            {% endfor %}
+          </select></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Employment Type</label>
+          <select name="employment_type" class="form-select">
+            <option value="">— None —</option>
+            {% for et in employment_types %}
+            <option value="{{ et.code }}" {{ 'selected' if item and item.employment_type==et.code }}>{{ et.description }}</option>
+            {% endfor %}
+          </select></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4 shadow-sm" id="licenseInfoCard">
+    <div class="card-header bg-light py-3"><span class="text-primary small text-uppercase fw-bold">License Information</span>
+      <span class="text-muted small ms-2">— required only for a Driver-type assignee</span></div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label fw-semibold">License Number</label>
+          <input type="text" name="license_number" id="licenseNumberInput" class="form-control"
+                 value="{{ item.license_number if item and item.license_number else '' }}"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold">License Expiry</label>
+          <input type="date" name="license_expiry" id="licenseExpiryInput" class="form-control"
+                 value="{{ item.license_expiry if item and item.license_expiry else '' }}"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold">License Type</label>
+          <select name="license_type" id="licenseTypeInput" class="form-select fms-select2">
+            <option value="">— Select —</option>
+            {% for lt in license_types %}
+            <option value="{{ lt.code }}" {{ 'selected' if item and item.license_type==lt.code }}>{{ lt.description }}</option>
+            {% endfor %}
+          </select></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4 shadow-sm">
+    <div class="card-header bg-light py-3"><span class="text-primary small text-uppercase fw-bold">Contact Information</span></div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-3"><label class="form-label fw-semibold">Mobile Number</label>
+          <input type="text" name="phone" class="form-control"
+                 value="{{ item.phone if item else '' }}"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Office Number</label>
+          <input type="text" name="office_number" class="form-control"
+                 value="{{ item.office_number if item and item.office_number else '' }}"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Home Number</label>
+          <input type="text" name="home_number" class="form-control"
+                 value="{{ item.home_number if item and item.home_number else '' }}"></div>
+        <div class="col-md-3"><label class="form-label fw-semibold">Email Address</label>
+          <input type="email" name="email" class="form-control"
+                 value="{{ item.email if item else '' }}"></div>
+        <div class="col-12"><label class="form-label fw-semibold">Complete Address</label>
+          <textarea name="complete_address" class="form-control" rows="2">{{ item.complete_address if item and item.complete_address else '' }}</textarea></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Emergency Contact Person</label>
+          <input type="text" name="emergency_contact_person" class="form-control"
+                 value="{{ item.emergency_contact_person if item and item.emergency_contact_person else '' }}"></div>
+        <div class="col-md-6"><label class="form-label fw-semibold">Emergency Contact Number</label>
+          <input type="text" name="emergency_contact_number" class="form-control"
+                 value="{{ item.emergency_contact_number if item and item.emergency_contact_number else '' }}"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-4 shadow-sm" id="businessInfoCard">
+    <div class="card-header bg-light py-3"><span class="text-primary small text-uppercase fw-bold">Business Information</span>
+      <span class="text-muted small ms-2">— for Consultant / Third Party Delivery assignees representing an outside business</span></div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label fw-semibold">Business Name</label>
+          <input type="text" name="business_name" class="form-control"
+                 value="{{ item.business_name if item and item.business_name else '' }}"></div>
+        <div class="col-md-4"><label class="form-label fw-semibold">Business Contact No.</label>
+          <input type="text" name="business_contact_no" class="form-control"
+                 value="{{ item.business_contact_no if item and item.business_contact_no else '' }}"></div>
+        <div class="col-12"><label class="form-label fw-semibold">Business Address</label>
+          <textarea name="business_address" class="form-control" rows="2">{{ item.business_address if item and item.business_address else '' }}</textarea></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-4">
     <button class="btn btn-primary" type="submit">Save</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('master_data.driver_list') }}">Cancel</a>
   </div>
 </form>
-</div></div>
+
 {% if item and item.id %}
+<div class="card mb-4 shadow-sm">
+  <div class="card-header bg-light py-3"><span class="text-primary small text-uppercase fw-bold">Emergency Contacts &amp; References</span></div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-5">
+        <form method="post" action="{{ url_for('master_data.driver_emergency_contact_add', did=item.id) }}" class="row g-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-12"><label class="form-label small">Contact Name</label>
+            <input type="text" name="contact_name" class="form-control form-control-sm" required></div>
+          <div class="col-12"><label class="form-label small">Relationship</label>
+            <input type="text" name="relationship_type" class="form-control form-control-sm"
+                   placeholder="e.g. Spouse, Parent, Sibling"></div>
+          <div class="col-12"><label class="form-label small">Contact Number</label>
+            <input type="text" name="contact_number" class="form-control form-control-sm"></div>
+          <div class="col-12">
+            <button class="btn btn-sm btn-outline-primary" type="submit">
+              <i class="bi bi-plus-lg me-1"></i>Add</button>
+          </div>
+        </form>
+      </div>
+      <div class="col-md-7">
+        <div class="list-group">
+        {% for c in item.emergency_contacts if c.is_active %}
+          <div class="list-group-item d-flex justify-content-between align-items-start">
+            <div>
+              <strong>{{ c.contact_name }}</strong>
+              {% if c.relationship_type %}<span class="badge text-bg-secondary ms-1">{{ c.relationship_type }}</span>{% endif %}
+              <div class="small text-muted">{{ c.contact_number or '' }}</div>
+            </div>
+            <form method="post" action="{{ url_for('master_data.driver_emergency_contact_delete', did=item.id, cid=c.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-trash"></i></button>
+            </form>
+          </div>
+        {% else %}
+          <p class="text-muted mb-0">No additional contacts yet.</p>
+        {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% set reference_table = "drivers" %}
 {% set reference_id = item.id %}
 {% include "master_data/_attachment_panel.html" %}
@@ -71,13 +224,24 @@
 {% endblock %}
 {% block scripts %}
 <script>
-if (window.jQuery && typeof flatpickr !== 'undefined') {
-  flatpickr(".flatpickr", {dateFormat: "Y-m-d"});
-}
 if (window.jQuery) {
   jQuery(function () {
     initAjaxSelect("#drvBranchSelect", "{{ url_for('api_search.search_branches') }}",
       { placeholder: "Type branch code or name..." });
+
+    // License Info is only required for a Driver-type assignee — an
+    // Employee, Consultant, or Third Party Delivery assignee can be
+    // assigned a vehicle without personally holding a license on file.
+    function toggleAssigneeSections() {
+      var assigneeType = $("#assigneeTypeSelect").val();
+      var isDriver = assigneeType === "DRIVER";
+      var isBusinessType = assigneeType === "CONSULTANT" || assigneeType === "THIRD_PARTY_DELIVERY";
+      $("#licenseInfoCard").toggle(isDriver);
+      $("#licenseNumberInput, #licenseExpiryInput, #licenseTypeInput").prop("required", isDriver);
+      $("#businessInfoCard").toggle(isBusinessType);
+    }
+    $("#assigneeTypeSelect").on("change", toggleAssigneeSections);
+    toggleAssigneeSections();
   });
 }
 </script>
