@@ -24,6 +24,24 @@
 <div class="card"><div class="card-body">
 <form method="post" class="row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Category</label>
+    <select name="order_category" id="moOrderCategorySelect" class="form-select" required>
+      <option value="MAINTENANCE" {{ 'selected' if prefill.order_category != 'OPERATIONAL' }}>Maintenance</option>
+      <option value="OPERATIONAL" {{ 'selected' if prefill.order_category == 'OPERATIONAL' }}>Operational</option>
+    </select>
+    <div class="form-text">Operational orders (Deployment, Administrative, Disposal, Accessories) are normal fleet work requests — they don't need a Maintenance Type or PM Scope.</div></div>
+  <div class="col-md-6"><label class="form-label">Transaction Type <span class="text-muted small">(optional)</span></label>
+    <select name="transaction_type_id" id="moTransactionTypeSelect" class="form-select fms-select2">
+      <option value="">— None —</option>
+      {% for group_name, types in transaction_types_by_group.items() %}
+      <optgroup label="{{ group_name|title }}">
+        {% for tt in types %}
+        <option value="{{ tt.id }}" data-category="{{ tt.order_category }}"
+                {{ 'selected' if prefill.transaction_type_id==tt.id }}>{{ tt.name }}</option>
+        {% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select></div>
   <div class="col-md-6"><label class="form-label">Vehicle</label>
     <div class="input-group">
       <select name="vehicle_id" id="moVehicleSelect" class="form-select" required>
@@ -38,6 +56,7 @@
       <button type="button" class="btn btn-outline-secondary" id="moVehicleModalBtn" title="Advanced search">
         <i class="bi bi-search"></i></button>
     </div></div>
+  <div id="moMaintenanceFieldsWrapper" class="row g-3">
   <div class="col-md-6"><label class="form-label">Maintenance Type</label>
     <select name="maintenance_type_id" id="moMaintenanceTypeSelect" class="form-select fms-select2" required>
       <option value="">— Select —</option>
@@ -71,6 +90,7 @@
         </div>
       </div>
     </div></div>
+  </div>
   <div class="col-md-6"><label class="form-label">Vendor (optional)</label>
     <select name="vendor_id" id="moVendorSelect" class="form-select">
       <option value="">— Type vendor code or name —</option>
@@ -104,6 +124,23 @@
         "{{ url_for('api_search.search_vehicles_table') }}");
       initAjaxSelect("#moVendorSelect", "{{ url_for('api_search.search_vendors') }}",
         { placeholder: "Type vendor code or name...", allowClear: true });
+
+      // Operational-category orders are normal fleet work requests and
+      // must never require a Maintenance Type or PM Scope Template.
+      function toggleMaintenanceFields() {
+        var isOperational = $("#moOrderCategorySelect").val() === "OPERATIONAL";
+        var $wrapper = $("#moMaintenanceFieldsWrapper");
+        var $mtSelect = $("#moMaintenanceTypeSelect");
+        if (isOperational) {
+          $wrapper.hide();
+          $mtSelect.prop("required", false);
+        } else {
+          $wrapper.show();
+          $mtSelect.prop("required", true);
+        }
+      }
+      $("#moOrderCategorySelect").on("change", toggleMaintenanceFields);
+      toggleMaintenanceFields();
 
       function refreshVehicleInfoPanel(vehicleId) {
         if (!vehicleId) {

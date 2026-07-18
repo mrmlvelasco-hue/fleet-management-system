@@ -29,7 +29,8 @@ from app.modules.transactions.vehicle_movement.service import (
 from app.modules.transactions.vehicle_movement.models import VehicleMovement
 from app.modules.transactions.trip_ticket.models import TripTicket
 from app.modules.transactions.maintenance_order.service import (
-    MaintenanceOrderService, IncompleteChecklistError, InvalidOrderStateError)
+    MaintenanceOrderService, IncompleteChecklistError, InvalidOrderStateError,
+    InvalidOrderCategoryError)
 from app.modules.transactions.maintenance_order.models import MaintenanceOrder
 from app.modules.transactions.maintenance_invoice.service import (
     MaintenanceInvoiceService, InvoiceLockedError)
@@ -563,8 +564,15 @@ def maintenanceorder_new():
     from app.modules.master_data.vehicle.service import VehicleService
     from app.modules.maintenance_config.service import (
         PMScheduleService, PMScopeTemplateService)
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    from itertools import groupby
 
     maintenance_types = MaintenanceTypeService().list()
+    all_transaction_types = TransactionTypeService().list()
+    transaction_types_by_group = {
+        group: list(items) for group, items in
+        groupby(all_transaction_types, key=lambda t: t.group or "Other")}
 
     # Optional pre-fill via query params — used by the Dashboard's
     # "Vehicles Due for Maintenance" widget so clicking a due item goes
@@ -575,6 +583,8 @@ def maintenanceorder_new():
         prefill_vehicle = VehicleService().get(int(request.args["vehicle_id"]))
     prefill = {
         "vehicle_id": request.args.get("vehicle_id", type=int),
+        "order_category": request.args.get("order_category", "MAINTENANCE"),
+        "transaction_type_id": request.args.get("transaction_type_id", type=int),
         "maintenance_type_id": request.args.get("maintenance_type_id", type=int),
         "scope_template_id": request.args.get("scope_template_id", type=int),
         "odometer_at_service": request.args.get("odometer_at_service", type=int),
@@ -601,10 +611,13 @@ def maintenanceorder_new():
 
     if request.method == "POST":
         f = request.form
+        order_category = f.get("order_category", "MAINTENANCE")
         try:
             MaintenanceOrderService().create(
                 vehicle_id=int(f["vehicle_id"]),
-                maintenance_type_id=int(f["maintenance_type_id"]),
+                order_category=order_category,
+                transaction_type_id=int(f["transaction_type_id"]) if f.get("transaction_type_id") else None,
+                maintenance_type_id=int(f["maintenance_type_id"]) if f.get("maintenance_type_id") else None,
                 scope_template_id=int(f["scope_template_id"]) if f.get("scope_template_id") else None,
                 scheduled_date=parse_form_date(f.get("scheduled_date"),
                                                "Scheduled Date", required=True),
@@ -616,10 +629,11 @@ def maintenanceorder_new():
                 user=current_user)
             flash("Maintenance Order created.", "success")
             return redirect(url_for("transactions.maintenanceorder_list"))
-        except (DateFormatError, RequiredFieldError) as e:
+        except (DateFormatError, RequiredFieldError, InvalidOrderCategoryError) as e:
             flash(str(e), "danger")
     return render_template("transactions/maintenanceorder_form.html",
                            maintenance_types=maintenance_types,
+                           transaction_types_by_group=transaction_types_by_group,
                            scope_templates=scope_templates,
                            prefill_vehicle=prefill_vehicle, prefill=prefill,
                            due_scope_template_id=due_scope_template_id,
