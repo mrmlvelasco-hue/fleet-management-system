@@ -25,7 +25,7 @@
     <input type="text" name="license_number" class="form-control"
            value="{{ item.license_number if item else '' }}" required></div>
   <div class="col-md-4"><label class="form-label">License Expiry</label>
-    <input type="text" name="license_expiry" class="form-control flatpickr"
+    <input type="date" name="license_expiry" class="form-control"
            value="{{ item.license_expiry if item and item.license_expiry else '' }}" required></div>
   <div class="col-md-4"><label class="form-label">License Type</label>
     <select name="license_type" class="form-select fms-select2">

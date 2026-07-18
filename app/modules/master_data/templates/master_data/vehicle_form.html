@@ -109,12 +109,11 @@
       {% endif %}
     </select></div>
   <div class="col-md-4"><label class="form-label">Acquisition Date</label>
-    <input type="text" name="acquisition_date"
-           class="form-control flatpickr {{ 'is-invalid' if error_field=='acquisition_date' }}"
-           placeholder="YYYY-MM-DD"
+    <input type="date" name="acquisition_date"
+           class="form-control {{ 'is-invalid' if error_field=='acquisition_date' }}"
            value="{{ item.acquisition_date if item and item.acquisition_date else '' }}">
     {% if error_field=='acquisition_date' %}
-    <div class="invalid-feedback">Please enter a valid date (YYYY-MM-DD) or use the date picker.</div>
+    <div class="invalid-feedback">Please enter a valid date.</div>
     {% endif %}
   </div>
   <div class="col-md-4"><label class="form-label">Acquisition Cost</label>
@@ -333,9 +332,6 @@
 {% endblock %}
 {% block scripts %}
 <script>
-if (window.jQuery && typeof flatpickr !== 'undefined') {
-  flatpickr(".flatpickr", {dateFormat: "Y-m-d"});
-}
 if (window.jQuery) {
   jQuery(function () {
     initAjaxSelect("#vehBranchSelect", "{{ url_for('api_search.search_branches') }}",
