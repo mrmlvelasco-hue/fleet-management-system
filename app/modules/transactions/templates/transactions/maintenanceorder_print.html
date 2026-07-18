@@ -31,7 +31,13 @@
     .sig-name { font-weight: bold; margin-top: 4px; }
     .sig-date { font-size: 11px; color: #555; }
     .no-print { text-align: center; margin-bottom: 20px; }
-    @media print { .no-print { display: none; } }
+    @media print {
+      .no-print { display: none; }
+      h6.section { page-break-after: avoid; break-after: avoid; }
+      table.info, table.grid, .signatures, .remarks-box {
+        page-break-inside: avoid; break-inside: avoid;
+      }
+    }
   </style>
 </head>
 <body>
