@@ -1,10 +1,33 @@
 """Vendor master service."""
 from app.extensions import db
-from app.modules.master_data.vendor.models import Vendor
+from app.modules.master_data.vendor.models import Vendor, VendorContact
 
 
 class DuplicateCodeError(Exception):
     pass
+
+
+class VendorContactService:
+    def create(self, *, vendor_id, contact_name, tel_number=None,
+              cel_number=None, email=None, position=None):
+        contact = VendorContact(
+            vendor_id=vendor_id, contact_name=contact_name,
+            tel_number=tel_number, cel_number=cel_number,
+            email=email, position=position)
+        db.session.add(contact)
+        db.session.commit()
+        return contact
+
+    def list_for_vendor(self, vendor_id) -> list:
+        return (VendorContact.query
+               .filter_by(vendor_id=vendor_id, is_active=True)
+               .order_by(VendorContact.id).all())
+
+    def delete(self, contact_id):
+        contact = db.session.get(VendorContact, contact_id)
+        if contact:
+            contact.is_active = False
+            db.session.commit()
 
 
 class VendorService:

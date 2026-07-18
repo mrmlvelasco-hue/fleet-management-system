@@ -27,6 +27,22 @@ vendor_business_units = db.Table(
 )
 
 
+class VendorContact(db.Model, BaseModel):
+    """A supplier can have multiple secondary/alternate contacts (e.g. an
+    Account Manager, a Sales Rep) beyond the single contact_person field
+    on Vendor itself — a genuine One-to-Many relationship."""
+    __tablename__ = "vendor_contacts"
+    vendor_id = db.Column(db.Integer, db.ForeignKey("vendors.id"),
+                          nullable=False, index=True)
+    contact_name = db.Column(db.String(120), nullable=False)
+    tel_number = db.Column(db.String(50), nullable=True)
+    cel_number = db.Column(db.String(50), nullable=True)
+    email = db.Column(db.String(255), nullable=True)
+    position = db.Column(db.String(100), nullable=True)
+
+    vendor = db.relationship("Vendor", backref="other_contacts")
+
+
 class Vendor(db.Model, BaseModel):
     __tablename__ = "vendors"
     code = db.Column(db.String(20), unique=True, nullable=False, index=True)
