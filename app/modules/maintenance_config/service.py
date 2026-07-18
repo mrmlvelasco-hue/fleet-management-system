@@ -24,6 +24,39 @@ def _validate_schedule(trigger_mode, interval_km, interval_days):
 
 
 class PMScheduleService:
+    def list_applicable_for_criteria(self, *, brand_name=None, model_name=None,
+                                     vehicle_type_id=None, maintenance_type_id=None):
+        """Same matching precedence as PMDueCalculationService's
+        _applicable_schedules(), but driven by raw criteria instead of a
+        saved Vehicle record — used by the Vehicle form's 'Assigned PM
+        Template' dropdown, which needs to filter live as Brand/Model/
+        Vehicle Type are being typed, before the vehicle even exists."""
+        if not brand_name and not model_name and not vehicle_type_id:
+            return []
+
+        base_query = PMSchedule.query.filter_by(is_active=True)
+        if maintenance_type_id:
+            base_query = base_query.filter_by(maintenance_type_id=maintenance_type_id)
+
+        brand = (brand_name or "").strip().lower()
+        model = (model_name or "").strip().lower()
+        if brand and model:
+            make_model_matches = [
+                s for s in base_query.all()
+                if s.vehicle_make and s.vehicle_model
+                and s.vehicle_make.strip().lower() == brand
+                and s.vehicle_model.strip().lower() == model]
+            if make_model_matches:
+                return make_model_matches
+
+        if vehicle_type_id:
+            type_matches = base_query.filter_by(vehicle_type_id=vehicle_type_id).all()
+            if type_matches:
+                return type_matches
+
+        return base_query.filter_by(vehicle_type_id=None, vehicle_make=None,
+                                    vehicle_model=None).all()
+
     def create(self, *, maintenance_type_id, trigger_mode,
                vehicle_type_id=None, vehicle_make=None, vehicle_model=None,
                vehicle_brand_id=None, vehicle_model_id=None,
