@@ -112,3 +112,20 @@ class Vehicle(db.Model, BaseModel):
     business_unit = db.relationship("BusinessUnit")
     pm_schedule = db.relationship("PMSchedule")
     assigned_driver = db.relationship("Driver")
+
+    def compute_assured_value(self, as_of_date=None):
+        """Assured Value formula: 10% depreciation per year (compounding),
+        computed every year from Delivery Date, applied against
+        Acquisition Cost. Returns None if either input is missing —
+        there's nothing sensible to compute without both."""
+        from datetime import date as _date
+        from decimal import Decimal
+        if not self.acquisition_cost or not self.delivery_date:
+            return None
+        as_of_date = as_of_date or _date.today()
+        years_elapsed = (as_of_date.year - self.delivery_date.year) - (
+            1 if (as_of_date.month, as_of_date.day) <
+                (self.delivery_date.month, self.delivery_date.day) else 0)
+        years_elapsed = max(0, years_elapsed)
+        value = Decimal(str(self.acquisition_cost)) * (Decimal("0.9") ** years_elapsed)
+        return value.quantize(Decimal("0.01"))

@@ -727,6 +727,7 @@ def vehicle_new():
                            vehicle_brands=vehicle_brands,
                            brand_ids_by_name=brand_ids_by_name,
                            error_field=error_field,
+                           computed_assured_value=None,
                            title="New Vehicle")
 
 
@@ -739,6 +740,10 @@ def vehicle_edit(vid):
     from app.core.validation.form_echo import FormEcho
     item = db.session.get(Vehicle, vid)
     original_label = item.conduction_number or item.plate_number
+    # Computed BEFORE any FormEcho reassignment below (FormEcho doesn't
+    # have compute_assured_value() — it's a plain echo of submitted data,
+    # not a real Vehicle instance).
+    computed_assured_value = item.compute_assured_value() if item else None
     vtypes = VehicleTypeService().list()
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
@@ -774,6 +779,7 @@ def vehicle_edit(vid):
                            vehicle_brands=vehicle_brands,
                            brand_ids_by_name=brand_ids_by_name,
                            error_field=error_field,
+                           computed_assured_value=computed_assured_value,
                            title=f"Edit — {original_label}")
 
 

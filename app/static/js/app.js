@@ -453,3 +453,37 @@
     });
   });
 })();
+
+// Comma-formatted money inputs — e.g. formatMoneyInput("#vehAcquisitionCost").
+// Displays "5,000.00" style formatting live as the person types, but strips
+// the commas back out right before the form actually submits, so the
+// server always receives a plain decimal number.
+window.formatMoneyInput = function (selector) {
+  document.querySelectorAll(selector).forEach(function (input) {
+    function formatValue(raw) {
+      var cleaned = raw.replace(/[^0-9.]/g, "");
+      var firstDot = cleaned.indexOf(".");
+      if (firstDot !== -1) {
+        cleaned = cleaned.slice(0, firstDot + 1)
+          + cleaned.slice(firstDot + 1).replace(/\./g, "");
+      }
+      var parts = cleaned.split(".");
+      var intPart = (parts[0] || "").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      var decPart = parts.length > 1 ? "." + parts[1].slice(0, 2) : "";
+      return intPart + decPart;
+    }
+    if (input.value) { input.value = formatValue(input.value); }
+    input.addEventListener("input", function () {
+      var cursorFromEnd = input.value.length - input.selectionStart;
+      input.value = formatValue(input.value);
+      var newPos = Math.max(0, input.value.length - cursorFromEnd);
+      input.setSelectionRange(newPos, newPos);
+    });
+    var form = input.closest("form");
+    if (form) {
+      form.addEventListener("submit", function () {
+        input.value = input.value.replace(/,/g, "");
+      });
+    }
+  });
+};

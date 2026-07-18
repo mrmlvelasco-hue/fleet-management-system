@@ -117,7 +117,8 @@
     {% endif %}
   </div>
   <div class="col-md-4"><label class="form-label">Acquisition Cost</label>
-    <input type="number" step="0.01" name="acquisition_cost" class="form-control text-end"
+    <input type="text" inputmode="decimal" id="vehAcquisitionCost" name="acquisition_cost"
+           class="form-control text-end"
            value="{{ item.acquisition_cost if item and item.acquisition_cost else '' }}"></div>
   <div class="col-md-4"><label class="form-label">Status</label>
     <select name="status" class="form-select">
@@ -189,11 +190,14 @@
 
   <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Financials</h6></div>
   <div class="col-md-4"><label class="form-label">Top-up Amount <span class="text-muted small">(VAT Exclusive)</span></label>
-    <input type="number" step="0.01" name="top_up_amount" class="form-control text-end"
+    <input type="text" inputmode="decimal" id="vehTopUpAmount" name="top_up_amount"
+           class="form-control text-end"
            value="{{ item.top_up_amount if item and item.top_up_amount else '' }}"></div>
   <div class="col-md-4"><label class="form-label">Assured Value This Year</label>
-    <input type="number" step="0.01" name="assured_value_current_year" class="form-control text-end"
-           value="{{ item.assured_value_current_year if item and item.assured_value_current_year else '' }}"></div>
+    <input type="text" inputmode="decimal" id="vehAssuredValue" name="assured_value_current_year"
+           class="form-control text-end"
+           value="{{ item.assured_value_current_year if item and item.assured_value_current_year else (computed_assured_value if computed_assured_value else '') }}">
+    <div class="form-text">Auto-computed: 10% depreciation per year from Delivery Date (compounding), based on Acquisition Cost. Editable if you need to override with an appraised value.</div></div>
   <div class="col-md-4"><label class="form-label">Delivery Date</label>
     <input type="date" name="delivery_date" class="form-control"
            value="{{ item.delivery_date if item and item.delivery_date else '' }}"></div>
@@ -332,6 +336,11 @@
 {% endblock %}
 {% block scripts %}
 <script>
+if (window.formatMoneyInput) {
+  formatMoneyInput("#vehAcquisitionCost");
+  formatMoneyInput("#vehTopUpAmount");
+  formatMoneyInput("#vehAssuredValue");
+}
 if (window.jQuery) {
   jQuery(function () {
     initAjaxSelect("#vehBranchSelect", "{{ url_for('api_search.search_branches') }}",
