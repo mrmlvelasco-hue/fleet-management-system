@@ -1,0 +1,49 @@
+{% extends "layout/base.html" %}
+{% block title %}MO Transaction Types{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">MO Transaction Types</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">MO Transaction Types</h1>
+  {% if current_user.has_permission('motransactiontype.create') %}
+  <a class="btn btn-primary" href="{{ url_for('maintenance_config.mo_transaction_type_new') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Transaction Type</a>
+  {% endif %}
+</div>
+<p class="text-muted">Configurable Transaction Types for the Maintenance Order module's Category
+  system — each belongs to exactly one Category (Maintenance or Operational). Deactivating one
+  removes it from the New Maintenance Order form without touching any existing orders that
+  already used it.</p>
+
+<div class="card"><table class="table table-striped mb-0" id="motTable">
+  <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Group</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+  {% for t in items %}
+    <tr>
+      <td><span class="badge text-bg-secondary">{{ t.code }}</span></td>
+      <td>{{ t.name }}</td>
+      <td><span class="badge text-bg-{{ 'info' if t.order_category=='MAINTENANCE' else 'warning' }}">{{ t.order_category|title }}</span></td>
+      <td>{{ t.group|title if t.group else '—' }}</td>
+      <td>{% if t.is_active %}<span class="badge text-bg-success">Yes</span>{% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
+      <td class="text-end">
+        {% if t.is_active and current_user.has_permission('motransactiontype.delete') %}
+        <form method="post" class="d-inline fms-confirm" data-confirm="Deactivate this Transaction Type?"
+              action="{{ url_for('maintenance_config.mo_transaction_type_deactivate', tt_id=t.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i> Deactivate</button>
+        </form>
+        {% elif not t.is_active and current_user.has_permission('motransactiontype.create') %}
+        <form method="post" class="d-inline"
+              action="{{ url_for('maintenance_config.mo_transaction_type_reactivate', tt_id=t.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-success"><i class="bi bi-arrow-counterclockwise"></i> Reactivate</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endblock %}
+{% block scripts %}
+<script>$(function(){ $('#motTable').DataTable(); });</script>
+{% endblock %}

@@ -53,6 +53,12 @@ class TransactionTypeService:
             tt.is_active = False
             db.session.commit()
 
+    def reactivate(self, tt_id):
+        tt = self.get_by_id(tt_id)
+        if tt:
+            tt.is_active = True
+            db.session.commit()
+
 
 class MaintenanceOrderService(BaseTransactionService):
     model = MaintenanceOrder

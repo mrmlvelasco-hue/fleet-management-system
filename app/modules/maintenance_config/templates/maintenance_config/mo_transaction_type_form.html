@@ -1,0 +1,40 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.mo_transaction_type_list') }}">MO Transaction Types</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ title }}</h1>
+<div class="card"><div class="card-body">
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="col-md-6"><label class="form-label">Code</label>
+    <input type="text" name="code" class="form-control" required
+           placeholder="e.g. DEP-ASSIGNMENT"></div>
+  <div class="col-md-6"><label class="form-label">Name</label>
+    <input type="text" name="name" class="form-control" required
+           placeholder="e.g. Assignment"></div>
+  <div class="col-md-6"><label class="form-label">Category</label>
+    <select name="order_category" class="form-select" required>
+      <option value="MAINTENANCE">Maintenance</option>
+      <option value="OPERATIONAL">Operational</option>
+    </select></div>
+  <div class="col-md-6"><label class="form-label">Group <span class="text-muted small">(optional — organizes the dropdown)</span></label>
+    <select name="group" class="form-select">
+      <option value="">— None —</option>
+      <option value="MAINTENANCE">Maintenance</option>
+      <option value="DEPLOYMENT">Deployment</option>
+      <option value="ADMINISTRATIVE">Administrative</option>
+      <option value="DISPOSAL">Disposal</option>
+      <option value="ACCESSORIES">Accessories</option>
+    </select></div>
+  <div class="col-md-4"><label class="form-label">Sort Order</label>
+    <input type="number" name="sort_order" class="form-control" value="0"></div>
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('maintenance_config.mo_transaction_type_list') }}">Cancel</a>
+  </div>
+</form>
+</div></div>
+{% endblock %}

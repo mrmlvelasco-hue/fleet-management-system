@@ -9,6 +9,8 @@ from app.core.security.registry import registry
 from app.modules.maintenance_config.service import (
     PMScheduleService, PMScopeTemplateService, PMSProfileService,
     InvalidScheduleError, InvalidScopeError)
+from app.modules.transactions.maintenance_order.service import (
+    TransactionTypeService)
 from app.modules.maintenance_config.import_service import (
     PMScheduleImportService, PMScopeImportService)
 from app.modules.master_data.reference.service import (
@@ -27,6 +29,9 @@ for _code, _desc in [
     ("pmscopetemplate.update", "Update PM scope templates"),
     ("pmscopetemplate.delete", "Deactivate PM scope templates"),
     ("pmprofile.view", "View PMS Profiles"),
+    ("motransactiontype.view", "View MO Transaction Types"),
+    ("motransactiontype.create", "Create MO Transaction Types"),
+    ("motransactiontype.delete", "Deactivate MO Transaction Types"),
 ]:
     _m, _a = _code.split(".")
     registry.register(_code, _m, _a, _desc)
@@ -298,3 +303,48 @@ def pmscope_import():
             flash("Please choose a CSV file.", "danger")
     return render_template("maintenance_config/scope_import.html",
                            result=result)
+
+
+# ── MO Transaction Types ─────────────────────────────────────────────────
+
+@bp.route("/mo-transaction-types")
+@login_required
+@require_permission("motransactiontype.view")
+def mo_transaction_type_list():
+    items = TransactionTypeService().list(include_inactive=True)
+    return render_template("maintenance_config/mo_transaction_type_list.html",
+                           items=items)
+
+
+@bp.route("/mo-transaction-types/new", methods=["GET", "POST"])
+@login_required
+@require_permission("motransactiontype.create")
+def mo_transaction_type_new():
+    if request.method == "POST":
+        f = request.form
+        TransactionTypeService().create(
+            code=f["code"], name=f["name"], order_category=f["order_category"],
+            group=f.get("group") or None,
+            sort_order=int(f.get("sort_order") or 0))
+        flash("Transaction Type created.", "success")
+        return redirect(url_for("maintenance_config.mo_transaction_type_list"))
+    return render_template("maintenance_config/mo_transaction_type_form.html",
+                           title="New MO Transaction Type")
+
+
+@bp.route("/mo-transaction-types/<int:tt_id>/deactivate", methods=["POST"])
+@login_required
+@require_permission("motransactiontype.delete")
+def mo_transaction_type_deactivate(tt_id):
+    TransactionTypeService().deactivate(tt_id)
+    flash("Transaction Type deactivated.", "info")
+    return redirect(url_for("maintenance_config.mo_transaction_type_list"))
+
+
+@bp.route("/mo-transaction-types/<int:tt_id>/reactivate", methods=["POST"])
+@login_required
+@require_permission("motransactiontype.create")
+def mo_transaction_type_reactivate(tt_id):
+    TransactionTypeService().reactivate(tt_id)
+    flash("Transaction Type reactivated.", "success")
+    return redirect(url_for("maintenance_config.mo_transaction_type_list"))

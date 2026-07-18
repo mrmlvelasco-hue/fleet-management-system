@@ -164,6 +164,10 @@
         <li><a href="{{ url_for('registration_config.registrationtemplate_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('registration_config.') }}">
           <i class="fms-nav-link__icon bi bi-calendar2-check"></i><span class="sidebar-label">Registration Templates</span></a></li>
         {% endif %}
+        {% if current_user.has_permission('motransactiontype.view') %}
+        <li><a href="{{ url_for('maintenance_config.mo_transaction_type_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('maintenance_config.mo_transaction_type_') }}">
+          <i class="fms-nav-link__icon bi bi-diagram-3"></i><span class="sidebar-label">MO Transaction Types</span></a></li>
+        {% endif %}
       </ul>
     </div>
   </div>
