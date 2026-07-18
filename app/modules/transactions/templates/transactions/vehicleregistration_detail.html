@@ -101,8 +101,14 @@
 {% set approve_url = url_for('transactions.vehicleregistration_approve', rid=item.id) %}
 {% set reject_url = url_for('transactions.vehicleregistration_reject', rid=item.id) %}
 {% set return_url = url_for('transactions.vehicleregistration_return', rid=item.id) %}
-{% include "layout/_approval_line.html" %}
-{% include "layout/_comment_thread.html" %}
+<div class="row g-3 mt-1">
+  <div class="col-lg-5">
+    {% include "layout/_approval_line.html" %}
+  </div>
+  <div class="col-lg-7">
+    {% include "layout/_comment_thread.html" %}
+  </div>
+</div>
 {% include "layout/_requestor_info.html" %}
 {% include "master_data/_attachment_panel.html" %}
 {% endblock %}
