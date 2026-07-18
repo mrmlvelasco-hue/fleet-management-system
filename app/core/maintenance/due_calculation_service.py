@@ -161,6 +161,16 @@ class PMDueCalculationService:
             vehicle = db.session.get(Vehicle, vehicle_id)
             fallback_km = (vehicle.current_odometer or 0) if vehicle else 0
             return fallback_km, order.completed_date
+        # No completed Maintenance Order exists in this system at all —
+        # for a freshly, manually-registered LEGACY vehicle (one with
+        # real prior service history that just predates being added
+        # here), assuming "0 km, never serviced" is wrong and causes it
+        # to show OVERDUE the moment it's registered. Fall back to the
+        # captured legacy baseline if one was provided at registration.
+        vehicle = db.session.get(Vehicle, vehicle_id)
+        if vehicle and (vehicle.last_pm_odometer is not None
+                       or vehicle.last_pm_date is not None):
+            return vehicle.last_pm_odometer or 0, vehicle.last_pm_date
         return 0, None
 
     def get_due_status(self, vehicle: Vehicle, maintenance_type_id=None,

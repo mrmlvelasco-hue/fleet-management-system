@@ -106,6 +106,18 @@ class Vehicle(db.Model, BaseModel):
     status = db.Column(db.String(20), default="ACTIVE", nullable=False)
     notes = db.Column(db.Text)
 
+    # Legacy Vehicle Baseline — captured at manual registration for a
+    # vehicle with real prior service history that predates being added
+    # to this system. Without this, a legacy vehicle with a genuinely
+    # high current_odometer but zero completed Maintenance Orders here
+    # gets treated as "never serviced, ever" by due-calculation and
+    # shows OVERDUE immediately upon registration — this baseline gives
+    # due-calculation a real starting point instead. Only used as a
+    # fallback: once a real Maintenance Order is completed in this
+    # system, that record takes over as the source of truth.
+    last_pm_odometer = db.Column(db.Integer, nullable=True)
+    last_pm_date = db.Column(db.Date, nullable=True)
+
     vehicle_type = db.relationship("VehicleType")
     branch = db.relationship("Branch")
     department = db.relationship("Department")
