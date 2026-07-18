@@ -142,6 +142,22 @@
       {% endfor %}
     </select>
     <div class="form-text">Optional — explicitly pins this vehicle to one PM Template, overriding automatic Make/Model matching. If several packages exist for the same vehicle (e.g. from an imported profile), each is now labeled with its interval so they're no longer indistinguishable.</div></div>
+
+  <div class="col-12">
+    <div class="alert alert-secondary py-2 px-3 mb-0">
+      <strong><i class="bi bi-clock-history me-1"></i>Legacy Vehicle Baseline</strong>
+      <span class="text-muted small">— fill this in only if this vehicle already has real service
+      history from before being added to this system (e.g. a used vehicle, or migrating from another
+      fleet system). Without it, a vehicle with a high odometer but no Maintenance Order on record
+      here will show up as immediately overdue on the Dashboard.</span>
+    </div>
+  </div>
+  <div class="col-md-4"><label class="form-label">Last PM Service Odometer</label>
+    <input type="number" name="last_pm_odometer" class="form-control"
+           value="{{ item.last_pm_odometer if item and item.last_pm_odometer is not none else '' }}"></div>
+  <div class="col-md-4"><label class="form-label">Last PM Service Date</label>
+    <input type="date" name="last_pm_date" class="form-control"
+           value="{{ item.last_pm_date if item and item.last_pm_date else '' }}"></div>
   <div class="col-md-8"><label class="form-label">Assigned Driver</label>
     <select name="assigned_driver_id" id="vehDriverSelect" class="form-select">
       {% if item and item.assigned_driver %}

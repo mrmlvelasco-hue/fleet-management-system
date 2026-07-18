@@ -851,6 +851,9 @@ def _vehicle_fields(include_conduction=True):
         acquisition_cost=f.get("acquisition_cost") or None,
         current_odometer=int(f.get("current_odometer") or 0),
         pm_schedule_id=int(f["pm_schedule_id"]) if f.get("pm_schedule_id") else None,
+        last_pm_odometer=int(f["last_pm_odometer"]) if f.get("last_pm_odometer") else None,
+        last_pm_date=parse_form_date(f.get("last_pm_date"), "Last PM Service Date")
+                    if f.get("last_pm_date") else None,
         assigned_driver_id=int(f["assigned_driver_id"]) if f.get("assigned_driver_id") else None,
         notes=f.get("notes", ""),
         # ── Vehicle Master enhancement ──
