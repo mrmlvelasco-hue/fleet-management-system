@@ -17,6 +17,7 @@ from datetime import date
 
 from app.extensions import db
 from app.modules.maintenance_config.models import PMSchedule
+from app.modules.master_data.reference.models import MaintenanceType
 from app.modules.master_data.vehicle.models import Vehicle
 from app.modules.transactions.maintenance_order.models import MaintenanceOrder
 from app.modules.system_admin.services.system_parameter_service import (
@@ -119,6 +120,33 @@ class PMDueCalculationService:
                            status="COMPLETED")
                  .order_by(MaintenanceOrder.completed_date.desc())
                  .first())
+        if order is None:
+            # Strict ID match found nothing — this is exactly the
+            # reported bug: a Brand+Model-specific schedule can resolve
+            # to a DIFFERENT MaintenanceType row than whichever one the
+            # actually-completed order used, even when both display the
+            # identical name (e.g. one from a VEMS import, one created
+            # separately by hand) — same real-world maintenance concept,
+            # different database row. Fall back to matching by name
+            # (case-insensitive) so a genuine completion isn't invisible
+            # to due-calculation just because of which specific row got
+            # selected at MO-creation time. Deliberately NOT falling back
+            # to matching by category alone — that's broad enough to
+            # wrongly conflate genuinely different maintenance concepts
+            # (e.g. "Oil Change PM" and "Tire Rotation PM" both being
+            # category PM), which name-matching avoids.
+            target_type = db.session.get(MaintenanceType, maintenance_type_id)
+            if target_type is not None:
+                same_name_ids = [
+                    mt.id for mt in MaintenanceType.query.all()
+                    if mt.name.strip().lower() == target_type.name.strip().lower()]
+                if len(same_name_ids) > 1:
+                    order = (MaintenanceOrder.query
+                            .filter(MaintenanceOrder.vehicle_id == vehicle_id,
+                                   MaintenanceOrder.maintenance_type_id.in_(same_name_ids),
+                                   MaintenanceOrder.status == "COMPLETED")
+                            .order_by(MaintenanceOrder.completed_date.desc())
+                            .first())
         if order:
             if order.odometer_at_service is not None:
                 return order.odometer_at_service, order.completed_date
@@ -149,8 +177,34 @@ class PMDueCalculationService:
         last_km, last_date = self._last_service(vehicle.id,
                                                 schedule.maintenance_type_id)
 
-        due_soon_km = schedule.notify_before_km or self.default_due_soon_km
-        due_soon_days = schedule.notify_before_days or self.default_due_soon_days
+        # An explicit notify_before_km/days on the schedule is a
+        # deliberate admin choice and is used as-is, uncapped. But the
+        # SYSTEM DEFAULT (30 days / 500 km) was flagging DUE_SOON on the
+        # very same day a short-interval service was completed — e.g. a
+        # 30-day interval schedule with no explicit notify_before_days
+        # got the full 30-day default window, meaning the vehicle was
+        # "due soon" for its entire service life between completions,
+        # not just when actually approaching due. Capping the default to
+        # roughly a third of the schedule's own interval keeps the
+        # warning meaningful regardless of how short the interval is,
+        # without shrinking an already-reasonable default for genuinely
+        # long intervals (a year-long schedule still gets the full
+        # 30-day default, since that's well under a third of 365 days).
+        if schedule.notify_before_days:
+            due_soon_days = schedule.notify_before_days
+        elif schedule.interval_days:
+            due_soon_days = min(self.default_due_soon_days,
+                               max(1, schedule.interval_days // 3))
+        else:
+            due_soon_days = self.default_due_soon_days
+
+        if schedule.notify_before_km:
+            due_soon_km = schedule.notify_before_km
+        elif schedule.interval_km:
+            due_soon_km = min(self.default_due_soon_km,
+                             max(1, schedule.interval_km // 3))
+        else:
+            due_soon_km = self.default_due_soon_km
 
         next_due_km = None
         next_due_date = None
