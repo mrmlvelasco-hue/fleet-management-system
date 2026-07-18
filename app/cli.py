@@ -36,6 +36,7 @@ def seed_all(admin_password):
     _seed_system_parameters()
     _seed_dashboard_widgets()
     _seed_lookups()
+    _seed_transaction_types()
     db.session.commit()
     click.echo("Default system parameters, dashboard widgets and lookups seeded.")
 
@@ -107,6 +108,70 @@ def _seed_lookups() -> None:
     import app.modules.master_data.routes  # noqa: F401 (triggers registration)
     from app.modules.system_admin.services.lookup_service import sync_lookups
     sync_lookups()
+
+
+def _seed_transaction_types() -> None:
+    """Default Transaction Types for the MO Category/Transaction Type
+    enhancement — admin-configurable from here on (System Admin can add
+    more later), but these are the ones named explicitly in the spec.
+    'group' only organizes the New MO form's dropdown into optgroups; the
+    real Category (used for validation) is order_category."""
+    from app.modules.transactions.maintenance_order.models import TransactionType
+
+    defaults = [
+        # (code, name, order_category, group)
+        ("MAINT-SERVICING", "Servicing", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-REPAIR", "Repair", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-TROUBLESHOOT", "Troubleshooting", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-TOWING", "Road Call / Towing", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-OVERHAUL", "Overhauling", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-INSPECTION", "Inspection", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-EMISSION", "Emission Test", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-REPL-UNIT", "Replacement Unit", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-REPAINT", "Repainting", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-REHAB", "Rehabilitation", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-REWIND", "Rewinding", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-FABRICATION", "Fabrication", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-INSTALLATION", "Installation", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-UPGRADE", "Upgrading", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-WASHING", "Washing / Detailing", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-ADJUSTMENT", "Adjustment / Alignment", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-ACCIDENT-MINOR", "Accident Minor", "MAINTENANCE", "MAINTENANCE"),
+        ("MAINT-ACCIDENT-MAJOR", "Accident Major", "MAINTENANCE", "MAINTENANCE"),
+
+        ("DEP-ASSIGNMENT", "Assignment", "OPERATIONAL", "DEPLOYMENT"),
+        ("DEP-REASSIGNMENT", "Reassignment", "OPERATIONAL", "DEPLOYMENT"),
+        ("DEP-RELOCATION", "Relocation", "OPERATIONAL", "DEPLOYMENT"),
+        ("DEP-TRANSFER", "Transfer / Relocation", "OPERATIONAL", "DEPLOYMENT"),
+
+        ("ADM-REG-AMEND", "Registration Amendments", "OPERATIONAL", "ADMINISTRATIVE"),
+        ("ADM-CHG-OWNER", "Change of Ownership", "OPERATIONAL", "ADMINISTRATIVE"),
+        ("ADM-CHG-COLOR", "Change Color", "OPERATIONAL", "ADMINISTRATIVE"),
+        ("ADM-CHG-ENGINE", "Change Engine", "OPERATIONAL", "ADMINISTRATIVE"),
+        ("ADM-CHG-CHASSIS", "Change Chassis", "OPERATIONAL", "ADMINISTRATIVE"),
+        ("ADM-CHG-BODY", "Change Body Type", "OPERATIONAL", "ADMINISTRATIVE"),
+        ("ADM-MORTGAGE", "Mortgage / Annotation", "OPERATIONAL", "ADMINISTRATIVE"),
+        ("ADM-CANCEL-MORTGAGE", "Cancellation of Mortgage", "OPERATIONAL", "ADMINISTRATIVE"),
+        ("ADM-TRAFFIC-VIOLATION", "Traffic Violation / Apprehension", "OPERATIONAL", "ADMINISTRATIVE"),
+        ("ADM-TRAINING", "Training / Seminar", "OPERATIONAL", "ADMINISTRATIVE"),
+        ("ADM-MIGRATE-EXPENSE", "Migration of Repair Expenses", "OPERATIONAL", "ADMINISTRATIVE"),
+
+        ("DIS-SCRAPPAGE", "Scrappage", "OPERATIONAL", "DISPOSAL"),
+        ("DIS-CARNAPPED", "Carnapped", "OPERATIONAL", "DISPOSAL"),
+        ("DIS-TOTAL-LOSS", "Total Loss / Wreck", "OPERATIONAL", "DISPOSAL"),
+        ("DIS-UNECONOMICAL", "Uneconomical to Repair", "OPERATIONAL", "DISPOSAL"),
+
+        ("ACC-APPLICATION", "Application", "OPERATIONAL", "ACCESSORIES"),
+        ("ACC-INSTALLATION", "Installation", "OPERATIONAL", "ACCESSORIES"),
+        ("ACC-FABRICATION", "Fabrication", "OPERATIONAL", "ACCESSORIES"),
+        ("ACC-REPLACEMENT", "Replacement", "OPERATIONAL", "ACCESSORIES"),
+    ]
+    for i, (code, name, order_category, group) in enumerate(defaults):
+        if not TransactionType.query.filter_by(code=code).first():
+            db.session.add(TransactionType(
+                code=code, name=name, order_category=order_category,
+                group=group, sort_order=i))
+    db.session.commit()
 
 
 pm_cli = AppGroup("pm", help="Preventive Maintenance testing/ops commands.")
