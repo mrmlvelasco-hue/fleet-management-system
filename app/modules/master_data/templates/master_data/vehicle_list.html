@@ -28,7 +28,7 @@
       <td>{{ v.vehicle_type.name if v.vehicle_type else '—' }}</td>
       <td>{{ v.branch.name if v.branch else '—' }}</td>
       <td><span class="badge text-bg-{{ 'success' if v.status=='ACTIVE' else 'warning' if v.status=='IN_REPAIR' else 'danger' }}">{{ v.status }}</span></td>
-      <td>{{ "{:,.0f}".format(v.current_odometer) if v.current_odometer else '—' }} km</td>
+      <td>{{ "{:,.0f}".format(v.current_odometer) if v.current_odometer is not none else '—' }} km</td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info"
            href="{{ url_for('master_data.vehicle_detail', vid=v.id) }}">

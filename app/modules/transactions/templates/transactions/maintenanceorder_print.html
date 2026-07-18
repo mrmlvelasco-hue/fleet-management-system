@@ -73,7 +73,7 @@
   <table class="info">
     <tr><td class="label">Plate Number</td><td>{{ item.vehicle.plate_number or item.vehicle.conduction_number }}</td>
         <td class="label">Brand / Model</td><td>{{ item.vehicle.brand }} {{ item.vehicle.model }}</td></tr>
-    <tr><td class="label">Odometer</td><td>{{ item.odometer_at_service or '—' }}</td>
+    <tr><td class="label">Odometer</td><td>{{ "{:,}".format(item.vehicle.current_odometer) if item.vehicle.current_odometer else (item.odometer_at_service or '—') }}</td>
         <td class="label">Branch / Sales Office</td><td>{{ item.vehicle.branch.name if item.vehicle.branch else '—' }}</td></tr>
     <tr><td class="label">Current Assignee</td>
         <td>{{ item.vehicle.assigned_driver.full_name if item.vehicle.assigned_driver else '—' }}</td>
