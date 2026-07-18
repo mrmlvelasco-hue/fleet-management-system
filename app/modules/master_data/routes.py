@@ -136,6 +136,25 @@ for _code, _desc, _order in [
 ]:
     lookup_registry.register("CHARGE_TO", _code, _desc, _order)
 
+for _code, _desc, _order in [
+    ("EMPLOYEE", "Employee", 1), ("THIRD_PARTY_DELIVERY", "Third Party Delivery", 2),
+    ("CONSULTANT", "Consultant", 3), ("DRIVER", "Driver", 4),
+]:
+    lookup_registry.register("ASSIGNEE_TYPE", _code, _desc, _order)
+
+for _code, _desc, _order in [
+    ("ACTIVE", "Active", 1), ("ON_LEAVE", "On Leave", 2),
+    ("RESIGNED", "Resigned", 3), ("TERMINATED", "Terminated", 4),
+    ("RETIRED", "Retired", 5),
+]:
+    lookup_registry.register("EMPLOYMENT_STATUS", _code, _desc, _order)
+
+for _code, _desc, _order in [
+    ("REGULAR", "Regular", 1), ("PROBATIONARY", "Probationary", 2),
+    ("CONTRACTUAL", "Contractual", 3), ("PROJECT_BASED", "Project-Based", 4),
+]:
+    lookup_registry.register("EMPLOYMENT_TYPE", _code, _desc, _order)
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 

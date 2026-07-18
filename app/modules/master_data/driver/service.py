@@ -2,18 +2,53 @@
 from datetime import date, timedelta
 
 from app.extensions import db
-from app.modules.master_data.driver.models import Driver
+from app.modules.master_data.driver.models import Driver, EmergencyContact
 
 
 class DuplicateDriverError(Exception):
     pass
 
 
+class InvalidAssigneeError(Exception):
+    pass
+
+
+class EmergencyContactService:
+    def create(self, *, person_record_id, contact_name, relationship_type=None,
+              contact_number=None):
+        contact = EmergencyContact(
+            person_record_id=person_record_id, contact_name=contact_name,
+            relationship_type=relationship_type, contact_number=contact_number)
+        db.session.add(contact)
+        db.session.commit()
+        return contact
+
+    def list_for_person(self, person_record_id) -> list:
+        return (EmergencyContact.query
+               .filter_by(person_record_id=person_record_id, is_active=True)
+               .order_by(EmergencyContact.id).all())
+
+    def delete(self, contact_id):
+        contact = db.session.get(EmergencyContact, contact_id)
+        if contact:
+            contact.is_active = False
+            db.session.commit()
+
+
 class DriverService:
     def create(self, employee_number, first_name, last_name,
-               license_number, license_expiry, license_type,
-               branch_id, **kwargs):
-        if Driver.query.filter_by(
+               branch_id, assignee_type="DRIVER", license_number=None,
+               license_expiry=None, license_type=None, **kwargs):
+        # DRIVER-type assignees keep the exact original requirement —
+        # license details are mandatory. Every other assignee type
+        # (Employee, Consultant, Third Party Delivery) can be assigned a
+        # vehicle without personally holding a license on file.
+        if assignee_type == "DRIVER" and not (
+                license_number and license_expiry and license_type):
+            raise InvalidAssigneeError(
+                "License Number, Expiry, and Type are required for a "
+                "Driver-type assignee.")
+        if license_number and Driver.query.filter_by(
                 license_number=license_number).first():
             raise DuplicateDriverError(
                 f"License number '{license_number}' already exists.")
@@ -21,14 +56,26 @@ class DriverService:
                 employee_number=employee_number).first():
             raise DuplicateDriverError(
                 f"Employee number '{employee_number}' already exists.")
+
+        person_id = self._generate_person_id()
         obj = Driver(
-            employee_number=employee_number, first_name=first_name,
-            last_name=last_name, license_number=license_number,
+            person_id=person_id, employee_number=employee_number,
+            first_name=first_name, last_name=last_name,
+            assignee_type=assignee_type, license_number=license_number,
             license_expiry=license_expiry, license_type=license_type,
             branch_id=branch_id, **kwargs)
         db.session.add(obj)
         db.session.commit()
         return obj
+
+    def _generate_person_id(self) -> str:
+        """Simple sequential Person ID — PID-<year>-<zero-padded count>.
+        Not a full document-numbering-engine document (this is master
+        data, not a transaction), but still unique and traceable."""
+        year = date.today().year
+        count = Driver.query.filter(
+            Driver.person_id.like(f"PID-{year}-%")).count()
+        return f"PID-{year}-{count + 1:06d}"
 
     def update(self, record_id, **kwargs):
         obj = db.session.get(Driver, record_id)
