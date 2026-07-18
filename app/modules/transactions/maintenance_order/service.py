@@ -11,7 +11,7 @@ from app.extensions import db
 from app.core.numbering.numbering_service import AutoNumberingService
 from app.modules.transactions.base_service import BaseTransactionService
 from app.modules.transactions.maintenance_order.models import (
-    MaintenanceOrder, MaintenanceChecklistItem)
+    MaintenanceOrder, MaintenanceChecklistItem, TransactionType)
 from app.modules.master_data.reference.models import MaintenanceType
 from app.modules.maintenance_config.models import PMScopeTemplate
 
@@ -24,16 +24,70 @@ class InvalidOrderStateError(Exception):
     pass
 
 
+class InvalidOrderCategoryError(Exception):
+    pass
+
+
+class TransactionTypeService:
+    def create(self, *, code, name, order_category, group=None, sort_order=0):
+        tt = TransactionType(code=code, name=name, order_category=order_category,
+                             group=group, sort_order=sort_order)
+        db.session.add(tt)
+        db.session.commit()
+        return tt
+
+    def get_by_id(self, tt_id):
+        return db.session.get(TransactionType, tt_id)
+
+    def list(self, order_category=None, include_inactive=False):
+        q = TransactionType.query
+        if not include_inactive:
+            q = q.filter_by(is_active=True)
+        if order_category:
+            q = q.filter_by(order_category=order_category)
+        return q.order_by(TransactionType.group, TransactionType.sort_order).all()
+
+    def deactivate(self, tt_id):
+        tt = self.get_by_id(tt_id)
+        if tt:
+            tt.is_active = False
+            db.session.commit()
+
+
 class MaintenanceOrderService(BaseTransactionService):
     model = MaintenanceOrder
     document_type_code = "MO"
     reference_table = "maintenance_orders"
 
-    def create(self, *, vehicle_id, maintenance_type_id, scheduled_date,
-               user, scope_template_id=None, pm_schedule_id=None,
-               description=None, odometer_at_service=None,
+    def create(self, *, vehicle_id, scheduled_date, user,
+               order_category="MAINTENANCE", maintenance_type_id=None,
+               transaction_type_id=None, scope_template_id=None,
+               pm_schedule_id=None, description=None, odometer_at_service=None,
                assigned_mechanic=None, vendor_id=None, estimated_cost=None):
-        mtype = db.session.get(MaintenanceType, maintenance_type_id)
+        # Per the spec: "Not every Maintenance Order represents vehicle
+        # maintenance. Administrative, Deployment, Disposal, and
+        # Accessories are valid Maintenance Orders" — Operational orders
+        # are normal work requests and must NOT require a Maintenance
+        # Type or PM Scope Template at all. MAINTENANCE-category orders
+        # keep the exact original requirement (nothing changes for
+        # existing PM/CM callers).
+        if order_category == "OPERATIONAL":
+            maintenance_type_id = None
+            scope_template_id = None
+            pm_schedule_id = None
+        elif not maintenance_type_id:
+            raise InvalidOrderCategoryError(
+                "Maintenance Type is required for a Maintenance-category order.")
+
+        if transaction_type_id:
+            tt = db.session.get(TransactionType, transaction_type_id)
+            if tt and tt.order_category != order_category:
+                raise InvalidOrderCategoryError(
+                    f"Transaction Type '{tt.name}' belongs to the "
+                    f"{tt.order_category} category, not {order_category}.")
+
+        mtype = (db.session.get(MaintenanceType, maintenance_type_id)
+                if maintenance_type_id else None)
 
         numbering = AutoNumberingService()
         try:
@@ -43,8 +97,10 @@ class MaintenanceOrderService(BaseTransactionService):
 
         order = MaintenanceOrder(
             document_number=doc_number, vehicle_id=vehicle_id,
+            order_category=order_category, transaction_type_id=transaction_type_id,
             maintenance_type_id=maintenance_type_id,
-            category=mtype.category, pm_schedule_id=pm_schedule_id,
+            category=mtype.category if mtype else None,
+            pm_schedule_id=pm_schedule_id,
             scope_template_id=scope_template_id, description=description,
             odometer_at_service=odometer_at_service,
             scheduled_date=scheduled_date,

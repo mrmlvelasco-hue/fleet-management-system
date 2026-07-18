@@ -1,7 +1,28 @@
 """Maintenance Order transaction model (Preventive + Corrective) with an
-optional generated checklist copied from a PM Scope Template."""
+optional generated checklist copied from a PM Scope Template.
+"""
 from app.extensions import db
 from app.core.models.base import BaseModel
+
+
+class TransactionType(db.Model, BaseModel):
+    """Per the MO Module Enhancement spec: 'Every Transaction Type
+    belongs to exactly one Category.' Admin-configurable master data —
+    not hardcoded, so new operational transaction types can be added
+    without a code change. `group` is purely for organizing the New MO
+    form's dropdown into optgroups (Deployment/Administrative/Disposal/
+    Accessories/Maintenance) — it isn't a third hierarchy level, just a
+    display aid, since a flat list of 40+ types in one dropdown would be
+    unusable."""
+    __tablename__ = "mo_transaction_types"
+
+    code = db.Column(db.String(30), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    # MAINTENANCE | OPERATIONAL
+    order_category = db.Column(db.String(15), nullable=False)
+    # DEPLOYMENT | ADMINISTRATIVE | DISPOSAL | ACCESSORIES | MAINTENANCE
+    group = db.Column(db.String(20), nullable=True)
+    sort_order = db.Column(db.Integer, default=0, nullable=False)
 
 
 class MaintenanceOrder(db.Model, BaseModel):
@@ -11,11 +32,23 @@ class MaintenanceOrder(db.Model, BaseModel):
                                 index=True)
     vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"),
                            nullable=False)
+    # Operational-category orders (Deployment, Administrative, Disposal,
+    # Accessories) are valid work requests that aren't vehicle
+    # maintenance at all — so unlike before, this is now nullable.
     maintenance_type_id = db.Column(db.Integer,
                                     db.ForeignKey("maintenance_types.id"),
-                                    nullable=False)
-    # PREVENTIVE | CORRECTIVE — copied from MaintenanceType at creation time
-    category = db.Column(db.String(12), nullable=False)
+                                    nullable=True)
+    # PREVENTIVE | CORRECTIVE — copied from MaintenanceType at creation
+    # time. Nullable for the same reason as maintenance_type_id above.
+    category = db.Column(db.String(12), nullable=True)
+    # MAINTENANCE | OPERATIONAL — the top-level split from the MO Module
+    # Enhancement spec. Defaults to MAINTENANCE so every existing order
+    # (and every order created the same way as before) is unaffected.
+    order_category = db.Column(db.String(15), nullable=False,
+                               default="MAINTENANCE")
+    transaction_type_id = db.Column(db.Integer,
+                                    db.ForeignKey("mo_transaction_types.id"),
+                                    nullable=True)
     pm_schedule_id = db.Column(db.Integer, db.ForeignKey("pm_schedules.id"),
                                nullable=True)
     scope_template_id = db.Column(db.Integer,
@@ -42,6 +75,7 @@ class MaintenanceOrder(db.Model, BaseModel):
 
     vehicle = db.relationship("Vehicle")
     maintenance_type = db.relationship("MaintenanceType")
+    transaction_type = db.relationship("TransactionType")
     pm_schedule = db.relationship("PMSchedule")
     scope_template = db.relationship("PMScopeTemplate")
     vendor = db.relationship("Vendor")
