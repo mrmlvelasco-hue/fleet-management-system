@@ -98,29 +98,25 @@
   </table>
   {% endif %}
 
-  {% set all_lines = item.invoices|selectattr('is_active')|map(attribute='line_items')|sum(start=[]) %}
-  {% if all_lines %}
-  <h6 class="section">Parts</h6>
+  {% set active_invoices = item.invoices|selectattr('is_active')|list %}
+  {% if active_invoices %}
+  {% for inv in active_invoices|sort(attribute='id') %}
+  <h6 class="section">Invoice: {{ inv.invoice_number }} — {{ inv.vendor.name }}</h6>
   <table class="grid">
-    <tr><th>Part</th><th>Spec</th><th class="num">Qty</th><th class="num">Unit Cost</th><th class="num">Total</th></tr>
-    {% for l in all_lines if l.expense_category in ['PARTS', 'TIRES', 'BATTERY', 'OIL', 'LUBRICANTS'] %}
+    <tr><th>Part / Description</th><th>Spec</th><th class="num">Qty</th>
+      <th class="num">Unit Cost</th><th>Category</th><th class="num">Total</th></tr>
+    {% for l in inv.line_items|sort(attribute='sort_order') %}
     <tr><td>{{ l.part_description }}</td><td>{{ l.specification or '—' }}</td>
         <td class="num">{{ l.quantity }}</td><td class="num">{{ "{:,.2f}".format(l.unit_cost) }}</td>
+        <td>{{ l.expense_category }}</td>
         <td class="num">{{ "{:,.2f}".format(l.total_amount) }}</td></tr>
     {% endfor %}
+    <tr><td colspan="5" style="text-align:right"><strong>Invoice Total</strong></td>
+        <td class="num"><strong>{{ "{:,.2f}".format(inv.total_invoice_amount) }}</strong></td></tr>
   </table>
+  {% endfor %}
 
-  <h6 class="section">Labor</h6>
-  <table class="grid">
-    <tr><th>Description</th><th class="num">Qty</th><th class="num">Unit Cost</th><th class="num">Total</th></tr>
-    {% for l in all_lines if l.expense_category in ['LABOR', 'EXTERNAL_SERVICES', 'TOWING'] %}
-    <tr><td>{{ l.part_description }}</td>
-        <td class="num">{{ l.quantity }}</td><td class="num">{{ "{:,.2f}".format(l.unit_cost) }}</td>
-        <td class="num">{{ "{:,.2f}".format(l.total_amount) }}</td></tr>
-    {% endfor %}
-  </table>
-
-  <h6 class="section">Invoice Summary</h6>
+  <h6 class="section">Invoice Summary (All Invoices Combined)</h6>
   <table class="info">
     <tr><td class="label">Total Parts Cost</td><td class="num">{{ "{:,.2f}".format(item.invoices|sum(attribute='total_parts_cost')) }}</td>
         <td class="label">Total Labor Cost</td><td class="num">{{ "{:,.2f}".format(item.invoices|sum(attribute='total_labor_cost')) }}</td></tr>
