@@ -201,6 +201,29 @@ def get_registration_template_details_for_vehicle():
     })
 
 
+@bp.route("/pm-schedules-for-vehicle-criteria")
+@login_required
+def search_pm_schedules_for_vehicle_criteria():
+    """Filters the Vehicle form's 'Assigned PM Template' dropdown by
+    whatever Brand/Model/Vehicle Type is currently selected -- previously
+    this dropdown showed every active PM Template in the system
+    regardless of relevance, the same class of bug fixed earlier for the
+    Maintenance Order form's Scope Template dropdown."""
+    from app.modules.maintenance_config.service import PMScheduleService
+    brand_name = request.args.get("brand_name")
+    model_name = request.args.get("model_name")
+    vehicle_type_id = request.args.get("vehicle_type_id", type=int)
+    results = PMScheduleService().list_applicable_for_criteria(
+        brand_name=brand_name, model_name=model_name,
+        vehicle_type_id=vehicle_type_id)
+    return jsonify({"results": [
+        {"id": s.id, "text": f"{s.maintenance_type.name} — "
+                             f"{s.interval_km or ''}{'km' if s.interval_km else ''}"
+                             f"{'/' if s.interval_km and s.interval_days else ''}"
+                             f"{s.interval_days or ''}{'d' if s.interval_days else ''}"}
+        for s in results]})
+
+
 @bp.route("/pm-scope-template-details/<int:template_id>")
 @login_required
 def get_pm_scope_template_details(template_id):

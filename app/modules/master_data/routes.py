@@ -697,7 +697,7 @@ def vehicle_new():
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
     vehicle_body_types = LookupService().get_by_type_with_fallback("VEHICLE_BODY_TYPE")
     component_groups = LookupService().get_by_type_with_fallback("COMPONENT_GROUP")
-    pm_schedules = PMScheduleService().list()
+    pm_schedules = []
     vehicle_brands = VehicleBrandService().list()
     brand_ids_by_name = {b.name: b.id for b in vehicle_brands}
     item = None
@@ -750,7 +750,16 @@ def vehicle_edit(vid):
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
     vehicle_body_types = LookupService().get_by_type_with_fallback("VEHICLE_BODY_TYPE")
     component_groups = LookupService().get_by_type_with_fallback("COMPONENT_GROUP")
-    pm_schedules = PMScheduleService().list()
+    pm_schedules = PMScheduleService().list_applicable_for_criteria(
+        brand_name=item.brand, model_name=item.model,
+        vehicle_type_id=item.vehicle_type_id) if item else []
+    if item and item.pm_schedule_id and item.pm_schedule_id not in [s.id for s in pm_schedules]:
+        # Already explicitly assigned to something outside the current
+        # filter criteria (e.g. a deliberate manual override) — don't
+        # let it silently vanish from the dropdown.
+        existing_assignment = PMScheduleService().get_by_id(item.pm_schedule_id)
+        if existing_assignment:
+            pm_schedules = [existing_assignment] + pm_schedules
     vehicle_brands = VehicleBrandService().list()
     brand_ids_by_name = {b.name: b.id for b in vehicle_brands}
     error_field = None

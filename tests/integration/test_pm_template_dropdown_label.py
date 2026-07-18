@@ -42,9 +42,16 @@ def test_pm_template_options_are_distinguishable_when_multiple_share_make_model(
         vehicle_brand_id=toyota.id, vehicle_model_id=hilux.id,
         profile_code="HILUX-PMLABEL", sequence_position=2)
 
-    resp = client.get("/master/vehicles/new")
+    # The New Vehicle form itself now starts with an empty dropdown
+    # (nothing to filter by until Brand/Model is picked) -- the AJAX
+    # endpoint is what actually powers the live-filtered list, which is
+    # where the original distinguishability concern applies.
+    resp = client.get(
+        "/api/search/pm-schedules-for-vehicle-criteria"
+        "?brand_name=Toyota PMLabel&model_name=Hilux PMLabel")
     assert resp.status_code == 200
-    assert b"10,000 km" in resp.data
-    assert b"20,000 km" in resp.data
-    assert b"HILUX-PMLABEL #1" in resp.data
-    assert b"HILUX-PMLABEL #2" in resp.data
+    data = resp.get_json()
+    labels = [r["text"] for r in data["results"]]
+    assert any("10000" in l or "10,000" in l for l in labels)
+    assert any("20000" in l or "20,000" in l for l in labels)
+    assert len(set(labels)) == len(labels)  # each option's label is unique

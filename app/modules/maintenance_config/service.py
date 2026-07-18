@@ -30,7 +30,11 @@ class PMScheduleService:
         _applicable_schedules(), but driven by raw criteria instead of a
         saved Vehicle record — used by the Vehicle form's 'Assigned PM
         Template' dropdown, which needs to filter live as Brand/Model/
-        Vehicle Type are being typed, before the vehicle even exists."""
+        Vehicle Type are being typed, before the vehicle even exists.
+        Checks BOTH real FK Brand+Model matches (vehicle_brand_id/
+        vehicle_model_id — how most VEMS-imported templates are stored)
+        and free-text vehicle_make/vehicle_model matches, since a
+        schedule could legitimately be stored either way."""
         if not brand_name and not model_name and not vehicle_type_id:
             return []
 
@@ -41,6 +45,22 @@ class PMScheduleService:
         brand = (brand_name or "").strip().lower()
         model = (model_name or "").strip().lower()
         if brand and model:
+            from app.modules.master_data.vehicle_brand.models import (
+                VehicleBrand, VehicleModel)
+            brand_row = VehicleBrand.query.filter(
+                db.func.lower(VehicleBrand.name) == brand).first()
+            fk_matches = []
+            if brand_row:
+                model_row = VehicleModel.query.filter(
+                    VehicleModel.brand_id == brand_row.id,
+                    db.func.lower(VehicleModel.name) == model).first()
+                if model_row:
+                    fk_matches = base_query.filter_by(
+                        vehicle_brand_id=brand_row.id,
+                        vehicle_model_id=model_row.id).all()
+            if fk_matches:
+                return fk_matches
+
             make_model_matches = [
                 s for s in base_query.all()
                 if s.vehicle_make and s.vehicle_model

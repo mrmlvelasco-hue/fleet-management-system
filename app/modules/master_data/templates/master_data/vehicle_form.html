@@ -34,7 +34,7 @@
     <input type="text" name="engine_number" class="form-control"
            value="{{ item.engine_number if item else '' }}"></div>
   <div class="col-md-4"><label class="form-label">Vehicle Type</label>
-    <select name="vehicle_type_id" class="form-select fms-select2" required>
+    <select name="vehicle_type_id" id="vehVehicleTypeSelect" class="form-select fms-select2" required>
       <option value="">— Select —</option>
       {% for vt in vehicle_types %}
       <option value="{{ vt.id }}" {{ 'selected' if item and item.vehicle_type_id==vt.id }}>
@@ -127,7 +127,7 @@
       {% endfor %}
     </select></div>
   <div class="col-md-8"><label class="form-label">Assigned PM Template</label>
-    <select name="pm_schedule_id" class="form-select fms-select2">
+    <select name="pm_schedule_id" id="vehPmScheduleSelect" class="form-select fms-select2">
       <option value="">— Auto-match by Make/Model or Vehicle Type —</option>
       {% for s in pm_schedules %}
       <option value="{{ s.id }}" {{ 'selected' if item and item.pm_schedule_id==s.id }}>
@@ -347,6 +347,36 @@ if (window.jQuery) {
       { placeholder: "Type branch code or name..." });
     initAjaxSelect("#vehDriverSelect", "{{ url_for('api_search.search_drivers') }}",
       { placeholder: "Type employee number or name...", allowClear: true });
+
+    // Filters the "Assigned PM Template" dropdown to only what's
+    // actually relevant to the currently selected Brand/Model/Vehicle
+    // Type -- previously showed every active PM Template in the system
+    // regardless of relevance.
+    var currentPmScheduleId = "{{ item.pm_schedule_id if item and item.pm_schedule_id else '' }}";
+    function refreshAssignedPmTemplates() {
+      var brand = jQuery("#vehBrandSelect").val();
+      var model = jQuery("#vehModelSelect").val();
+      var vehicleTypeId = jQuery("#vehVehicleTypeSelect").val();
+      var $pmSelect = jQuery("#vehPmScheduleSelect");
+      var params = new URLSearchParams();
+      if (brand) params.set("brand_name", brand);
+      if (model) params.set("model_name", model);
+      if (vehicleTypeId) params.set("vehicle_type_id", vehicleTypeId);
+      fetch("{{ url_for('api_search.search_pm_schedules_for_vehicle_criteria') }}?" + params.toString())
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var options = '<option value="">— Auto-match by Make/Model or Vehicle Type —</option>';
+          data.results.forEach(function (r) {
+            var selected = (String(r.id) === String(currentPmScheduleId)) ? " selected" : "";
+            options += '<option value="' + r.id + '"' + selected + '>' + r.text + "</option>";
+          });
+          $pmSelect.html(options).trigger("change");
+        });
+    }
+    jQuery("#vehBrandSelect, #vehModelSelect, #vehVehicleTypeSelect").on("change", refreshAssignedPmTemplates);
+    if (jQuery("#vehBrandSelect").val() || jQuery("#vehVehicleTypeSelect").val()) {
+      refreshAssignedPmTemplates();
+    }
   });
 }
 
