@@ -120,7 +120,19 @@ class PMDueCalculationService:
                  .order_by(MaintenanceOrder.completed_date.desc())
                  .first())
         if order:
-            return order.odometer_at_service or 0, order.completed_date
+            if order.odometer_at_service is not None:
+                return order.odometer_at_service, order.completed_date
+            # The completing user left Odometer at Service blank — falling
+            # back to a hardcoded 0 here was the actual bug: it made the
+            # due-calculation treat "we don't know" as "the vehicle has
+            # travelled 0 km ever", so a just-completed service NEVER
+            # cleared a DUE_SOON/OVERDUE status. The vehicle's own
+            # current_odometer (kept in sync by MO/Trip Ticket completion
+            # elsewhere) is a far better proxy for "how far has this
+            # vehicle actually gone" than assuming zero.
+            vehicle = db.session.get(Vehicle, vehicle_id)
+            fallback_km = (vehicle.current_odometer or 0) if vehicle else 0
+            return fallback_km, order.completed_date
         return 0, None
 
     def get_due_status(self, vehicle: Vehicle, maintenance_type_id=None,
