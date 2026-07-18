@@ -23,6 +23,26 @@ class MaintenanceInvoiceService(BaseTransactionService):
     document_type_code = "INV"
     reference_table = "maintenance_invoices"
 
+    def submit(self, record_id: int, user):
+        """Overrides the base submit() to sync the invoice's OWN status
+        field with what actually happened — the base implementation only
+        sets approval_instance_id and never touches record.status at all.
+        Per the spec, Invoice approval is configurable ('No Approval
+        Required' is a valid choice): when it's off, the underlying
+        ApprovalInstance auto-approves itself instantly, but nothing was
+        propagating that back onto the invoice — it stayed stuck at DRAFT
+        forever with no way to reach a completed state. Now: no approval
+        configured -> straight to APPROVED; approval configured -> SUBMITTED
+        (correctly reflecting it's awaiting a real approval, not jumping
+        ahead of it)."""
+        record = super().submit(record_id, user)
+        if record.approval_instance and record.approval_instance.status == "APPROVED":
+            record.status = "APPROVED"
+        else:
+            record.status = "SUBMITTED"
+        db.session.commit()
+        return record
+
     def create(self, *, maintenance_order_id, vendor_id, invoice_number,
               invoice_date, user, vat_type="VAT_EXCLUSIVE", vat_percentage=12,
               or_number=None, po_number=None, dr_number=None, currency="PHP"):
