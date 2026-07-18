@@ -489,6 +489,32 @@ def vendor_deactivate(vid):
     return redirect(url_for("master_data.vendor_list"))
 
 
+@bp.route("/vendors/<int:vid>/contacts", methods=["POST"])
+@login_required
+@require_permission("vendor.update")
+def vendor_contact_add(vid):
+    from app.modules.master_data.vendor.service import VendorContactService
+    f = request.form
+    if f.get("contact_name"):
+        VendorContactService().create(
+            vendor_id=vid, contact_name=f["contact_name"],
+            tel_number=f.get("tel_number") or None,
+            cel_number=f.get("cel_number") or None,
+            email=f.get("email") or None, position=f.get("position") or None)
+        flash("Contact added.", "success")
+    return redirect(url_for("master_data.vendor_edit", vid=vid))
+
+
+@bp.route("/vendors/<int:vid>/contacts/<int:cid>/delete", methods=["POST"])
+@login_required
+@require_permission("vendor.update")
+def vendor_contact_delete(vid, cid):
+    from app.modules.master_data.vendor.service import VendorContactService
+    VendorContactService().delete(cid)
+    flash("Contact removed.", "info")
+    return redirect(url_for("master_data.vendor_edit", vid=vid))
+
+
 def _vendor_fields(include_code=True):
     fields = ["name", "address", "city", "phone", "email",
               "tin", "contact_person", "vendor_type"]

@@ -61,6 +61,57 @@
 {% set reference_table = "vendors" %}
 {% set reference_id = item.id %}
 {% include "master_data/_attachment_panel.html" %}
+
+<div class="card mt-3">
+  <div class="card-header">Other Contact</div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-5">
+        <form method="post" action="{{ url_for('master_data.vendor_contact_add', vid=item.id) }}" class="row g-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-12"><label class="form-label small">Contact Person / Name</label>
+            <input type="text" name="contact_name" class="form-control form-control-sm" required></div>
+          <div class="col-12"><label class="form-label small">Tel Number</label>
+            <input type="text" name="tel_number" class="form-control form-control-sm"></div>
+          <div class="col-12"><label class="form-label small">Cel Number</label>
+            <input type="text" name="cel_number" class="form-control form-control-sm"></div>
+          <div class="col-12"><label class="form-label small">Email Address</label>
+            <input type="email" name="email" class="form-control form-control-sm"></div>
+          <div class="col-12"><label class="form-label small">Position / Role</label>
+            <input type="text" name="position" class="form-control form-control-sm"
+                   placeholder="e.g. Finance, Sales, Support"></div>
+          <div class="col-12">
+            <button class="btn btn-sm btn-outline-primary" type="submit">
+              <i class="bi bi-plus-lg me-1"></i>Add</button>
+          </div>
+        </form>
+      </div>
+      <div class="col-md-7">
+        <div class="list-group">
+        {% for c in item.other_contacts if c.is_active %}
+          <div class="list-group-item d-flex justify-content-between align-items-start">
+            <div>
+              <strong>{{ c.contact_name }}</strong>
+              {% if c.position %}<span class="badge text-bg-secondary ms-1">{{ c.position }}</span>{% endif %}
+              <div class="small text-muted">
+                {% if c.tel_number %}Tel: {{ c.tel_number }}{% endif %}
+                {% if c.cel_number %} · Cel: {{ c.cel_number }}{% endif %}
+                {% if c.email %} · {{ c.email }}{% endif %}
+              </div>
+            </div>
+            <form method="post" action="{{ url_for('master_data.vendor_contact_delete', vid=item.id, cid=c.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-trash"></i></button>
+            </form>
+          </div>
+        {% else %}
+          <p class="text-muted mb-0">No additional contacts yet.</p>
+        {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endif %}
 {% endblock %}
 {% block scripts %}
