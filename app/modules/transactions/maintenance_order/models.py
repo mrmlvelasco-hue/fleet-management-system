@@ -61,6 +61,14 @@ class MaintenanceOrder(db.Model, BaseModel):
     assigned_mechanic = db.Column(db.String(120), nullable=True)
     vendor_id = db.Column(db.Integer, db.ForeignKey("vendors.id"),
                           nullable=True)
+    # Used by Operational/Deployment orders (Assignment, Reassignment,
+    # Relocation, Transfer) as the "Vehicle Assignment Memo" — the formal
+    # paper trail for a driver assignment change. On completion, this
+    # updates Vehicle.assigned_driver_id the same way an approved ATD
+    # does (see assignment_hooks.py) -- either mechanism can be the
+    # operative record depending on which document your process uses.
+    driver_id = db.Column(db.Integer, db.ForeignKey("drivers.id"),
+                          nullable=True)
     estimated_cost = db.Column(db.Numeric(18, 2), nullable=True)
     actual_cost = db.Column(db.Numeric(18, 2), nullable=True)
 
@@ -79,6 +87,7 @@ class MaintenanceOrder(db.Model, BaseModel):
     pm_schedule = db.relationship("PMSchedule")
     scope_template = db.relationship("PMScopeTemplate")
     vendor = db.relationship("Vendor")
+    driver = db.relationship("Driver")
     requester = db.relationship("User", foreign_keys=[requested_by])
     approval_instance = db.relationship("ApprovalInstance")
     checklist_items = db.relationship(

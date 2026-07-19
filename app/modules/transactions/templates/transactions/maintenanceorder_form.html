@@ -37,6 +37,7 @@
       <optgroup label="{{ group_name|title }}">
         {% for tt in types %}
         <option value="{{ tt.id }}" data-category="{{ tt.order_category }}"
+                data-code="{{ tt.code }}"
                 {{ 'selected' if prefill.transaction_type_id==tt.id }}>{{ tt.name }}</option>
         {% endfor %}
       </optgroup>
@@ -105,6 +106,19 @@
     <input type="number" step="0.01" name="estimated_cost" class="form-control"></div>
   <div class="col-md-6"><label class="form-label">Assigned Mechanic</label>
     <input type="text" name="assigned_mechanic" class="form-control"></div>
+  <div class="col-md-6" id="moDriverFieldWrapper" style="display:none;">
+    <label class="form-label">Driver / Assignee</label>
+    <select name="driver_id" id="moDriverSelect" class="form-select">
+      <option value="">— Type employee number or name —</option>
+    </select>
+    <div class="form-text">
+      This is the "Vehicle Assignment Memo" — completing this order will
+      update the vehicle's current Assigned Driver to this person,
+      exactly like an approved Authority To Drive does. Use this for a
+      formal handover record (e.g. reassigning after a temporary CASA/
+      service custody).
+    </div>
+  </div>
   <div class="col-12"><label class="form-label">Description</label>
     <textarea name="description" class="form-control" rows="2"></textarea></div>
   <div class="col-12">
@@ -141,6 +155,29 @@
       }
       $("#moOrderCategorySelect").on("change", toggleMaintenanceFields);
       toggleMaintenanceFields();
+
+      // The Driver/Assignee field ("Vehicle Assignment Memo") only makes
+      // sense for the Deployment group's assignment-family transaction
+      // types -- showing it for every Operational order (e.g. Disposal,
+      // Accessories) would be confusing since those have nothing to do
+      // with who's driving the vehicle.
+      var ASSIGNMENT_CODES = ["DEP-ASSIGNMENT", "DEP-REASSIGNMENT",
+                              "DEP-RELOCATION", "DEP-TRANSFER"];
+      function toggleDriverField() {
+        var $opt = $("#moTransactionTypeSelect option:selected");
+        var code = $opt.attr("data-code");
+        var $wrapper = $("#moDriverFieldWrapper");
+        if (ASSIGNMENT_CODES.indexOf(code) !== -1) {
+          $wrapper.show();
+        } else {
+          $wrapper.hide();
+          $("#moDriverSelect").val(null).trigger("change");
+        }
+      }
+      initAjaxSelect("#moDriverSelect", "{{ url_for('api_search.search_drivers') }}",
+        { placeholder: "Type employee number or name...", allowClear: true });
+      $("#moTransactionTypeSelect").on("change", toggleDriverField);
+      toggleDriverField();
 
       function refreshVehicleInfoPanel(vehicleId) {
         if (!vehicleId) {

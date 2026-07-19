@@ -69,7 +69,8 @@ class MaintenanceOrderService(BaseTransactionService):
                order_category="MAINTENANCE", maintenance_type_id=None,
                transaction_type_id=None, scope_template_id=None,
                pm_schedule_id=None, description=None, odometer_at_service=None,
-               assigned_mechanic=None, vendor_id=None, estimated_cost=None):
+               assigned_mechanic=None, vendor_id=None, estimated_cost=None,
+               driver_id=None):
         # Per the spec: "Not every Maintenance Order represents vehicle
         # maintenance. Administrative, Deployment, Disposal, and
         # Accessories are valid Maintenance Orders" — Operational orders
@@ -112,6 +113,7 @@ class MaintenanceOrderService(BaseTransactionService):
             scheduled_date=scheduled_date,
             assigned_mechanic=assigned_mechanic, vendor_id=vendor_id,
             estimated_cost=estimated_cost, status="DRAFT",
+            driver_id=driver_id,
             requested_by=user.id if user else None)
         db.session.add(order)
         db.session.flush()
@@ -187,4 +189,16 @@ class MaintenanceOrderService(BaseTransactionService):
                 order.odometer_at_service > order.vehicle.current_odometer):
             order.vehicle.current_odometer = order.odometer_at_service
         db.session.commit()
+
+        # "Vehicle Assignment Memo" workflow: an Operational order with a
+        # Driver/Assignee set (Assignment, Reassignment, Relocation,
+        # Transfer transaction types) updates the vehicle's current
+        # assigned driver on completion -- the same outcome an approved
+        # ATD produces (see assignment_hooks.py), so either document can
+        # be the operative record for a given handover.
+        if order.driver_id:
+            from app.modules.master_data.vehicle.assignment_hooks import (
+                assign_driver_to_vehicle)
+            assign_driver_to_vehicle(order.vehicle_id, order.driver_id)
+
         return order
