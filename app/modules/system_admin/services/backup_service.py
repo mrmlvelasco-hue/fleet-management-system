@@ -25,16 +25,59 @@ from urllib.parse import urlparse, unquote
 
 from flask import current_app
 
+# Common install locations checked when mysqldump isn't on PATH -- this is
+# the normal situation on Windows, where the MySQL installer doesn't
+# always add its bin/ folder to PATH. Checked in order; first match wins.
+_COMMON_MYSQLDUMP_LOCATIONS = [
+    r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe",
+    r"C:\Program Files\MySQL\MySQL Server 8.4\bin\mysqldump.exe",
+    r"C:\Program Files\MySQL\MySQL Server 5.7\bin\mysqldump.exe",
+    r"C:\xampp\mysql\bin\mysqldump.exe",
+    r"C:\wamp64\bin\mysql\mysql8.0.31\bin\mysqldump.exe",
+    "/usr/bin/mysqldump",
+    "/usr/local/bin/mysqldump",
+    "/usr/local/mysql/bin/mysqldump",
+    "/opt/homebrew/bin/mysqldump",
+]
+
 
 class BackupService:
 
+    def _resolve_mysqldump_path(self) -> str | None:
+        """Resolve the mysqldump executable, in priority order:
+        1. Admin-configured path (System Parameters -> BACKUP.MYSQLDUMP_PATH)
+        2. PATH lookup (shutil.which)
+        3. Common install locations (Windows MySQL installer, XAMPP, WAMP,
+           common *nix paths) -- covers the frequent case where MySQL
+           client tools are installed but the installer didn't add them
+           to PATH, which is the exact error this resolves.
+        """
+        from app.modules.system_admin.services.system_parameter_service import (
+            SystemParameterService)
+        configured = SystemParameterService().get("MYSQLDUMP_PATH")
+        if configured and os.path.isfile(configured):
+            return configured
+
+        found = shutil.which("mysqldump")
+        if found:
+            return found
+
+        for candidate in _COMMON_MYSQLDUMP_LOCATIONS:
+            if os.path.isfile(candidate):
+                return candidate
+
+        return None
+
     # ── Configuration test ────────────────────────────────────────────────
 
-    def test_configuration(self, destination_path: str) -> list:
+    def test_configuration(self, destination_path: str,
+                           mysqldump_path_override: str = None) -> list:
         """Run non-destructive readiness checks. Returns a list of
         {check, ok, detail} dicts so the UI can show a green/red line per
         check — the quickest way to confirm the backup will actually work
-        before the client depends on it."""
+        before the client depends on it. `mysqldump_path_override` lets the
+        Test Configuration button check a path the admin just typed but
+        hasn't saved yet."""
         results = []
         uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
         is_mysql = uri.startswith("mysql")
@@ -45,7 +88,7 @@ class BackupService:
 
         # 2. mysqldump availability (MySQL only).
         if is_mysql:
-            results.append(self._check_mysqldump())
+            results.append(self._check_mysqldump(mysqldump_path_override))
         else:
             results.append({
                 "check": "Backup tool",
@@ -69,13 +112,23 @@ class BackupService:
             return {"check": "Database connection", "ok": False,
                     "detail": f"Failed: {e}"}
 
-    def _check_mysqldump(self) -> dict:
-        exe = shutil.which("mysqldump")
+    def _check_mysqldump(self, override_path: str = None) -> dict:
+        exe = None
+        if override_path and os.path.isfile(override_path):
+            exe = override_path
+        elif override_path:
+            return {"check": "mysqldump", "ok": False,
+                    "detail": f"Path does not exist: {override_path}"}
+        else:
+            exe = self._resolve_mysqldump_path()
         if not exe:
             return {"check": "mysqldump", "ok": False,
-                    "detail": "mysqldump not found on PATH. Install MySQL "
-                              "client tools on the server or set the full "
-                              "path."}
+                    "detail": "mysqldump not found on PATH or in common "
+                              "install locations. Either add MySQL's bin/ "
+                              "folder to your system PATH, or set the full "
+                              "path (e.g. C:\\Program Files\\MySQL\\MySQL "
+                              "Server 8.0\\bin\\mysqldump.exe) in the "
+                              "'MySQL Tools Path' field below."}
         try:
             out = subprocess.run([exe, "--version"], capture_output=True,
                                  text=True, timeout=10)
@@ -133,8 +186,14 @@ class BackupService:
         p = urlparse(uri)
         db_name = p.path.lstrip("/").split("?")[0]
         out_file = os.path.join(dest, f"fms_{db_name}_{stamp}.sql.gz")
+        exe = self._resolve_mysqldump_path()
+        if not exe:
+            raise FileNotFoundError(
+                "mysqldump not found on PATH or in common install "
+                "locations. Set the full path in System Administration -> "
+                "Backup Config -> MySQL Tools Path.")
         cmd = [
-            shutil.which("mysqldump") or "mysqldump",
+            exe,
             f"--host={p.hostname or '127.0.0.1'}",
             f"--port={p.port or 3306}",
             f"--user={unquote(p.username or 'root')}",

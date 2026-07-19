@@ -74,28 +74,121 @@
 </div>
 
 {% if item.checklist_items %}
-<div class="card mt-3">
-  <div class="card-header">Maintenance Checklist</div>
-  <ul class="list-group list-group-flush">
+<div class="card mt-3" id="maintenance-checklist">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Maintenance Checklist</span>
+    {% if item.status == 'IN_PROGRESS' and current_user.has_permission('maintenanceorder.update') %}
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-sm btn-outline-success"
+              data-checklist-mark-all="{{ url_for('transactions.maintenanceorder_checklist_mark_all_ajax', oid=item.id) }}"
+              data-done="1">
+        <i class="bi bi-check2-all me-1"></i>Mark All Done</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+              data-checklist-mark-all="{{ url_for('transactions.maintenanceorder_checklist_mark_all_ajax', oid=item.id) }}"
+              data-done="0">
+        Undo All</button>
+    </div>
+    {% endif %}
+  </div>
+  <ul class="list-group list-group-flush" id="checklist-item-list">
     {% for ci in item.checklist_items %}
-    <li class="list-group-item d-flex justify-content-between align-items-center">
+    <li class="list-group-item d-flex justify-content-between align-items-center"
+        data-checklist-row="{{ ci.id }}">
       <span>
-        {% if ci.is_done %}<i class="bi bi-check-circle-fill text-success me-2"></i>
-        {% else %}<i class="bi bi-circle text-muted me-2"></i>{% endif %}
+        <i class="bi {{ 'bi-check-circle-fill text-success' if ci.is_done else 'bi-circle text-muted' }} me-2"
+           data-checklist-icon></i>
         <code class="me-2">{{ ci.activity_code }}</code>{{ ci.activity_description }}
       </span>
       {% if item.status == 'IN_PROGRESS' and current_user.has_permission('maintenanceorder.update') %}
-      <form method="post" action="{{ url_for('transactions.maintenanceorder_checklist_toggle', oid=item.id, item_id=ci.id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="done" value="{{ '0' if ci.is_done else '1' }}">
-        <button class="btn btn-sm btn-outline-{{ 'secondary' if ci.is_done else 'success' }}">
-          {{ 'Undo' if ci.is_done else 'Mark Done' }}</button>
-      </form>
+      <button type="button"
+              class="btn btn-sm btn-outline-{{ 'secondary' if ci.is_done else 'success' }}"
+              data-checklist-toggle="{{ url_for('transactions.maintenanceorder_checklist_toggle_ajax', oid=item.id, item_id=ci.id) }}"
+              data-done="{{ '0' if ci.is_done else '1' }}"
+              data-item-id="{{ ci.id }}">
+        {{ 'Undo' if ci.is_done else 'Mark Done' }}</button>
       {% endif %}
     </li>
     {% endfor %}
   </ul>
 </div>
+
+<script>
+(function () {
+  // AJAX checklist — updates one row (icon + button) in place, no page
+  // navigation, so a long PM scope doesn't scroll the user back to the top
+  // after every "Mark Done" click. Falls back gracefully: if fetch fails
+  // for any reason, the buttons still carry a real URL so a normal click
+  // could be wired to a <form> instead -- but in practice this always
+  // succeeds since it's a same-origin same-session request.
+  const csrfToken = "{{ csrf_token() }}";
+
+  function setRow(li, isDone) {
+    const icon = li.querySelector('[data-checklist-icon]');
+    icon.className = isDone
+      ? 'bi bi-check-circle-fill text-success me-2'
+      : 'bi bi-circle text-muted me-2';
+    const btn = li.querySelector('[data-checklist-toggle]');
+    if (btn) {
+      btn.textContent = isDone ? 'Undo' : 'Mark Done';
+      btn.dataset.done = isDone ? '0' : '1';
+      btn.classList.toggle('btn-outline-secondary', isDone);
+      btn.classList.toggle('btn-outline-success', !isDone);
+    }
+  }
+
+  document.getElementById('checklist-item-list').addEventListener('click', function (e) {
+    const btn = e.target.closest('[data-checklist-toggle]');
+    if (!btn) return;
+    e.preventDefault();
+    const url = btn.getAttribute('data-checklist-toggle');
+    const done = btn.dataset.done;
+    btn.disabled = true;
+    fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'csrf_token=' + encodeURIComponent(csrfToken) + '&done=' + done
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          setRow(btn.closest('[data-checklist-row]'), data.is_done);
+        } else {
+          alert(data.error || 'Could not update this item.');
+        }
+      })
+      .catch(() => alert('Network error updating checklist item.'))
+      .finally(() => { btn.disabled = false; });
+  });
+
+  document.querySelectorAll('[data-checklist-mark-all]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const url = btn.getAttribute('data-checklist-mark-all');
+      const done = btn.dataset.done;
+      const label = done === '1' ? 'Mark ALL items as done?' : 'Undo ALL items?';
+      if (!confirm(label)) return;
+      btn.disabled = true;
+      fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'csrf_token=' + encodeURIComponent(csrfToken) + '&done=' + done
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.ok) {
+            data.items.forEach(function (it) {
+              const row = document.querySelector('[data-checklist-row="' + it.item_id + '"]');
+              if (row) setRow(row, it.is_done);
+            });
+          } else {
+            alert(data.error || 'Could not update the checklist.');
+          }
+        })
+        .catch(() => alert('Network error updating the checklist.'))
+        .finally(() => { btn.disabled = false; });
+    });
+  });
+})();
+</script>
 {% endif %}
 
 <div class="card mt-3">
