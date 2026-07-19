@@ -19,6 +19,20 @@
     <input type="text" name="destination_path" id="destination_path" class="form-control"
            placeholder="e.g. D:\fms\backups (blank = instance/backups)"
            value="{{ cfg.destination_path if cfg else '' }}"></div>
+  <div class="col-md-8">
+    <label class="form-label">MySQL Tools Path (mysqldump)</label>
+    <input type="text" name="mysqldump_path" class="form-control"
+           placeholder="e.g. C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe"
+           value="{{ mysqldump_path }}">
+    <div class="form-text">
+      Leave blank to auto-detect from PATH or common install locations.
+      Set this if <strong>Test Configuration</strong> reports mysqldump not found —
+      typical on Windows where the MySQL installer doesn't add its bin
+      folder to PATH. Find yours with: <code>where mysqldump</code> in
+      Command Prompt, or look under
+      <code>C:\Program Files\MySQL\MySQL Server X.X\bin\</code>.
+    </div>
+  </div>
   {% if current_user.has_permission('backupconfig.update') %}
   <div class="col-12 d-flex gap-2">
     <button class="btn btn-primary" type="submit">Save</button>

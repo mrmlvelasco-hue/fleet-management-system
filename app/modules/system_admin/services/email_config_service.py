@@ -10,8 +10,12 @@ from app.extensions import db
 from app.modules.system_admin.models import EmailConfig
 
 # Never let an unreachable/misconfigured SMTP server hang the request (or a
-# Celery worker) indefinitely. 20s is generous for a handshake+login+send.
-SMTP_TIMEOUT_SECONDS = 20
+# Celery worker) indefinitely. Kept modest (not 20-30s) because
+# socket.create_connection() applies this timeout PER resolved address, so
+# a host with multiple DNS records (common: IPv4 + IPv6) can multiply the
+# wait -- 10s keeps the worst case for a normal 1-2-address host bounded to
+# ~10-20s instead of a minute+.
+SMTP_TIMEOUT_SECONDS = 10
 
 
 class EmailNotConfiguredError(Exception):

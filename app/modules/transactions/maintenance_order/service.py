@@ -146,6 +146,25 @@ class MaintenanceOrderService(BaseTransactionService):
         db.session.commit()
         return item
 
+    def mark_all_checklist_items(self, order_id: int, done: bool, user):
+        """Bulk toggle every checklist item on an order in one commit --
+        backs the "Mark All Done" button so a long PM scope (dozens of
+        lines) doesn't need one click + page round-trip per item."""
+        order = db.session.get(MaintenanceOrder, order_id)
+        if order is None:
+            raise InvalidOrderStateError("Maintenance Order not found.")
+        if order.status != "IN_PROGRESS":
+            raise InvalidOrderStateError(
+                "Checklist items can only be updated while the order is "
+                "IN_PROGRESS.")
+        now = datetime.now(timezone.utc)
+        for item in order.checklist_items:
+            item.is_done = done
+            item.done_by = user.id if done and user else None
+            item.done_at = now if done else None
+        db.session.commit()
+        return order.checklist_items
+
     def complete(self, order_id: int, actual_cost, completed_date):
         order = db.session.get(MaintenanceOrder, order_id)
         # "PM" is the current code for Preventive Maintenance (Category

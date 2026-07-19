@@ -4,7 +4,7 @@ per-module services / the shared ApprovalEngine."""
 from datetime import date, datetime
 
 from flask import (Blueprint, render_template, redirect, url_for, flash,
-                   request, abort)
+                   request, abort, jsonify)
 from flask_login import login_required, current_user
 
 from app.core.security.decorators import require_permission
@@ -763,6 +763,41 @@ def maintenanceorder_checklist_toggle(oid, item_id):
     except InvalidOrderStateError as e:
         flash(str(e), "danger")
     return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+@bp.route("/maintenance-orders/<int:oid>/checklist/<int:item_id>/toggle-ajax",
+          methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_checklist_toggle_ajax(oid, item_id):
+    """JSON variant of the toggle above -- lets the detail page update a
+    single checklist row in place (no navigation, no lost scroll position)
+    instead of a full form POST-redirect-GET back to the top of the page."""
+    done = request.form.get("done") == "1"
+    try:
+        item = MaintenanceOrderService().toggle_checklist_item(
+            item_id, done=done, user=current_user)
+        return jsonify(ok=True, item_id=item.id, is_done=item.is_done)
+    except InvalidOrderStateError as e:
+        return jsonify(ok=False, error=str(e)), 409
+
+
+@bp.route("/maintenance-orders/<int:oid>/checklist/mark-all-ajax",
+          methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_checklist_mark_all_ajax(oid):
+    """Mark every checklist item on the order done (or undone) in a single
+    request -- backs the "Mark All Done" button for scopes with many
+    checklist lines."""
+    done = request.form.get("done", "1") == "1"
+    try:
+        items = MaintenanceOrderService().mark_all_checklist_items(
+            oid, done=done, user=current_user)
+        return jsonify(ok=True, items=[
+            {"item_id": i.id, "is_done": i.is_done} for i in items])
+    except InvalidOrderStateError as e:
+        return jsonify(ok=False, error=str(e)), 409
 
 
 @bp.route("/maintenance-orders/<int:oid>/complete", methods=["POST"])

@@ -414,6 +414,8 @@ def dashboard_config():
 @require_permission("backupconfig.view")
 def backup_config():
     from app.modules.system_admin.services.backup_service import BackupService
+    from app.modules.system_admin.services.system_parameter_service import (
+        SystemParameterService)
     cfg = BackupConfig.query.filter_by(is_active=True).first()
     if request.method == "POST":
         if not current_user.has_permission("backupconfig.update"):
@@ -425,13 +427,30 @@ def backup_config():
         cfg.schedule = request.form.get("schedule", "MANUAL")
         cfg.retention_days = int(request.form.get("retention_days", 30))
         cfg.destination_path = request.form.get("destination_path", "")
+
+        # mysqldump path lives in System Parameters (BACKUP group) rather
+        # than a BackupConfig column, matching the app-wide "configurable
+        # via System Parameters" convention. Upsert so this still works on
+        # an install that hasn't re-run `flask seed all` since this field
+        # was added.
+        mysqldump_path = request.form.get("mysqldump_path", "").strip()
+        param = SystemParameter.query.filter_by(code="MYSQLDUMP_PATH").first()
+        if param is None:
+            param = SystemParameter(code="MYSQLDUMP_PATH", value="",
+                                    data_type="STRING", group_name="BACKUP",
+                                    description="Full path to mysqldump.exe. "
+                                    "Leave blank to auto-detect.")
+            db.session.add(param)
+        param.value = mysqldump_path
+
         db.session.commit()
         flash("Backup configuration saved.", "success")
         return redirect(url_for("system_admin.backup_config"))
     backups = BackupService().list_backups(
         cfg.destination_path if cfg else None)
+    mysqldump_path = SystemParameterService().get("MYSQLDUMP_PATH", "") or ""
     return render_template("system_admin/backup_config.html", cfg=cfg,
-                           backups=backups)
+                           backups=backups, mysqldump_path=mysqldump_path)
 
 
 @bp.route("/backup-config/test", methods=["POST"])
@@ -443,7 +462,8 @@ def backup_config_test():
     client relies on it."""
     from app.modules.system_admin.services.backup_service import BackupService
     dest = request.form.get("destination_path", "")
-    results = BackupService().test_configuration(dest)
+    mysqldump_path = request.form.get("mysqldump_path", "").strip() or None
+    results = BackupService().test_configuration(dest, mysqldump_path)
     for r in results:
         flash(f"{'✓' if r['ok'] else '✗'} {r['check']}: {r['detail']}",
               "success" if r["ok"] else "danger")

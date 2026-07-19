@@ -148,6 +148,11 @@ def _seed_system_parameters() -> None:
         ("WO_PM_LIST_COLUMNS", "15", "INTEGER", "UI_PREFERENCES",
          "Work Order (PM) list column count"),
 
+        # ── Backup / restore ───────────────────────────────────────────
+        ("MYSQLDUMP_PATH", "", "STRING", "BACKUP",
+         "Full path to mysqldump.exe. Leave blank to auto-detect from PATH "
+         "or common MySQL install locations."),
+
         # ── Trip ticket / general (FMS) ───────────────────────────────
         ("REQUIRE_DRIVER_FROM_MASTER", "YES", "STRING", "TRIP_TICKET",
          "YES = driver must come from Driver Master; NO = manual entry"),
