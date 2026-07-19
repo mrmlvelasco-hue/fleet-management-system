@@ -22,19 +22,23 @@
     .status-IN_PROGRESS { background: #0d6efd; }
     .status-CANCELLED { background: #6c757d; }
     .status-PENDING_APPROVAL, .status-DRAFT { background: #fd7e14; }
-    .photo-block { text-align: center; margin-bottom: 16px; }
-    .photo-block img { max-width: 340px; max-height: 220px; border: 1px solid #999; object-fit: cover; }
-    .photo-placeholder { width: 340px; height: 200px; border: 1px dashed #999; margin: 0 auto;
-                        display: flex; align-items: center; justify-content: center; color: #999;
-                        font-size: 12px; }
-    .top-layout { display: flex; gap: 24px; align-items: flex-start; }
-    .top-layout .specs { flex: 1; }
+    .gallery { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 10px; }
+    .gallery-item { width: 220px; text-align: center; border: 1px solid #ccc; padding: 8px;
+                   border-radius: 4px; background: #fafafa; }
+    .gallery-item img { width: 100%; height: 150px; object-fit: contain; background: #fff;
+                        border: 1px solid #ddd; margin-bottom: 6px; }
+    .gallery-item .file-icon { width: 100%; height: 150px; display: flex; align-items: center;
+                              justify-content: center; background: #fff; border: 1px solid #ddd;
+                              margin-bottom: 6px; font-size: 32px; color: #999; }
+    .gallery-item .file-name { font-size: 10px; color: #555; word-break: break-word; margin-bottom: 4px; }
+    .gallery-item a.view-btn { font-size: 11px; text-decoration: none; color: #0d6efd; }
     .no-print { text-align: center; margin-bottom: 20px; }
     .footer-note { text-align: center; color: #888; font-size: 10px; margin-top: 30px; }
     @media print {
       .no-print { display: none; }
+      .gallery-item a.view-btn { display: none; }
       h6.section { page-break-after: avoid; break-after: avoid; }
-      table.info, table.grid { page-break-inside: avoid; break-inside: avoid; }
+      table.info, table.grid, .gallery-item { page-break-inside: avoid; break-inside: avoid; }
     }
   </style>
 </head>
@@ -49,34 +53,21 @@
   </div>
   <div class="doc-title">VEHICLE PROFILE</div>
 
-  <div class="top-layout">
-    <div class="photo-block">
-      {% if photo %}
-      <img src="{{ url_for('master_data.attachment_view', att_id=photo.id) }}" alt="Vehicle photo">
-      {% else %}
-      <div class="photo-placeholder">No photo on file</div>
-      {% endif %}
-      <div style="font-weight:bold; margin-top:8px; font-size:15px;">
-        {{ item.plate_number or item.conduction_number }}
-      </div>
-      <div>{{ item.brand }} {{ item.model }} {{ item.variant or '' }} ({{ item.year }})</div>
-    </div>
-    <div class="specs">
-      <h6 class="section">Vehicle Information</h6>
-      <table class="info">
-        <tr><td class="label">Branch</td><td>{{ item.branch.name if item.branch else '—' }}</td>
-            <td class="label">Status</td><td>{{ item.status }}</td></tr>
-        <tr><td class="label">Assigned Driver</td>
-            <td colspan="3">{{ item.assigned_driver.full_name if item.assigned_driver else '—' }}</td></tr>
-        <tr><td class="label">Fuel Type</td><td>{{ item.fuel_type or '—' }}</td>
-            <td class="label">Transmission</td><td>{{ item.transmission or '—' }}</td></tr>
-        <tr><td class="label">Displacement</td><td>{{ item.displacement or '—' }}</td>
-            <td class="label">Body Color</td><td>{{ item.color or '—' }}</td></tr>
-        <tr><td class="label">Current Odometer</td><td>{{ item.current_odometer }} km</td>
-            <td class="label">Current Engine Hrs</td><td>{{ item.current_engine_hours or '—' }}</td></tr>
-      </table>
-    </div>
-  </div>
+  <h6 class="section">Vehicle Information</h6>
+  <table class="info">
+    <tr><td class="label">Plate / Conduction No.</td><td>{{ item.plate_number or item.conduction_number }}</td>
+        <td class="label">Make / Model</td><td>{{ item.brand }} {{ item.model }} {{ item.variant or '' }} ({{ item.year }})</td></tr>
+    <tr><td class="label">Branch</td><td>{{ item.branch.name if item.branch else '—' }}</td>
+        <td class="label">Status</td><td>{{ item.status }}</td></tr>
+    <tr><td class="label">Assigned Driver</td>
+        <td colspan="3">{{ item.assigned_driver.full_name if item.assigned_driver else '—' }}</td></tr>
+    <tr><td class="label">Fuel Type</td><td>{{ item.fuel_type or '—' }}</td>
+        <td class="label">Transmission</td><td>{{ item.transmission or '—' }}</td></tr>
+    <tr><td class="label">Displacement</td><td>{{ item.displacement or '—' }}</td>
+        <td class="label">Body Color</td><td>{{ item.color or '—' }}</td></tr>
+    <tr><td class="label">Current Odometer</td><td>{{ item.current_odometer }} km</td>
+        <td class="label">Current Engine Hrs</td><td>{{ item.current_engine_hours or '—' }}</td></tr>
+  </table>
 
   <h6 class="section">Registration & Identification</h6>
   <table class="info">
@@ -86,6 +77,26 @@
         <td class="label">Engine Number</td><td>{{ item.engine_number or '—' }}</td></tr>
     <tr><td class="label">Chassis Number</td><td colspan="3">{{ item.chassis_number or '—' }}</td></tr>
   </table>
+
+  <h6 class="section">Attached Files & Documents ({{ attachments|length }})</h6>
+  {% if attachments %}
+  <div class="gallery">
+    {% for att in attachments %}
+    <div class="gallery-item">
+      {% if (att.mime_type or "").startswith("image/") %}
+      <img src="{{ url_for('master_data.attachment_view', att_id=att.id) }}" alt="{{ att.original_filename }}">
+      {% else %}
+      <div class="file-icon">📄</div>
+      {% endif %}
+      <div class="file-name">{{ att.original_filename }}</div>
+      <a class="view-btn" href="{{ url_for('master_data.attachment_view', att_id=att.id) }}" target="_blank">
+        View full size</a>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p style="color:#888;">No files attached for this vehicle.</p>
+  {% endif %}
 
   <h6 class="section">Maintenance Order History ({{ mo_history|length }})</h6>
   {% if mo_history %}

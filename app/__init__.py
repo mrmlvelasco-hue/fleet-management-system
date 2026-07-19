@@ -81,6 +81,10 @@ def create_app(config_name: str | None = None) -> Flask:
         register_notification_hooks)
     register_notification_hooks()
 
+    from app.modules.master_data.vehicle.assignment_hooks import (
+        register_vehicle_assignment_hooks)
+    register_vehicle_assignment_hooks()
+
     from app.cli import register_cli
     register_cli(app)
 

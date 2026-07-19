@@ -18,7 +18,7 @@ bp = Blueprint("comments", __name__, url_prefix="/comments")
 # the full org-scope visibility check here.
 _REFERENCE_TABLE_PERMISSION = {
     "trip_tickets": "tripticket.view",
-    "authority_to_drive": "atd.view",
+    "authority_to_drives": "atd.view",
     "vehicle_movements": "vehiclemovement.view",
     "maintenance_orders": "maintenanceorder.view",
     "purchase_requests": "purchaserequest.view",
