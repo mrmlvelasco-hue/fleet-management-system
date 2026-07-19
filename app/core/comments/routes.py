@@ -38,14 +38,11 @@ def post_comment(reference_table, reference_id):
     try:
         recipient_id = request.form.get("recipient_id")
         recipient = db.session.get(User, int(recipient_id)) if recipient_id else None
+        file = request.files.get("attachment")
         comment = CommentService().create(
             reference_table=reference_table, reference_id=reference_id,
             author=current_user, body=request.form.get("body", ""),
-            recipient=recipient)
-        file = request.files.get("attachment")
-        if file and file.filename:
-            AttachmentService().upload(file, "document_comments", comment.id,
-                                       user=current_user)
+            recipient=recipient, attachment_file=file)
         flash("Comment posted.", "success")
     except (EmptyCommentError, AttachmentError) as e:
         flash(str(e), "danger")

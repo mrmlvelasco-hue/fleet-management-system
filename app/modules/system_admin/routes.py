@@ -294,6 +294,72 @@ def email_template_edit(tmpl_id):
                            item=item, title=f"Edit — {item.name}")
 
 
+@bp.route("/email-templates/<int:tmpl_id>/send-test", methods=["POST"])
+@login_required
+@require_permission("emailtemplate.update")
+def email_template_send_test(tmpl_id):
+    """Render whatever is currently in the Subject/Body fields — including
+    unsaved edits — with realistic sample data, and send it to an address
+    the admin types in. Same "preview by actually receiving it" pattern as
+    Email Configuration's Send Test Email, but reads from the submitted
+    form so a change doesn't have to be saved first just to see how it
+    looks rendered by a real mail client."""
+    from jinja2 import Template
+    from app.modules.system_admin.services.email_config_service import (
+        EmailSenderService, EmailNotConfiguredError)
+
+    item = db.session.get(EmailTemplate, tmpl_id)
+    if item is None:
+        flash("Template not found.", "warning")
+        return redirect(url_for("system_admin.email_template_list"))
+
+    test_recipient = request.form.get("test_email") or current_user.email
+    if not test_recipient:
+        flash("Enter a recipient address to send the test to.", "warning")
+        return redirect(url_for("system_admin.email_template_edit",
+                                tmpl_id=tmpl_id))
+
+    subject_src = request.form.get("subject") or item.subject
+    body_html_src = request.form.get("body_html") or item.body_html or ""
+    body_text_src = request.form.get("body_text") or item.body_text or ""
+    event_code = request.form.get("event_code") or item.event_code
+
+    # Same fields a real notification would have, but with sample values
+    # so the admin can see realistic formatting without an actual pending
+    # document.
+    sample_context = {
+        "recipient_name": current_user.full_name
+                         if hasattr(current_user, "full_name")
+                         else current_user.username,
+        "reference_table": "maintenance_orders",
+        "reference_id": 11,
+        "document_number": "MO-2026-000011",
+        "view_url": url_for("main.dashboard"),
+        "event_code": event_code,
+        "event_label": event_code.replace("_", " ").title(),
+        "comment_body": "This is a sample comment shown so you can see "
+                        "how a real comment mention will look in this "
+                        "template.",
+        "author_name": "Sample User",
+    }
+
+    try:
+        subject = f"[TEST] {Template(subject_src).render(**sample_context)}"
+        body_html = Template(body_html_src).render(**sample_context)
+        body_text = Template(body_text_src).render(**sample_context)
+        EmailSenderService().send(to_email=test_recipient, subject=subject,
+                                  body_html=body_html, body_text=body_text)
+        flash(f"Test email sent to {test_recipient} using sample data — "
+              f"check that inbox to review formatting.", "success")
+    except EmailNotConfiguredError as e:
+        flash(str(e), "warning")
+    except Exception as e:
+        current_app.logger.exception("Template test email failed: %s", e)
+        flash(f"Test email failed to send: {e}", "danger")
+    return redirect(url_for("system_admin.email_template_edit",
+                            tmpl_id=tmpl_id))
+
+
 @bp.route("/email-templates/<int:tmpl_id>/deactivate", methods=["POST"])
 @login_required
 @require_permission("emailtemplate.delete")

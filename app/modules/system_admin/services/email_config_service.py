@@ -41,7 +41,12 @@ class EmailConfigService:
 
 class EmailSenderService:
     def send(self, *, to_email: str, subject: str, body_html: str,
-             body_text: str = None) -> None:
+             body_text: str = None, attach_files: list = None) -> None:
+        """Send an email. `attach_files`, if given, is a list of dicts
+        {"filepath": str, "filename": str, "mime_type": str|None} — used
+        to carry a document's attachments (e.g. a comment's uploaded
+        file) along with the notification, so the recipient doesn't have
+        to log in just to see what was attached."""
         config = EmailConfigService().get()
         if not config.is_enabled:
             raise EmailNotConfiguredError(
@@ -60,6 +65,22 @@ class EmailSenderService:
         msg.set_content(body_text or _strip_html(body_html))
         if body_html:
             msg.add_alternative(body_html, subtype="html")
+
+        for f in (attach_files or []):
+            try:
+                with open(f["filepath"], "rb") as fh:
+                    data = fh.read()
+                mime = f.get("mime_type") or "application/octet-stream"
+                maintype, _, subtype = mime.partition("/")
+                msg.add_attachment(
+                    data, maintype=maintype or "application",
+                    subtype=subtype or "octet-stream",
+                    filename=f.get("filename") or "attachment")
+            except OSError:
+                # A missing/moved file on disk shouldn't block the whole
+                # notification from being sent — the recipient still gets
+                # the message and can open the document to find the file.
+                continue
 
         port = int(config.smtp_port or 587)
         context = ssl.create_default_context()

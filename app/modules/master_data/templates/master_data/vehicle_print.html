@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Vehicle Profile — {{ item.plate_number or item.conduction_number }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #111; font-size: 13px; }
+    .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
+    .letterhead h1 { font-size: 18px; margin: 0; }
+    .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
+    h6.section { text-transform: uppercase; font-size: 11px; letter-spacing: .05em; color: #555;
+                border-bottom: 1px solid #ccc; padding-bottom: 3px; margin: 18px 0 8px; }
+    table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    table.info td { padding: 5px 8px; border: 1px solid #999; }
+    table.info td.label { font-weight: bold; width: 22%; background: #f2f2f2; }
+    table.grid { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    table.grid th, table.grid td { padding: 5px 7px; border: 1px solid #999; text-align: left; font-size: 11px; }
+    table.grid th { background: #f2f2f2; }
+    .status-pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10px;
+                  font-weight: bold; color: #fff; background: #6c757d; }
+    .status-COMPLETED { background: #198754; }
+    .status-IN_PROGRESS { background: #0d6efd; }
+    .status-CANCELLED { background: #6c757d; }
+    .status-PENDING_APPROVAL, .status-DRAFT { background: #fd7e14; }
+    .photo-block { text-align: center; margin-bottom: 16px; }
+    .photo-block img { max-width: 340px; max-height: 220px; border: 1px solid #999; object-fit: cover; }
+    .photo-placeholder { width: 340px; height: 200px; border: 1px dashed #999; margin: 0 auto;
+                        display: flex; align-items: center; justify-content: center; color: #999;
+                        font-size: 12px; }
+    .top-layout { display: flex; gap: 24px; align-items: flex-start; }
+    .top-layout .specs { flex: 1; }
+    .no-print { text-align: center; margin-bottom: 20px; }
+    .footer-note { text-align: center; color: #888; font-size: 10px; margin-top: 30px; }
+    @media print {
+      .no-print { display: none; }
+      h6.section { page-break-after: avoid; break-after: avoid; }
+      table.info, table.grid { page-break-inside: avoid; break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
+  <div class="letterhead">
+    <h1>{{ company.company_name if company else 'Company Name' }}</h1>
+    <div>{{ company.address_line1 if company else '' }}{% if company and company.city %}, {{ company.city }}{% endif %}</div>
+  </div>
+  <div class="doc-title">VEHICLE PROFILE</div>
+
+  <div class="top-layout">
+    <div class="photo-block">
+      {% if photo %}
+      <img src="{{ url_for('master_data.attachment_view', att_id=photo.id) }}" alt="Vehicle photo">
+      {% else %}
+      <div class="photo-placeholder">No photo on file</div>
+      {% endif %}
+      <div style="font-weight:bold; margin-top:8px; font-size:15px;">
+        {{ item.plate_number or item.conduction_number }}
+      </div>
+      <div>{{ item.brand }} {{ item.model }} {{ item.variant or '' }} ({{ item.year }})</div>
+    </div>
+    <div class="specs">
+      <h6 class="section">Vehicle Information</h6>
+      <table class="info">
+        <tr><td class="label">Branch</td><td>{{ item.branch.name if item.branch else '—' }}</td>
+            <td class="label">Status</td><td>{{ item.status }}</td></tr>
+        <tr><td class="label">Assigned Driver</td>
+            <td colspan="3">{{ item.assigned_driver.full_name if item.assigned_driver else '—' }}</td></tr>
+        <tr><td class="label">Fuel Type</td><td>{{ item.fuel_type or '—' }}</td>
+            <td class="label">Transmission</td><td>{{ item.transmission or '—' }}</td></tr>
+        <tr><td class="label">Displacement</td><td>{{ item.displacement or '—' }}</td>
+            <td class="label">Body Color</td><td>{{ item.color or '—' }}</td></tr>
+        <tr><td class="label">Current Odometer</td><td>{{ item.current_odometer }} km</td>
+            <td class="label">Current Engine Hrs</td><td>{{ item.current_engine_hours or '—' }}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h6 class="section">Registration & Identification</h6>
+  <table class="info">
+    <tr><td class="label">FAR Number</td><td>{{ item.far_number or '—' }}</td>
+        <td class="label">MV File Number</td><td>{{ item.mv_file_number or '—' }}</td></tr>
+    <tr><td class="label">CR Number</td><td>{{ item.cr_number or '—' }}</td>
+        <td class="label">Engine Number</td><td>{{ item.engine_number or '—' }}</td></tr>
+    <tr><td class="label">Chassis Number</td><td colspan="3">{{ item.chassis_number or '—' }}</td></tr>
+  </table>
+
+  <h6 class="section">Maintenance Order History ({{ mo_history|length }})</h6>
+  {% if mo_history %}
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>MO Number</th><th>Type</th><th>Category</th><th>Scheduled</th>
+        <th>Completed</th><th>Odometer</th><th>Status</th><th>Cost</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for mo in mo_history %}
+      <tr>
+        <td>{{ mo.document_number or '(draft)' }}</td>
+        <td>{{ mo.maintenance_type.name if mo.maintenance_type else '—' }}</td>
+        <td>{{ mo.category }}</td>
+        <td>{{ mo.scheduled_date }}</td>
+        <td>{{ mo.completed_date or '—' }}</td>
+        <td>{{ mo.odometer_at_service or '—' }}</td>
+        <td><span class="status-pill status-{{ mo.status }}">{{ mo.status }}</span></td>
+        <td>{{ mo.actual_cost or mo.estimated_cost or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#888;">No maintenance orders on record for this vehicle.</p>
+  {% endif %}
+
+  <div class="footer-note">
+    Generated {{ generated_at.strftime('%B %d, %Y %I:%M %p') }} — Fleet Management System
+  </div>
+</body>
+</html>

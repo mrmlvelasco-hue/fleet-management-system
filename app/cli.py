@@ -200,82 +200,101 @@ def _seed_dashboard_widgets() -> None:
 def _seed_email_templates() -> None:
     """Seed default Jinja2 email templates for every approval-engine event
     and the scheduled reminder events. Admins can edit subject/body under
-    System Administration → Email Templates without touching code.
+    System Administration -> Email Templates without touching code.
 
-    Available context variables (see notification tasks.py):
-      {{ recipient_name }}, {{ reference_table }}, {{ reference_id }},
+    Available context variables (see notification tasks.py ->
+    _build_notification_context):
+      {{ recipient_name }}   - the person being emailed
+      {{ document_number }} - the REAL document number (e.g.
+                              "MO-2026-000011"), not the raw database id
+      {{ reference_table }}, {{ reference_id }} - the raw generic key,
+                              still available for custom templates that
+                              want it, but document_number is what should
+                              be shown to a person
+      {{ view_url }}        - absolute path back into the app for this
+                              document (empty string if not resolvable)
       {{ event_code }}, {{ event_label }}
+      {{ comment_body }}, {{ author_name }} - populated only for the
+                              DOCUMENT_COMMENT event; empty otherwise
     """
     from app.modules.system_admin.models import EmailTemplate
 
-    def _tmpl(intro):
+    def _tmpl(intro, include_comment=False):
+        view_link = (
+            '<p><a href="{{ view_url }}">Open this document</a></p>'
+            if True else "")
+        comment_block = (
+            '{% if comment_body %}'
+            '<blockquote style="margin:0 0 1em 0;padding:0.5em 1em;'
+            'border-left:3px solid #ccc;color:#333;">'
+            '<strong>{{ author_name }}</strong> wrote:<br>{{ comment_body }}'
+            '</blockquote>{% endif %}'
+            if include_comment else "")
         html = (f"<p>Hello {{{{ recipient_name }}}},</p>"
                 f"<p>{intro}</p>"
-                f"<p><strong>{{{{ reference_table }}}} "
-                f"#{{{{ reference_id }}}}</strong></p>"
-                f"<p>Please log in to the Fleet Management System to view "
-                f"the details.</p>")
+                f"{comment_block}"
+                f"<p><strong>{{{{ document_number }}}}</strong></p>"
+                f'{view_link}')
+        comment_text = (
+            "{% if comment_body %}\n\"{{ author_name }} wrote: "
+            "{{ comment_body }}\"\n\n{% endif %}" if include_comment else "")
         text = (f"Hello {{{{ recipient_name }}}},\n\n{intro}\n\n"
-                f"{{{{ reference_table }}}} #{{{{ reference_id }}}}\n\n"
-                f"Please log in to the Fleet Management System to view the "
-                f"details.")
+                f"{comment_text}"
+                f"{{{{ document_number }}}}\n\n"
+                f"{{% if view_url %}}Open this document: {{{{ view_url }}}}"
+                f"{{% endif %}}")
         return html, text
 
     templates = [
         ("submitted", "Document Submitted for Approval",
-         "[FMS] Approval needed: {{ reference_table }} #{{ reference_id }}",
-         "A document has been submitted and is now awaiting your approval."),
+         "[FMS] Approval needed: {{ document_number }}",
+         "A document has been submitted and is now awaiting your approval.",
+         False),
         ("approved_level", "Approval Level Passed",
-         "[FMS] Progressed: {{ reference_table }} #{{ reference_id }}",
+         "[FMS] Progressed: {{ document_number }}",
          "A document you submitted has passed an approval level and moved "
-         "to the next approver."),
+         "to the next approver.", False),
         ("approved_final", "Document Fully Approved",
-         "[FMS] Approved: {{ reference_table }} #{{ reference_id }}",
-         "Good news — your document has been fully approved."),
+         "[FMS] Approved: {{ document_number }}",
+         "Good news — your document has been fully approved. You may "
+         "proceed with execution.", False),
         ("rejected", "Document Rejected",
-         "[FMS] Rejected: {{ reference_table }} #{{ reference_id }}",
+         "[FMS] Rejected: {{ document_number }}",
          "Your document has been rejected. Please review the approver's "
-         "remarks."),
+         "remarks.", False),
         ("returned", "Document Returned",
-         "[FMS] Returned for revision: {{ reference_table }} "
-         "#{{ reference_id }}",
-         "Your document has been returned for revision."),
+         "[FMS] Returned for revision: {{ document_number }}",
+         "Your document has been returned for revision.", False),
         ("resubmitted", "Document Resubmitted",
-         "[FMS] Resubmitted: {{ reference_table }} #{{ reference_id }}",
+         "[FMS] Resubmitted: {{ document_number }}",
          "A previously returned document has been revised and resubmitted "
-         "for your approval."),
+         "for your approval.", False),
         ("cancelled", "Document Cancelled",
-         "[FMS] Cancelled: {{ reference_table }} #{{ reference_id }}",
-         "A document has been cancelled."),
+         "[FMS] Cancelled: {{ document_number }}",
+         "A document has been cancelled.", False),
         ("PMS_DUE", "Preventive Maintenance Due",
-         "[FMS] PM due: {{ reference_table }} #{{ reference_id }}",
-         "A vehicle is due for preventive maintenance."),
+         "[FMS] PM due: {{ document_number }}",
+         "A vehicle is due for preventive maintenance.", False),
         ("REGISTRATION_EXPIRING", "Vehicle Registration Expiring",
-         "[FMS] Registration expiring: {{ reference_table }} "
-         "#{{ reference_id }}",
+         "[FMS] Registration expiring: {{ document_number }}",
          "A vehicle registration is approaching its expiry date and needs "
-         "renewal."),
+         "renewal.", False),
         ("TIRE_REPLACEMENT", "Tire Replacement Due",
-         "[FMS] Tire replacement due: {{ reference_table }} "
-         "#{{ reference_id }}",
-         "A tire has reached its replacement threshold."),
+         "[FMS] Tire replacement due: {{ document_number }}",
+         "A tire has reached its replacement threshold.", False),
         ("BATTERY_REPLACEMENT", "Battery Replacement Due",
-         "[FMS] Battery replacement due: {{ reference_table }} "
-         "#{{ reference_id }}",
-         "A battery has reached its replacement threshold."),
+         "[FMS] Battery replacement due: {{ document_number }}",
+         "A battery has reached its replacement threshold.", False),
         ("TRIP_TICKET_RELEASE", "Trip Ticket Released",
-         "[FMS] Trip ticket released: {{ reference_table }} "
-         "#{{ reference_id }}",
-         "A trip ticket has been released."),
+         "[FMS] Trip ticket released: {{ document_number }}",
+         "A trip ticket has been released.", False),
         ("DOCUMENT_COMMENT", "Mentioned in a Comment",
-         "[FMS] You were mentioned: {{ reference_table }} "
-         "#{{ reference_id }}",
-         "Someone mentioned you in a comment on a document. Open it to "
-         "read the full comment and reply."),
+         "[FMS] You were mentioned: {{ document_number }}",
+         "Someone mentioned you in a comment on a document:", True),
     ]
-    for event_code, name, subject, intro in templates:
+    for event_code, name, subject, intro, include_comment in templates:
         if not EmailTemplate.query.filter_by(event_code=event_code).first():
-            html, text = _tmpl(intro)
+            html, text = _tmpl(intro, include_comment)
             db.session.add(EmailTemplate(
                 event_code=event_code, name=name, subject=subject,
                 body_html=html, body_text=text))
