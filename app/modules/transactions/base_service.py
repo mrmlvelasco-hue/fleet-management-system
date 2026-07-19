@@ -102,21 +102,42 @@ class BaseTransactionService:
 
     def _visible_to(self, record, user) -> bool:
         """Does `user` have visibility into this record?
-        - No user passed → no filtering (backward compatible).
+        - No user passed -> no filtering (backward compatible).
         - The record's own requester always sees it, regardless of scope.
+        - Anyone who is part of the document's comment thread -- either
+          because they posted a comment on it, or because someone
+          specifically notified them via the "Type a name to notify"
+          picker -- always sees it too. Being addressed in a comment makes
+          someone a participant in that document regardless of which
+          branch they're normally scoped to; without this, a comment
+          recipient outside the document's branch couldn't even open the
+          page to read the comment that mentioned them.
         - No org context on the record, or the user has no scope rows
-          assigned (not yet opted into org-scoping) → visible (same
+          assigned (not yet opted into org-scoping) -> visible (same
           rollout-safety rule as F1's approval eligibility).
         - Otherwise, visible only if the user's UserOrgScope covers the
-          record's inferred branch."""
+          record's inferred branch.
+        """
         if user is None:
             return True
         if getattr(record, "requested_by", None) == getattr(user, "id", None):
+            return True
+        if self._is_comment_participant(record, user):
             return True
         from app.modules.user_management.org_scope_service import (
             UserOrgScopeService)
         branch_id = self._infer_branch_id(record)
         return UserOrgScopeService().covers(user.id, branch_id=branch_id)
+
+    def _is_comment_participant(self, record, user) -> bool:
+        from app.core.comments.models import DocumentComment
+        from sqlalchemy import or_
+        return db.session.query(DocumentComment.id).filter(
+            DocumentComment.reference_table == self.reference_table,
+            DocumentComment.reference_id == record.id,
+            or_(DocumentComment.author_id == user.id,
+               DocumentComment.recipient_id == user.id)
+        ).first() is not None
 
     def list(self, include_inactive: bool = True, user=None):
         query = db.session.query(self.model)

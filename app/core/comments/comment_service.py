@@ -11,7 +11,14 @@ class EmptyCommentError(Exception):
 
 class CommentService:
     def create(self, *, reference_table, reference_id, author, body,
-               recipient=None):
+               recipient=None, attachment_file=None):
+        """`attachment_file`, if given, is uploaded and linked to this
+        comment BEFORE the recipient is notified -- so the notification
+        email (which includes any attached file) reflects reality instead
+        of being composed before the upload happens. Previously the route
+        created the comment (which notifies) and only uploaded the file
+        afterward, so the email always went out with zero attachments
+        even when a file was attached."""
         text = (body or "").strip()
         if not text:
             raise EmptyCommentError("Comment cannot be empty.")
@@ -22,12 +29,26 @@ class CommentService:
         db.session.add(comment)
         db.session.commit()
 
+        if attachment_file is not None and attachment_file.filename:
+            from app.core.attachments.attachment_service import (
+                AttachmentService, AttachmentError)
+            try:
+                AttachmentService().upload(
+                    attachment_file, "document_comments", comment.id,
+                    user=author)
+            except AttachmentError:
+                # Don't let a bad attachment (wrong type, too large) block
+                # the comment itself -- it's already saved. The person
+                # posting it sees the error via the route's own handling.
+                raise
+
         # The "notify" picker in the UI implies the selected person will
         # actually be told about the comment -- previously recipient_id was
         # only stored, never acted on. Fire both channels the same way
         # every other event in the app does (InAppNotification row +
         # queued email via the DOCUMENT_COMMENT template), so a mention
-        # here behaves identically to an approval notification.
+        # here behaves identically to an approval notification. This runs
+        # AFTER the attachment upload above so the email can include it.
         if recipient is not None and recipient.id != author.id:
             self._notify_recipient(comment, recipient, author)
 
@@ -50,7 +71,8 @@ class CommentService:
             dispatch_notification_email(
                 user_id=recipient.id, event_code="DOCUMENT_COMMENT",
                 reference_table=comment.reference_table,
-                reference_id=comment.reference_id)
+                reference_id=comment.reference_id,
+                comment_id=comment.id)
         except Exception:
             import logging
             logging.getLogger(__name__).exception(

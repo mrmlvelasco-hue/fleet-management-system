@@ -61,9 +61,61 @@ def send_test_email(self, to_email: str):
     logger.info("Test email sent to %s", to_email)
 
 
+def _build_notification_context(user, event_code, reference_table,
+                                reference_id, comment_id=None) -> dict:
+    """Everything a template might want to reference. Kept in one place
+    so every template (built-in or admin-added) has access to the same
+    fields regardless of event type."""
+    from app.core.reference_resolver import get_document_number, get_view_url
+
+    context = {
+        "recipient_name": user.full_name if hasattr(user, "full_name") else user.username,
+        "reference_table": reference_table,
+        "reference_id": reference_id,
+        "event_code": event_code,
+        "event_label": event_code.replace("_", " ").title(),
+        # Real document number (e.g. "MO-2026-000011") instead of the raw
+        # numeric reference_id -- this was previously the only thing
+        # every email showed, which is meaningless to a recipient.
+        "document_number": get_document_number(reference_table, reference_id),
+        "view_url": get_view_url(reference_table, reference_id) or "",
+        "comment_body": "",
+        "author_name": "",
+    }
+
+    if comment_id is not None:
+        from app.core.comments.models import DocumentComment
+        comment = db.session.get(DocumentComment, comment_id)
+        if comment is not None:
+            context["comment_body"] = comment.body
+            author = getattr(comment, "author", None)
+            context["author_name"] = (
+                author.full_name if author and hasattr(author, "full_name")
+                else (author.username if author else "Someone"))
+    return context
+
+
+def _resolve_comment_attachments(comment_id: int) -> list:
+    """Files attached to a comment, in the shape EmailSenderService
+    expects, resolved to an absolute path on disk."""
+    if comment_id is None:
+        return []
+    import os
+    from flask import current_app
+    from app.core.attachments.attachment_service import AttachmentService
+    attachments = AttachmentService().list_for("document_comments", comment_id)
+    out = []
+    for att in attachments:
+        filepath = os.path.join(current_app.instance_path, "uploads",
+                                "document_comments", att.filename)
+        out.append({"filepath": filepath, "filename": att.original_filename,
+                    "mime_type": att.mime_type})
+    return out
+
+
 def _send_notification_email_impl(user_id: int, event_code: str,
-                                   reference_table: str, reference_id: int
-                                   ) -> None:
+                                   reference_table: str, reference_id: int,
+                                   comment_id: int = None) -> None:
     """The actual work: render the template and send via SMTP. Plain
     function (no Celery `self`/retry) so it can be called directly as a
     synchronous fallback, not only through the Celery task below."""
@@ -76,13 +128,8 @@ def _send_notification_email_impl(user_id: int, event_code: str,
                    "address) — in-app notification still delivered.", user_id)
         return
 
-    context = {
-        "recipient_name": user.full_name if hasattr(user, "full_name") else user.username,
-        "reference_table": reference_table,
-        "reference_id": reference_id,
-        "event_code": event_code,
-        "event_label": event_code.replace("_", " ").title(),
-    }
+    context = _build_notification_context(
+        user, event_code, reference_table, reference_id, comment_id)
 
     template = EmailTemplate.query.filter_by(event_code=event_code).first()
     subject_src = template.subject if template else _FALLBACK_SUBJECT
@@ -93,9 +140,12 @@ def _send_notification_email_impl(user_id: int, event_code: str,
     body_html = Template(body_html_src).render(**context)
     body_text = Template(body_text_src).render(**context)
 
+    attach_files = _resolve_comment_attachments(comment_id)
+
     try:
         EmailSenderService().send(to_email=user.email, subject=subject,
-                                  body_html=body_html, body_text=body_text)
+                                  body_html=body_html, body_text=body_text,
+                                  attach_files=attach_files)
         logger.info("Email notification sent: user=%s event=%s ref=%s/%s",
                    user_id, event_code, reference_table, reference_id)
     except EmailNotConfiguredError as e:
@@ -107,10 +157,11 @@ def _send_notification_email_impl(user_id: int, event_code: str,
 @celery.task(name="system_admin.send_notification_email", bind=True,
              max_retries=3, default_retry_delay=60)
 def send_notification_email(self, user_id: int, event_code: str,
-                             reference_table: str, reference_id: int):
+                             reference_table: str, reference_id: int,
+                             comment_id: int = None):
     try:
         _send_notification_email_impl(
-            user_id, event_code, reference_table, reference_id)
+            user_id, event_code, reference_table, reference_id, comment_id)
     except Exception as e:
         logger.exception(
             "Failed to send email notification: user=%s event=%s ref=%s/%s: %s",
@@ -119,26 +170,32 @@ def send_notification_email(self, user_id: int, event_code: str,
 
 
 def dispatch_notification_email(user_id: int, event_code: str,
-                                reference_table: str, reference_id: int
-                                ) -> None:
+                                reference_table: str, reference_id: int,
+                                comment_id: int = None) -> None:
     """Single entry point used by every caller that wants a notification
     email sent (NotificationEngine, CommentService, ...). Tries to queue
     via Celery first (fast, non-blocking); if the broker is unreachable —
     the common case with no `celery worker` process running — falls back
     to sending synchronously in the current request via the same impl
     function, so the email actually goes out either way instead of
-    silently disappearing after a logged warning."""
+    silently disappearing after a logged warning.
+
+    `comment_id`, when given (comment-mention notifications only), lets
+    the email include the actual comment text and any files attached to
+    that specific comment."""
     try:
         send_notification_email.delay(
             user_id=user_id, event_code=event_code,
-            reference_table=reference_table, reference_id=reference_id)
+            reference_table=reference_table, reference_id=reference_id,
+            comment_id=comment_id)
     except Exception:
         logger.info(
             "Celery broker unavailable for notification email (event=%s, "
             "user=%s) — sending synchronously instead.", event_code, user_id)
         try:
             _send_notification_email_impl(
-                user_id, event_code, reference_table, reference_id)
+                user_id, event_code, reference_table, reference_id,
+                comment_id)
         except Exception:
             logger.exception(
                 "Synchronous fallback also failed to send notification "
