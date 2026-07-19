@@ -717,67 +717,13 @@ def vehicle_register_report():
 @login_required
 @require_permission("vehicle.view")
 def vehicle_register_report_export():
-    from io import BytesIO
     from flask import send_file
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, Alignment, PatternFill
-    from app.modules.master_data.vehicle.report_service import (
-        VehicleRegisterReportService)
+    from io import BytesIO
+    from app.core.reporting.generators import generate_vehicle_register_xlsx
 
-    groups = VehicleRegisterReportService().get_grouped(user=current_user)
-
-    columns = [
-        ("Plate No.", "plate_number"), ("Assignee", "assignee"),
-        ("Make", "make"), ("Model", "model"), ("Variant", "variant"),
-        ("Year", "year"), ("Displacement", "displacement"),
-        ("Fuel", "fuel"), ("Transmission", "transmission"),
-        ("BodyColor", "body_color"), ("Type", "type"),
-        ("FARNumber", "far_number"), ("MVFileNo", "mv_file_number"),
-        ("CRNumber", "cr_number"), ("EngineNumber", "engine_number"),
-        ("ChassisNumber", "chassis_number"),
-    ]
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Vehicle Register"
-    ws.append(["Vehicle Register Details"])
-    ws["A1"].font = Font(size=14, bold=True)
-    ws.append([])
-
-    header_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2",
-                              fill_type="solid")
-    branch_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2",
-                              fill_type="solid")
-
-    for group in groups:
-        row = [group["branch_code"]]
-        ws.append(row)
-        r = ws.max_row
-        ws.cell(r, 1).font = Font(bold=True)
-        for c in range(1, len(columns) + 1):
-            ws.cell(r, c).fill = branch_fill
-
-        ws.append([label for label, _ in columns])
-        r = ws.max_row
-        for c in range(1, len(columns) + 1):
-            ws.cell(r, c).font = Font(bold=True)
-            ws.cell(r, c).fill = header_fill
-
-        for vehicle_row in group["vehicles"]:
-            ws.append([vehicle_row[key] for _, key in columns])
-
-        ws.append([])  # blank line between branch sections
-
-    for i, (label, _) in enumerate(columns, start=1):
-        ws.column_dimensions[ws.cell(1, i).column_letter].width = max(
-            12, len(label) + 2)
-
-    buf = BytesIO()
-    wb.save(buf)
-    buf.seek(0)
+    filename, xlsx_bytes = generate_vehicle_register_xlsx(user=current_user)
     return send_file(
-        buf, as_attachment=True,
-        download_name=f"Vehicle_Register_Details_{datetime.now():%Y%m%d}.xlsx",
+        BytesIO(xlsx_bytes), as_attachment=True, download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument"
                  ".spreadsheetml.sheet")
 

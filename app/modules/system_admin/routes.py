@@ -3,6 +3,7 @@ Profile, Email Templates, Notification Rules, Audit Trail Viewer,
 Dashboard Config, Backup Config, Report Config, and the notification bell
 API endpoints. Thin controllers only — business logic in services."""
 import os
+from datetime import datetime
 from flask import (Blueprint, render_template, redirect, url_for, flash,
                    request, jsonify, current_app)
 from flask_login import login_required, current_user
@@ -590,6 +591,145 @@ def report_config_new():
             flash(f"Report '{code}' registered.", "success")
         return redirect(url_for("system_admin.report_config_list"))
     return render_template("system_admin/report_config_form.html")
+
+
+# ── Analytical Reports (Phase 5) ────────────────────────────────────────────
+
+def _report_filters_from_request():
+    """Shared filter parsing for the three analytical reports below —
+    branch_id / date_from / date_to / status, all optional."""
+    return {
+        "branch_id": request.args.get("branch_id") or None,
+        "date_from": request.args.get("date_from") or None,
+        "date_to": request.args.get("date_to") or None,
+        "status": request.args.get("status") or None,
+    }
+
+
+def _branch_choices():
+    from app.modules.master_data.org.models import Branch
+    return Branch.query.filter_by(is_active=True).order_by(Branch.name).all()
+
+
+@bp.route("/reports/pms-compliance")
+@login_required
+@require_permission("maintenanceorder.view")
+def report_pms_compliance():
+    from app.core.maintenance.due_calculation_service import (
+        PMDueCalculationService)
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+    filters = _report_filters_from_request()
+    scope_svc = UserOrgScopeService()
+    rows = [r for r in PMDueCalculationService().get_all_due_vehicles()
+           if scope_svc.covers(current_user.id, branch_id=r["vehicle"].branch_id)]
+    if filters["branch_id"]:
+        rows = [r for r in rows
+               if r["vehicle"].branch_id == int(filters["branch_id"])]
+    if filters["status"]:
+        rows = [r for r in rows if r["status"] == filters["status"]]
+    return render_template("system_admin/report_pms_compliance.html",
+                           rows=rows, filters=filters,
+                           branches=_branch_choices(),
+                           generated_at=datetime.now())
+
+
+@bp.route("/reports/pms-compliance/export.xlsx")
+@login_required
+@require_permission("maintenanceorder.view")
+def report_pms_compliance_export():
+    from flask import send_file
+    from io import BytesIO
+    from app.core.reporting.generators import generate_pms_compliance_xlsx
+    filename, data = generate_pms_compliance_xlsx(
+        _report_filters_from_request(), user=current_user)
+    return send_file(BytesIO(data), as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument"
+                              ".spreadsheetml.sheet")
+
+
+@bp.route("/reports/registration-expiry")
+@login_required
+@require_permission("vehicleregistration.view")
+def report_registration_expiry():
+    from app.modules.registration_config.service import (
+        RegistrationDueCalculationService)
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+    filters = _report_filters_from_request()
+    scope_svc = UserOrgScopeService()
+    rows = [r for r in RegistrationDueCalculationService().get_all_due_vehicles()
+           if scope_svc.covers(current_user.id, branch_id=r["vehicle"].branch_id)]
+    if filters["branch_id"]:
+        rows = [r for r in rows
+               if r["vehicle"].branch_id == int(filters["branch_id"])]
+    if filters["status"]:
+        rows = [r for r in rows if r["status"] == filters["status"]]
+    return render_template("system_admin/report_registration_expiry.html",
+                           rows=rows, filters=filters,
+                           branches=_branch_choices(),
+                           generated_at=datetime.now())
+
+
+@bp.route("/reports/registration-expiry/export.xlsx")
+@login_required
+@require_permission("vehicleregistration.view")
+def report_registration_expiry_export():
+    from flask import send_file
+    from io import BytesIO
+    from app.core.reporting.generators import generate_registration_expiry_xlsx
+    filename, data = generate_registration_expiry_xlsx(
+        _report_filters_from_request(), user=current_user)
+    return send_file(BytesIO(data), as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument"
+                              ".spreadsheetml.sheet")
+
+
+@bp.route("/reports/maintenance-cost-summary")
+@login_required
+@require_permission("maintenanceorder.view")
+def report_maintenance_cost_summary():
+    from app.extensions import db
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+    filters = _report_filters_from_request()
+
+    query = MaintenanceOrder.query.filter_by(status="COMPLETED")
+    if filters["branch_id"]:
+        query = query.filter(MaintenanceOrder.vehicle.has(
+            branch_id=int(filters["branch_id"])))
+    if filters["date_from"]:
+        query = query.filter(MaintenanceOrder.completed_date >= filters["date_from"])
+    if filters["date_to"]:
+        query = query.filter(MaintenanceOrder.completed_date <= filters["date_to"])
+    orders = query.order_by(MaintenanceOrder.completed_date.desc()).all()
+
+    scope_svc = UserOrgScopeService()
+    orders = [o for o in orders
+             if scope_svc.covers(current_user.id, branch_id=o.vehicle.branch_id)]
+    total = sum(float(o.actual_cost or 0) for o in orders)
+
+    return render_template("system_admin/report_maintenance_cost_summary.html",
+                           orders=orders, total=total, filters=filters,
+                           branches=_branch_choices(),
+                           generated_at=datetime.now())
+
+
+@bp.route("/reports/maintenance-cost-summary/export.xlsx")
+@login_required
+@require_permission("maintenanceorder.view")
+def report_maintenance_cost_summary_export():
+    from flask import send_file
+    from io import BytesIO
+    from app.core.reporting.generators import (
+        generate_maintenance_cost_summary_xlsx)
+    filename, data = generate_maintenance_cost_summary_xlsx(
+        _report_filters_from_request(), user=current_user)
+    return send_file(BytesIO(data), as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument"
+                              ".spreadsheetml.sheet")
 
 
 # ── Notification bell API ──────────────────────────────────────────────────

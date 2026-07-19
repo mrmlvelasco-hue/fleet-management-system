@@ -78,6 +78,38 @@ BUILTIN_REPORTS = [
         "kind": "LIST",
         "needs_document": False,
     },
+    {
+        "report_code": "RPT_PMS_COMPLIANCE",
+        "name": "PMS Compliance / Due Report",
+        "description": "Every vehicle's preventive maintenance due status "
+                       "(Overdue/Due Soon/OK), filterable by branch and "
+                       "status.",
+        "template_path": "endpoint:system_admin.report_pms_compliance",
+        "permission": "maintenanceorder.view",
+        "kind": "LIST",
+        "needs_document": False,
+    },
+    {
+        "report_code": "RPT_REGISTRATION_EXPIRY",
+        "name": "Vehicle Registration Expiry Report",
+        "description": "Vehicles approaching or past LTO registration "
+                       "renewal, filterable by branch and status.",
+        "template_path": "endpoint:system_admin.report_registration_expiry",
+        "permission": "vehicleregistration.view",
+        "kind": "LIST",
+        "needs_document": False,
+    },
+    {
+        "report_code": "RPT_MAINTENANCE_COST_SUMMARY",
+        "name": "Maintenance Cost Summary",
+        "description": "Completed maintenance orders and their actual "
+                       "cost, filterable by branch and date range, with a "
+                       "grand total.",
+        "template_path": "endpoint:system_admin.report_maintenance_cost_summary",
+        "permission": "maintenanceorder.view",
+        "kind": "LIST",
+        "needs_document": False,
+    },
 ]
 
 
