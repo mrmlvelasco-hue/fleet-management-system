@@ -3,6 +3,19 @@
 Email delivery now actually sends via SMTP (EmailSenderService), gated
 behind the admin-configurable EmailConfig.is_enabled switch -- this
 replaces the earlier stub that only logged intent.
+
+IMPORTANT: the actual email-sending logic lives in the plain function
+`_send_notification_email_impl` below, NOT inside the Celery task body.
+The Celery task is a thin wrapper around it. This lets callers (the
+Notification Engine, the comment service) fall back to calling the impl
+function directly -- synchronously, in the same request -- when
+`.delay()` can't reach the broker, which is the normal situation on a
+dev machine where no separate `celery worker` process is running.
+Without this, every real notification (approvals, comment mentions)
+silently dropped: `.delay()` would fail, get caught, and just log a
+warning, with nothing ever actually sent -- while the unrelated "Send
+Test Email" button worked fine because IT already had this same
+fallback. Now both paths behave identically.
 """
 import logging
 
@@ -48,10 +61,12 @@ def send_test_email(self, to_email: str):
     logger.info("Test email sent to %s", to_email)
 
 
-@celery.task(name="system_admin.send_notification_email", bind=True,
-             max_retries=3, default_retry_delay=60)
-def send_notification_email(self, user_id: int, event_code: str,
-                             reference_table: str, reference_id: int):
+def _send_notification_email_impl(user_id: int, event_code: str,
+                                   reference_table: str, reference_id: int
+                                   ) -> None:
+    """The actual work: render the template and send via SMTP. Plain
+    function (no Celery `self`/retry) so it can be called directly as a
+    synchronous fallback, not only through the Celery task below."""
     from app.modules.user_management.models import User
     from app.modules.system_admin.models import EmailTemplate
 
@@ -87,8 +102,45 @@ def send_notification_email(self, user_id: int, event_code: str,
         # Not an error worth retrying or alarming about — email just isn't
         # turned on. The in-app notification already reached the person.
         logger.info("Email not sent (not configured): %s", e)
+
+
+@celery.task(name="system_admin.send_notification_email", bind=True,
+             max_retries=3, default_retry_delay=60)
+def send_notification_email(self, user_id: int, event_code: str,
+                             reference_table: str, reference_id: int):
+    try:
+        _send_notification_email_impl(
+            user_id, event_code, reference_table, reference_id)
     except Exception as e:
         logger.exception(
             "Failed to send email notification: user=%s event=%s ref=%s/%s: %s",
             user_id, event_code, reference_table, reference_id, e)
         raise self.retry(exc=e)
+
+
+def dispatch_notification_email(user_id: int, event_code: str,
+                                reference_table: str, reference_id: int
+                                ) -> None:
+    """Single entry point used by every caller that wants a notification
+    email sent (NotificationEngine, CommentService, ...). Tries to queue
+    via Celery first (fast, non-blocking); if the broker is unreachable —
+    the common case with no `celery worker` process running — falls back
+    to sending synchronously in the current request via the same impl
+    function, so the email actually goes out either way instead of
+    silently disappearing after a logged warning."""
+    try:
+        send_notification_email.delay(
+            user_id=user_id, event_code=event_code,
+            reference_table=reference_table, reference_id=reference_id)
+    except Exception:
+        logger.info(
+            "Celery broker unavailable for notification email (event=%s, "
+            "user=%s) — sending synchronously instead.", event_code, user_id)
+        try:
+            _send_notification_email_impl(
+                user_id, event_code, reference_table, reference_id)
+        except Exception:
+            logger.exception(
+                "Synchronous fallback also failed to send notification "
+                "email: user=%s event=%s ref=%s/%s",
+                user_id, event_code, reference_table, reference_id)
