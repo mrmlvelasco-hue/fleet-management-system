@@ -105,10 +105,26 @@ class InAppNotificationService:
         db.session.commit()
 
 
+_HOOKS_REGISTERED = False
+
+
 def register_notification_hooks() -> None:
     """Subscribe the NotificationEngine to ApprovalEngine events.
-    Called once in the app factory."""
+    Called once in the app factory.
+
+    Guarded against double-registration: `_subscribers` is a module-level
+    list that persists across repeated create_app() calls in the same
+    process (Flask's dev-server reloader, or multiple app fixtures in a
+    test run) — without this guard, each additional call would append
+    another copy of this lambda, and every approval event would fire the
+    notification dispatch once per registered copy, sending the same
+    email 2x, 3x, etc.
+    """
+    global _HOOKS_REGISTERED
+    if _HOOKS_REGISTERED:
+        return
     from app.core.approval.engine import _subscribers
     engine = NotificationEngine()
     _subscribers.append(
         lambda event_name, instance: engine.dispatch(event_name, instance))
+    _HOOKS_REGISTERED = True

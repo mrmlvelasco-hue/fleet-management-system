@@ -680,10 +680,6 @@ def vehicle_print(vid):
 
     company = CompanyProfileService().get()
     attachments = _attachment_rows("vehicles", vid)
-    # Prefer an image attachment as the vehicle photo; fall back to none
-    # (the template shows a placeholder box instead of a broken image).
-    photo = next((a for a in attachments
-                 if (a.mime_type or "").startswith("image/")), None)
 
     mo_history = []
     try:
@@ -697,7 +693,7 @@ def vehicle_print(vid):
         pass
 
     return render_template("master_data/vehicle_print.html", item=item,
-                           company=company, photo=photo,
+                           company=company, attachments=attachments,
                            mo_history=mo_history,
                            generated_at=datetime.now())
 

@@ -27,7 +27,7 @@ _REGISTRY = {
         "app.modules.transactions.trip_ticket.models",
         "TripTicket",
         lambda id_: ("transactions.tripticket_detail", {"tid": id_})),
-    "authority_to_drive": (
+    "authority_to_drives": (
         "app.modules.transactions.atd.models",
         "AuthorityToDrive",
         lambda id_: ("transactions.atd_detail", {"aid": id_})),
