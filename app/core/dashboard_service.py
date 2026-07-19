@@ -31,6 +31,14 @@ class DashboardService:
         return len([d for d in due
                    if scope_svc.covers(user.id, branch_id=d["vehicle"].branch_id)])
 
+    def recent_vehicles(self, user=None, limit: int = 10) -> list:
+        """Return the most recent org-scoped vehicles for the Vehicle List
+        dashboard widget. Reuses VehicleService.list so org-scope filtering
+        is identical to the master-data list page."""
+        vehicles = VehicleService().list(include_inactive=False, user=user)
+        vehicles = sorted(vehicles, key=lambda v: v.id, reverse=True)
+        return vehicles[:limit]
+
     def approvals_pending_count(self, user) -> int:
         if user is None:
             return 0

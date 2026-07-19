@@ -2,6 +2,7 @@
 Profile, Email Templates, Notification Rules, Audit Trail Viewer,
 Dashboard Config, Backup Config, Report Config, and the notification bell
 API endpoints. Thin controllers only — business logic in services."""
+import os
 from flask import (Blueprint, render_template, redirect, url_for, flash,
                    request, jsonify, current_app)
 from flask_login import login_required, current_user
@@ -204,7 +205,29 @@ def email_config():
 def email_config_send_test():
     from app.modules.system_admin.services.email_config_service import (
         EmailSenderService, EmailNotConfiguredError)
+    from app.modules.system_admin.tasks import send_test_email
+
     test_recipient = request.form.get("test_email") or current_user.email
+    if not test_recipient:
+        flash("Enter a recipient address to send the test to.", "warning")
+        return redirect(url_for("system_admin.email_config"))
+
+    # Prefer async delivery so the button returns immediately instead of
+    # blocking the request thread on the SMTP handshake. If the broker
+    # (Redis) is unavailable — typical in a plain dev run — fall back to a
+    # synchronous send. The synchronous send is now timeout-bounded
+    # (SMTP_TIMEOUT_SECONDS) so it can never hang the browser indefinitely,
+    # which was the original "page just keeps loading" bug.
+    try:
+        send_test_email.delay(test_recipient)
+        flash(f"Test email queued for {test_recipient}. Check the inbox "
+              f"(and spam) in a moment; if nothing arrives, review the "
+              f"worker log for the SMTP error.", "info")
+        return redirect(url_for("system_admin.email_config"))
+    except Exception:
+        current_app.logger.info(
+            "Celery broker unavailable — sending test email synchronously.")
+
     try:
         EmailSenderService().send(
             to_email=test_recipient,
@@ -212,8 +235,9 @@ def email_config_send_test():
             body_html=(
                 "<p>This is a test email confirming your SMTP configuration "
                 "is working correctly.</p>"
-                f"<p>Sent to confirm delivery for: {test_recipient}</p>"),
-            body_text="This is a test email confirming your SMTP configuration is working correctly.")
+                f"<p>Delivery target: {test_recipient}</p>"),
+            body_text="This is a test email confirming your SMTP "
+                      "configuration is working correctly.")
         flash(f"Test email sent successfully to {test_recipient}.", "success")
     except EmailNotConfiguredError as e:
         flash(str(e), "warning")
@@ -389,6 +413,7 @@ def dashboard_config():
 @login_required
 @require_permission("backupconfig.view")
 def backup_config():
+    from app.modules.system_admin.services.backup_service import BackupService
     cfg = BackupConfig.query.filter_by(is_active=True).first()
     if request.method == "POST":
         if not current_user.has_permission("backupconfig.update"):
@@ -403,7 +428,46 @@ def backup_config():
         db.session.commit()
         flash("Backup configuration saved.", "success")
         return redirect(url_for("system_admin.backup_config"))
-    return render_template("system_admin/backup_config.html", cfg=cfg)
+    backups = BackupService().list_backups(
+        cfg.destination_path if cfg else None)
+    return render_template("system_admin/backup_config.html", cfg=cfg,
+                           backups=backups)
+
+
+@bp.route("/backup-config/test", methods=["POST"])
+@login_required
+@require_permission("backupconfig.update")
+def backup_config_test():
+    """Non-destructive readiness check — confirms the backup will actually
+    work (DB reachable, mysqldump present, destination writable) before the
+    client relies on it."""
+    from app.modules.system_admin.services.backup_service import BackupService
+    dest = request.form.get("destination_path", "")
+    results = BackupService().test_configuration(dest)
+    for r in results:
+        flash(f"{'✓' if r['ok'] else '✗'} {r['check']}: {r['detail']}",
+              "success" if r["ok"] else "danger")
+    return redirect(url_for("system_admin.backup_config"))
+
+
+@bp.route("/backup-config/run", methods=["POST"])
+@login_required
+@require_permission("backupconfig.update")
+def backup_config_run():
+    """Trigger a backup immediately (manual run). For scheduled runs this
+    same service method is invoked by the Celery Beat task."""
+    from app.modules.system_admin.services.backup_service import BackupService
+    cfg = BackupConfig.query.filter_by(is_active=True).first()
+    result = BackupService().run_backup(
+        destination_path=cfg.destination_path if cfg else None,
+        retention_days=cfg.retention_days if cfg else 30)
+    if result["ok"]:
+        kb = result["size_bytes"] / 1024
+        flash(f"Backup created: {os.path.basename(result['file'])} "
+              f"({kb:.1f} KB).", "success")
+    else:
+        flash(f"Backup failed: {result['error']}", "danger")
+    return redirect(url_for("system_admin.backup_config"))
 
 
 # ── Report Config ──────────────────────────────────────────────────────────
@@ -412,8 +476,34 @@ def backup_config():
 @login_required
 @require_permission("reportconfig.view")
 def report_config_list():
+    from app.modules.system_admin.services.report_registry_service import (
+        ReportRegistryService)
     items = ReportConfig.query.order_by(ReportConfig.report_code).all()
-    return render_template("system_admin/report_config_list.html", items=items)
+    available = ReportRegistryService().list_available(current_user)
+    return render_template("system_admin/report_config_list.html",
+                           items=items, available=available)
+
+
+@bp.route("/report-config/new", methods=["GET", "POST"])
+@login_required
+@require_permission("reportconfig.update")
+def report_config_new():
+    """Register a new report definition — lets an admin add a report to the
+    catalog without a code change (the definition drives the Reports menu)."""
+    if request.method == "POST":
+        code = request.form["report_code"].strip().upper()
+        if ReportConfig.query.filter_by(report_code=code).first():
+            flash(f"Report code '{code}' already exists.", "warning")
+        else:
+            db.session.add(ReportConfig(
+                report_code=code,
+                name=request.form["name"].strip(),
+                description=request.form.get("description", "").strip(),
+                template_path=request.form.get("template_path", "").strip()))
+            db.session.commit()
+            flash(f"Report '{code}' registered.", "success")
+        return redirect(url_for("system_admin.report_config_list"))
+    return render_template("system_admin/report_config_form.html")
 
 
 # ── Notification bell API ──────────────────────────────────────────────────

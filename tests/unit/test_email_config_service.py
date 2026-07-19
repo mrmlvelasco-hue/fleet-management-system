@@ -62,7 +62,10 @@ def test_send_uses_configured_smtp_settings(mock_smtp_cls, db):
         body_html="<p>Please review MO-2026-000001</p>",
         body_text="Please review MO-2026-000001")
 
-    mock_smtp_cls.assert_called_once_with("smtp.example.com", 587)
+    # 587 = submission port → plain SMTP + STARTTLS, now with a timeout so
+    # a dead server can't hang the request/worker indefinitely.
+    mock_smtp_cls.assert_called_once_with("smtp.example.com", 587, timeout=20)
+    mock_server.ehlo.assert_called()
     mock_server.starttls.assert_called_once()
     mock_server.login.assert_called_once_with("fleet@example.com", "secret123")
     assert mock_server.send_message.call_count == 1
@@ -70,6 +73,31 @@ def test_send_uses_configured_smtp_settings(mock_smtp_cls, db):
     assert sent_msg["To"] == "approver@example.com"
     assert sent_msg["Subject"] == "Document Pending Approval"
     assert "Example Fleet" in sent_msg["From"]
+
+
+@patch("app.modules.system_admin.services.email_config_service.smtplib.SMTP_SSL")
+@patch("app.modules.system_admin.services.email_config_service.smtplib.SMTP")
+def test_send_uses_ssl_on_port_465(mock_smtp, mock_smtp_ssl, db):
+    """Port 465 is implicit SSL — must use SMTP_SSL and must NOT call
+    starttls(). Using plain SMTP()+starttls() against 465 hangs forever
+    (the original 'browser keeps loading' bug). Regression guard."""
+    EmailConfigService().update(
+        smtp_host="smtp.hostinger.com", smtp_port=465,
+        smtp_username="admin@example.com", smtp_password="secret",
+        use_tls=False, from_email="admin@example.com",
+        from_name="Fleet", is_enabled=True)
+    ssl_server = MagicMock()
+    mock_smtp_ssl.return_value.__enter__.return_value = ssl_server
+
+    EmailSenderService().send(to_email="a@example.com", subject="Hi",
+                              body_html="<p>Hi</p>")
+
+    # SMTP_SSL used with timeout; plain SMTP never touched; no STARTTLS.
+    assert mock_smtp_ssl.call_args[0][:2] == ("smtp.hostinger.com", 465)
+    assert mock_smtp_ssl.call_args[1]["timeout"] == 20
+    mock_smtp.assert_not_called()
+    ssl_server.starttls.assert_not_called()
+    ssl_server.login.assert_called_once()
 
 
 @patch("app.modules.system_admin.services.email_config_service.smtplib.SMTP")

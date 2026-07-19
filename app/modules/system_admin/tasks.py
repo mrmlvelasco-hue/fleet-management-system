@@ -28,6 +28,26 @@ _FALLBACK_BODY_TEXT = (
     "Please log in to the Fleet Management System to view details.")
 
 
+@celery.task(name="system_admin.send_test_email", bind=True,
+             max_retries=0)
+def send_test_email(self, to_email: str):
+    """Send a one-off SMTP test message. Kept separate from
+    send_notification_email so a failing test never retries three times
+    against a broken server and so the admin gets the real error string."""
+    from app.modules.system_admin.services.email_config_service import (
+        EmailSenderService)
+    EmailSenderService().send(
+        to_email=to_email,
+        subject="Fleet Management System — Test Email",
+        body_html=(
+            "<p>This is a test email confirming your SMTP configuration "
+            "is working correctly.</p>"
+            f"<p>Delivery target: {to_email}</p>"),
+        body_text=("This is a test email confirming your SMTP configuration "
+                   "is working correctly."))
+    logger.info("Test email sent to %s", to_email)
+
+
 @celery.task(name="system_admin.send_notification_email", bind=True,
              max_retries=3, default_retry_delay=60)
 def send_notification_email(self, user_id: int, event_code: str,

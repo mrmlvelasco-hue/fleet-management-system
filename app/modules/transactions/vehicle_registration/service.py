@@ -31,6 +31,33 @@ class VehicleRegistrationService(BaseTransactionService):
     document_type_code = "VR"
     reference_table = "vehicle_registrations"
 
+    def get_finance_params(self) -> dict:
+        """VAT rate and % assured value for registration computations.
+
+        These are read from System Parameters (FINANCE group) rather than
+        hardcoded, matching the legacy VEMS 'Other Setting' config (VAT
+        12%, % Assured Value 10). Admins change them under System
+        Administration → System Parameters with no code change, satisfying
+        the 'no values shall be hardcoded' requirement.
+        """
+        from decimal import Decimal
+        from app.modules.system_admin.services.system_parameter_service import (
+            SystemParameterService)
+        svc = SystemParameterService()
+        return {
+            "vat_rate": svc.get("VAT_RATE", Decimal("12")),
+            "assured_value_pct": svc.get("ASSURED_VALUE_PCT", Decimal("10")),
+        }
+
+    def compute_vat(self, base_amount) -> "Decimal":
+        """Compute VAT on a base amount using the configured VAT rate."""
+        from decimal import Decimal, ROUND_HALF_UP
+        if base_amount is None:
+            return Decimal("0.00")
+        rate = self.get_finance_params()["vat_rate"]
+        vat = (Decimal(str(base_amount)) * Decimal(str(rate)) / Decimal("100"))
+        return vat.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
     def create(self, *, vehicle_id, registration_type, registration_date,
                user, validity_years=None, or_cr_cost=None,
                odometer_at_registration=None):

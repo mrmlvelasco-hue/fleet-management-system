@@ -2,8 +2,9 @@
 {% block title %}Backup Config{% endblock %}
 {% block breadcrumbs %}<li class="breadcrumb-item active">Backup Config</li>{% endblock %}
 {% block content %}
-<h1 class="h3 mb-4">Backup & Restore Configuration</h1>
-<div class="card"><div class="card-body">
+<h1 class="h3 mb-4">Backup &amp; Restore Configuration</h1>
+
+<div class="card mb-4"><div class="card-body">
 <form method="post" class="row g-3">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="col-md-4"><label class="form-label">Schedule</label>
@@ -15,11 +16,52 @@
   <div class="col-md-4"><label class="form-label">Retention (days)</label>
     <input type="number" name="retention_days" class="form-control" value="{{ cfg.retention_days if cfg else 30 }}"></div>
   <div class="col-md-8"><label class="form-label">Destination Path</label>
-    <input type="text" name="destination_path" class="form-control" value="{{ cfg.destination_path if cfg else '' }}"></div>
-  <p class="text-muted small col-12">Actual backup execution will be implemented in Phase 5.</p>
+    <input type="text" name="destination_path" id="destination_path" class="form-control"
+           placeholder="e.g. D:\fms\backups (blank = instance/backups)"
+           value="{{ cfg.destination_path if cfg else '' }}"></div>
   {% if current_user.has_permission('backupconfig.update') %}
-  <div class="col-12"><button class="btn btn-primary" type="submit">Save</button></div>
+  <div class="col-12 d-flex gap-2">
+    <button class="btn btn-primary" type="submit">Save</button>
+    <button class="btn btn-outline-secondary" type="submit"
+            formaction="{{ url_for('system_admin.backup_config_test') }}">
+      <i class="bi bi-clipboard-check me-1"></i>Test Configuration</button>
+    <button class="btn btn-outline-success" type="submit"
+            formaction="{{ url_for('system_admin.backup_config_run') }}"
+            onclick="return confirm('Run a backup now?');">
+      <i class="bi bi-download me-1"></i>Run Backup Now</button>
+  </div>
   {% endif %}
 </form>
 </div></div>
+
+<div class="card mb-4"><div class="card-body">
+  <h2 class="h6 text-uppercase text-muted fw-bold mb-3">Backup History</h2>
+  {% if backups %}
+  <div class="table-responsive">
+    <table class="table table-sm mb-0">
+      <thead><tr><th>File</th><th>Size</th><th>Created (UTC)</th></tr></thead>
+      <tbody>
+      {% for b in backups %}
+        <tr>
+          <td><code>{{ b.name }}</code></td>
+          <td>{{ '%.1f'|format(b.size_bytes / 1024) }} KB</td>
+          <td>{{ b.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted mb-0">No backups yet. Configure a destination and click
+    <strong>Run Backup Now</strong>, or set a Daily/Weekly schedule.</p>
+  {% endif %}
+</div></div>
+
+<div class="alert alert-info small mb-0">
+  <i class="bi bi-info-circle me-1"></i>
+  <strong>Restore</strong> is performed on the server, not from the app, to
+  prevent accidental production overwrites. For MySQL:
+  <code>gunzip &lt; backup.sql.gz | mysql -u USER -p DATABASE</code>. See the
+  README for the full procedure.
+</div>
 {% endblock %}

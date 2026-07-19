@@ -1,0 +1,1252 @@
+diff --git a/app/cli.py b/app/cli.py
+index 92a648d..5e5c249 100644
+--- a/app/cli.py
++++ b/app/cli.py
+@@ -37,8 +37,12 @@ def seed_all(admin_password):
+     _seed_dashboard_widgets()
+     _seed_lookups()
+     _seed_transaction_types()
++    _seed_email_templates()
++    _seed_notification_rules()
++    _seed_reports()
+     db.session.commit()
+-    click.echo("Default system parameters, dashboard widgets and lookups seeded.")
++    click.echo("Default system parameters, dashboard widgets, lookups, "
++               "email templates and notification rules seeded.")
+ 
+ 
+ def _seed_admin(admin_password: str) -> None:
+@@ -65,12 +69,86 @@ def _seed_admin(admin_password: str) -> None:
+ 
+ 
+ def _seed_system_parameters() -> None:
++    """Seed the configurable business rules. Grouped to mirror the legacy
++    VEMS 'Vehicle Management System Config' screen (System Configuration
++    tab) so the client sees familiar settings, plus the FMS-specific
++    security/trip-ticket params. Idempotent: only inserts codes that don't
++    already exist, so it's safe to re-run after adding new defaults."""
+     from app.modules.system_admin.models import SystemParameter
+     defaults = [
++        # (code, value, data_type, group, description)
++
++        # ── Security / session (FMS) ──────────────────────────────────
+         ("SESSION_TIMEOUT_MINUTES", "30", "INTEGER", "SECURITY",
+          "Session timeout in minutes"),
+         ("MAX_FAILED_LOGIN_ATTEMPTS", "5", "INTEGER", "SECURITY",
+          "Max failed login attempts before lockout"),
++
++        # ── Password policy (VEMS: System Configuration) ──────────────
++        ("PASSWORD_WARNING_DAYS", "30", "INTEGER", "PASSWORD_POLICY",
++         "Days before expiry to start warning the user"),
++        ("PASSWORD_EXPIRY_DAYS", "90", "INTEGER", "PASSWORD_POLICY",
++         "Password validity period in days"),
++        ("PASSWORD_HISTORY_LENGTH", "6", "INTEGER", "PASSWORD_POLICY",
++         "Number of previous passwords that cannot be reused"),
++        ("PASSWORD_MIN_LENGTH", "6", "INTEGER", "PASSWORD_POLICY",
++         "Minimum password length"),
++        ("PASSWORD_MAX_LENGTH", "20", "INTEGER", "PASSWORD_POLICY",
++         "Maximum password length"),
++
++        # ── Image size limits, px (VEMS: Vehicle Picture/Person Setup) ─
++        ("IMG_VEHICLE_FRONT_BACK_PX", "400", "INTEGER", "IMAGE_LIMITS",
++         "Vehicle picture size in pixels (Front, Back)"),
++        ("IMG_CR_PX", "600", "INTEGER", "IMAGE_LIMITS",
++         "CR picture size in pixels"),
++        ("IMG_PERSON_ATD_PX", "320", "INTEGER", "IMAGE_LIMITS",
++         "Person/Assignee/ATD picture size in pixels"),
++        ("IMG_LTO_ENGINE_PX", "600", "INTEGER", "IMAGE_LIMITS",
++         "LTO/Engine picture size in pixels"),
++        ("IMG_ENGINE_CR_PX", "800", "INTEGER", "IMAGE_LIMITS",
++         "Engine picture size in pixels (CR)"),
++
++        # ── Car plan budget over 5 years (VEMS) ───────────────────────
++        ("CAR_PLAN_BUDGET_Y1", "3000", "DECIMAL", "CAR_PLAN_BUDGET",
++         "Car Plan budget, year 1"),
++        ("CAR_PLAN_BUDGET_Y2", "3750", "DECIMAL", "CAR_PLAN_BUDGET",
++         "Car Plan budget, year 2"),
++        ("CAR_PLAN_BUDGET_Y3", "4500", "DECIMAL", "CAR_PLAN_BUDGET",
++         "Car Plan budget, year 3"),
++        ("CAR_PLAN_BUDGET_Y4", "5250", "DECIMAL", "CAR_PLAN_BUDGET",
++         "Car Plan budget, year 4"),
++        ("CAR_PLAN_BUDGET_Y5", "6000", "DECIMAL", "CAR_PLAN_BUDGET",
++         "Car Plan budget, year 5"),
++
++        # ── Company-owned budget over 5 years (VEMS) ──────────────────
++        ("COMPANY_OWNED_BUDGET_Y1", "2000", "DECIMAL", "COMPANY_OWNED_BUDGET",
++         "Company-owned vehicle budget, year 1"),
++        ("COMPANY_OWNED_BUDGET_Y2", "2500", "DECIMAL", "COMPANY_OWNED_BUDGET",
++         "Company-owned vehicle budget, year 2"),
++        ("COMPANY_OWNED_BUDGET_Y3", "3000", "DECIMAL", "COMPANY_OWNED_BUDGET",
++         "Company-owned vehicle budget, year 3"),
++        ("COMPANY_OWNED_BUDGET_Y4", "3500", "DECIMAL", "COMPANY_OWNED_BUDGET",
++         "Company-owned vehicle budget, year 4"),
++        ("COMPANY_OWNED_BUDGET_Y5", "4000", "DECIMAL", "COMPANY_OWNED_BUDGET",
++         "Company-owned vehicle budget, year 5"),
++
++        # ── Finance (VEMS: Other Setting) — read by Vehicle Registration
++        ("VAT_RATE", "12", "DECIMAL", "FINANCE",
++         "VAT rate (%) applied on registration/computed amounts"),
++        ("ASSURED_VALUE_PCT", "10", "DECIMAL", "FINANCE",
++         "% Assured Value used in vehicle registration computation"),
++
++        # ── UI list preferences (VEMS: Other Setting) ─────────────────
++        ("LIST_PAGES", "75", "INTEGER", "UI_PREFERENCES",
++         "Default number of rows per list page"),
++        ("VEHICLE_LIST_COLUMNS", "38", "INTEGER", "UI_PREFERENCES",
++         "Vehicle list column count"),
++        ("WO_NORMAL_LIST_COLUMNS", "15", "INTEGER", "UI_PREFERENCES",
++         "Work Order (Normal) list column count"),
++        ("WO_PM_LIST_COLUMNS", "15", "INTEGER", "UI_PREFERENCES",
++         "Work Order (PM) list column count"),
++
++        # ── Trip ticket / general (FMS) ───────────────────────────────
+         ("REQUIRE_DRIVER_FROM_MASTER", "YES", "STRING", "TRIP_TICKET",
+          "YES = driver must come from Driver Master; NO = manual entry"),
+         ("COMPANY_NAME", "My Company", "STRING", "GENERAL", "Company name"),
+@@ -84,14 +162,27 @@ def _seed_system_parameters() -> None:
+ 
+ 
+ def _seed_dashboard_widgets() -> None:
++    """Seed the dashboard widget catalog. Two kinds of widget:
++      - KPI tiles (top row counters): FLEET, MAINTENANCE, APPROVALS, ...
++      - Panels (list/table sections): MY_ACTIONS, VEHICLE_LIST,
++        DUE_MAINTENANCE, DUE_REGISTRATION.
++    Every widget is individually toggleable per user under System
++    Administration → Dashboard Config, so a CEO and a dispatcher can see
++    different dashboards."""
+     from app.modules.system_admin.models import DashboardWidget
+     widgets = [
++        # KPI tiles
+         ("FLEET", "Fleet", "bi-truck", 1),
+         ("MAINTENANCE", "Maintenance", "bi-wrench", 2),
+         ("APPROVALS", "Approvals", "bi-check2-square", 3),
+         ("REGISTRATIONS", "Registrations", "bi-card-checklist", 4),
+         ("TIRES", "Tires", "bi-circle", 5),
+         ("BATTERIES", "Batteries", "bi-battery-half", 6),
++        # Panels (list/table widgets)
++        ("MY_ACTIONS", "For My Action", "bi-inbox", 10),
++        ("VEHICLE_LIST", "Vehicle List", "bi-list-ul", 11),
++        ("DUE_MAINTENANCE", "Vehicles Due for Maintenance", "bi-wrench", 12),
++        ("DUE_REGISTRATION", "Vehicles Due for Registration", "bi-card-checklist", 13),
+     ]
+     for code, label, icon, sort in widgets:
+         if not DashboardWidget.query.filter_by(code=code).first():
+@@ -101,6 +192,125 @@ def _seed_dashboard_widgets() -> None:
+     db.session.flush()
+ 
+ 
++def _seed_email_templates() -> None:
++    """Seed default Jinja2 email templates for every approval-engine event
++    and the scheduled reminder events. Admins can edit subject/body under
++    System Administration → Email Templates without touching code.
++
++    Available context variables (see notification tasks.py):
++      {{ recipient_name }}, {{ reference_table }}, {{ reference_id }},
++      {{ event_code }}, {{ event_label }}
++    """
++    from app.modules.system_admin.models import EmailTemplate
++
++    def _tmpl(intro):
++        html = (f"<p>Hello {{{{ recipient_name }}}},</p>"
++                f"<p>{intro}</p>"
++                f"<p><strong>{{{{ reference_table }}}} "
++                f"#{{{{ reference_id }}}}</strong></p>"
++                f"<p>Please log in to the Fleet Management System to view "
++                f"the details.</p>")
++        text = (f"Hello {{{{ recipient_name }}}},\n\n{intro}\n\n"
++                f"{{{{ reference_table }}}} #{{{{ reference_id }}}}\n\n"
++                f"Please log in to the Fleet Management System to view the "
++                f"details.")
++        return html, text
++
++    templates = [
++        ("submitted", "Document Submitted for Approval",
++         "[FMS] Approval needed: {{ reference_table }} #{{ reference_id }}",
++         "A document has been submitted and is now awaiting your approval."),
++        ("approved_level", "Approval Level Passed",
++         "[FMS] Progressed: {{ reference_table }} #{{ reference_id }}",
++         "A document you submitted has passed an approval level and moved "
++         "to the next approver."),
++        ("approved_final", "Document Fully Approved",
++         "[FMS] Approved: {{ reference_table }} #{{ reference_id }}",
++         "Good news — your document has been fully approved."),
++        ("rejected", "Document Rejected",
++         "[FMS] Rejected: {{ reference_table }} #{{ reference_id }}",
++         "Your document has been rejected. Please review the approver's "
++         "remarks."),
++        ("returned", "Document Returned",
++         "[FMS] Returned for revision: {{ reference_table }} "
++         "#{{ reference_id }}",
++         "Your document has been returned for revision."),
++        ("resubmitted", "Document Resubmitted",
++         "[FMS] Resubmitted: {{ reference_table }} #{{ reference_id }}",
++         "A previously returned document has been revised and resubmitted "
++         "for your approval."),
++        ("cancelled", "Document Cancelled",
++         "[FMS] Cancelled: {{ reference_table }} #{{ reference_id }}",
++         "A document has been cancelled."),
++        ("PMS_DUE", "Preventive Maintenance Due",
++         "[FMS] PM due: {{ reference_table }} #{{ reference_id }}",
++         "A vehicle is due for preventive maintenance."),
++        ("REGISTRATION_EXPIRING", "Vehicle Registration Expiring",
++         "[FMS] Registration expiring: {{ reference_table }} "
++         "#{{ reference_id }}",
++         "A vehicle registration is approaching its expiry date and needs "
++         "renewal."),
++        ("TIRE_REPLACEMENT", "Tire Replacement Due",
++         "[FMS] Tire replacement due: {{ reference_table }} "
++         "#{{ reference_id }}",
++         "A tire has reached its replacement threshold."),
++        ("BATTERY_REPLACEMENT", "Battery Replacement Due",
++         "[FMS] Battery replacement due: {{ reference_table }} "
++         "#{{ reference_id }}",
++         "A battery has reached its replacement threshold."),
++        ("TRIP_TICKET_RELEASE", "Trip Ticket Released",
++         "[FMS] Trip ticket released: {{ reference_table }} "
++         "#{{ reference_id }}",
++         "A trip ticket has been released."),
++    ]
++    for event_code, name, subject, intro in templates:
++        if not EmailTemplate.query.filter_by(event_code=event_code).first():
++            html, text = _tmpl(intro)
++            db.session.add(EmailTemplate(
++                event_code=event_code, name=name, subject=subject,
++                body_html=html, body_text=text))
++    db.session.flush()
++
++
++def _seed_notification_rules() -> None:
++    """Seed default notification rules so approval events actually notify
++    the right people out of the box. Channel defaults to BOTH (in-app +
++    email); admins can switch any rule to IN_APP only under System
++    Administration → Notification Rules.
++
++    Recipient logic:
++      - submitted/resubmitted → CURRENT_APPROVER (the person who must act)
++      - approved_final/rejected/returned → SUBMITTER (the originator)
++    """
++    from app.modules.system_admin.models import NotificationRule
++
++    rules = [
++        ("submitted", "BOTH", "CURRENT_APPROVER"),
++        ("resubmitted", "BOTH", "CURRENT_APPROVER"),
++        ("approved_level", "BOTH", "CURRENT_APPROVER"),
++        ("approved_final", "BOTH", "SUBMITTER"),
++        ("rejected", "BOTH", "SUBMITTER"),
++        ("returned", "BOTH", "SUBMITTER"),
++        ("cancelled", "IN_APP", "SUBMITTER"),
++    ]
++    for event_code, channel, recipient_type in rules:
++        exists = NotificationRule.query.filter_by(
++            event_code=event_code, recipient_type=recipient_type).first()
++        if not exists:
++            db.session.add(NotificationRule(
++                event_code=event_code, channel=channel,
++                recipient_type=recipient_type))
++    db.session.flush()
++
++
++def _seed_reports() -> None:
++    """Seed the built-in report registry so the 5 shipped reports appear in
++    the unified Reports list; admins add new reports as ReportConfig rows."""
++    from app.modules.system_admin.services.report_registry_service import (
++        ReportRegistryService)
++    ReportRegistryService().seed_builtin()
++
++
+ def _seed_lookups() -> None:
+     """Sync all module-registered lookup types (FUEL_TYPE, LICENSE_TYPE, etc.)
+     Must import the master_data routes module first so its lookup
+diff --git a/app/core/dashboard_service.py b/app/core/dashboard_service.py
+index d58adb9..1d06fc3 100644
+--- a/app/core/dashboard_service.py
++++ b/app/core/dashboard_service.py
+@@ -31,6 +31,14 @@ class DashboardService:
+         return len([d for d in due
+                    if scope_svc.covers(user.id, branch_id=d["vehicle"].branch_id)])
+ 
++    def recent_vehicles(self, user=None, limit: int = 10) -> list:
++        """Return the most recent org-scoped vehicles for the Vehicle List
++        dashboard widget. Reuses VehicleService.list so org-scope filtering
++        is identical to the master-data list page."""
++        vehicles = VehicleService().list(include_inactive=False, user=user)
++        vehicles = sorted(vehicles, key=lambda v: v.id, reverse=True)
++        return vehicles[:limit]
++
+     def approvals_pending_count(self, user) -> int:
+         if user is None:
+             return 0
+diff --git a/app/modules/main/routes.py b/app/modules/main/routes.py
+index fc49af5..1fe0bf3 100644
+--- a/app/modules/main/routes.py
++++ b/app/modules/main/routes.py
+@@ -48,6 +48,16 @@ def _visible_widget_codes(user) -> set:
+            if configs.get(w.code, w.default_visible)}
+ 
+ 
++def _widget_exists(code: str) -> bool:
++    """True if a DashboardWidget row exists for `code`. Used so panels
++    (My Actions, Vehicle List, due tables) that pre-date the widget
++    catalog stay visible on installs where `flask seed all` hasn't yet
++    added their catalog rows — "unregistered widget = show it" preserves
++    backward compatibility."""
++    from app.modules.system_admin.models import DashboardWidget
++    return DashboardWidget.query.filter_by(code=code).first() is not None
++
++
+ @bp.route("/")
+ @login_required
+ def dashboard():
+@@ -76,19 +86,35 @@ def dashboard():
+     ]
+     cards = [c for c in all_cards if c["code"] in visible_codes]
+ 
+-    my_tasks = ApprovalTaskService().list_for_user(current_user)
+-    for_my_action = [{
+-        "document_number": t.document_number or "(no number)",
+-        "document_type": t.document_type.name if t.document_type else "",
+-        "requester": t.requester.full_name if t.requester else "Unknown",
+-        "created_at": t.created_at,
+-        "aging": _aging_label(t.created_at),
+-        "level_number": t.level_number,
+-        "url": resolve_task_url(t),
+-    } for t in my_tasks]
++    # "For My Action" panel — now a toggleable widget (MY_ACTIONS). Defaults
++    # to shown if the widget row is absent, so existing installs are
++    # unaffected.
++    for_my_action = []
++    if "MY_ACTIONS" in visible_codes or not _widget_exists("MY_ACTIONS"):
++        my_tasks = ApprovalTaskService().list_for_user(current_user)
++        for_my_action = [{
++            "document_number": t.document_number or "(no number)",
++            "document_type": t.document_type.name if t.document_type else "",
++            "requester": t.requester.full_name if t.requester else "Unknown",
++            "created_at": t.created_at,
++            "aging": _aging_label(t.created_at),
++            "level_number": t.level_number,
++            "url": resolve_task_url(t),
++        } for t in my_tasks]
++
++    # "Vehicle List" panel (VEHICLE_LIST widget) — the compact recent-fleet
++    # table the client asked to have as a dashboard option.
++    recent_vehicles = []
++    if "VEHICLE_LIST" in visible_codes:
++        recent_vehicles = [{
++            "vehicle": v,
++            "url": url_for("master_data.vehicle_detail", vid=v.id),
++        } for v in dash.recent_vehicles(user=current_user, limit=10)]
+ 
+     due_vehicles = []
+-    if "MAINTENANCE" in visible_codes:
++    if ("DUE_MAINTENANCE" in visible_codes
++            or (not _widget_exists("DUE_MAINTENANCE")
++                and "MAINTENANCE" in visible_codes)):
+         from app.core.maintenance.due_calculation_service import (
+             PMDueCalculationService)
+         from app.modules.user_management.org_scope_service import (
+@@ -121,7 +147,9 @@ def dashboard():
+             })
+ 
+     due_registrations = []
+-    if "REGISTRATIONS" in visible_codes:
++    if ("DUE_REGISTRATION" in visible_codes
++            or (not _widget_exists("DUE_REGISTRATION")
++                and "REGISTRATIONS" in visible_codes)):
+         from app.modules.registration_config.service import (
+             RegistrationDueCalculationService)
+         from app.modules.user_management.org_scope_service import (
+@@ -150,5 +178,6 @@ def dashboard():
+ 
+     return render_template("main/dashboard.html", cards=cards,
+                            for_my_action=for_my_action,
++                           recent_vehicles=recent_vehicles,
+                            due_vehicles=due_vehicles,
+                            due_registrations=due_registrations)
+diff --git a/app/modules/main/templates/main/dashboard.html b/app/modules/main/templates/main/dashboard.html
+index 480c6c5..9aa13d4 100644
+--- a/app/modules/main/templates/main/dashboard.html
++++ b/app/modules/main/templates/main/dashboard.html
+@@ -24,6 +24,7 @@
+ </div>
+ 
+ <div class="row g-3 mt-1">
++  {% if for_my_action is defined and for_my_action %}
+   <div class="col-12 col-xl-8">
+     <div class="card" id="for-my-action">
+       <div class="card-header d-flex align-items-center gap-2">
+@@ -58,6 +59,31 @@
+       </div>
+     </div>
+   </div>
++  {% endif %}
++
++  {% if recent_vehicles is defined and recent_vehicles %}
++  <div class="col-12 col-xl-4">
++    <div class="card" id="vehicle-list">
++      <div class="card-header d-flex align-items-center justify-content-between">
++        <div class="d-flex align-items-center gap-2">
++          <span class="fw-semibold">Vehicle List</span>
++          <span class="badge text-bg-secondary rounded-pill">{{ recent_vehicles|length }}</span>
++        </div>
++        <a href="{{ url_for('master_data.vehicle_list') }}" class="small text-decoration-none">View all</a>
++      </div>
++      <div class="list-group list-group-flush">
++        {% for row in recent_vehicles %}
++        <a href="{{ row.url }}" class="list-group-item list-group-item-action">
++          <div class="d-flex justify-content-between">
++            <span class="fw-semibold">{{ row.vehicle.plate_number or row.vehicle.conduction_number or '—' }}</span>
++            <span class="text-muted small">{{ row.vehicle.brand }} {{ row.vehicle.model }}</span>
++          </div>
++        </a>
++        {% endfor %}
++      </div>
++    </div>
++  </div>
++  {% endif %}
+ </div>
+ 
+ {% if due_vehicles is defined %}
+diff --git a/app/modules/system_admin/routes.py b/app/modules/system_admin/routes.py
+index 52609eb..090d3ef 100644
+--- a/app/modules/system_admin/routes.py
++++ b/app/modules/system_admin/routes.py
+@@ -2,6 +2,7 @@
+ Profile, Email Templates, Notification Rules, Audit Trail Viewer,
+ Dashboard Config, Backup Config, Report Config, and the notification bell
+ API endpoints. Thin controllers only — business logic in services."""
++import os
+ from flask import (Blueprint, render_template, redirect, url_for, flash,
+                    request, jsonify, current_app)
+ from flask_login import login_required, current_user
+@@ -204,7 +205,29 @@ def email_config():
+ def email_config_send_test():
+     from app.modules.system_admin.services.email_config_service import (
+         EmailSenderService, EmailNotConfiguredError)
++    from app.modules.system_admin.tasks import send_test_email
++
+     test_recipient = request.form.get("test_email") or current_user.email
++    if not test_recipient:
++        flash("Enter a recipient address to send the test to.", "warning")
++        return redirect(url_for("system_admin.email_config"))
++
++    # Prefer async delivery so the button returns immediately instead of
++    # blocking the request thread on the SMTP handshake. If the broker
++    # (Redis) is unavailable — typical in a plain dev run — fall back to a
++    # synchronous send. The synchronous send is now timeout-bounded
++    # (SMTP_TIMEOUT_SECONDS) so it can never hang the browser indefinitely,
++    # which was the original "page just keeps loading" bug.
++    try:
++        send_test_email.delay(test_recipient)
++        flash(f"Test email queued for {test_recipient}. Check the inbox "
++              f"(and spam) in a moment; if nothing arrives, review the "
++              f"worker log for the SMTP error.", "info")
++        return redirect(url_for("system_admin.email_config"))
++    except Exception:
++        current_app.logger.info(
++            "Celery broker unavailable — sending test email synchronously.")
++
+     try:
+         EmailSenderService().send(
+             to_email=test_recipient,
+@@ -212,8 +235,9 @@ def email_config_send_test():
+             body_html=(
+                 "<p>This is a test email confirming your SMTP configuration "
+                 "is working correctly.</p>"
+-                f"<p>Sent to confirm delivery for: {test_recipient}</p>"),
+-            body_text="This is a test email confirming your SMTP configuration is working correctly.")
++                f"<p>Delivery target: {test_recipient}</p>"),
++            body_text="This is a test email confirming your SMTP "
++                      "configuration is working correctly.")
+         flash(f"Test email sent successfully to {test_recipient}.", "success")
+     except EmailNotConfiguredError as e:
+         flash(str(e), "warning")
+@@ -389,6 +413,7 @@ def dashboard_config():
+ @login_required
+ @require_permission("backupconfig.view")
+ def backup_config():
++    from app.modules.system_admin.services.backup_service import BackupService
+     cfg = BackupConfig.query.filter_by(is_active=True).first()
+     if request.method == "POST":
+         if not current_user.has_permission("backupconfig.update"):
+@@ -403,7 +428,46 @@ def backup_config():
+         db.session.commit()
+         flash("Backup configuration saved.", "success")
+         return redirect(url_for("system_admin.backup_config"))
+-    return render_template("system_admin/backup_config.html", cfg=cfg)
++    backups = BackupService().list_backups(
++        cfg.destination_path if cfg else None)
++    return render_template("system_admin/backup_config.html", cfg=cfg,
++                           backups=backups)
++
++
++@bp.route("/backup-config/test", methods=["POST"])
++@login_required
++@require_permission("backupconfig.update")
++def backup_config_test():
++    """Non-destructive readiness check — confirms the backup will actually
++    work (DB reachable, mysqldump present, destination writable) before the
++    client relies on it."""
++    from app.modules.system_admin.services.backup_service import BackupService
++    dest = request.form.get("destination_path", "")
++    results = BackupService().test_configuration(dest)
++    for r in results:
++        flash(f"{'✓' if r['ok'] else '✗'} {r['check']}: {r['detail']}",
++              "success" if r["ok"] else "danger")
++    return redirect(url_for("system_admin.backup_config"))
++
++
++@bp.route("/backup-config/run", methods=["POST"])
++@login_required
++@require_permission("backupconfig.update")
++def backup_config_run():
++    """Trigger a backup immediately (manual run). For scheduled runs this
++    same service method is invoked by the Celery Beat task."""
++    from app.modules.system_admin.services.backup_service import BackupService
++    cfg = BackupConfig.query.filter_by(is_active=True).first()
++    result = BackupService().run_backup(
++        destination_path=cfg.destination_path if cfg else None,
++        retention_days=cfg.retention_days if cfg else 30)
++    if result["ok"]:
++        kb = result["size_bytes"] / 1024
++        flash(f"Backup created: {os.path.basename(result['file'])} "
++              f"({kb:.1f} KB).", "success")
++    else:
++        flash(f"Backup failed: {result['error']}", "danger")
++    return redirect(url_for("system_admin.backup_config"))
+ 
+ 
+ # ── Report Config ──────────────────────────────────────────────────────────
+@@ -412,8 +476,34 @@ def backup_config():
+ @login_required
+ @require_permission("reportconfig.view")
+ def report_config_list():
++    from app.modules.system_admin.services.report_registry_service import (
++        ReportRegistryService)
+     items = ReportConfig.query.order_by(ReportConfig.report_code).all()
+-    return render_template("system_admin/report_config_list.html", items=items)
++    available = ReportRegistryService().list_available(current_user)
++    return render_template("system_admin/report_config_list.html",
++                           items=items, available=available)
++
++
++@bp.route("/report-config/new", methods=["GET", "POST"])
++@login_required
++@require_permission("reportconfig.update")
++def report_config_new():
++    """Register a new report definition — lets an admin add a report to the
++    catalog without a code change (the definition drives the Reports menu)."""
++    if request.method == "POST":
++        code = request.form["report_code"].strip().upper()
++        if ReportConfig.query.filter_by(report_code=code).first():
++            flash(f"Report code '{code}' already exists.", "warning")
++        else:
++            db.session.add(ReportConfig(
++                report_code=code,
++                name=request.form["name"].strip(),
++                description=request.form.get("description", "").strip(),
++                template_path=request.form.get("template_path", "").strip()))
++            db.session.commit()
++            flash(f"Report '{code}' registered.", "success")
++        return redirect(url_for("system_admin.report_config_list"))
++    return render_template("system_admin/report_config_form.html")
+ 
+ 
+ # ── Notification bell API ──────────────────────────────────────────────────
+diff --git a/app/modules/system_admin/services/backup_service.py b/app/modules/system_admin/services/backup_service.py
+new file mode 100644
+index 0000000..beed225
+--- /dev/null
++++ b/app/modules/system_admin/services/backup_service.py
+@@ -0,0 +1,196 @@
++"""Backup service — configuration verification and MySQL backup execution.
++
++Design decision (Senior Architect note): Restore is deliberately NOT exposed
++as an in-app button. A one-click restore sitting one misclick away from
++overwriting production is an enterprise anti-pattern — restore is an ops
++procedure run deliberately from the server, documented in the README. What
++the app DOES provide is:
++
++  1. "Test Configuration" — non-destructive readiness checks so an admin can
++     confirm the backup will work BEFORE relying on it (mysqldump reachable,
++     destination writable, DB credentials valid).
++  2. run_backup() — the actual mysqldump execution, invoked by the Celery
++     Beat schedule (DAILY/WEEKLY) or a manual trigger, with gzip compression
++     and retention purge.
++
++SQLite dev databases don't use mysqldump; the checks and backup adapt to the
++active engine so "Test Configuration" is meaningful in every environment.
++"""
++import os
++import gzip
++import shutil
++import subprocess
++from datetime import datetime, timezone, timedelta
++from urllib.parse import urlparse, unquote
++
++from flask import current_app
++
++
++class BackupService:
++
++    # ── Configuration test ────────────────────────────────────────────────
++
++    def test_configuration(self, destination_path: str) -> list:
++        """Run non-destructive readiness checks. Returns a list of
++        {check, ok, detail} dicts so the UI can show a green/red line per
++        check — the quickest way to confirm the backup will actually work
++        before the client depends on it."""
++        results = []
++        uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
++        is_mysql = uri.startswith("mysql")
++
++        # 1. Database connectivity — SELECT 1 through the app's own engine,
++        #    so it exercises the exact credentials the app uses.
++        results.append(self._check_db_connection())
++
++        # 2. mysqldump availability (MySQL only).
++        if is_mysql:
++            results.append(self._check_mysqldump())
++        else:
++            results.append({
++                "check": "Backup tool",
++                "ok": True,
++                "detail": "SQLite engine detected — backup copies the "
++                          "database file directly; mysqldump not required."})
++
++        # 3. Destination path writable.
++        results.append(self._check_destination_writable(destination_path))
++
++        return results
++
++    def _check_db_connection(self) -> dict:
++        from app.extensions import db
++        from sqlalchemy import text
++        try:
++            db.session.execute(text("SELECT 1"))
++            return {"check": "Database connection", "ok": True,
++                    "detail": "Connected and SELECT 1 succeeded."}
++        except Exception as e:
++            return {"check": "Database connection", "ok": False,
++                    "detail": f"Failed: {e}"}
++
++    def _check_mysqldump(self) -> dict:
++        exe = shutil.which("mysqldump")
++        if not exe:
++            return {"check": "mysqldump", "ok": False,
++                    "detail": "mysqldump not found on PATH. Install MySQL "
++                              "client tools on the server or set the full "
++                              "path."}
++        try:
++            out = subprocess.run([exe, "--version"], capture_output=True,
++                                 text=True, timeout=10)
++            return {"check": "mysqldump", "ok": out.returncode == 0,
++                    "detail": (out.stdout or out.stderr).strip()
++                              or f"Found at {exe}"}
++        except Exception as e:
++            return {"check": "mysqldump", "ok": False,
++                    "detail": f"Found at {exe} but failed to run: {e}"}
++
++    def _check_destination_writable(self, destination_path: str) -> dict:
++        path = destination_path or os.path.join(
++            current_app.instance_path, "backups")
++        try:
++            os.makedirs(path, exist_ok=True)
++            probe = os.path.join(path, ".write_test")
++            with open(probe, "w") as f:
++                f.write("ok")
++            os.remove(probe)
++            return {"check": "Destination path", "ok": True,
++                    "detail": f"Writable: {path}"}
++        except Exception as e:
++            return {"check": "Destination path", "ok": False,
++                    "detail": f"Not writable ({path}): {e}"}
++
++    # ── Backup execution ──────────────────────────────────────────────────
++
++    def run_backup(self, destination_path: str = None,
++                   retention_days: int = 30) -> dict:
++        """Execute a backup of the active database. Returns
++        {ok, file, size_bytes, error}. Called by the scheduled Celery task
++        or a manual trigger."""
++        uri = current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
++        dest = destination_path or os.path.join(
++            current_app.instance_path, "backups")
++        os.makedirs(dest, exist_ok=True)
++        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
++
++        try:
++            if uri.startswith("mysql"):
++                out_file = self._backup_mysql(uri, dest, stamp)
++            elif uri.startswith("sqlite"):
++                out_file = self._backup_sqlite(uri, dest, stamp)
++            else:
++                return {"ok": False, "error": f"Unsupported engine: {uri}"}
++            size = os.path.getsize(out_file)
++            self._purge_old(dest, retention_days)
++            return {"ok": True, "file": out_file, "size_bytes": size,
++                    "error": None}
++        except Exception as e:
++            current_app.logger.exception("Backup failed: %s", e)
++            return {"ok": False, "error": str(e)}
++
++    def _backup_mysql(self, uri: str, dest: str, stamp: str) -> str:
++        p = urlparse(uri)
++        db_name = p.path.lstrip("/").split("?")[0]
++        out_file = os.path.join(dest, f"fms_{db_name}_{stamp}.sql.gz")
++        cmd = [
++            shutil.which("mysqldump") or "mysqldump",
++            f"--host={p.hostname or '127.0.0.1'}",
++            f"--port={p.port or 3306}",
++            f"--user={unquote(p.username or 'root')}",
++            "--single-transaction", "--routines", "--triggers", db_name,
++        ]
++        env = dict(os.environ)
++        if p.password:
++            env["MYSQL_PWD"] = unquote(p.password)  # avoids password on argv
++        with gzip.open(out_file, "wb") as gz:
++            proc = subprocess.run(cmd, stdout=gz,
++                                  stderr=subprocess.PIPE, env=env, timeout=3600)
++        if proc.returncode != 0:
++            raise RuntimeError(proc.stderr.decode(errors="replace"))
++        return out_file
++
++    def _backup_sqlite(self, uri: str, dest: str, stamp: str) -> str:
++        src = uri.replace("sqlite:///", "").replace("sqlite://", "")
++        if not src or not os.path.exists(src):
++            raise FileNotFoundError(f"SQLite file not found: {src}")
++        out_file = os.path.join(dest, f"fms_sqlite_{stamp}.db.gz")
++        with open(src, "rb") as f_in, gzip.open(out_file, "wb") as f_out:
++            shutil.copyfileobj(f_in, f_out)
++        return out_file
++
++    def _purge_old(self, dest: str, retention_days: int) -> None:
++        if not retention_days or retention_days <= 0:
++            return
++        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
++        for name in os.listdir(dest):
++            if not name.startswith("fms_"):
++                continue
++            full = os.path.join(dest, name)
++            try:
++                mtime = datetime.fromtimestamp(
++                    os.path.getmtime(full), tz=timezone.utc)
++                if mtime < cutoff:
++                    os.remove(full)
++            except OSError:
++                pass
++
++    def list_backups(self, destination_path: str = None) -> list:
++        """Return existing backup files (newest first) for the history
++        table on the config screen."""
++        dest = destination_path or os.path.join(
++            current_app.instance_path, "backups")
++        if not os.path.isdir(dest):
++            return []
++        rows = []
++        for name in sorted(os.listdir(dest), reverse=True):
++            if not name.startswith("fms_"):
++                continue
++            full = os.path.join(dest, name)
++            rows.append({
++                "name": name,
++                "size_bytes": os.path.getsize(full),
++                "created_at": datetime.fromtimestamp(
++                    os.path.getmtime(full), tz=timezone.utc),
++            })
++        return rows
+diff --git a/app/modules/system_admin/services/email_config_service.py b/app/modules/system_admin/services/email_config_service.py
+index b55c941..718309d 100644
+--- a/app/modules/system_admin/services/email_config_service.py
++++ b/app/modules/system_admin/services/email_config_service.py
+@@ -3,11 +3,16 @@ send_notification_email task (which only logged intent) with real email
+ sending, gated behind an admin-configurable enable switch and settings.
+ """
+ import smtplib
++import ssl
+ from email.message import EmailMessage
+ 
+ from app.extensions import db
+ from app.modules.system_admin.models import EmailConfig
+ 
++# Never let an unreachable/misconfigured SMTP server hang the request (or a
++# Celery worker) indefinitely. 20s is generous for a handshake+login+send.
++SMTP_TIMEOUT_SECONDS = 20
++
+ 
+ class EmailNotConfiguredError(Exception):
+     pass
+@@ -52,12 +57,34 @@ class EmailSenderService:
+         if body_html:
+             msg.add_alternative(body_html, subtype="html")
+ 
+-        with smtplib.SMTP(config.smtp_host, config.smtp_port or 587) as server:
+-            if config.use_tls:
+-                server.starttls()
+-            if config.smtp_username:
+-                server.login(config.smtp_username, config.smtp_password)
+-            server.send_message(msg)
++        port = int(config.smtp_port or 587)
++        context = ssl.create_default_context()
++
++        # Port 465 = implicit SSL ("SMTPS"): the connection is encrypted from
++        # the very first byte, so we must use SMTP_SSL and must NOT call
++        # starttls(). The previous code always used plain SMTP() + starttls(),
++        # which hangs forever against a 465 endpoint (Hostinger, Gmail SSL,
++        # etc.) because the server is waiting for a TLS handshake, not a plain
++        # EHLO. This was the "browser just keeps loading" symptom.
++        if port == 465:
++            with smtplib.SMTP_SSL(config.smtp_host, port,
++                                  timeout=SMTP_TIMEOUT_SECONDS,
++                                  context=context) as server:
++                if config.smtp_username:
++                    server.login(config.smtp_username, config.smtp_password)
++                server.send_message(msg)
++        else:
++            # 587 (submission) or 25: start plaintext, optionally upgrade with
++            # STARTTLS. use_tls drives whether we attempt the upgrade.
++            with smtplib.SMTP(config.smtp_host, port,
++                              timeout=SMTP_TIMEOUT_SECONDS) as server:
++                server.ehlo()
++                if config.use_tls:
++                    server.starttls(context=context)
++                    server.ehlo()
++                if config.smtp_username:
++                    server.login(config.smtp_username, config.smtp_password)
++                server.send_message(msg)
+ 
+ 
+ def _strip_html(html: str) -> str:
+diff --git a/app/modules/system_admin/services/report_registry_service.py b/app/modules/system_admin/services/report_registry_service.py
+new file mode 100644
+index 0000000..2c0ab15
+--- /dev/null
++++ b/app/modules/system_admin/services/report_registry_service.py
+@@ -0,0 +1,109 @@
++"""Report Registry — turns ReportConfig rows into a discoverable,
++permission-filtered catalog of reports, so new reports can be surfaced to
++users by adding a ReportConfig row (admin screen) rather than changing code.
++
++Two kinds of report are supported by the same registry:
++
++  * PRINT  — an existing HTML print view (the 5 already shipped: Trip Ticket,
++             ATD, Vehicle Movement, Maintenance Order, PM Work Order). These
++             map to an existing Flask endpoint that renders a printable page
++             the browser exports to PDF.
++  * LIST   — a list/summary report exported to Excel/PDF from a registered
++             query (the growth path for "add other reports in the app").
++
++A ReportConfig row carries: report_code, name, description, template_path.
++We overload template_path with a small "endpoint:<name>" or "query:<key>"
++convention so no schema migration is needed to ship the registry now; a
++dedicated column can be added later without breaking existing rows.
++"""
++from app.modules.system_admin.models import ReportConfig
++
++
++# Reports the app ships with. Seeded into ReportConfig so they appear in the
++# unified Reports list; admins can add more rows for new reports.
++BUILTIN_REPORTS = [
++    {
++        "report_code": "RPT_TRIP_TICKET",
++        "name": "Trip Ticket",
++        "description": "Printable trip ticket (per document).",
++        "template_path": "endpoint:transactions.tripticket_print",
++        "permission": "tripticket.print",
++        "kind": "PRINT",
++        "needs_document": True,
++    },
++    {
++        "report_code": "RPT_ATD",
++        "name": "Authority To Drive",
++        "description": "Printable Authority To Drive (per document).",
++        "template_path": "endpoint:transactions.atd_print",
++        "permission": "atd.print",
++        "kind": "PRINT",
++        "needs_document": True,
++    },
++    {
++        "report_code": "RPT_VEHICLE_MOVEMENT",
++        "name": "Vehicle Movement",
++        "description": "Printable vehicle movement slip (per document).",
++        "template_path": "endpoint:transactions.vehiclemovement_print",
++        "permission": "vehiclemovement.print",
++        "kind": "PRINT",
++        "needs_document": True,
++    },
++    {
++        "report_code": "RPT_MAINTENANCE_ORDER",
++        "name": "Maintenance Order",
++        "description": "Printable maintenance order / work order.",
++        "template_path": "endpoint:transactions.maintenanceorder_print",
++        "permission": "maintenanceorder.print",
++        "kind": "PRINT",
++        "needs_document": True,
++    },
++    {
++        "report_code": "RPT_PM_WORK_ORDER",
++        "name": "PM Work Order (Dynamic)",
++        "description": "Dynamic PM work order report with parameter tokens.",
++        "template_path": "endpoint:transactions.maintenanceorder_print",
++        "permission": "maintenanceorder.print",
++        "kind": "PRINT",
++        "needs_document": True,
++    },
++]
++
++
++class ReportRegistryService:
++
++    def seed_builtin(self) -> None:
++        """Insert built-in report definitions if absent. Idempotent."""
++        from app.extensions import db
++        for r in BUILTIN_REPORTS:
++            if not ReportConfig.query.filter_by(
++                    report_code=r["report_code"]).first():
++                db.session.add(ReportConfig(
++                    report_code=r["report_code"], name=r["name"],
++                    description=r["description"],
++                    template_path=r["template_path"]))
++        db.session.flush()
++
++    def list_available(self, user) -> list:
++        """Return registered reports the user may run, filtered by the
++        permission encoded in BUILTIN_REPORTS (custom rows with no known
++        permission are shown to anyone who can view report config)."""
++        perms = {r["report_code"]: r for r in BUILTIN_REPORTS}
++        out = []
++        for cfg in ReportConfig.query.filter_by(is_active=True).order_by(
++                ReportConfig.report_code).all():
++            meta = perms.get(cfg.report_code, {})
++            required = meta.get("permission")
++            if required and not user.has_permission(required):
++                continue
++            out.append({
++                "code": cfg.report_code,
++                "name": cfg.name,
++                "description": cfg.description,
++                "kind": meta.get("kind", "LIST"),
++                "endpoint": (cfg.template_path or "").replace("endpoint:", "")
++                            if (cfg.template_path or "").startswith("endpoint:")
++                            else None,
++                "needs_document": meta.get("needs_document", False),
++            })
++        return out
+diff --git a/app/modules/system_admin/tasks.py b/app/modules/system_admin/tasks.py
+index 6a16f40..151adec 100644
+--- a/app/modules/system_admin/tasks.py
++++ b/app/modules/system_admin/tasks.py
+@@ -28,6 +28,26 @@ _FALLBACK_BODY_TEXT = (
+     "Please log in to the Fleet Management System to view details.")
+ 
+ 
++@celery.task(name="system_admin.send_test_email", bind=True,
++             max_retries=0)
++def send_test_email(self, to_email: str):
++    """Send a one-off SMTP test message. Kept separate from
++    send_notification_email so a failing test never retries three times
++    against a broken server and so the admin gets the real error string."""
++    from app.modules.system_admin.services.email_config_service import (
++        EmailSenderService)
++    EmailSenderService().send(
++        to_email=to_email,
++        subject="Fleet Management System — Test Email",
++        body_html=(
++            "<p>This is a test email confirming your SMTP configuration "
++            "is working correctly.</p>"
++            f"<p>Delivery target: {to_email}</p>"),
++        body_text=("This is a test email confirming your SMTP configuration "
++                   "is working correctly."))
++    logger.info("Test email sent to %s", to_email)
++
++
+ @celery.task(name="system_admin.send_notification_email", bind=True,
+              max_retries=3, default_retry_delay=60)
+ def send_notification_email(self, user_id: int, event_code: str,
+diff --git a/app/modules/system_admin/templates/system_admin/backup_config.html b/app/modules/system_admin/templates/system_admin/backup_config.html
+index 15547e4..9a78812 100644
+--- a/app/modules/system_admin/templates/system_admin/backup_config.html
++++ b/app/modules/system_admin/templates/system_admin/backup_config.html
+@@ -2,8 +2,9 @@
+ {% block title %}Backup Config{% endblock %}
+ {% block breadcrumbs %}<li class="breadcrumb-item active">Backup Config</li>{% endblock %}
+ {% block content %}
+-<h1 class="h3 mb-4">Backup & Restore Configuration</h1>
+-<div class="card"><div class="card-body">
++<h1 class="h3 mb-4">Backup &amp; Restore Configuration</h1>
++
++<div class="card mb-4"><div class="card-body">
+ <form method="post" class="row g-3">
+   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+   <div class="col-md-4"><label class="form-label">Schedule</label>
+@@ -15,11 +16,52 @@
+   <div class="col-md-4"><label class="form-label">Retention (days)</label>
+     <input type="number" name="retention_days" class="form-control" value="{{ cfg.retention_days if cfg else 30 }}"></div>
+   <div class="col-md-8"><label class="form-label">Destination Path</label>
+-    <input type="text" name="destination_path" class="form-control" value="{{ cfg.destination_path if cfg else '' }}"></div>
+-  <p class="text-muted small col-12">Actual backup execution will be implemented in Phase 5.</p>
++    <input type="text" name="destination_path" id="destination_path" class="form-control"
++           placeholder="e.g. D:\fms\backups (blank = instance/backups)"
++           value="{{ cfg.destination_path if cfg else '' }}"></div>
+   {% if current_user.has_permission('backupconfig.update') %}
+-  <div class="col-12"><button class="btn btn-primary" type="submit">Save</button></div>
++  <div class="col-12 d-flex gap-2">
++    <button class="btn btn-primary" type="submit">Save</button>
++    <button class="btn btn-outline-secondary" type="submit"
++            formaction="{{ url_for('system_admin.backup_config_test') }}">
++      <i class="bi bi-clipboard-check me-1"></i>Test Configuration</button>
++    <button class="btn btn-outline-success" type="submit"
++            formaction="{{ url_for('system_admin.backup_config_run') }}"
++            onclick="return confirm('Run a backup now?');">
++      <i class="bi bi-download me-1"></i>Run Backup Now</button>
++  </div>
+   {% endif %}
+ </form>
+ </div></div>
++
++<div class="card mb-4"><div class="card-body">
++  <h2 class="h6 text-uppercase text-muted fw-bold mb-3">Backup History</h2>
++  {% if backups %}
++  <div class="table-responsive">
++    <table class="table table-sm mb-0">
++      <thead><tr><th>File</th><th>Size</th><th>Created (UTC)</th></tr></thead>
++      <tbody>
++      {% for b in backups %}
++        <tr>
++          <td><code>{{ b.name }}</code></td>
++          <td>{{ '%.1f'|format(b.size_bytes / 1024) }} KB</td>
++          <td>{{ b.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
++        </tr>
++      {% endfor %}
++      </tbody>
++    </table>
++  </div>
++  {% else %}
++  <p class="text-muted mb-0">No backups yet. Configure a destination and click
++    <strong>Run Backup Now</strong>, or set a Daily/Weekly schedule.</p>
++  {% endif %}
++</div></div>
++
++<div class="alert alert-info small mb-0">
++  <i class="bi bi-info-circle me-1"></i>
++  <strong>Restore</strong> is performed on the server, not from the app, to
++  prevent accidental production overwrites. For MySQL:
++  <code>gunzip &lt; backup.sql.gz | mysql -u USER -p DATABASE</code>. See the
++  README for the full procedure.
++</div>
+ {% endblock %}
+diff --git a/app/modules/system_admin/templates/system_admin/report_config_form.html b/app/modules/system_admin/templates/system_admin/report_config_form.html
+new file mode 100644
+index 0000000..122bba9
+--- /dev/null
++++ b/app/modules/system_admin/templates/system_admin/report_config_form.html
+@@ -0,0 +1,43 @@
++{% extends "layout/base.html" %}
++{% block title %}Register Report{% endblock %}
++{% block breadcrumbs %}
++<li class="breadcrumb-item"><a href="{{ url_for('system_admin.report_config_list') }}">Report Config</a></li>
++<li class="breadcrumb-item active">Register Report</li>
++{% endblock %}
++{% block content %}
++<h1 class="h3 mb-4">Register Report</h1>
++<div class="card"><div class="card-body">
++<form method="post" class="row g-3">
++  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
++  <div class="col-md-4">
++    <label class="form-label fw-semibold">Report Code</label>
++    <input type="text" name="report_code" class="form-control" required
++           placeholder="RPT_FLEET_SUMMARY">
++    <div class="form-text">Unique, uppercase. Prefix with RPT_.</div>
++  </div>
++  <div class="col-md-8">
++    <label class="form-label fw-semibold">Name</label>
++    <input type="text" name="name" class="form-control" required
++           placeholder="Fleet Summary">
++  </div>
++  <div class="col-12">
++    <label class="form-label fw-semibold">Description</label>
++    <input type="text" name="description" class="form-control"
++           placeholder="What this report shows and who it's for.">
++  </div>
++  <div class="col-12">
++    <label class="form-label fw-semibold">Target</label>
++    <input type="text" name="template_path" class="form-control"
++           placeholder="endpoint:transactions.tripticket_print">
++    <div class="form-text">
++      For a print report, use <code>endpoint:&lt;blueprint.route&gt;</code>.
++      Leave blank for a list report to be wired to a query later.
++    </div>
++  </div>
++  <div class="col-12">
++    <button class="btn btn-primary" type="submit">Register</button>
++    <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.report_config_list') }}">Cancel</a>
++  </div>
++</form>
++</div></div>
++{% endblock %}
+diff --git a/app/modules/system_admin/templates/system_admin/report_config_list.html b/app/modules/system_admin/templates/system_admin/report_config_list.html
+index 4521134..5c2ba3e 100644
+--- a/app/modules/system_admin/templates/system_admin/report_config_list.html
++++ b/app/modules/system_admin/templates/system_admin/report_config_list.html
+@@ -2,21 +2,61 @@
+ {% block title %}Report Config{% endblock %}
+ {% block breadcrumbs %}<li class="breadcrumb-item active">Report Config</li>{% endblock %}
+ {% block content %}
+-<h1 class="h3 mb-4">Report Configuration</h1>
+-<p class="text-muted">Report rendering will be implemented in Phase 5. Register report codes here.</p>
++<div class="d-flex justify-content-between align-items-center mb-4">
++  <h1 class="h3 mb-0">Report Configuration</h1>
++  {% if current_user.has_permission('reportconfig.update') %}
++  <a href="{{ url_for('system_admin.report_config_new') }}" class="btn btn-primary btn-sm">
++    <i class="bi bi-plus-lg me-1"></i>Register Report</a>
++  {% endif %}
++</div>
++
++<p class="text-muted">Registered reports appear in the app filtered by each
++user's permissions. Add a report here to surface it without a code change;
++"print" reports open a printable page the browser exports to PDF.</p>
++
++<div class="card mb-4"><div class="card-body">
++  <h2 class="h6 text-uppercase text-muted fw-bold mb-3">Available to You</h2>
++  {% if available %}
++  <div class="table-responsive">
++    <table class="table table-sm mb-0">
++      <thead><tr><th>Report</th><th>Type</th><th>Description</th><th></th></tr></thead>
++      <tbody>
++      {% for r in available %}
++        <tr>
++          <td class="fw-semibold">{{ r.name }}</td>
++          <td><span class="badge text-bg-secondary">{{ r.kind }}</span></td>
++          <td class="text-muted small">{{ r.description or '—' }}</td>
++          <td class="text-end">
++            {% if r.needs_document %}
++              <span class="text-muted small">Open from the document's page</span>
++            {% elif r.endpoint %}
++              <a class="btn btn-sm btn-outline-primary" href="{{ url_for(r.endpoint) }}">Run</a>
++            {% endif %}
++          </td>
++        </tr>
++      {% endfor %}
++      </tbody>
++    </table>
++  </div>
++  {% else %}
++  <p class="text-muted mb-0">No reports available. Register one above.</p>
++  {% endif %}
++</div></div>
++
+ <div class="card"><div class="card-body">
+-<table class="table table-striped fms-datatable">
+-  <thead><tr><th>Code</th><th>Name</th><th>Description</th><th>Template</th></tr></thead>
+-  <tbody>
+-  {% for r in items %}
+-    <tr>
+-      <td><code>{{ r.report_code }}</code></td>
+-      <td>{{ r.name }}</td>
+-      <td>{{ r.description or '—' }}</td>
+-      <td>{{ r.template_path or '—' }}</td>
+-    </tr>
+-  {% endfor %}
+-  </tbody>
+-</table>
++  <h2 class="h6 text-uppercase text-muted fw-bold mb-3">Registered Definitions</h2>
++  <table class="table table-striped fms-datatable">
++    <thead><tr><th>Code</th><th>Name</th><th>Description</th><th>Target</th></tr></thead>
++    <tbody>
++    {% for r in items %}
++      <tr>
++        <td><code>{{ r.report_code }}</code></td>
++        <td>{{ r.name }}</td>
++        <td>{{ r.description or '—' }}</td>
++        <td class="text-muted small">{{ r.template_path or '—' }}</td>
++      </tr>
++    {% endfor %}
++    </tbody>
++  </table>
+ </div></div>
+ {% endblock %}
+diff --git a/app/modules/transactions/vehicle_registration/service.py b/app/modules/transactions/vehicle_registration/service.py
+index 5284aa5..16b4ba5 100644
+--- a/app/modules/transactions/vehicle_registration/service.py
++++ b/app/modules/transactions/vehicle_registration/service.py
+@@ -31,6 +31,33 @@ class VehicleRegistrationService(BaseTransactionService):
+     document_type_code = "VR"
+     reference_table = "vehicle_registrations"
+ 
++    def get_finance_params(self) -> dict:
++        """VAT rate and % assured value for registration computations.
++
++        These are read from System Parameters (FINANCE group) rather than
++        hardcoded, matching the legacy VEMS 'Other Setting' config (VAT
++        12%, % Assured Value 10). Admins change them under System
++        Administration → System Parameters with no code change, satisfying
++        the 'no values shall be hardcoded' requirement.
++        """
++        from decimal import Decimal
++        from app.modules.system_admin.services.system_parameter_service import (
++            SystemParameterService)
++        svc = SystemParameterService()
++        return {
++            "vat_rate": svc.get("VAT_RATE", Decimal("12")),
++            "assured_value_pct": svc.get("ASSURED_VALUE_PCT", Decimal("10")),
++        }
++
++    def compute_vat(self, base_amount) -> "Decimal":
++        """Compute VAT on a base amount using the configured VAT rate."""
++        from decimal import Decimal, ROUND_HALF_UP
++        if base_amount is None:
++            return Decimal("0.00")
++        rate = self.get_finance_params()["vat_rate"]
++        vat = (Decimal(str(base_amount)) * Decimal(str(rate)) / Decimal("100"))
++        return vat.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
++
+     def create(self, *, vehicle_id, registration_type, registration_date,
+                user, validity_years=None, or_cr_cost=None,
+                odometer_at_registration=None):
+diff --git a/tests/unit/test_email_config_service.py b/tests/unit/test_email_config_service.py
+index 22afd51..bf765ba 100644
+--- a/tests/unit/test_email_config_service.py
++++ b/tests/unit/test_email_config_service.py
+@@ -62,7 +62,10 @@ def test_send_uses_configured_smtp_settings(mock_smtp_cls, db):
+         body_html="<p>Please review MO-2026-000001</p>",
+         body_text="Please review MO-2026-000001")
+ 
+-    mock_smtp_cls.assert_called_once_with("smtp.example.com", 587)
++    # 587 = submission port → plain SMTP + STARTTLS, now with a timeout so
++    # a dead server can't hang the request/worker indefinitely.
++    mock_smtp_cls.assert_called_once_with("smtp.example.com", 587, timeout=20)
++    mock_server.ehlo.assert_called()
+     mock_server.starttls.assert_called_once()
+     mock_server.login.assert_called_once_with("fleet@example.com", "secret123")
+     assert mock_server.send_message.call_count == 1
+@@ -72,6 +75,31 @@ def test_send_uses_configured_smtp_settings(mock_smtp_cls, db):
+     assert "Example Fleet" in sent_msg["From"]
+ 
+ 
++@patch("app.modules.system_admin.services.email_config_service.smtplib.SMTP_SSL")
++@patch("app.modules.system_admin.services.email_config_service.smtplib.SMTP")
++def test_send_uses_ssl_on_port_465(mock_smtp, mock_smtp_ssl, db):
++    """Port 465 is implicit SSL — must use SMTP_SSL and must NOT call
++    starttls(). Using plain SMTP()+starttls() against 465 hangs forever
++    (the original 'browser keeps loading' bug). Regression guard."""
++    EmailConfigService().update(
++        smtp_host="smtp.hostinger.com", smtp_port=465,
++        smtp_username="admin@example.com", smtp_password="secret",
++        use_tls=False, from_email="admin@example.com",
++        from_name="Fleet", is_enabled=True)
++    ssl_server = MagicMock()
++    mock_smtp_ssl.return_value.__enter__.return_value = ssl_server
++
++    EmailSenderService().send(to_email="a@example.com", subject="Hi",
++                              body_html="<p>Hi</p>")
++
++    # SMTP_SSL used with timeout; plain SMTP never touched; no STARTTLS.
++    assert mock_smtp_ssl.call_args[0][:2] == ("smtp.hostinger.com", 465)
++    assert mock_smtp_ssl.call_args[1]["timeout"] == 20
++    mock_smtp.assert_not_called()
++    ssl_server.starttls.assert_not_called()
++    ssl_server.login.assert_called_once()
++
++
+ @patch("app.modules.system_admin.services.email_config_service.smtplib.SMTP")
+ def test_send_skips_starttls_and_login_when_not_configured(mock_smtp_cls, db):
+     EmailConfigService().update(
