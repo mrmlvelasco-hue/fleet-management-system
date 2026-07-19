@@ -443,7 +443,26 @@ def registration_run_due_check():
     click.echo(f"Due/overdue scan complete. Registrations created: {created}")
 
 
+report_cli = AppGroup("report", help="Scheduled report delivery commands.")
+
+
+@report_cli.command("run-due")
+def report_run_due():
+    """Send every ScheduledReport whose next_run_at has passed, then
+    advance it to the next occurrence. Safe to run as often as you like
+    (e.g. hourly via cron/Task Scheduler) — a schedule with a future
+    next_run_at is simply skipped, so this never double-sends. This is
+    the report-delivery equivalent of `flask pm run-due-check` /
+    `flask registration run-due-check` — same trigger pattern, no
+    separate Celery Beat process required."""
+    from app.modules.system_admin.services.scheduled_report_service import (
+        ScheduledReportService)
+    sent, failed = ScheduledReportService().run_due()
+    click.echo(f"Scheduled report run complete. Sent: {sent}, Failed: {failed}.")
+
+
 def register_cli(app):
     app.cli.add_command(seed_cli)
     app.cli.add_command(pm_cli)
     app.cli.add_command(registration_cli)
+    app.cli.add_command(report_cli)

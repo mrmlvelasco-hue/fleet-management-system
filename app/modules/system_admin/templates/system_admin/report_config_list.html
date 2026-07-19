@@ -4,10 +4,14 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="h3 mb-0">Report Configuration</h1>
-  {% if current_user.has_permission('reportconfig.update') %}
-  <a href="{{ url_for('system_admin.report_config_new') }}" class="btn btn-primary btn-sm">
-    <i class="bi bi-plus-lg me-1"></i>Register Report</a>
-  {% endif %}
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('system_admin.scheduled_report_list') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-clock-history me-1"></i>Scheduled Reports</a>
+    {% if current_user.has_permission('reportconfig.update') %}
+    <a href="{{ url_for('system_admin.report_config_new') }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i>Register Report</a>
+    {% endif %}
+  </div>
 </div>
 
 <p class="text-muted">Registered reports appear in the app filtered by each
