@@ -267,6 +267,11 @@ def _seed_email_templates() -> None:
          "[FMS] Trip ticket released: {{ reference_table }} "
          "#{{ reference_id }}",
          "A trip ticket has been released."),
+        ("DOCUMENT_COMMENT", "Mentioned in a Comment",
+         "[FMS] You were mentioned: {{ reference_table }} "
+         "#{{ reference_id }}",
+         "Someone mentioned you in a comment on a document. Open it to "
+         "read the full comment and reply."),
     ]
     for event_code, name, subject, intro in templates:
         if not EmailTemplate.query.filter_by(event_code=event_code).first():

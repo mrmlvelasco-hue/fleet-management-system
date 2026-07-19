@@ -155,6 +155,18 @@ class ApprovalEngine:
             raise InvalidStateError(
                 f"Unknown document type '{document_type_code}'.")
 
+        # Guard against duplicate submission (e.g. a double-click on
+        # Submit before the button disables, or a resubmitted browser
+        # tab) creating a second ApprovalInstance -- and therefore a
+        # second ApprovalTask -- for the same document. Without this, the
+        # same document shows up twice in "For My Action".
+        existing = (ApprovalInstance.query
+                   .filter_by(reference_table=reference_table,
+                             reference_id=reference_id, status="PENDING")
+                   .first())
+        if existing is not None:
+            return existing
+
         instance = ApprovalInstance(
             document_type_id=dt.id, reference_table=reference_table,
             reference_id=reference_id, amount=amount,

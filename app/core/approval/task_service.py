@@ -48,7 +48,14 @@ class ApprovalTaskService:
     def list_for_user(self, user) -> list:
         """PENDING tasks this user can act on: directly assigned (USER-type
         level), or holding the assigned role AND their org scope covers
-        the task's branch/business unit."""
+        the task's branch/business unit.
+
+        Deduplicated by document (reference_table + reference_id): if more
+        than one PENDING task somehow exists for the same document (e.g.
+        leftover data from a double-submit before the guard in
+        ApprovalEngine.submit() was added), only the earliest one is shown
+        so "For My Action" never lists the same document twice.
+        """
         role_ids = [r.id for r in user.roles if r.is_active]
         scope_svc = UserOrgScopeService()
 
@@ -61,7 +68,17 @@ class ApprovalTaskService:
                      .order_by(ApprovalTask.created_at)
                      .all())
 
-        return [t for t in candidates
-               if t.assigned_user_id == user.id
-               or scope_svc.covers(user.id, branch_id=t.branch_id,
-                                   business_unit_id=t.business_unit_id)]
+        eligible = [t for t in candidates
+                   if t.assigned_user_id == user.id
+                   or scope_svc.covers(user.id, branch_id=t.branch_id,
+                                       business_unit_id=t.business_unit_id)]
+
+        seen = set()
+        distinct = []
+        for t in eligible:
+            key = (t.reference_table, t.reference_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            distinct.append(t)
+        return distinct

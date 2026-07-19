@@ -67,6 +67,17 @@ BUILTIN_REPORTS = [
         "kind": "PRINT",
         "needs_document": True,
     },
+    {
+        "report_code": "RPT_VEHICLE_REGISTER",
+        "name": "Vehicle Register Details",
+        "description": "All vehicles grouped by branch, with registration "
+                       "document numbers (FAR/MV File/CR/Engine/Chassis) — "
+                       "printable and Excel-exportable.",
+        "template_path": "endpoint:master_data.vehicle_register_report",
+        "permission": "vehicle.view",
+        "kind": "LIST",
+        "needs_document": False,
+    },
 ]
 
 
