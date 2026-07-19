@@ -1,0 +1,76 @@
+{% extends "layout/base.html" %}
+{% block title %}Vehicle Register Details{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.vehicle_list') }}">Vehicles</a></li>
+<li class="breadcrumb-item active">Vehicle Register Details</li>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 no-print">
+  <h1 class="h3 mb-0">Vehicle Register Details</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-success"
+       href="{{ url_for('master_data.vehicle_register_report_export') }}">
+      <i class="bi bi-file-earmark-excel me-1"></i>Export to Excel</a>
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print / Save as PDF</button>
+  </div>
+</div>
+
+<div class="report-sheet">
+  <h2 class="text-center h4 mb-1">Vehicle Register Details</h2>
+  <p class="text-center text-muted small mb-4">
+    Generated {{ generated_at.strftime('%B %d, %Y %I:%M %p') }}
+  </p>
+
+  {% if not groups %}
+  <p class="text-muted text-center py-5">No vehicles found for your organizational scope.</p>
+  {% endif %}
+
+  {% for group in groups %}
+  <h3 class="h6 fw-bold mt-4 mb-2">{{ group.branch_code }} — {{ group.branch_name }}</h3>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered mb-4 vehicle-register-table">
+      <thead>
+        <tr>
+          <th>Plate No.</th><th>Assignee</th><th>Make</th><th>Model</th>
+          <th>Variant</th><th>Year</th><th>Displacement</th><th>Fuel</th>
+          <th>Transmission</th><th>BodyColor</th><th>Type</th>
+          <th>FARNumber</th><th>MVFileNo</th><th>CRNumber</th>
+          <th>EngineNumber</th><th>ChassisNumber</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in group.vehicles %}
+        <tr>
+          <td>{{ v.plate_number }}</td>
+          <td>{{ v.assignee }}</td>
+          <td>{{ v.make }}</td>
+          <td>{{ v.model }}</td>
+          <td>{{ v.variant }}</td>
+          <td>{{ v.year }}</td>
+          <td>{{ v.displacement }}</td>
+          <td>{{ v.fuel }}</td>
+          <td>{{ v.transmission }}</td>
+          <td>{{ v.body_color }}</td>
+          <td>{{ v.type }}</td>
+          <td>{{ v.far_number }}</td>
+          <td>{{ v.mv_file_number }}</td>
+          <td>{{ v.cr_number }}</td>
+          <td>{{ v.engine_number }}</td>
+          <td>{{ v.chassis_number }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+</div>
+
+<style>
+  .vehicle-register-table { font-size: 0.8rem; white-space: nowrap; }
+  @media print {
+    .no-print { display: none !important; }
+    .report-sheet { font-size: 10px; }
+  }
+</style>
+{% endblock %}
