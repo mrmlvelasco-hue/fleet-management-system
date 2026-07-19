@@ -131,3 +131,61 @@ class ReportConfig(db.Model, BaseModel):
     name = db.Column(db.String(120), nullable=False)
     description = db.Column(db.String(255))
     template_path = db.Column(db.String(500))
+
+
+class ScheduledReport(db.Model, BaseModel):
+    """Recurring, unattended email delivery of any report registered in
+    app.core.reporting.generators.REPORT_GENERATORS. Triggered by the
+    `flask report run-due` CLI command (see app/cli.py) rather than a
+    Celery Beat schedule -- matches this project's existing pattern for
+    recurring jobs (flask pm run-due-check, flask registration
+    run-due-check), so no separate `celery beat` process is required;
+    whatever already triggers those two (OS cron / Windows Task
+    Scheduler) can trigger this one too, e.g. hourly. Idempotent and
+    safe to run as often as you like — it only sends when a schedule's
+    computed next_run_at has passed."""
+    __tablename__ = "scheduled_reports"
+
+    name = db.Column(db.String(150), nullable=False)
+    report_code = db.Column(db.String(60), nullable=False)
+    frequency = db.Column(db.String(10), nullable=False, default="WEEKLY")
+    # DAILY | WEEKLY | MONTHLY
+
+    # Comma-separated email addresses -- kept simple (no join table)
+    # since recipients here are delivery addresses, not app Users who
+    # need permission checks; anyone can be an external recipient (e.g.
+    # a branch manager who isn't an FMS user at all).
+    recipients = db.Column(db.Text, nullable=False)
+
+    # JSON-encoded filters dict matching the generator's `filters` param
+    # (branch_id / status; date_from/date_to are intentionally NOT
+    # supported here in v1 -- see generators.py docstring -- so every
+    # scheduled run reflects the live, as-of-now snapshot).
+    filters_json = db.Column(db.Text, nullable=True)
+
+    last_run_at = db.Column(db.DateTime, nullable=True)
+    next_run_at = db.Column(db.DateTime, nullable=True)
+    last_run_status = db.Column(db.String(20), nullable=True)
+    # SUCCESS | FAILED, set after each run for the admin to see at a glance
+
+    def recipient_list(self) -> list:
+        return [r.strip() for r in (self.recipients or "").split(",")
+               if r.strip()]
+
+    def filters_dict(self) -> dict:
+        import json
+        if not self.filters_json:
+            return {}
+        try:
+            return json.loads(self.filters_json)
+        except (ValueError, TypeError):
+            return {}
+
+    def compute_next_run(self, from_time=None):
+        from datetime import datetime, timezone, timedelta
+        base = from_time or datetime.now(timezone.utc)
+        if self.frequency == "DAILY":
+            return base + timedelta(days=1)
+        if self.frequency == "MONTHLY":
+            return base + timedelta(days=30)
+        return base + timedelta(days=7)  # WEEKLY, default

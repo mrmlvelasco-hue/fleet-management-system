@@ -1,0 +1,110 @@
+{% extends "layout/base.html" %}
+{% block title %}Scheduled Reports{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('system_admin.report_config_list') }}">Report Config</a></li>
+<li class="breadcrumb-item active">Scheduled Reports</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Scheduled Reports</h1>
+
+<div class="alert alert-info small">
+  <i class="bi bi-info-circle me-1"></i>
+  Scheduled reports are delivered by the <code>flask report run-due</code>
+  command — run it periodically (hourly is typical) via cron / Windows
+  Task Scheduler. It's safe to run as often as you like: a schedule only
+  actually sends once its due time has passed.
+</div>
+
+<div class="card mb-4"><div class="card-body">
+  <h2 class="h6 text-uppercase text-muted fw-bold mb-3">New Schedule</h2>
+  <form method="post" action="{{ url_for('system_admin.scheduled_report_new') }}" class="row g-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="col-md-4">
+      <label class="form-label">Name</label>
+      <input type="text" name="name" class="form-control" required
+             placeholder="e.g. Weekly Maintenance Cost Summary">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Report</label>
+      <select name="report_code" class="form-select" required>
+        {% for code in report_choices %}
+        <option value="{{ code }}">{{ code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Frequency</label>
+      <select name="frequency" class="form-select">
+        <option value="DAILY">Daily</option>
+        <option value="WEEKLY" selected>Weekly</option>
+        <option value="MONTHLY">Monthly</option>
+      </select>
+    </div>
+    <div class="col-md-8">
+      <label class="form-label">Recipients (comma-separated emails)</label>
+      <input type="text" name="recipients" class="form-control" required
+             placeholder="manager@example.com, branch.head@example.com">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Status filter <span class="text-muted small">(optional)</span></label>
+      <select name="status" class="form-select">
+        <option value="">All</option>
+        <option value="OVERDUE">Overdue</option>
+        <option value="DUE_SOON">Due Soon</option>
+        <option value="OK">OK</option>
+      </select>
+    </div>
+    <div class="col-12">
+      <button class="btn btn-primary" type="submit">Create Schedule</button>
+    </div>
+  </form>
+</div></div>
+
+<div class="card"><div class="card-body">
+  <h2 class="h6 text-uppercase text-muted fw-bold mb-3">Active Schedules</h2>
+  {% if items %}
+  <div class="table-responsive">
+    <table class="table table-sm">
+      <thead>
+        <tr><th>Name</th><th>Report</th><th>Frequency</th><th>Recipients</th>
+            <th>Last Run</th><th>Next Run</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+      {% for s in items %}
+        <tr>
+          <td>{{ s.name }}</td>
+          <td><code>{{ s.report_code }}</code></td>
+          <td>{{ s.frequency }}</td>
+          <td class="small">{{ s.recipients }}</td>
+          <td class="small">{{ s.last_run_at.strftime('%Y-%m-%d %H:%M') if s.last_run_at else '—' }}</td>
+          <td class="small">{{ s.next_run_at.strftime('%Y-%m-%d %H:%M') if s.next_run_at else '—' }}</td>
+          <td>
+            {% if s.last_run_status == 'SUCCESS' %}
+              <span class="badge text-bg-success">SUCCESS</span>
+            {% elif s.last_run_status == 'FAILED' %}
+              <span class="badge text-bg-danger">FAILED</span>
+            {% else %}
+              <span class="badge text-bg-secondary">Not run yet</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <form method="post" action="{{ url_for('system_admin.scheduled_report_run_now', sched_id=s.id) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-secondary" type="submit">Run Now</button>
+            </form>
+            <form method="post" action="{{ url_for('system_admin.scheduled_report_delete', sched_id=s.id) }}" class="d-inline"
+                  onsubmit="return confirm('Remove this schedule?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Remove</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted mb-0">No scheduled reports yet.</p>
+  {% endif %}
+</div></div>
+{% endblock %}

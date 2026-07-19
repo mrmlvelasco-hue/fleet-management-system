@@ -732,6 +732,83 @@ def report_maintenance_cost_summary_export():
                               ".spreadsheetml.sheet")
 
 
+@bp.route("/reports/scheduled")
+@login_required
+@require_permission("reportconfig.view")
+def scheduled_report_list():
+    from app.modules.system_admin.services.scheduled_report_service import (
+        ScheduledReportService)
+    from app.core.reporting.generators import REPORT_GENERATORS
+    items = ScheduledReportService().list_all()
+    return render_template("system_admin/scheduled_report_list.html",
+                           items=items,
+                           report_choices=sorted(REPORT_GENERATORS.keys()))
+
+
+@bp.route("/reports/scheduled/new", methods=["POST"])
+@login_required
+@require_permission("reportconfig.update")
+def scheduled_report_new():
+    from app.modules.system_admin.services.scheduled_report_service import (
+        ScheduledReportService)
+    recipients = request.form.get("recipients", "").strip()
+    filters = {}
+    if request.form.get("branch_id"):
+        filters["branch_id"] = request.form["branch_id"]
+    if request.form.get("status"):
+        filters["status"] = request.form["status"]
+    try:
+        ScheduledReportService().create(
+            name=request.form["name"].strip(),
+            report_code=request.form["report_code"],
+            frequency=request.form.get("frequency", "WEEKLY"),
+            recipients=recipients, filters=filters)
+        flash("Scheduled report created.", "success")
+    except ValueError as e:
+        flash(str(e), "danger")
+    return redirect(url_for("system_admin.scheduled_report_list"))
+
+
+@bp.route("/reports/scheduled/<int:sched_id>/delete", methods=["POST"])
+@login_required
+@require_permission("reportconfig.update")
+def scheduled_report_delete(sched_id):
+    from app.modules.system_admin.services.scheduled_report_service import (
+        ScheduledReportService)
+    ScheduledReportService().delete(sched_id)
+    flash("Scheduled report removed.", "success")
+    return redirect(url_for("system_admin.scheduled_report_list"))
+
+
+@bp.route("/reports/scheduled/<int:sched_id>/run-now", methods=["POST"])
+@login_required
+@require_permission("reportconfig.update")
+def scheduled_report_run_now(sched_id):
+    """Force this one schedule to run immediately, regardless of its
+    next_run_at — lets an admin verify a new schedule actually works
+    (correct recipients, generator succeeds) without waiting for the
+    next real occurrence."""
+    from datetime import datetime, timezone
+    from app.extensions import db
+    from app.modules.system_admin.models import ScheduledReport
+    from app.modules.system_admin.services.scheduled_report_service import (
+        ScheduledReportService)
+    item = db.session.get(ScheduledReport, sched_id)
+    if item is None:
+        flash("Schedule not found.", "warning")
+        return redirect(url_for("system_admin.scheduled_report_list"))
+    item.next_run_at = datetime.now(timezone.utc)
+    db.session.commit()
+    sent, failed = ScheduledReportService().run_due(only_id=sched_id)
+    if failed:
+        flash(f"Run attempted — check the report's status; {failed} "
+              f"schedule(s) failed. See server log for details.", "warning")
+    else:
+        flash(f"Sent successfully to {', '.join(item.recipient_list())}.",
+              "success")
+    return redirect(url_for("system_admin.scheduled_report_list"))
+
+
 # ── Notification bell API ──────────────────────────────────────────────────
 
 @bp.route("/notifications/unread-count")
