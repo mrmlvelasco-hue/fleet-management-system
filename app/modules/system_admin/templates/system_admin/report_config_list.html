@@ -2,21 +2,61 @@
 {% block title %}Report Config{% endblock %}
 {% block breadcrumbs %}<li class="breadcrumb-item active">Report Config</li>{% endblock %}
 {% block content %}
-<h1 class="h3 mb-4">Report Configuration</h1>
-<p class="text-muted">Report rendering will be implemented in Phase 5. Register report codes here.</p>
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">Report Configuration</h1>
+  {% if current_user.has_permission('reportconfig.update') %}
+  <a href="{{ url_for('system_admin.report_config_new') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>Register Report</a>
+  {% endif %}
+</div>
+
+<p class="text-muted">Registered reports appear in the app filtered by each
+user's permissions. Add a report here to surface it without a code change;
+"print" reports open a printable page the browser exports to PDF.</p>
+
+<div class="card mb-4"><div class="card-body">
+  <h2 class="h6 text-uppercase text-muted fw-bold mb-3">Available to You</h2>
+  {% if available %}
+  <div class="table-responsive">
+    <table class="table table-sm mb-0">
+      <thead><tr><th>Report</th><th>Type</th><th>Description</th><th></th></tr></thead>
+      <tbody>
+      {% for r in available %}
+        <tr>
+          <td class="fw-semibold">{{ r.name }}</td>
+          <td><span class="badge text-bg-secondary">{{ r.kind }}</span></td>
+          <td class="text-muted small">{{ r.description or '—' }}</td>
+          <td class="text-end">
+            {% if r.needs_document %}
+              <span class="text-muted small">Open from the document's page</span>
+            {% elif r.endpoint %}
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for(r.endpoint) }}">Run</a>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-muted mb-0">No reports available. Register one above.</p>
+  {% endif %}
+</div></div>
+
 <div class="card"><div class="card-body">
-<table class="table table-striped fms-datatable">
-  <thead><tr><th>Code</th><th>Name</th><th>Description</th><th>Template</th></tr></thead>
-  <tbody>
-  {% for r in items %}
-    <tr>
-      <td><code>{{ r.report_code }}</code></td>
-      <td>{{ r.name }}</td>
-      <td>{{ r.description or '—' }}</td>
-      <td>{{ r.template_path or '—' }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+  <h2 class="h6 text-uppercase text-muted fw-bold mb-3">Registered Definitions</h2>
+  <table class="table table-striped fms-datatable">
+    <thead><tr><th>Code</th><th>Name</th><th>Description</th><th>Target</th></tr></thead>
+    <tbody>
+    {% for r in items %}
+      <tr>
+        <td><code>{{ r.report_code }}</code></td>
+        <td>{{ r.name }}</td>
+        <td>{{ r.description or '—' }}</td>
+        <td class="text-muted small">{{ r.template_path or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </div></div>
 {% endblock %}

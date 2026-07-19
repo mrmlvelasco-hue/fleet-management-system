@@ -37,8 +37,12 @@ def seed_all(admin_password):
     _seed_dashboard_widgets()
     _seed_lookups()
     _seed_transaction_types()
+    _seed_email_templates()
+    _seed_notification_rules()
+    _seed_reports()
     db.session.commit()
-    click.echo("Default system parameters, dashboard widgets and lookups seeded.")
+    click.echo("Default system parameters, dashboard widgets, lookups, "
+               "email templates and notification rules seeded.")
 
 
 def _seed_admin(admin_password: str) -> None:
@@ -65,12 +69,86 @@ def _seed_admin(admin_password: str) -> None:
 
 
 def _seed_system_parameters() -> None:
+    """Seed the configurable business rules. Grouped to mirror the legacy
+    VEMS 'Vehicle Management System Config' screen (System Configuration
+    tab) so the client sees familiar settings, plus the FMS-specific
+    security/trip-ticket params. Idempotent: only inserts codes that don't
+    already exist, so it's safe to re-run after adding new defaults."""
     from app.modules.system_admin.models import SystemParameter
     defaults = [
+        # (code, value, data_type, group, description)
+
+        # ── Security / session (FMS) ──────────────────────────────────
         ("SESSION_TIMEOUT_MINUTES", "30", "INTEGER", "SECURITY",
          "Session timeout in minutes"),
         ("MAX_FAILED_LOGIN_ATTEMPTS", "5", "INTEGER", "SECURITY",
          "Max failed login attempts before lockout"),
+
+        # ── Password policy (VEMS: System Configuration) ──────────────
+        ("PASSWORD_WARNING_DAYS", "30", "INTEGER", "PASSWORD_POLICY",
+         "Days before expiry to start warning the user"),
+        ("PASSWORD_EXPIRY_DAYS", "90", "INTEGER", "PASSWORD_POLICY",
+         "Password validity period in days"),
+        ("PASSWORD_HISTORY_LENGTH", "6", "INTEGER", "PASSWORD_POLICY",
+         "Number of previous passwords that cannot be reused"),
+        ("PASSWORD_MIN_LENGTH", "6", "INTEGER", "PASSWORD_POLICY",
+         "Minimum password length"),
+        ("PASSWORD_MAX_LENGTH", "20", "INTEGER", "PASSWORD_POLICY",
+         "Maximum password length"),
+
+        # ── Image size limits, px (VEMS: Vehicle Picture/Person Setup) ─
+        ("IMG_VEHICLE_FRONT_BACK_PX", "400", "INTEGER", "IMAGE_LIMITS",
+         "Vehicle picture size in pixels (Front, Back)"),
+        ("IMG_CR_PX", "600", "INTEGER", "IMAGE_LIMITS",
+         "CR picture size in pixels"),
+        ("IMG_PERSON_ATD_PX", "320", "INTEGER", "IMAGE_LIMITS",
+         "Person/Assignee/ATD picture size in pixels"),
+        ("IMG_LTO_ENGINE_PX", "600", "INTEGER", "IMAGE_LIMITS",
+         "LTO/Engine picture size in pixels"),
+        ("IMG_ENGINE_CR_PX", "800", "INTEGER", "IMAGE_LIMITS",
+         "Engine picture size in pixels (CR)"),
+
+        # ── Car plan budget over 5 years (VEMS) ───────────────────────
+        ("CAR_PLAN_BUDGET_Y1", "3000", "DECIMAL", "CAR_PLAN_BUDGET",
+         "Car Plan budget, year 1"),
+        ("CAR_PLAN_BUDGET_Y2", "3750", "DECIMAL", "CAR_PLAN_BUDGET",
+         "Car Plan budget, year 2"),
+        ("CAR_PLAN_BUDGET_Y3", "4500", "DECIMAL", "CAR_PLAN_BUDGET",
+         "Car Plan budget, year 3"),
+        ("CAR_PLAN_BUDGET_Y4", "5250", "DECIMAL", "CAR_PLAN_BUDGET",
+         "Car Plan budget, year 4"),
+        ("CAR_PLAN_BUDGET_Y5", "6000", "DECIMAL", "CAR_PLAN_BUDGET",
+         "Car Plan budget, year 5"),
+
+        # ── Company-owned budget over 5 years (VEMS) ──────────────────
+        ("COMPANY_OWNED_BUDGET_Y1", "2000", "DECIMAL", "COMPANY_OWNED_BUDGET",
+         "Company-owned vehicle budget, year 1"),
+        ("COMPANY_OWNED_BUDGET_Y2", "2500", "DECIMAL", "COMPANY_OWNED_BUDGET",
+         "Company-owned vehicle budget, year 2"),
+        ("COMPANY_OWNED_BUDGET_Y3", "3000", "DECIMAL", "COMPANY_OWNED_BUDGET",
+         "Company-owned vehicle budget, year 3"),
+        ("COMPANY_OWNED_BUDGET_Y4", "3500", "DECIMAL", "COMPANY_OWNED_BUDGET",
+         "Company-owned vehicle budget, year 4"),
+        ("COMPANY_OWNED_BUDGET_Y5", "4000", "DECIMAL", "COMPANY_OWNED_BUDGET",
+         "Company-owned vehicle budget, year 5"),
+
+        # ── Finance (VEMS: Other Setting) — read by Vehicle Registration
+        ("VAT_RATE", "12", "DECIMAL", "FINANCE",
+         "VAT rate (%) applied on registration/computed amounts"),
+        ("ASSURED_VALUE_PCT", "10", "DECIMAL", "FINANCE",
+         "% Assured Value used in vehicle registration computation"),
+
+        # ── UI list preferences (VEMS: Other Setting) ─────────────────
+        ("LIST_PAGES", "75", "INTEGER", "UI_PREFERENCES",
+         "Default number of rows per list page"),
+        ("VEHICLE_LIST_COLUMNS", "38", "INTEGER", "UI_PREFERENCES",
+         "Vehicle list column count"),
+        ("WO_NORMAL_LIST_COLUMNS", "15", "INTEGER", "UI_PREFERENCES",
+         "Work Order (Normal) list column count"),
+        ("WO_PM_LIST_COLUMNS", "15", "INTEGER", "UI_PREFERENCES",
+         "Work Order (PM) list column count"),
+
+        # ── Trip ticket / general (FMS) ───────────────────────────────
         ("REQUIRE_DRIVER_FROM_MASTER", "YES", "STRING", "TRIP_TICKET",
          "YES = driver must come from Driver Master; NO = manual entry"),
         ("COMPANY_NAME", "My Company", "STRING", "GENERAL", "Company name"),
@@ -84,14 +162,27 @@ def _seed_system_parameters() -> None:
 
 
 def _seed_dashboard_widgets() -> None:
+    """Seed the dashboard widget catalog. Two kinds of widget:
+      - KPI tiles (top row counters): FLEET, MAINTENANCE, APPROVALS, ...
+      - Panels (list/table sections): MY_ACTIONS, VEHICLE_LIST,
+        DUE_MAINTENANCE, DUE_REGISTRATION.
+    Every widget is individually toggleable per user under System
+    Administration → Dashboard Config, so a CEO and a dispatcher can see
+    different dashboards."""
     from app.modules.system_admin.models import DashboardWidget
     widgets = [
+        # KPI tiles
         ("FLEET", "Fleet", "bi-truck", 1),
         ("MAINTENANCE", "Maintenance", "bi-wrench", 2),
         ("APPROVALS", "Approvals", "bi-check2-square", 3),
         ("REGISTRATIONS", "Registrations", "bi-card-checklist", 4),
         ("TIRES", "Tires", "bi-circle", 5),
         ("BATTERIES", "Batteries", "bi-battery-half", 6),
+        # Panels (list/table widgets)
+        ("MY_ACTIONS", "For My Action", "bi-inbox", 10),
+        ("VEHICLE_LIST", "Vehicle List", "bi-list-ul", 11),
+        ("DUE_MAINTENANCE", "Vehicles Due for Maintenance", "bi-wrench", 12),
+        ("DUE_REGISTRATION", "Vehicles Due for Registration", "bi-card-checklist", 13),
     ]
     for code, label, icon, sort in widgets:
         if not DashboardWidget.query.filter_by(code=code).first():
@@ -99,6 +190,125 @@ def _seed_dashboard_widgets() -> None:
                 code=code, label=label, icon=icon,
                 sort_order=sort, default_visible=True))
     db.session.flush()
+
+
+def _seed_email_templates() -> None:
+    """Seed default Jinja2 email templates for every approval-engine event
+    and the scheduled reminder events. Admins can edit subject/body under
+    System Administration → Email Templates without touching code.
+
+    Available context variables (see notification tasks.py):
+      {{ recipient_name }}, {{ reference_table }}, {{ reference_id }},
+      {{ event_code }}, {{ event_label }}
+    """
+    from app.modules.system_admin.models import EmailTemplate
+
+    def _tmpl(intro):
+        html = (f"<p>Hello {{{{ recipient_name }}}},</p>"
+                f"<p>{intro}</p>"
+                f"<p><strong>{{{{ reference_table }}}} "
+                f"#{{{{ reference_id }}}}</strong></p>"
+                f"<p>Please log in to the Fleet Management System to view "
+                f"the details.</p>")
+        text = (f"Hello {{{{ recipient_name }}}},\n\n{intro}\n\n"
+                f"{{{{ reference_table }}}} #{{{{ reference_id }}}}\n\n"
+                f"Please log in to the Fleet Management System to view the "
+                f"details.")
+        return html, text
+
+    templates = [
+        ("submitted", "Document Submitted for Approval",
+         "[FMS] Approval needed: {{ reference_table }} #{{ reference_id }}",
+         "A document has been submitted and is now awaiting your approval."),
+        ("approved_level", "Approval Level Passed",
+         "[FMS] Progressed: {{ reference_table }} #{{ reference_id }}",
+         "A document you submitted has passed an approval level and moved "
+         "to the next approver."),
+        ("approved_final", "Document Fully Approved",
+         "[FMS] Approved: {{ reference_table }} #{{ reference_id }}",
+         "Good news — your document has been fully approved."),
+        ("rejected", "Document Rejected",
+         "[FMS] Rejected: {{ reference_table }} #{{ reference_id }}",
+         "Your document has been rejected. Please review the approver's "
+         "remarks."),
+        ("returned", "Document Returned",
+         "[FMS] Returned for revision: {{ reference_table }} "
+         "#{{ reference_id }}",
+         "Your document has been returned for revision."),
+        ("resubmitted", "Document Resubmitted",
+         "[FMS] Resubmitted: {{ reference_table }} #{{ reference_id }}",
+         "A previously returned document has been revised and resubmitted "
+         "for your approval."),
+        ("cancelled", "Document Cancelled",
+         "[FMS] Cancelled: {{ reference_table }} #{{ reference_id }}",
+         "A document has been cancelled."),
+        ("PMS_DUE", "Preventive Maintenance Due",
+         "[FMS] PM due: {{ reference_table }} #{{ reference_id }}",
+         "A vehicle is due for preventive maintenance."),
+        ("REGISTRATION_EXPIRING", "Vehicle Registration Expiring",
+         "[FMS] Registration expiring: {{ reference_table }} "
+         "#{{ reference_id }}",
+         "A vehicle registration is approaching its expiry date and needs "
+         "renewal."),
+        ("TIRE_REPLACEMENT", "Tire Replacement Due",
+         "[FMS] Tire replacement due: {{ reference_table }} "
+         "#{{ reference_id }}",
+         "A tire has reached its replacement threshold."),
+        ("BATTERY_REPLACEMENT", "Battery Replacement Due",
+         "[FMS] Battery replacement due: {{ reference_table }} "
+         "#{{ reference_id }}",
+         "A battery has reached its replacement threshold."),
+        ("TRIP_TICKET_RELEASE", "Trip Ticket Released",
+         "[FMS] Trip ticket released: {{ reference_table }} "
+         "#{{ reference_id }}",
+         "A trip ticket has been released."),
+    ]
+    for event_code, name, subject, intro in templates:
+        if not EmailTemplate.query.filter_by(event_code=event_code).first():
+            html, text = _tmpl(intro)
+            db.session.add(EmailTemplate(
+                event_code=event_code, name=name, subject=subject,
+                body_html=html, body_text=text))
+    db.session.flush()
+
+
+def _seed_notification_rules() -> None:
+    """Seed default notification rules so approval events actually notify
+    the right people out of the box. Channel defaults to BOTH (in-app +
+    email); admins can switch any rule to IN_APP only under System
+    Administration → Notification Rules.
+
+    Recipient logic:
+      - submitted/resubmitted → CURRENT_APPROVER (the person who must act)
+      - approved_final/rejected/returned → SUBMITTER (the originator)
+    """
+    from app.modules.system_admin.models import NotificationRule
+
+    rules = [
+        ("submitted", "BOTH", "CURRENT_APPROVER"),
+        ("resubmitted", "BOTH", "CURRENT_APPROVER"),
+        ("approved_level", "BOTH", "CURRENT_APPROVER"),
+        ("approved_final", "BOTH", "SUBMITTER"),
+        ("rejected", "BOTH", "SUBMITTER"),
+        ("returned", "BOTH", "SUBMITTER"),
+        ("cancelled", "IN_APP", "SUBMITTER"),
+    ]
+    for event_code, channel, recipient_type in rules:
+        exists = NotificationRule.query.filter_by(
+            event_code=event_code, recipient_type=recipient_type).first()
+        if not exists:
+            db.session.add(NotificationRule(
+                event_code=event_code, channel=channel,
+                recipient_type=recipient_type))
+    db.session.flush()
+
+
+def _seed_reports() -> None:
+    """Seed the built-in report registry so the 5 shipped reports appear in
+    the unified Reports list; admins add new reports as ReportConfig rows."""
+    from app.modules.system_admin.services.report_registry_service import (
+        ReportRegistryService)
+    ReportRegistryService().seed_builtin()
 
 
 def _seed_lookups() -> None:

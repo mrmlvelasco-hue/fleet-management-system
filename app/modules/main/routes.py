@@ -48,6 +48,16 @@ def _visible_widget_codes(user) -> set:
            if configs.get(w.code, w.default_visible)}
 
 
+def _widget_exists(code: str) -> bool:
+    """True if a DashboardWidget row exists for `code`. Used so panels
+    (My Actions, Vehicle List, due tables) that pre-date the widget
+    catalog stay visible on installs where `flask seed all` hasn't yet
+    added their catalog rows — "unregistered widget = show it" preserves
+    backward compatibility."""
+    from app.modules.system_admin.models import DashboardWidget
+    return DashboardWidget.query.filter_by(code=code).first() is not None
+
+
 @bp.route("/")
 @login_required
 def dashboard():
@@ -76,19 +86,35 @@ def dashboard():
     ]
     cards = [c for c in all_cards if c["code"] in visible_codes]
 
-    my_tasks = ApprovalTaskService().list_for_user(current_user)
-    for_my_action = [{
-        "document_number": t.document_number or "(no number)",
-        "document_type": t.document_type.name if t.document_type else "",
-        "requester": t.requester.full_name if t.requester else "Unknown",
-        "created_at": t.created_at,
-        "aging": _aging_label(t.created_at),
-        "level_number": t.level_number,
-        "url": resolve_task_url(t),
-    } for t in my_tasks]
+    # "For My Action" panel — now a toggleable widget (MY_ACTIONS). Defaults
+    # to shown if the widget row is absent, so existing installs are
+    # unaffected.
+    for_my_action = []
+    if "MY_ACTIONS" in visible_codes or not _widget_exists("MY_ACTIONS"):
+        my_tasks = ApprovalTaskService().list_for_user(current_user)
+        for_my_action = [{
+            "document_number": t.document_number or "(no number)",
+            "document_type": t.document_type.name if t.document_type else "",
+            "requester": t.requester.full_name if t.requester else "Unknown",
+            "created_at": t.created_at,
+            "aging": _aging_label(t.created_at),
+            "level_number": t.level_number,
+            "url": resolve_task_url(t),
+        } for t in my_tasks]
+
+    # "Vehicle List" panel (VEHICLE_LIST widget) — the compact recent-fleet
+    # table the client asked to have as a dashboard option.
+    recent_vehicles = []
+    if "VEHICLE_LIST" in visible_codes:
+        recent_vehicles = [{
+            "vehicle": v,
+            "url": url_for("master_data.vehicle_detail", vid=v.id),
+        } for v in dash.recent_vehicles(user=current_user, limit=10)]
 
     due_vehicles = []
-    if "MAINTENANCE" in visible_codes:
+    if ("DUE_MAINTENANCE" in visible_codes
+            or (not _widget_exists("DUE_MAINTENANCE")
+                and "MAINTENANCE" in visible_codes)):
         from app.core.maintenance.due_calculation_service import (
             PMDueCalculationService)
         from app.modules.user_management.org_scope_service import (
@@ -121,7 +147,9 @@ def dashboard():
             })
 
     due_registrations = []
-    if "REGISTRATIONS" in visible_codes:
+    if ("DUE_REGISTRATION" in visible_codes
+            or (not _widget_exists("DUE_REGISTRATION")
+                and "REGISTRATIONS" in visible_codes)):
         from app.modules.registration_config.service import (
             RegistrationDueCalculationService)
         from app.modules.user_management.org_scope_service import (
@@ -150,5 +178,6 @@ def dashboard():
 
     return render_template("main/dashboard.html", cards=cards,
                            for_my_action=for_my_action,
+                           recent_vehicles=recent_vehicles,
                            due_vehicles=due_vehicles,
                            due_registrations=due_registrations)

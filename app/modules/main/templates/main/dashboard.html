@@ -24,6 +24,7 @@
 </div>
 
 <div class="row g-3 mt-1">
+  {% if for_my_action is defined and for_my_action %}
   <div class="col-12 col-xl-8">
     <div class="card" id="for-my-action">
       <div class="card-header d-flex align-items-center gap-2">
@@ -58,6 +59,31 @@
       </div>
     </div>
   </div>
+  {% endif %}
+
+  {% if recent_vehicles is defined and recent_vehicles %}
+  <div class="col-12 col-xl-4">
+    <div class="card" id="vehicle-list">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-semibold">Vehicle List</span>
+          <span class="badge text-bg-secondary rounded-pill">{{ recent_vehicles|length }}</span>
+        </div>
+        <a href="{{ url_for('master_data.vehicle_list') }}" class="small text-decoration-none">View all</a>
+      </div>
+      <div class="list-group list-group-flush">
+        {% for row in recent_vehicles %}
+        <a href="{{ row.url }}" class="list-group-item list-group-item-action">
+          <div class="d-flex justify-content-between">
+            <span class="fw-semibold">{{ row.vehicle.plate_number or row.vehicle.conduction_number or '—' }}</span>
+            <span class="text-muted small">{{ row.vehicle.brand }} {{ row.vehicle.model }}</span>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 {% if due_vehicles is defined %}

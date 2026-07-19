@@ -3,10 +3,15 @@ send_notification_email task (which only logged intent) with real email
 sending, gated behind an admin-configurable enable switch and settings.
 """
 import smtplib
+import ssl
 from email.message import EmailMessage
 
 from app.extensions import db
 from app.modules.system_admin.models import EmailConfig
+
+# Never let an unreachable/misconfigured SMTP server hang the request (or a
+# Celery worker) indefinitely. 20s is generous for a handshake+login+send.
+SMTP_TIMEOUT_SECONDS = 20
 
 
 class EmailNotConfiguredError(Exception):
@@ -52,12 +57,34 @@ class EmailSenderService:
         if body_html:
             msg.add_alternative(body_html, subtype="html")
 
-        with smtplib.SMTP(config.smtp_host, config.smtp_port or 587) as server:
-            if config.use_tls:
-                server.starttls()
-            if config.smtp_username:
-                server.login(config.smtp_username, config.smtp_password)
-            server.send_message(msg)
+        port = int(config.smtp_port or 587)
+        context = ssl.create_default_context()
+
+        # Port 465 = implicit SSL ("SMTPS"): the connection is encrypted from
+        # the very first byte, so we must use SMTP_SSL and must NOT call
+        # starttls(). The previous code always used plain SMTP() + starttls(),
+        # which hangs forever against a 465 endpoint (Hostinger, Gmail SSL,
+        # etc.) because the server is waiting for a TLS handshake, not a plain
+        # EHLO. This was the "browser just keeps loading" symptom.
+        if port == 465:
+            with smtplib.SMTP_SSL(config.smtp_host, port,
+                                  timeout=SMTP_TIMEOUT_SECONDS,
+                                  context=context) as server:
+                if config.smtp_username:
+                    server.login(config.smtp_username, config.smtp_password)
+                server.send_message(msg)
+        else:
+            # 587 (submission) or 25: start plaintext, optionally upgrade with
+            # STARTTLS. use_tls drives whether we attempt the upgrade.
+            with smtplib.SMTP(config.smtp_host, port,
+                              timeout=SMTP_TIMEOUT_SECONDS) as server:
+                server.ehlo()
+                if config.use_tls:
+                    server.starttls(context=context)
+                    server.ehlo()
+                if config.smtp_username:
+                    server.login(config.smtp_username, config.smtp_password)
+                server.send_message(msg)
 
 
 def _strip_html(html: str) -> str:
