@@ -626,6 +626,7 @@ def maintenanceorder_new():
                 assigned_mechanic=f.get("assigned_mechanic"),
                 vendor_id=int(f["vendor_id"]) if f.get("vendor_id") else None,
                 estimated_cost=f.get("estimated_cost") or None,
+                driver_id=int(f["driver_id"]) if f.get("driver_id") else None,
                 user=current_user)
             flash("Maintenance Order created.", "success")
             return redirect(url_for("transactions.maintenanceorder_list"))
