@@ -1,0 +1,69 @@
+{% extends "layout/base.html" %}
+{% block title %}Maintenance Cost Summary{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Maintenance Cost Summary</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Maintenance Cost Summary</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-success"
+       href="{{ url_for('system_admin.report_maintenance_cost_summary_export', **filters) }}">
+      <i class="bi bi-file-earmark-excel me-1"></i>Export to Excel</a>
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print</button>
+  </div>
+</div>
+
+<form method="get" class="row g-2 mb-3 no-print">
+  <div class="col-auto">
+    <select name="branch_id" class="form-select form-select-sm">
+      <option value="">All Branches</option>
+      {% for b in branches %}
+      <option value="{{ b.id }}" {{ 'selected' if filters.branch_id==b.id|string }}>{{ b.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from or '' }}" placeholder="From">
+  </div>
+  <div class="col-auto">
+    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to or '' }}" placeholder="To">
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-sm btn-primary" type="submit">Filter</button>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('system_admin.report_maintenance_cost_summary') }}">Clear</a>
+  </div>
+</form>
+
+<p class="text-muted small">Generated {{ generated_at.strftime('%B %d, %Y %I:%M %p') }} — {{ orders|length }} completed order(s)</p>
+
+<div class="table-responsive">
+  <table class="table table-sm table-bordered">
+    <thead class="table-light">
+      <tr><th>MO Number</th><th>Vehicle</th><th>Branch</th><th>Category</th>
+          <th>Maintenance Type</th><th>Completed Date</th><th class="text-end">Actual Cost</th></tr>
+    </thead>
+    <tbody>
+      {% for o in orders %}
+      <tr>
+        <td>{{ o.document_number or '(draft)' }}</td>
+        <td>{{ o.vehicle.plate_number or o.vehicle.conduction_number }} — {{ o.vehicle.brand }} {{ o.vehicle.model }}</td>
+        <td>{{ o.vehicle.branch.name if o.vehicle.branch else '—' }}</td>
+        <td>{{ o.category or o.order_category }}</td>
+        <td>{{ o.maintenance_type.name if o.maintenance_type else '—' }}</td>
+        <td>{{ o.completed_date or '—' }}</td>
+        <td class="text-end">{{ '%.2f'|format(o.actual_cost or 0) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-center text-muted py-4">No completed orders match this filter.</td></tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="fw-bold">
+        <td colspan="6" class="text-end">TOTAL</td>
+        <td class="text-end">{{ '%.2f'|format(total) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+<style>@media print { .no-print { display: none; } }</style>
+{% endblock %}

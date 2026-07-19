@@ -1,0 +1,73 @@
+{% extends "layout/base.html" %}
+{% block title %}PMS Compliance Report{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">PMS Compliance Report</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">PMS Compliance / Due Report</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-outline-success"
+       href="{{ url_for('system_admin.report_pms_compliance_export', **filters) }}">
+      <i class="bi bi-file-earmark-excel me-1"></i>Export to Excel</a>
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print</button>
+  </div>
+</div>
+
+<form method="get" class="row g-2 mb-3 no-print">
+  <div class="col-auto">
+    <select name="branch_id" class="form-select form-select-sm">
+      <option value="">All Branches</option>
+      {% for b in branches %}
+      <option value="{{ b.id }}" {{ 'selected' if filters.branch_id==b.id|string }}>{{ b.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="status" class="form-select form-select-sm">
+      <option value="">All Statuses</option>
+      <option value="OVERDUE" {{ 'selected' if filters.status=='OVERDUE' }}>Overdue</option>
+      <option value="DUE_SOON" {{ 'selected' if filters.status=='DUE_SOON' }}>Due Soon</option>
+      <option value="OK" {{ 'selected' if filters.status=='OK' }}>OK</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-sm btn-primary" type="submit">Filter</button>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('system_admin.report_pms_compliance') }}">Clear</a>
+  </div>
+</form>
+
+<p class="text-muted small">Generated {{ generated_at.strftime('%B %d, %Y %I:%M %p') }} — {{ rows|length }} vehicle(s)</p>
+
+<div class="table-responsive">
+  <table class="table table-sm table-bordered">
+    <thead class="table-light">
+      <tr>
+        <th>Plate No.</th><th>Branch</th><th>Make</th><th>Model</th>
+        <th>Maintenance Type</th><th>Next Due (km)</th><th>Current Odometer</th>
+        <th>Next Due Date</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.vehicle.plate_number or r.vehicle.conduction_number }}</td>
+        <td>{{ r.vehicle.branch.name if r.vehicle.branch else '—' }}</td>
+        <td>{{ r.vehicle.brand }}</td>
+        <td>{{ r.vehicle.model }}</td>
+        <td>{{ r.schedule.maintenance_type.name if r.schedule and r.schedule.maintenance_type else '—' }}</td>
+        <td>{{ r.next_due_km or '—' }}</td>
+        <td>{{ r.vehicle.current_odometer }}</td>
+        <td>{{ r.next_due_date or '—' }}</td>
+        <td>
+          <span class="badge text-bg-{{ 'danger' if r.status=='OVERDUE' else ('warning' if r.status=='DUE_SOON' else 'success') }}">
+            {{ r.status }}</span>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="text-center text-muted py-4">No vehicles match this filter.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<style>@media print { .no-print { display: none; } }</style>
+{% endblock %}
