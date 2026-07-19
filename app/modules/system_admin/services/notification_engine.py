@@ -68,18 +68,15 @@ class NotificationEngine:
         db.session.commit()
 
     def _queue_email(self, user: User, event_name: str, instance) -> None:
-        """Queue async email via Celery. Logs warning if broker unavailable."""
-        try:
-            from app.modules.system_admin.tasks import send_notification_email
-            send_notification_email.delay(
-                user_id=user.id, event_code=event_name,
-                reference_table=instance.reference_table,
-                reference_id=instance.reference_id)
-        except Exception:
-            import logging
-            logging.getLogger(__name__).warning(
-                "Email task could not be queued (broker unavailable?). "
-                "In-app notification was still delivered.")
+        """Send the notification email -- via Celery if a worker/broker is
+        reachable, or synchronously in this request if not. See
+        tasks.dispatch_notification_email for why this can no longer
+        silently drop the email when Celery isn't running."""
+        from app.modules.system_admin.tasks import dispatch_notification_email
+        dispatch_notification_email(
+            user_id=user.id, event_code=event_name,
+            reference_table=instance.reference_table,
+            reference_id=instance.reference_id)
 
 
 class InAppNotificationService:

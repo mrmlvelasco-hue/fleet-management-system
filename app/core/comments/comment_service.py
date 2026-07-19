@@ -46,16 +46,17 @@ class CommentService:
         db.session.commit()
 
         try:
-            from app.modules.system_admin.tasks import send_notification_email
-            send_notification_email.delay(
+            from app.modules.system_admin.tasks import dispatch_notification_email
+            dispatch_notification_email(
                 user_id=recipient.id, event_code="DOCUMENT_COMMENT",
                 reference_table=comment.reference_table,
                 reference_id=comment.reference_id)
         except Exception:
             import logging
-            logging.getLogger(__name__).warning(
-                "Comment email could not be queued (broker unavailable?). "
-                "In-app notification was still delivered.")
+            logging.getLogger(__name__).exception(
+                "Comment notification email failed entirely (both queued "
+                "and synchronous attempts). In-app notification was still "
+                "delivered.")
 
     def list_for(self, reference_table, reference_id) -> list:
         return (DocumentComment.query
