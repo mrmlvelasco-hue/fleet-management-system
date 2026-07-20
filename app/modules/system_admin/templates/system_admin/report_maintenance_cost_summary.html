@@ -23,6 +23,18 @@
     </select>
   </div>
   <div class="col-auto">
+    <select name="vehicle_type_id" class="form-select form-select-sm">
+      <option value="">All Vehicle Types</option>
+      {% for vt in vehicle_types %}
+      <option value="{{ vt.id }}" {{ 'selected' if filters.vehicle_type_id==vt.id|string }}>{{ vt.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <input type="text" name="plate_number" class="form-control form-control-sm"
+           placeholder="Plate / Conduction No." value="{{ filters.plate_number or '' }}">
+  </div>
+  <div class="col-auto">
     <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from or '' }}" placeholder="From">
   </div>
   <div class="col-auto">

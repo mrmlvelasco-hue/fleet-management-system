@@ -1348,11 +1348,18 @@ def vehicleregistration_checklist_toggle(rid, item_id):
 @login_required
 @require_permission("vehicleregistration.update")
 def vehicleregistration_complete(rid):
+    from app.modules.transactions.vehicle_registration.service import (
+        RegistrationDateOrderError, DuplicateORNumberError,
+        DuplicateCRNumberError)
     f = request.form
-    VehicleRegistrationService().complete(
-        rid, or_number=f["or_number"], cr_number=f["cr_number"],
-        plate_number=f.get("plate_number") or None)
-    flash("Vehicle Registration completed.", "success")
+    try:
+        VehicleRegistrationService().complete(
+            rid, or_number=f["or_number"], cr_number=f["cr_number"],
+            plate_number=f.get("plate_number") or None)
+        flash("Vehicle Registration completed.", "success")
+    except (RegistrationDateOrderError, DuplicateORNumberError,
+           DuplicateCRNumberError) as e:
+        flash(str(e), "danger")
     return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
 
 

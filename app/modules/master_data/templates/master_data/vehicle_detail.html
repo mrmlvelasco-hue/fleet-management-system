@@ -79,6 +79,42 @@
 </div>
 {% endif %}
 
+{% if registration_status %}
+<div class="card mt-4">
+  <div class="card-header"><i class="bi bi-calendar2-check me-1"></i>Registration Status</div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-3"><div class="text-muted small">Plate Number</div>
+        <div class="fw-semibold">{{ item.plate_number or item.conduction_number or '—' }}</div></div>
+      <div class="col-md-3"><div class="text-muted small">Plate Schedule</div>
+        <div class="fw-semibold">
+          {% if registration_status.lto_month %}
+            Month {{ registration_status.lto_month }}{% if registration_status.lto_week %}, Week {{ registration_status.lto_week }}{% endif %}
+          {% else %}—{% endif %}
+        </div></div>
+      <div class="col-md-3"><div class="text-muted small">Latest OR / CR Number</div>
+        <div class="fw-semibold">
+          {% if registration_status.last_registration %}
+            {{ registration_status.last_registration.or_number or '—' }} / {{ registration_status.last_registration.cr_number or '—' }}
+          {% else %}—{% endif %}
+        </div></div>
+      <div class="col-md-3"><div class="text-muted small">Registration Expiry</div>
+        <div class="fw-semibold">{{ registration_status.stored_expiry_date or registration_status.suggested_due_date or '—' }}</div></div>
+    </div>
+    <div class="mt-3 d-flex align-items-center gap-2">
+      <span class="text-muted small">Due Status:</span>
+      <span class="badge text-bg-{{ 'danger' if registration_status.status == 'OVERDUE' else 'warning' if registration_status.status in ('DUE_SOON','NO_RECORD') else 'success' }}">
+        {{ registration_status.status }}</span>
+      <span class="text-muted small">({{ registration_status.source }})</span>
+      {% if registration_status.warning == 'REGISTRATION_DATE_MISMATCH' %}
+      <span class="badge text-bg-warning">
+        <i class="bi bi-exclamation-triangle me-1"></i>Stored expiry differs from the plate's LTO schedule — please verify.</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% if registration_history %}
 <div class="card mt-4">
   <div class="card-header"><i class="bi bi-card-checklist me-1"></i>Registration History</div>

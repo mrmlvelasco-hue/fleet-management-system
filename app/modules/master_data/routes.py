@@ -756,10 +756,20 @@ def vehicle_detail(vid):
                                .all())
     except Exception:
         pass
+
+    registration_status = None
+    try:
+        from app.modules.registration_config.service import (
+            RegistrationDueCalculationService)
+        registration_status = RegistrationDueCalculationService().get_due_status(item)
+    except Exception:
+        pass
+
     return render_template("master_data/vehicle_detail.html",
                            item=item, vehicle=item, attachments=attachments,
                            maintenance_history=maintenance_history,
-                           registration_history=registration_history)
+                           registration_history=registration_history,
+                           registration_status=registration_status)
 
 
 @bp.route("/vehicles/<int:vid>/clone")
