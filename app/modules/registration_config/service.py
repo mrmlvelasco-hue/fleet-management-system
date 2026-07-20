@@ -98,9 +98,17 @@ class RegistrationDueCalculationService:
         from datetime import date as _date
         from app.modules.transactions.vehicle_registration.models import (
             VehicleRegistration)
+        from app.modules.registration_config.lto_plate_schedule import (
+            get_plate_schedule, calculate_due_date_from_plate,
+            next_due_date_from_plate)
         as_of_date = as_of_date or _date.today()
 
         template = RegistrationTemplateService().find_applicable(vehicle)
+        plate_number = vehicle.plate_number or vehicle.conduction_number
+        schedule = get_plate_schedule(plate_number)
+        lto_month = schedule["month"] if schedule else None
+        lto_week = schedule["week"] if schedule else None
+
         last_reg = (VehicleRegistration.query
                    .filter_by(vehicle_id=vehicle.id, status="COMPLETED")
                    .filter(VehicleRegistration.expiry_date.isnot(None))
@@ -108,9 +116,30 @@ class RegistrationDueCalculationService:
                    .first())
 
         if last_reg is None:
-            return {"status": "NO_RECORD", "template": template,
-                   "next_due_date": None, "last_registration": None}
+            # No COMPLETED registration on file at all — fall back to the
+            # plate's LTO schedule so a reminder can still be generated
+            # instead of the vehicle silently having no due date tracked.
+            suggested = (next_due_date_from_plate(plate_number, as_of_date)
+                        if schedule else None)
+            return {
+                "status": "NO_RECORD",
+                "source": "PLATE_SCHEDULE",
+                "template": template,
+                "next_due_date": suggested,
+                "suggested_due_date": suggested,
+                "last_registration": None,
+                "lto_month": lto_month,
+                "lto_week": lto_week,
+                "calculated_due_date": suggested,
+                "stored_expiry_date": None,
+                "days_remaining": (suggested - as_of_date).days if suggested else None,
+                "warning": None,
+            }
 
+        # A COMPLETED registration exists — it's the source of truth for
+        # due-status, per the spec ("if a COMPLETED registration exists,
+        # use the registration record"). The plate schedule is only
+        # cross-checked against it to flag a possible data-entry mistake.
         notify_before_days = (
             template.notify_before_days if template and template.notify_before_days
             else self.default_notify_before_days)
@@ -124,15 +153,38 @@ class RegistrationDueCalculationService:
         else:
             status = "GOOD"
 
-        return {"status": status, "template": template,
-               "next_due_date": expiry_date, "last_registration": last_reg,
-               "days_remaining": days_remaining}
+        calculated_due_date = (calculate_due_date_from_plate(
+            plate_number, expiry_date.year) if schedule else None)
+        warning = None
+        if calculated_due_date is not None:
+            # LTO renewal weeks are ~7-day blocks; a gap bigger than two
+            # blocks (14 days) is a meaningful mismatch worth flagging,
+            # rather than every few-day rounding difference.
+            if abs((calculated_due_date - expiry_date).days) > 14:
+                warning = "REGISTRATION_DATE_MISMATCH"
 
-    def get_all_due_vehicles(self, as_of_date=None) -> list:
-        """Every active vehicle that's DUE_SOON or OVERDUE — mirrors
-        PMDueCalculationService.get_all_due_vehicles()'s shape, used by
-        both the Dashboard widget and the auto-generation task."""
+        return {
+            "status": status,
+            "source": "REGISTRATION_RECORD",
+            "template": template,
+            "next_due_date": expiry_date,
+            "last_registration": last_reg,
+            "lto_month": lto_month,
+            "lto_week": lto_week,
+            "calculated_due_date": calculated_due_date,
+            "stored_expiry_date": expiry_date,
+            "days_remaining": days_remaining,
+            "warning": warning,
+        }
+
+    def get_all_due_vehicles(self, as_of_date=None, statuses=None) -> list:
+        """Every active vehicle whose status is in `statuses` — defaults
+        to (DUE_SOON, OVERDUE), preserving the exact prior behavior for
+        the Dashboard widget and the auto-generation task. Pass e.g.
+        statuses=("NO_RECORD",) for the "No Registration Record" filter,
+        or statuses=("OVERDUE",) for "Expired Registration"."""
         from app.modules.master_data.vehicle.models import Vehicle
+        statuses = statuses or ("DUE_SOON", "OVERDUE")
         results = []
         # Same DISPOSED exclusion as Maintenance PMS — a disposed vehicle
         # has no LTO registration to renew.
@@ -140,6 +192,6 @@ class RegistrationDueCalculationService:
             Vehicle.status != "DISPOSED")
         for vehicle in query.all():
             result = self.get_due_status(vehicle, as_of_date=as_of_date)
-            if result["status"] in ("DUE_SOON", "OVERDUE"):
+            if result["status"] in statuses:
                 results.append({"vehicle": vehicle, **result})
         return results

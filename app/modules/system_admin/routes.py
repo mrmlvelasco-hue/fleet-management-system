@@ -596,19 +596,48 @@ def report_config_new():
 # ── Analytical Reports (Phase 5) ────────────────────────────────────────────
 
 def _report_filters_from_request():
-    """Shared filter parsing for the three analytical reports below —
-    branch_id / date_from / date_to / status, all optional."""
+    """Shared filter parsing for the analytical reports below —
+    branch_id / vehicle_type_id / plate_number / date_from / date_to /
+    status, all optional. plate_number is a case-insensitive substring
+    match (typing 'AKA' finds AKA-7134) and also matches conduction
+    numbers, since unregistered vehicles have no plate yet."""
     return {
         "branch_id": request.args.get("branch_id") or None,
+        "vehicle_type_id": request.args.get("vehicle_type_id") or None,
+        "plate_number": (request.args.get("plate_number") or "").strip() or None,
         "date_from": request.args.get("date_from") or None,
         "date_to": request.args.get("date_to") or None,
         "status": request.args.get("status") or None,
     }
 
 
+def _vehicle_matches_filters(vehicle, filters) -> bool:
+    """Shared per-vehicle filter check used by the due-based reports
+    (which iterate vehicle rows rather than SQL-query them)."""
+    if filters.get("branch_id"):
+        if vehicle.branch_id != int(filters["branch_id"]):
+            return False
+    if filters.get("vehicle_type_id"):
+        if vehicle.vehicle_type_id != int(filters["vehicle_type_id"]):
+            return False
+    if filters.get("plate_number"):
+        needle = filters["plate_number"].lower()
+        plate = (vehicle.plate_number or "").lower()
+        conduction = (vehicle.conduction_number or "").lower()
+        if needle not in plate and needle not in conduction:
+            return False
+    return True
+
+
 def _branch_choices():
     from app.modules.master_data.org.models import Branch
     return Branch.query.filter_by(is_active=True).order_by(Branch.name).all()
+
+
+def _vehicle_type_choices():
+    from app.modules.master_data.reference.models import VehicleType
+    return (VehicleType.query.filter_by(is_active=True)
+           .order_by(VehicleType.name).all())
 
 
 @bp.route("/reports/pms-compliance")
@@ -622,15 +651,14 @@ def report_pms_compliance():
     filters = _report_filters_from_request()
     scope_svc = UserOrgScopeService()
     rows = [r for r in PMDueCalculationService().get_all_due_vehicles()
-           if scope_svc.covers(current_user.id, branch_id=r["vehicle"].branch_id)]
-    if filters["branch_id"]:
-        rows = [r for r in rows
-               if r["vehicle"].branch_id == int(filters["branch_id"])]
+           if scope_svc.covers(current_user.id, branch_id=r["vehicle"].branch_id)
+           and _vehicle_matches_filters(r["vehicle"], filters)]
     if filters["status"]:
         rows = [r for r in rows if r["status"] == filters["status"]]
     return render_template("system_admin/report_pms_compliance.html",
                            rows=rows, filters=filters,
                            branches=_branch_choices(),
+                           vehicle_types=_vehicle_type_choices(),
                            generated_at=datetime.now())
 
 
@@ -658,16 +686,23 @@ def report_registration_expiry():
         UserOrgScopeService)
     filters = _report_filters_from_request()
     scope_svc = UserOrgScopeService()
-    rows = [r for r in RegistrationDueCalculationService().get_all_due_vehicles()
-           if scope_svc.covers(current_user.id, branch_id=r["vehicle"].branch_id)]
-    if filters["branch_id"]:
-        rows = [r for r in rows
-               if r["vehicle"].branch_id == int(filters["branch_id"])]
+    # Fetch every status (not just DUE_SOON/OVERDUE) so the status filter
+    # dropdown's other options (GOOD, NO_RECORD) actually have data to
+    # show — previously this only ever fetched DUE_SOON/OVERDUE, so
+    # selecting "OK" (which didn't even match the real "GOOD" status
+    # string) or any future "No Record" filter silently returned nothing
+    # regardless of what was actually in the fleet.
+    all_statuses = ("OVERDUE", "DUE_SOON", "GOOD", "NO_RECORD")
+    rows = [r for r in RegistrationDueCalculationService().get_all_due_vehicles(
+                statuses=all_statuses)
+           if scope_svc.covers(current_user.id, branch_id=r["vehicle"].branch_id)
+           and _vehicle_matches_filters(r["vehicle"], filters)]
     if filters["status"]:
         rows = [r for r in rows if r["status"] == filters["status"]]
     return render_template("system_admin/report_registration_expiry.html",
                            rows=rows, filters=filters,
                            branches=_branch_choices(),
+                           vehicle_types=_vehicle_type_choices(),
                            generated_at=datetime.now())
 
 
@@ -700,11 +735,20 @@ def report_maintenance_cost_summary():
     if filters["branch_id"]:
         query = query.filter(MaintenanceOrder.vehicle.has(
             branch_id=int(filters["branch_id"])))
+    if filters["vehicle_type_id"]:
+        query = query.filter(MaintenanceOrder.vehicle.has(
+            vehicle_type_id=int(filters["vehicle_type_id"])))
     if filters["date_from"]:
         query = query.filter(MaintenanceOrder.completed_date >= filters["date_from"])
     if filters["date_to"]:
         query = query.filter(MaintenanceOrder.completed_date <= filters["date_to"])
     orders = query.order_by(MaintenanceOrder.completed_date.desc()).all()
+
+    if filters["plate_number"]:
+        needle = filters["plate_number"].lower()
+        orders = [o for o in orders
+                 if needle in (o.vehicle.plate_number or "").lower()
+                 or needle in (o.vehicle.conduction_number or "").lower()]
 
     scope_svc = UserOrgScopeService()
     orders = [o for o in orders
@@ -714,6 +758,7 @@ def report_maintenance_cost_summary():
     return render_template("system_admin/report_maintenance_cost_summary.html",
                            orders=orders, total=total, filters=filters,
                            branches=_branch_choices(),
+                           vehicle_types=_vehicle_type_choices(),
                            generated_at=datetime.now())
 
 

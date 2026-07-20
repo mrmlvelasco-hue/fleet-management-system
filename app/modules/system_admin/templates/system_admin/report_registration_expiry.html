@@ -23,11 +23,24 @@
     </select>
   </div>
   <div class="col-auto">
+    <select name="vehicle_type_id" class="form-select form-select-sm">
+      <option value="">All Vehicle Types</option>
+      {% for vt in vehicle_types %}
+      <option value="{{ vt.id }}" {{ 'selected' if filters.vehicle_type_id==vt.id|string }}>{{ vt.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <input type="text" name="plate_number" class="form-control form-control-sm"
+           placeholder="Plate / Conduction No." value="{{ filters.plate_number or '' }}">
+  </div>
+  <div class="col-auto">
     <select name="status" class="form-select form-select-sm">
       <option value="">All Statuses</option>
-      <option value="OVERDUE" {{ 'selected' if filters.status=='OVERDUE' }}>Overdue</option>
+      <option value="OVERDUE" {{ 'selected' if filters.status=='OVERDUE' }}>Overdue (Expired)</option>
       <option value="DUE_SOON" {{ 'selected' if filters.status=='DUE_SOON' }}>Due Soon</option>
-      <option value="OK" {{ 'selected' if filters.status=='OK' }}>OK</option>
+      <option value="GOOD" {{ 'selected' if filters.status=='GOOD' }}>Good</option>
+      <option value="NO_RECORD" {{ 'selected' if filters.status=='NO_RECORD' }}>No Registration Record</option>
     </select>
   </div>
   <div class="col-auto">
@@ -42,7 +55,7 @@
   <table class="table table-sm table-bordered">
     <thead class="table-light">
       <tr><th>Plate No.</th><th>Branch</th><th>Make</th><th>Model</th>
-          <th>Next Due Date</th><th>Status</th></tr>
+          <th>LTO Sched.</th><th>Next Due Date</th><th>Source</th><th>Status</th><th></th></tr>
     </thead>
     <tbody>
       {% for r in rows %}
@@ -51,14 +64,24 @@
         <td>{{ r.vehicle.branch.name if r.vehicle.branch else '—' }}</td>
         <td>{{ r.vehicle.brand }}</td>
         <td>{{ r.vehicle.model }}</td>
+        <td class="small">
+          {% if r.lto_month %}Mo. {{ r.lto_month }}{% if r.lto_week %}, Wk {{ r.lto_week }}{% endif %}{% else %}—{% endif %}
+        </td>
         <td>{{ r.next_due_date or '—' }}</td>
+        <td class="small text-muted">{{ r.source.replace('_', ' ').title() if r.source else '—' }}</td>
         <td>
-          <span class="badge text-bg-{{ 'danger' if r.status=='OVERDUE' else ('warning' if r.status=='DUE_SOON' else 'success') }}">
-            {{ r.status }}</span>
+          <span class="badge text-bg-{{ 'danger' if r.status=='OVERDUE' else ('warning' if r.status in ('DUE_SOON','NO_RECORD') else 'success') }}">
+            {{ r.status.replace('_', ' ') }}</span>
+        </td>
+        <td>
+          {% if r.warning == 'REGISTRATION_DATE_MISMATCH' %}
+          <span class="badge text-bg-warning" title="Stored expiry differs from the plate's LTO schedule">
+            <i class="bi bi-exclamation-triangle"></i></span>
+          {% endif %}
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="text-center text-muted py-4">No vehicles match this filter.</td></tr>
+      <tr><td colspan="9" class="text-center text-muted py-4">No vehicles match this filter.</td></tr>
       {% endfor %}
     </tbody>
   </table>

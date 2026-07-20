@@ -8,10 +8,13 @@ unattended overnight — the two were previously at risk of drifting apart
 since the manual export lived inline in a route.
 
 Supported filter keys (all optional; a report ignores keys it doesn't use):
-  branch_id   - int, restrict to one branch
-  date_from   - date, inclusive
-  date_to     - date, inclusive
-  status      - str, e.g. "OVERDUE" for the due-based reports
+  branch_id       - int, restrict to one branch
+  vehicle_type_id - int, restrict to one vehicle type
+  plate_number    - str, case-insensitive substring match against plate
+                    number OR conduction number
+  date_from       - date, inclusive
+  date_to         - date, inclusive
+  status          - str, e.g. "OVERDUE" for the due-based reports
 """
 from datetime import datetime
 from io import BytesIO
@@ -23,6 +26,25 @@ _HEADER_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2",
                            fill_type="solid")
 _SECTION_FILL = PatternFill(start_color="F2F2F2", end_color="F2F2F2",
                             fill_type="solid")
+
+
+def _vehicle_matches(vehicle, filters: dict) -> bool:
+    """Shared per-vehicle filter check, mirroring the report pages' own
+    _vehicle_matches_filters so the Excel export always contains exactly
+    what the screen showed for the same filter values."""
+    if filters.get("branch_id"):
+        if vehicle.branch_id != int(filters["branch_id"]):
+            return False
+    if filters.get("vehicle_type_id"):
+        if vehicle.vehicle_type_id != int(filters["vehicle_type_id"]):
+            return False
+    if filters.get("plate_number"):
+        needle = str(filters["plate_number"]).lower()
+        plate = (vehicle.plate_number or "").lower()
+        conduction = (vehicle.conduction_number or "").lower()
+        if needle not in plate and needle not in conduction:
+            return False
+    return True
 
 
 def _new_workbook(title: str, sheet_name: str):
@@ -99,11 +121,8 @@ def generate_pms_compliance_xlsx(filters: dict = None, user=None):
     from app.core.maintenance.due_calculation_service import (
         PMDueCalculationService)
     filters = filters or {}
-    rows = PMDueCalculationService().get_all_due_vehicles()
-
-    if filters.get("branch_id"):
-        rows = [r for r in rows
-               if r["vehicle"].branch_id == int(filters["branch_id"])]
+    rows = [r for r in PMDueCalculationService().get_all_due_vehicles()
+           if _vehicle_matches(r["vehicle"], filters)]
     if filters.get("status"):
         rows = [r for r in rows if r["status"] == filters["status"]]
 
@@ -133,16 +152,15 @@ def generate_registration_expiry_xlsx(filters: dict = None, user=None):
     from app.modules.registration_config.service import (
         RegistrationDueCalculationService)
     filters = filters or {}
-    rows = RegistrationDueCalculationService().get_all_due_vehicles()
-
-    if filters.get("branch_id"):
-        rows = [r for r in rows
-               if r["vehicle"].branch_id == int(filters["branch_id"])]
+    all_statuses = ("OVERDUE", "DUE_SOON", "GOOD", "NO_RECORD")
+    rows = RegistrationDueCalculationService().get_all_due_vehicles(
+        statuses=all_statuses)
+    rows = [r for r in rows if _vehicle_matches(r["vehicle"], filters)]
     if filters.get("status"):
         rows = [r for r in rows if r["status"] == filters["status"]]
 
-    columns = ["Plate No.", "Branch", "Make", "Model", "Next Due Date",
-              "Status"]
+    columns = ["Plate No.", "Branch", "Make", "Model", "LTO Month",
+              "LTO Week", "Next Due Date", "Source", "Status", "Warning"]
     wb, ws = _new_workbook("Vehicle Registration Expiry Report",
                            "Registration Expiry")
     ws.append(columns)
@@ -151,7 +169,9 @@ def generate_registration_expiry_xlsx(filters: dict = None, user=None):
         v = r["vehicle"]
         ws.append([
             v.plate_number or v.conduction_number, v.branch.name if v.branch else "—",
-            v.brand, v.model, r.get("next_due_date") or "—", r["status"],
+            v.brand, v.model, r.get("lto_month") or "—", r.get("lto_week") or "—",
+            r.get("next_due_date") or "—", r.get("source") or "—", r["status"],
+            r.get("warning") or "",
         ])
     _autosize(ws, columns)
     return (f"Registration_Expiry_Report_{datetime.now():%Y%m%d}.xlsx",
@@ -170,14 +190,24 @@ def generate_maintenance_cost_summary_xlsx(filters: dict = None, user=None):
     filters = filters or {}
     query = MaintenanceOrder.query.filter_by(status="COMPLETED")
     if filters.get("branch_id"):
-        query = query.join(MaintenanceOrder.vehicle).filter(
-            MaintenanceOrder.vehicle.has(branch_id=int(filters["branch_id"])))
+        query = query.filter(MaintenanceOrder.vehicle.has(
+            branch_id=int(filters["branch_id"])))
+    if filters.get("vehicle_type_id"):
+        query = query.filter(MaintenanceOrder.vehicle.has(
+            vehicle_type_id=int(filters["vehicle_type_id"])))
     if filters.get("date_from"):
         query = query.filter(MaintenanceOrder.completed_date >= filters["date_from"])
     if filters.get("date_to"):
         query = query.filter(MaintenanceOrder.completed_date <= filters["date_to"])
 
     orders = query.order_by(MaintenanceOrder.completed_date.desc()).all()
+
+    if filters.get("plate_number"):
+        needle = str(filters["plate_number"]).lower()
+        orders = [o for o in orders
+                 if needle in (o.vehicle.plate_number or "").lower()
+                 or needle in (o.vehicle.conduction_number or "").lower()]
+
     if user is not None:
         scope_svc = UserOrgScopeService()
         orders = [o for o in orders

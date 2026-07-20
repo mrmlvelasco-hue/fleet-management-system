@@ -26,6 +26,18 @@ class InvalidRegistrationStateError(Exception):
     pass
 
 
+class RegistrationDateOrderError(Exception):
+    pass
+
+
+class DuplicateORNumberError(Exception):
+    pass
+
+
+class DuplicateCRNumberError(Exception):
+    pass
+
+
 class VehicleRegistrationService(BaseTransactionService):
     model = VehicleRegistration
     document_type_code = "VR"
@@ -136,6 +148,42 @@ class VehicleRegistrationService(BaseTransactionService):
     def complete(self, registration_id: int, *, or_number, cr_number,
                 plate_number=None):
         reg = db.session.get(VehicleRegistration, registration_id)
+
+        # Rule: a COMPLETED record can never have its registration date
+        # after its own expiry date — that would mean the certificate
+        # expired before it was even issued, always a data-entry error.
+        if (reg.registration_date and reg.expiry_date
+                and reg.registration_date > reg.expiry_date):
+            raise RegistrationDateOrderError(
+                f"Registration date ({reg.registration_date}) cannot be "
+                f"after the expiry date ({reg.expiry_date}).")
+
+        # Rule: OR/CR numbers must be unique across all registrations —
+        # each is a real, physically-issued government document number,
+        # so a duplicate almost always means the same document was
+        # entered twice or copy-pasted from another vehicle's record by
+        # mistake.
+        if or_number:
+            dup = (VehicleRegistration.query
+                  .filter(VehicleRegistration.or_number == or_number,
+                         VehicleRegistration.id != registration_id)
+                  .first())
+            if dup is not None:
+                raise DuplicateORNumberError(
+                    f"OR Number '{or_number}' is already used by "
+                    f"registration {dup.document_number or dup.id} "
+                    f"(vehicle: {dup.vehicle.plate_number or dup.vehicle.conduction_number if dup.vehicle else '—'}).")
+        if cr_number:
+            dup = (VehicleRegistration.query
+                  .filter(VehicleRegistration.cr_number == cr_number,
+                         VehicleRegistration.id != registration_id)
+                  .first())
+            if dup is not None:
+                raise DuplicateCRNumberError(
+                    f"CR Number '{cr_number}' is already used by "
+                    f"registration {dup.document_number or dup.id} "
+                    f"(vehicle: {dup.vehicle.plate_number or dup.vehicle.conduction_number if dup.vehicle else '—'}).")
+
         reg.or_number = or_number
         reg.cr_number = cr_number
         if plate_number:
