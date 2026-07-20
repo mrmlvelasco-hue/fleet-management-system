@@ -1376,8 +1376,24 @@ def attachment_download(att_id):
     if att is None or not att.is_active:
         flash("Attachment not found.", "warning")
         return redirect(url_for("main.dashboard"))
+    if att.file_data is not None:
+        # Authoritative copy, from the shared database -- works no
+        # matter which machine originally handled the upload.
+        from flask import Response
+        return Response(
+            att.file_data, mimetype=att.mime_type or "application/octet-stream",
+            headers={"Content-Disposition":
+                    f'attachment; filename="{att.original_filename}"'})
+    # Fallback for attachments uploaded before file_data existed, still
+    # sitting on whichever machine's local disk originally received them.
     upload_dir = os.path.join(current_app.instance_path, "uploads",
                               att.reference_table)
+    if not os.path.exists(os.path.join(upload_dir, att.filename)):
+        flash("This file was uploaded before database storage was added "
+              "and isn't available on this machine — try opening it from "
+              "the machine it was originally uploaded on, or re-upload it "
+              "here to migrate it into shared storage.", "warning")
+        return redirect(request.referrer or url_for("main.dashboard"))
     return send_from_directory(upload_dir, att.filename,
                                download_name=att.original_filename)
 
@@ -1391,7 +1407,15 @@ def attachment_view(att_id):
     if att is None or not att.is_active:
         flash("Attachment not found.", "warning")
         return redirect(url_for("main.dashboard"))
+    if att.file_data is not None:
+        from flask import Response
+        return Response(att.file_data,
+                        mimetype=att.mime_type or "application/octet-stream")
     upload_dir = os.path.join(current_app.instance_path, "uploads",
                               att.reference_table)
+    if not os.path.exists(os.path.join(upload_dir, att.filename)):
+        flash("This file was uploaded before database storage was added "
+              "and isn't available on this machine.", "warning")
+        return redirect(request.referrer or url_for("main.dashboard"))
     return send_from_directory(upload_dir, att.filename, as_attachment=False,
                                mimetype=att.mime_type)

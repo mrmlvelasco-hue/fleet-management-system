@@ -68,8 +68,15 @@ class EmailSenderService:
 
         for f in (attach_files or []):
             try:
-                with open(f["filepath"], "rb") as fh:
-                    data = fh.read()
+                if f.get("data") is not None:
+                    # Raw bytes given directly (e.g. read from the
+                    # database rather than a machine-local disk path) --
+                    # the preferred path now that Attachment.file_data
+                    # exists.
+                    data = f["data"]
+                else:
+                    with open(f["filepath"], "rb") as fh:
+                        data = fh.read()
                 mime = f.get("mime_type") or "application/octet-stream"
                 maintype, _, subtype = mime.partition("/")
                 msg.add_attachment(
