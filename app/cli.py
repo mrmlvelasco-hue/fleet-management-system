@@ -40,9 +40,62 @@ def seed_all(admin_password):
     _seed_email_templates()
     _seed_notification_rules()
     _seed_reports()
+    _migrate_report_permissions_from_data_permissions()
     db.session.commit()
     click.echo("Default system parameters, dashboard widgets, lookups, "
                "email templates and notification rules seeded.")
+
+
+def _migrate_report_permissions_from_data_permissions() -> None:
+    """One-time upgrade step: reports used to be gated on the underlying
+    data's own view permission (vehicle.view, maintenanceorder.view,
+    vehicleregistration.view). Now each report has its own dedicated
+    permission so an admin can grant/revoke access to a SPECIFIC report
+    per Role independently. This grants the new report permission to any
+    role that already had the old coupled data permission, ONCE, so
+    nobody loses access on upgrade.
+
+    Genuinely one-time, not just idempotent: `flask seed all` runs
+    repeatedly over the life of the app (every deploy), and this
+    function is called from it every time. If it re-checked the old
+    coupling on every run, an admin who deliberately unchecked one of
+    these report permissions for a role would find it silently
+    re-granted the next time someone ran `flask seed all` -- defeating
+    the entire point of the per-report toggle. A dedicated SystemParameter
+    row marks the migration as done so it only ever runs once. (Not
+    using SystemParameterService.set() here since it only updates an
+    already-existing parameter and would silently no-op for a brand-new
+    code like this one.)"""
+    from app.modules.system_admin.models import SystemParameter
+    from app.modules.user_management.models import Role, Permission
+
+    marker_code = "REPORT_PERMISSIONS_MIGRATED_V1"
+    marker = SystemParameter.query.filter_by(code=marker_code).first()
+    if marker is not None and marker.value == "true":
+        return
+
+    coupling = [
+        ("vehicle.view", "reportvehicleregister.view"),
+        ("maintenanceorder.view", "reportpmscompliance.view"),
+        ("vehicleregistration.view", "reportregistrationexpiry.view"),
+        ("maintenanceorder.view", "reportmaintenancecost.view"),
+    ]
+    for old_code, new_code in coupling:
+        old_perm = Permission.query.filter_by(code=old_code).first()
+        new_perm = Permission.query.filter_by(code=new_code).first()
+        if old_perm is None or new_perm is None:
+            continue
+        for role in old_perm.roles:
+            if new_perm not in role.permissions:
+                role.permissions.append(new_perm)
+
+    if marker is None:
+        db.session.add(SystemParameter(
+            code=marker_code, value="true", data_type="STRING",
+            group_name="INTERNAL", is_editable=False,
+            description="Internal one-time migration marker — do not edit."))
+    else:
+        marker.value = "true"
 
 
 def _seed_admin(admin_password: str) -> None:

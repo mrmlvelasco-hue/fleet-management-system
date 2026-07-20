@@ -158,6 +158,55 @@ def test_get_all_due_vehicles_statuses_param_is_backward_compatible(
     assert vehicle.id in [r["vehicle"].id for r in explicit_rows]
 
 
+def test_get_due_status_uses_manual_entry_when_no_registration_record(
+        db, vehicle):
+    """The exact gap this field was added for: a migrated vehicle with no
+    digitized VehicleRegistration record, but a real known expiry entered
+    manually, should trigger DUE_SOON/OVERDUE from that real date -- not
+    silently fall back to a pure plate-schedule guess that can roll a
+    year forward once this year's window has passed."""
+    vehicle.last_known_registration_expiry = date(2026, 8, 15)
+    db.session.commit()
+
+    result = RegistrationDueCalculationService().get_due_status(
+        vehicle, as_of_date=date(2026, 8, 1))
+    assert result["source"] == "MANUAL_ENTRY"
+    assert result["status"] == "DUE_SOON"
+    assert result["stored_expiry_date"] == date(2026, 8, 15)
+    assert result["days_remaining"] == 14
+
+
+def test_manual_entry_ignored_once_real_registration_exists(
+        db, vehicle):
+    """A real COMPLETED registration must always win over the manual
+    fallback field, even if both are present."""
+    vehicle.last_known_registration_expiry = date(2026, 1, 1)  # stale/wrong
+    reg = VehicleRegistration(
+        vehicle_id=vehicle.id, registration_type="RENEWAL", status="COMPLETED",
+        registration_date=date(2026, 6, 1), expiry_date=date(2026, 7, 21),
+        or_number="OR-REAL", cr_number="CR-REAL")
+    db.session.add(reg)
+    db.session.commit()
+
+    result = RegistrationDueCalculationService().get_due_status(
+        vehicle, as_of_date=date(2026, 7, 10))
+    assert result["source"] == "REGISTRATION_RECORD"
+    assert result["stored_expiry_date"] == date(2026, 7, 21)
+
+
+def test_no_record_and_no_manual_entry_falls_back_to_pure_plate_schedule(
+        db, vehicle):
+    assert vehicle.last_known_registration_expiry is None
+    result = RegistrationDueCalculationService().get_due_status(
+        vehicle, as_of_date=date(2026, 8, 1))
+    assert result["source"] == "PLATE_SCHEDULE"
+    assert result["status"] == "NO_RECORD"
+    # This year's July 21 has already passed as of Aug 1 -> rolls to
+    # next year, which is exactly the surprising behavior a migrated
+    # vehicle should avoid by having last_known_registration_expiry set.
+    assert result["suggested_due_date"] == date(2027, 7, 21)
+
+
 # ── Registration completion validation ──────────────────────────────────────
 
 @pytest.fixture()

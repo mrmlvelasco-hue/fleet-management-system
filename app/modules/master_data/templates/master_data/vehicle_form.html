@@ -180,6 +180,17 @@
     <input type="text" name="mv_file_number" class="form-control" value="{{ item.mv_file_number if item and item.mv_file_number else '' }}"></div>
   <div class="col-md-3"><label class="form-label">LTO Office</label>
     <input type="text" name="lto_office" class="form-control" value="{{ item.lto_office if item and item.lto_office else '' }}"></div>
+  <div class="col-md-3"><label class="form-label">Last Known Registration Expiry</label>
+    <input type="date" name="last_known_registration_expiry" class="form-control"
+           value="{{ item.last_known_registration_expiry if item and item.last_known_registration_expiry else '' }}">
+    <div class="form-text">
+      Only needed if this vehicle has no Vehicle Registration transaction
+      recorded yet (e.g. migrated data) — gives the renewal reminder a
+      real expiry date to trigger from instead of only guessing from the
+      plate number. Ignored automatically once a real registration is
+      recorded.
+    </div>
+  </div>
 
   <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Classification</h6></div>
   <div class="col-md-4"><label class="form-label">Vehicle Body Type</label>

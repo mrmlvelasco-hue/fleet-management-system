@@ -47,6 +47,17 @@ class Vehicle(db.Model, BaseModel):
     mv_file_number = db.Column(db.String(60), nullable=True)
     remarks = db.Column(db.Text, nullable=True)
 
+    # Set once, manually, for a vehicle migrated into the system without a
+    # full digitized VehicleRegistration transaction history (e.g. from
+    # VEMS) -- gives the due-calculation engine a real, known expiry date
+    # to trigger reminders from immediately, instead of only being able to
+    # guess from the plate's LTO schedule (which can be off by up to a
+    # year if the vehicle's last actual renewal date isn't known). Once a
+    # real COMPLETED VehicleRegistration exists for the vehicle, that
+    # record takes over as the source of truth and this field is no
+    # longer consulted -- see RegistrationDueCalculationService.get_due_status.
+    last_known_registration_expiry = db.Column(db.Date, nullable=True)
+
     # ── Classification lookups/free-text ──────────────────────────────
     vehicle_body_type = db.Column(db.String(40), nullable=True)  # Lookup VEHICLE_BODY_TYPE
     displacement = db.Column(db.String(40), nullable=True)

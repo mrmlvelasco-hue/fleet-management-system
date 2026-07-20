@@ -240,13 +240,16 @@
   </div>
 
   {# ── Reports (collapsible group) — a main module, NOT under System
-     Administration: report viewing is gated per-report on the underlying
-     data's own view permission (vehicle.view, maintenanceorder.view,
-     ...), so an ordinary user with view rights sees exactly the reports
-     their data access allows, without needing any admin permission. #}
-  {% if current_user.has_permission('vehicle.view')
-        or current_user.has_permission('maintenanceorder.view')
-        or current_user.has_permission('vehicleregistration.view') %}
+     Administration. Each report is gated on its OWN dedicated
+     permission (reportvehicleregister.view, etc.) rather than the
+     underlying data's view permission, so an admin can grant or revoke
+     access to a specific report per Role independently -- via Role
+     Management -> Permissions, no separate report-access screen needed. #}
+  {% if current_user.has_permission('reportvehicleregister.view')
+        or current_user.has_permission('reportpmscompliance.view')
+        or current_user.has_permission('reportregistrationexpiry.view')
+        or current_user.has_permission('reportmaintenancecost.view')
+        or current_user.has_permission('reportconfig.view') %}
   <div class="sidebar-group">
     <button class="btn sidebar-group-toggle w-100 d-flex justify-content-between align-items-center text-uppercase small sidebar-section"
             type="button" data-bs-toggle="collapse" data-bs-target="#sbGroupReports"
@@ -256,19 +259,19 @@
     </button>
     <div class="collapse show" id="sbGroupReports">
       <ul class="nav nav-pills flex-column">
-        {% if current_user.has_permission('vehicle.view') %}
+        {% if current_user.has_permission('reportvehicleregister.view') %}
         <li><a href="{{ url_for('master_data.vehicle_register_report') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'master_data.vehicle_register_report' }}">
           <i class="fms-nav-link__icon bi bi-truck"></i><span class="sidebar-label">Vehicle Register Details</span></a></li>
         {% endif %}
-        {% if current_user.has_permission('maintenanceorder.view') %}
+        {% if current_user.has_permission('reportpmscompliance.view') %}
         <li><a href="{{ url_for('system_admin.report_pms_compliance') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.report_pms_compliance') }}">
           <i class="fms-nav-link__icon bi bi-clipboard2-pulse"></i><span class="sidebar-label">PMS Compliance / Due</span></a></li>
         {% endif %}
-        {% if current_user.has_permission('vehicleregistration.view') %}
+        {% if current_user.has_permission('reportregistrationexpiry.view') %}
         <li><a href="{{ url_for('system_admin.report_registration_expiry') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.report_registration_expiry') }}">
           <i class="fms-nav-link__icon bi bi-calendar-x"></i><span class="sidebar-label">Registration Expiry</span></a></li>
         {% endif %}
-        {% if current_user.has_permission('maintenanceorder.view') %}
+        {% if current_user.has_permission('reportmaintenancecost.view') %}
         <li><a href="{{ url_for('system_admin.report_maintenance_cost_summary') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.report_maintenance_cost_summary') }}">
           <i class="fms-nav-link__icon bi bi-cash-stack"></i><span class="sidebar-label">Maintenance Cost Summary</span></a></li>
         {% endif %}
