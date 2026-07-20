@@ -108,6 +108,28 @@ class RegistrationDueCalculationService:
         schedule = get_plate_schedule(plate_number)
         lto_month = schedule["month"] if schedule else None
         lto_week = schedule["week"] if schedule else None
+        notify_before_days = (
+            template.notify_before_days if template and template.notify_before_days
+            else self.default_notify_before_days)
+
+        def _status_from_expiry(expiry_date):
+            days_remaining = (expiry_date - as_of_date).days
+            if days_remaining < 0:
+                status = "OVERDUE"
+            elif days_remaining <= notify_before_days:
+                status = "DUE_SOON"
+            else:
+                status = "GOOD"
+            calculated = (calculate_due_date_from_plate(
+                plate_number, expiry_date.year) if schedule else None)
+            warning = None
+            if calculated is not None:
+                # LTO renewal weeks are ~7-day blocks; a gap bigger than
+                # two blocks (14 days) is a meaningful mismatch worth
+                # flagging, rather than every few-day rounding difference.
+                if abs((calculated - expiry_date).days) > 14:
+                    warning = "REGISTRATION_DATE_MISMATCH"
+            return status, calculated, warning, days_remaining
 
         last_reg = (VehicleRegistration.query
                    .filter_by(vehicle_id=vehicle.id, status="COMPLETED")
@@ -115,66 +137,56 @@ class RegistrationDueCalculationService:
                    .order_by(VehicleRegistration.expiry_date.desc())
                    .first())
 
-        if last_reg is None:
-            # No COMPLETED registration on file at all — fall back to the
-            # plate's LTO schedule so a reminder can still be generated
-            # instead of the vehicle silently having no due date tracked.
-            suggested = (next_due_date_from_plate(plate_number, as_of_date)
-                        if schedule else None)
+        if last_reg is not None:
+            # A COMPLETED registration exists — it's the source of truth
+            # for due-status. The plate schedule is only cross-checked
+            # against it to flag a possible data-entry mistake.
+            status, calculated, warning, days_remaining = _status_from_expiry(
+                last_reg.expiry_date)
             return {
-                "status": "NO_RECORD",
-                "source": "PLATE_SCHEDULE",
-                "template": template,
-                "next_due_date": suggested,
-                "suggested_due_date": suggested,
-                "last_registration": None,
-                "lto_month": lto_month,
-                "lto_week": lto_week,
-                "calculated_due_date": suggested,
-                "stored_expiry_date": None,
-                "days_remaining": (suggested - as_of_date).days if suggested else None,
-                "warning": None,
+                "status": status, "source": "REGISTRATION_RECORD",
+                "template": template, "next_due_date": last_reg.expiry_date,
+                "last_registration": last_reg, "lto_month": lto_month,
+                "lto_week": lto_week, "calculated_due_date": calculated,
+                "stored_expiry_date": last_reg.expiry_date,
+                "days_remaining": days_remaining, "warning": warning,
             }
 
-        # A COMPLETED registration exists — it's the source of truth for
-        # due-status, per the spec ("if a COMPLETED registration exists,
-        # use the registration record"). The plate schedule is only
-        # cross-checked against it to flag a possible data-entry mistake.
-        notify_before_days = (
-            template.notify_before_days if template and template.notify_before_days
-            else self.default_notify_before_days)
-        expiry_date = last_reg.expiry_date
-        days_remaining = (expiry_date - as_of_date).days
+        if vehicle.last_known_registration_expiry is not None:
+            # No digitized VehicleRegistration transaction yet, but this
+            # vehicle's actual current expiry IS known (entered once,
+            # manually, typically during data migration from a legacy
+            # system) — use it as a real trigger instead of only being
+            # able to guess from the plate's LTO schedule, which can be
+            # off by up to a year if the last actual renewal date isn't
+            # known. Once a real COMPLETED registration is recorded, that
+            # takes over automatically (see the branch above).
+            status, calculated, warning, days_remaining = _status_from_expiry(
+                vehicle.last_known_registration_expiry)
+            return {
+                "status": status, "source": "MANUAL_ENTRY",
+                "template": template,
+                "next_due_date": vehicle.last_known_registration_expiry,
+                "last_registration": None, "lto_month": lto_month,
+                "lto_week": lto_week, "calculated_due_date": calculated,
+                "stored_expiry_date": vehicle.last_known_registration_expiry,
+                "days_remaining": days_remaining, "warning": warning,
+            }
 
-        if days_remaining < 0:
-            status = "OVERDUE"
-        elif days_remaining <= notify_before_days:
-            status = "DUE_SOON"
-        else:
-            status = "GOOD"
-
-        calculated_due_date = (calculate_due_date_from_plate(
-            plate_number, expiry_date.year) if schedule else None)
-        warning = None
-        if calculated_due_date is not None:
-            # LTO renewal weeks are ~7-day blocks; a gap bigger than two
-            # blocks (14 days) is a meaningful mismatch worth flagging,
-            # rather than every few-day rounding difference.
-            if abs((calculated_due_date - expiry_date).days) > 14:
-                warning = "REGISTRATION_DATE_MISMATCH"
-
+        # Neither a digitized registration nor a manually-entered known
+        # expiry exists — fall back to the plate's LTO schedule alone so
+        # a reminder can still be generated instead of the vehicle
+        # silently having no due date tracked at all.
+        suggested = (next_due_date_from_plate(plate_number, as_of_date)
+                    if schedule else None)
         return {
-            "status": status,
-            "source": "REGISTRATION_RECORD",
-            "template": template,
-            "next_due_date": expiry_date,
-            "last_registration": last_reg,
-            "lto_month": lto_month,
-            "lto_week": lto_week,
-            "calculated_due_date": calculated_due_date,
-            "stored_expiry_date": expiry_date,
-            "days_remaining": days_remaining,
-            "warning": warning,
+            "status": "NO_RECORD", "source": "PLATE_SCHEDULE",
+            "template": template, "next_due_date": suggested,
+            "suggested_due_date": suggested, "last_registration": None,
+            "lto_month": lto_month, "lto_week": lto_week,
+            "calculated_due_date": suggested, "stored_expiry_date": None,
+            "days_remaining": (suggested - as_of_date).days if suggested else None,
+            "warning": None,
         }
 
     def get_all_due_vehicles(self, as_of_date=None, statuses=None) -> list:

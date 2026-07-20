@@ -54,6 +54,17 @@ for _code, _desc in [
     ("backupconfig.update", "Update backup config"),
     ("reportconfig.view", "View report config"),
     ("reportconfig.update", "Update report config"),
+    # Per-report permissions -- deliberately separate from the underlying
+    # data's own view permission (vehicle.view, etc.) so an admin can
+    # grant or revoke access to a SPECIFIC report per Role independently
+    # of whether that role can see the underlying records themselves
+    # (e.g. a role with vehicle.view doesn't automatically have to see
+    # the Vehicle Register Details report). See Role Management ->
+    # Permissions to check/uncheck these per role.
+    ("reportvehicleregister.view", "View Vehicle Register Details report"),
+    ("reportpmscompliance.view", "View PMS Compliance / Due report"),
+    ("reportregistrationexpiry.view", "View Registration Expiry report"),
+    ("reportmaintenancecost.view", "View Maintenance Cost Summary report"),
 ]:
     _m, _a = _code.split(".")
     registry.register(_code, _m, _a, _desc)
@@ -642,7 +653,7 @@ def _vehicle_type_choices():
 
 @bp.route("/reports/pms-compliance")
 @login_required
-@require_permission("maintenanceorder.view")
+@require_permission("reportpmscompliance.view")
 def report_pms_compliance():
     from app.core.maintenance.due_calculation_service import (
         PMDueCalculationService)
@@ -664,7 +675,7 @@ def report_pms_compliance():
 
 @bp.route("/reports/pms-compliance/export.xlsx")
 @login_required
-@require_permission("maintenanceorder.view")
+@require_permission("reportpmscompliance.view")
 def report_pms_compliance_export():
     from flask import send_file
     from io import BytesIO
@@ -678,7 +689,7 @@ def report_pms_compliance_export():
 
 @bp.route("/reports/registration-expiry")
 @login_required
-@require_permission("vehicleregistration.view")
+@require_permission("reportregistrationexpiry.view")
 def report_registration_expiry():
     from app.modules.registration_config.service import (
         RegistrationDueCalculationService)
@@ -708,7 +719,7 @@ def report_registration_expiry():
 
 @bp.route("/reports/registration-expiry/export.xlsx")
 @login_required
-@require_permission("vehicleregistration.view")
+@require_permission("reportregistrationexpiry.view")
 def report_registration_expiry_export():
     from flask import send_file
     from io import BytesIO
@@ -722,7 +733,7 @@ def report_registration_expiry_export():
 
 @bp.route("/reports/maintenance-cost-summary")
 @login_required
-@require_permission("maintenanceorder.view")
+@require_permission("reportmaintenancecost.view")
 def report_maintenance_cost_summary():
     from app.extensions import db
     from app.modules.transactions.maintenance_order.models import (
@@ -764,7 +775,7 @@ def report_maintenance_cost_summary():
 
 @bp.route("/reports/maintenance-cost-summary/export.xlsx")
 @login_required
-@require_permission("maintenanceorder.view")
+@require_permission("reportmaintenancecost.view")
 def report_maintenance_cost_summary_export():
     from flask import send_file
     from io import BytesIO

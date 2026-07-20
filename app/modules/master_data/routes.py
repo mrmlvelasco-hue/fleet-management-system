@@ -700,7 +700,7 @@ def vehicle_print(vid):
 
 @bp.route("/vehicles/register-report")
 @login_required
-@require_permission("vehicle.view")
+@require_permission("reportvehicleregister.view")
 def vehicle_register_report():
     """Vehicle Register Details report — legacy VEMS layout: one section
     per branch, one row per vehicle. Printable via the browser (Ctrl+P /
@@ -715,7 +715,7 @@ def vehicle_register_report():
 
 @bp.route("/vehicles/register-report/export.xlsx")
 @login_required
-@require_permission("vehicle.view")
+@require_permission("reportvehicleregister.view")
 def vehicle_register_report_export():
     from flask import send_file
     from io import BytesIO
@@ -997,6 +997,9 @@ def _vehicle_fields(include_conduction=True):
         ctpl_policy_number=f.get("ctpl_policy_number") or None,
         ctpl_insurance_provider=f.get("ctpl_insurance_provider") or None,
         lto_office=f.get("lto_office") or None,
+        last_known_registration_expiry=parse_form_date(
+            f.get("last_known_registration_expiry"),
+            "Last Known Registration Expiry"),
         has_ctpl=f.get("has_ctpl") == "on",
         ctpl_from_date=parse_form_date(f.get("ctpl_from_date"), "CTPL From Date"),
         ctpl_to_date=parse_form_date(f.get("ctpl_to_date"), "CTPL To Date"),
