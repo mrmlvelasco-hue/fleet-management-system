@@ -52,7 +52,23 @@ class AttachmentService:
 
     def upload(self, file, reference_table: str, reference_id: int,
                user=None) -> Attachment:
-        """Save a file and create an Attachment row. Raises AttachmentError."""
+        """Save a file and create an Attachment row. Raises AttachmentError.
+
+        The file's bytes are stored directly in the `file_data` column of
+        the SAME shared database this row lives in — this is the
+        authoritative copy, readable from any machine connecting to that
+        database (e.g. a personal laptop AND an office laptop both
+        pointed at the same MySQL server), unlike the local disk copy
+        below, which only exists on whichever machine happened to handle
+        this particular upload.
+
+        Still ALSO writes to local disk as a redundant backup copy (not
+        the primary source of truth) — belt-and-suspenders in case of a
+        future storage-strategy change, at negligible extra cost since
+        the bytes are already in memory. Serving always prefers
+        `file_data` over the disk copy when both exist (see
+        attachment_view/attachment_download in master_data/routes.py).
+        """
         if not file or not file.filename:
             raise AttachmentError("No file provided.")
         if not _allowed(file.filename, self._allowed):
@@ -68,8 +84,15 @@ class AttachmentService:
         original = secure_filename(file.filename)
         ext = original.rsplit(".", 1)[1].lower()
         stored = f"{uuid.uuid4().hex}.{ext}"
-        dest = os.path.join(_get_upload_dir(reference_table), stored)
-        file.save(dest)
+        try:
+            dest = os.path.join(_get_upload_dir(reference_table), stored)
+            file.save(dest)
+        except OSError:
+            # The local-disk backup copy is optional -- if this machine's
+            # disk isn't writable for some reason, that must never block
+            # the upload, since the database copy (below) is already the
+            # authoritative one.
+            pass
         att = Attachment(
             reference_table=reference_table,
             reference_id=reference_id,
@@ -77,6 +100,7 @@ class AttachmentService:
             original_filename=original,
             file_size=len(content),
             mime_type=file.content_type,
+            file_data=content,
             uploaded_by=user.id if user else None)
         db.session.add(att)
         db.session.commit()

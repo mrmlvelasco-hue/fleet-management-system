@@ -41,6 +41,15 @@ def _serialise(value):
         return value.isoformat()
     if isinstance(value, Decimal):
         return str(value)
+    if isinstance(value, (bytes, bytearray)):
+        # Raw binary (e.g. Attachment.file_data) isn't meaningful in an
+        # audit trail and isn't JSON-serializable — record its size
+        # instead of the bytes themselves. Handled generically here
+        # rather than special-cased per model, so any future
+        # LargeBinary/BLOB column added anywhere in the app is safe by
+        # default instead of crashing the flush the first time someone
+        # saves a row containing one.
+        return f"<binary data, {len(value)} bytes>"
     return value
 
 

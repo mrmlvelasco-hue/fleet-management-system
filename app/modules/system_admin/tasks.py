@@ -97,7 +97,10 @@ def _build_notification_context(user, event_code, reference_table,
 
 def _resolve_comment_attachments(comment_id: int) -> list:
     """Files attached to a comment, in the shape EmailSenderService
-    expects, resolved to an absolute path on disk."""
+    expects. Prefers the shared-database copy (Attachment.file_data) so
+    the email attachment is correct regardless of which machine actually
+    handled the original upload -- falls back to the local disk copy
+    only for attachments uploaded before file_data existed."""
     if comment_id is None:
         return []
     import os
@@ -106,10 +109,14 @@ def _resolve_comment_attachments(comment_id: int) -> list:
     attachments = AttachmentService().list_for("document_comments", comment_id)
     out = []
     for att in attachments:
-        filepath = os.path.join(current_app.instance_path, "uploads",
-                                "document_comments", att.filename)
-        out.append({"filepath": filepath, "filename": att.original_filename,
-                    "mime_type": att.mime_type})
+        if att.file_data is not None:
+            out.append({"data": att.file_data, "filename": att.original_filename,
+                       "mime_type": att.mime_type})
+        else:
+            filepath = os.path.join(current_app.instance_path, "uploads",
+                                    "document_comments", att.filename)
+            out.append({"filepath": filepath, "filename": att.original_filename,
+                       "mime_type": att.mime_type})
     return out
 
 
