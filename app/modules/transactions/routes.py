@@ -631,6 +631,7 @@ def maintenanceorder_new():
                                      if f.get("destination_branch_id") else None,
                 disposal_value=f.get("disposal_value") or None,
                 disposal_recipient=f.get("disposal_recipient") or None,
+                assignment_classification=f.get("assignment_classification") or None,
                 user=current_user)
             flash("Maintenance Order created.", "success")
             return redirect(url_for("transactions.maintenanceorder_list"))
@@ -676,6 +677,66 @@ def maintenanceorder_print_disposal(oid):
     company = CompanyProfileService().get()
     return render_template("transactions/maintenanceorder_print_disposal.html",
                            item=item, company=company,
+                           generated_at=datetime.now())
+
+
+@bp.route("/maintenance-orders/<int:oid>/print-vam")
+@login_required
+@require_permission("maintenanceorder.view")
+def maintenanceorder_print_vam(oid):
+    """Vehicle Assignment Memo (VAM) — the formal company memo for
+    Assignment/Reassignment orders, matching the corporate paper form.
+    Endorsed By / Approved By are pulled from the REAL approval trail
+    (ApprovalTask, ordered by level) rather than typed in, since "This
+    VAM was electronically approved hence not requiring any signature"
+    is only true if it reflects what was actually approved."""
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    from app.modules.user_management.models import User
+    item = db.session.get(MaintenanceOrder, oid)
+    if item is None or not item.driver_id:
+        flash("This order has no Driver/Assignee set — the Vehicle "
+             "Assignment Memo only applies to Assignment/Reassignment "
+             "orders.", "warning")
+        return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+    company = CompanyProfileService().get()
+
+    approval_steps = []
+    if item.approval_instance:
+        from app.core.approval.models import ApprovalTask
+        tasks = (ApprovalTask.query
+                .filter_by(approval_instance_id=item.approval_instance.id,
+                          status="COMPLETED")
+                .order_by(ApprovalTask.level_number.asc()).all())
+        for t in tasks:
+            approver = db.session.get(User, t.completed_by) if t.completed_by else None
+            role_name = None
+            if approver and approver.roles:
+                role_name = approver.roles[0].name
+            approval_steps.append({
+                "level": t.level_number,
+                "name": approver.full_name if approver else "—",
+                "title": role_name or "",
+                "date": t.completed_at.date() if t.completed_at else None,
+            })
+
+    latest_reg = None
+    try:
+        from app.modules.transactions.vehicle_registration.models import (
+            VehicleRegistration)
+        latest_reg = (VehicleRegistration.query
+                     .filter_by(vehicle_id=item.vehicle_id, status="COMPLETED")
+                     .filter(VehicleRegistration.expiry_date.isnot(None))
+                     .order_by(VehicleRegistration.expiry_date.desc())
+                     .first())
+    except Exception:
+        pass
+
+    return render_template("transactions/maintenanceorder_print_vam.html",
+                           item=item, company=company,
+                           approval_steps=approval_steps,
+                           latest_reg=latest_reg,
                            generated_at=datetime.now())
 
 

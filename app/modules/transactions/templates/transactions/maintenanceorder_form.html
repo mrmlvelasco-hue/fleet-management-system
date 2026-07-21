@@ -118,6 +118,15 @@
       formal handover record (e.g. reassigning after a temporary CASA/
       service custody).
     </div>
+    <label class="form-label mt-2">Assignment Classification</label>
+    <select name="assignment_classification" class="form-select">
+      <option value="">— Select —</option>
+      <option value="PERK">Perk (Officer, Director, GM, GSM, Senior Manager)</option>
+      <option value="TOOL_OF_THE_TRADE">Tool of the Trade (SM, BDM, FMM, SOOM, KAM, TSM, ADM, BDO, TSO, Channel Manager, Fleet Manager)</option>
+      <option value="OPERATIONS_SERVICE_UNIT">Operations Service Unit (Pre-seller, Salesman, Marketing Services / Postmix Technician, Department Service Unit)</option>
+      <option value="EDS_UNIT">EDS Unit (EDS-SR, MR-EDS, TPD, Business Partner, Operator)</option>
+    </select>
+    <div class="form-text">Printed as the checked box on the Vehicle Assignment Memo.</div>
   </div>
   <div class="col-md-6" id="moDestinationBranchFieldWrapper" style="display:none;">
     <label class="form-label">Destination Branch</label>
@@ -200,6 +209,7 @@
         } else {
           $wrapper.hide();
           $("#moDriverSelect").val(null).trigger("change");
+          $wrapper.find("select[name='assignment_classification']").val("");
         }
       }
       initAjaxSelect("#moDriverSelect", "{{ url_for('api_search.search_drivers') }}",

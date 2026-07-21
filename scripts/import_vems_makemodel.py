@@ -11,6 +11,15 @@ import sys
 # same name.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# See import_pm_task_list.py for the full explanation: without this, a
+# raw script invocation silently falls back to an unmigrated local
+# SQLite file instead of the real configured (e.g. MySQL) database.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 import openpyxl
 
 from app.extensions import db
