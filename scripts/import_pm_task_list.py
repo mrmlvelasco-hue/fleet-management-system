@@ -284,13 +284,51 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
     return stats
 
 
+def reset_pm_data() -> dict:
+    """Wipes ALL PMSchedule/PMScopeTemplate/PMScopeItem rows -- for
+    starting a clean re-migration, per the explicit request to "delete
+    all the template in the table and re-migrate again" (e.g. after
+    fixing a database character-set issue that corrupted a previous
+    import). Deletes children before parents in explicit bulk statements
+    (PMScopeTemplate.items has ORM-level cascade, but a bulk .delete()
+    query bypasses that -- it's a raw SQL DELETE, not an object-by-object
+    ORM operation -- so the three tables are cleared in FK-safe order
+    here instead of relying on it).
+
+    This is intentionally its own explicit opt-in step (--reset flag),
+    never automatic, since it deletes ALL PM schedule data, not just
+    rows from a specific prior import run."""
+    from app.modules.maintenance_config.models import (
+        PMSchedule, PMScopeTemplate, PMScopeItem)
+    counts = {
+        "pm_scope_items": PMScopeItem.query.count(),
+        "pm_scope_templates": PMScopeTemplate.query.count(),
+        "pm_schedules": PMSchedule.query.count(),
+    }
+    PMScopeItem.query.delete()
+    PMScopeTemplate.query.delete()
+    PMSchedule.query.delete()
+    db.session.commit()
+    return counts
+
+
 if __name__ == "__main__":
     import sys
     from app import create_app
     path = sys.argv[1] if len(sys.argv) > 1 else "PM_Task_List.xlsx"
     dry = "--dry-run" in sys.argv
+    do_reset = "--reset" in sys.argv
     app = create_app()
     with app.app_context():
+        if do_reset:
+            if dry:
+                print("--reset ignored during --dry-run (nothing is ever "
+                     "deleted in a dry run).")
+            else:
+                deleted = reset_pm_data()
+                print(f"Reset: deleted {deleted['pm_schedules']} PM "
+                     f"schedules, {deleted['pm_scope_templates']} scope "
+                     f"templates, {deleted['pm_scope_items']} scope items.")
         result = import_pm_task_list(path, dry_run=dry)
         for k, v in result.items():
             if k != "samples":

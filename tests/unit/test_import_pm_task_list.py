@@ -158,3 +158,39 @@ def test_real_import_creates_correct_km_and_day_intervals(db):
     assert first_service.interval_days == 30  # 1MTH -> 30 days, as requested
     assert "First 1,000" in first_service.work_description_template \
         or "First 1000" in first_service.work_description_template
+
+
+def test_reset_pm_data_clears_all_three_tables_in_fk_safe_order(db):
+    from import_pm_task_list import reset_pm_data
+    import_pm_task_list("/mnt/user-data/uploads/PM_Task_List.xlsx",
+                        dry_run=False, limit_groups=2)
+
+    from app.modules.maintenance_config.models import (
+        PMSchedule, PMScopeTemplate, PMScopeItem)
+    assert PMSchedule.query.count() > 0
+    assert PMScopeTemplate.query.count() > 0
+    assert PMScopeItem.query.count() > 0
+
+    deleted = reset_pm_data()
+    assert deleted["pm_schedules"] > 0
+    assert deleted["pm_scope_templates"] > 0
+    assert deleted["pm_scope_items"] > 0
+
+    assert PMSchedule.query.count() == 0
+    assert PMScopeTemplate.query.count() == 0
+    assert PMScopeItem.query.count() == 0
+
+
+def test_reset_then_reimport_produces_a_clean_result(db):
+    """The actual workflow requested: reset, then re-run the import, and
+    end up with exactly the fresh import's data -- no leftover
+    duplicates from before the reset."""
+    from import_pm_task_list import reset_pm_data
+    import_pm_task_list("/mnt/user-data/uploads/PM_Task_List.xlsx",
+                        dry_run=False, limit_groups=1)
+    reset_pm_data()
+    stats = import_pm_task_list("/mnt/user-data/uploads/PM_Task_List.xlsx",
+                                dry_run=False, limit_groups=1)
+
+    from app.modules.maintenance_config.models import PMSchedule
+    assert PMSchedule.query.count() == stats["packages_created"]
