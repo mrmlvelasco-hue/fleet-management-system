@@ -34,8 +34,27 @@ class MaintenanceInvoiceService(BaseTransactionService):
         forever with no way to reach a completed state. Now: no approval
         configured -> straight to APPROVED; approval configured -> SUBMITTED
         (correctly reflecting it's awaiting a real approval, not jumping
-        ahead of it)."""
-        record = super().submit(record_id, user)
+        ahead of it).
+
+        Also handles the adjacent case reported in practice: Invoice
+        approval IS marked as required, but no Approval Matrix has
+        actually been configured for it yet (e.g. not set up during
+        System Administration setup). Previously this raised NoMatrixError
+        straight out of submit(), leaving the invoice stuck in DRAFT with
+        a confusing error and no way forward. Treated the same as "no
+        approval required" -- there's nothing configured to route this
+        to, so it goes straight to APPROVED rather than blocking the
+        user. An admin adding a real matrix later only affects invoices
+        submitted after that point.
+        """
+        from app.modules.approval_config.service import NoMatrixError
+        try:
+            record = super().submit(record_id, user)
+        except NoMatrixError:
+            record = db.session.get(MaintenanceInvoice, record_id)
+            record.status = "APPROVED"
+            db.session.commit()
+            return record
         if record.approval_instance and record.approval_instance.status == "APPROVED":
             record.status = "APPROVED"
         else:

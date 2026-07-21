@@ -105,3 +105,40 @@ def test_submit_with_approval_configured_marks_invoice_submitted(db, env):
     inv = MaintenanceInvoiceService().get_by_id(inv.id)
     assert inv.status == "SUBMITTED"
     assert inv.status != "APPROVED"  # must NOT jump ahead of the real approval
+
+
+def test_submit_with_no_matrix_configured_completes_instead_of_getting_stuck(
+        db, env):
+    """Reproduces the reported bug: Invoice approval IS marked as
+    required, but no Approval Matrix has actually been configured for it
+    (e.g. setup was skipped) -- this used to raise NoMatrixError straight
+    out of submit(), leaving the invoice stuck in DRAFT with a confusing
+    error and no way forward. There's nothing configured to route this
+    to, so it should behave the same as "no approval required": go
+    straight to APPROVED."""
+    branch, vehicle, vendor, order = env
+    from app.modules.document_config.models import DocumentType
+    dt = DocumentType.query.filter_by(code="INV").first()
+    dt.requires_approval = True
+    db.session.commit()
+    # Deliberately NOT creating an ApprovalMatrix -- this is the exact
+    # misconfiguration being tested.
+
+    inv = MaintenanceInvoiceService().create(
+        maintenance_order_id=order.id, vendor_id=vendor.id,
+        invoice_number="INV-STATUS-0003", invoice_date=date.today(),
+        vat_type="NON_VAT", vat_percentage=0, user=None)
+    from app.modules.user_management.models import User
+    from app.core.security.password import hash_password
+    requester3 = User(username="invstatus_requester3",
+                      email="invstatus_requester3@x.com",
+                      password_hash=hash_password("pw123456"))
+    db.session.add(requester3)
+    db.session.commit()
+
+    # Must NOT raise NoMatrixError.
+    result = MaintenanceInvoiceService().submit(inv.id, user=requester3)
+    assert result.status == "APPROVED"
+
+    inv = MaintenanceInvoiceService().get_by_id(inv.id)
+    assert inv.status == "APPROVED"

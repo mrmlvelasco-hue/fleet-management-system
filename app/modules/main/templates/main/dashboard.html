@@ -43,6 +43,12 @@
               <div>
                 <span class="fw-semibold">{{ item.document_number }}</span>
                 <span class="text-muted"> : {{ item.document_type }}</span>
+                {% if item.plate_number %}
+                <span class="badge text-bg-light border text-dark ms-1">{{ item.plate_number }}</span>
+                {% endif %}
+                {% if item.type_label %}
+                <span class="text-muted small">({{ item.type_label }})</span>
+                {% endif %}
               </div>
               <span class="text-muted small">By {{ item.requester }}</span>
             </div>

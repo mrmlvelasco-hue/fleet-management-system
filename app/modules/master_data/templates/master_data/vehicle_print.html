@@ -111,8 +111,8 @@
       {% for mo in mo_history %}
       <tr>
         <td>{{ mo.document_number or '(draft)' }}</td>
-        <td>{{ mo.maintenance_type.name if mo.maintenance_type else '—' }}</td>
-        <td>{{ mo.category }}</td>
+        <td>{{ mo.maintenance_type.name if mo.maintenance_type else (mo.transaction_type.name if mo.transaction_type else '—') }}</td>
+        <td>{{ mo.category or mo.order_category or '—' }}</td>
         <td>{{ mo.scheduled_date }}</td>
         <td>{{ mo.completed_date or '—' }}</td>
         <td>{{ mo.odometer_at_service or '—' }}</td>
