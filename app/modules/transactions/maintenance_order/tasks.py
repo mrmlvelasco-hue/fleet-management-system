@@ -77,12 +77,24 @@ def auto_generate_due_maintenance_orders() -> int:
 
         from datetime import date
         scope_template = schedule.scope_templates[0] if schedule.scope_templates else None
+        # Pre-fill the description from the schedule's own migrated
+        # work_description_template (pm2-pm9 tokens resolved against
+        # this specific vehicle) -- previously nothing was passed here
+        # at all, so an auto-generated PMS order had a blank description
+        # even though the whole point of migrating WorkDescription onto
+        # PMSchedule was for it to actually show up somewhere.
+        work_description = None
+        if schedule.work_description_template:
+            from app.core.reporting.token_resolver import resolve_pm_tokens
+            work_description = resolve_pm_tokens(
+                schedule.work_description_template, vehicle)
         order = order_service.create(
             vehicle_id=vehicle.id, maintenance_type_id=maintenance_type_id,
             pm_schedule_id=schedule.id,
             scope_template_id=scope_template.id if scope_template else None,
             scheduled_date=date.today(),
-            odometer_at_service=vehicle.current_odometer, user=None)
+            odometer_at_service=vehicle.current_odometer,
+            description=work_description, user=None)
         created += 1
 
         context = _PMNotificationContext(
