@@ -53,6 +53,15 @@ class User(db.Model, BaseModel, UserMixin):
     last_login_at = db.Column(db.DateTime, nullable=True)
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
     must_change_password = db.Column(db.Boolean, default=False, nullable=False)
+    # When the current password_hash was set — needed to enforce
+    # PASSWORD_EXPIRY_DAYS/PASSWORD_WARNING_DAYS (System Parameters that
+    # existed since Phase 1c but were never actually enforced anywhere
+    # until this). Nullable: existing users before this column existed
+    # have no known change date, so they're treated as "not yet tracked,
+    # not expired" rather than force-expiring everyone the moment this
+    # ships — the clock starts the next time each of them changes their
+    # password.
+    password_changed_at = db.Column(db.DateTime, nullable=True)
     roles = db.relationship("Role", secondary=user_roles, backref="users")
     branch = db.relationship("Branch", foreign_keys=[branch_id])
     department = db.relationship("Department")
@@ -87,6 +96,20 @@ class UserOrgScope(db.Model, BaseModel):
     user = db.relationship("User", backref="org_scopes")
     branch = db.relationship("Branch")
     business_unit = db.relationship("BusinessUnit")
+
+
+class PasswordHistory(db.Model, BaseModel):
+    """Enforces PASSWORD_HISTORY_LENGTH — a System Parameter that existed
+    since Phase 1c but had nothing recording past hashes to check
+    against until this. One row per password a user has ever had; only
+    the most recent PASSWORD_HISTORY_LENGTH rows are actually checked
+    (old ones beyond that are pruned on each change, not kept forever)."""
+    __tablename__ = "password_histories"
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False,
+                        index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+
+    user = db.relationship("User", backref="password_history")
 
 
 @login_manager.user_loader

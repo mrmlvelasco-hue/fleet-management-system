@@ -239,10 +239,56 @@ def generate_maintenance_cost_summary_xlsx(filters: dict = None, user=None):
            _to_bytes(wb))
 
 
+def generate_audit_trail_xlsx(filters: dict = None, user=None):
+    """Filters: table, action, user_id, date_from, date_to -- same keys
+    the Audit Trail page's own query string uses, so Export always
+    reflects exactly what's on screen."""
+    from app.core.models.audit_log import AuditLog
+    from app.modules.user_management.models import User
+    from app.extensions import db
+    filters = filters or {}
+
+    q = AuditLog.query
+    if filters.get("table"):
+        q = q.filter(AuditLog.table_name == filters["table"])
+    if filters.get("action"):
+        q = q.filter(AuditLog.action == filters["action"])
+    if filters.get("user_id"):
+        q = q.filter(AuditLog.user_id == int(filters["user_id"]))
+    if filters.get("date_from"):
+        q = q.filter(AuditLog.timestamp >= filters["date_from"])
+    if filters.get("date_to"):
+        q = q.filter(AuditLog.timestamp <= filters["date_to"] + " 23:59:59")
+    logs = q.order_by(AuditLog.id.desc()).limit(5000).all()
+
+    columns = ["ID", "Timestamp", "Table", "Record ID", "Action", "User",
+              "Changes"]
+    wb, ws = _new_workbook("Audit Trail", "Audit Trail")
+    ws.append(columns)
+    _style_header_row(ws, ws.max_row, len(columns))
+    for log in logs:
+        user_obj = db.session.get(User, log.user_id) if log.user_id else None
+        user_label = (user_obj.username if user_obj else
+                     (str(log.user_id) if log.user_id else "—"))
+        changes = ""
+        if log.action == "UPDATE" and log.old_values and log.new_values:
+            diffs = []
+            for k, new_v in (log.new_values or {}).items():
+                old_v = (log.old_values or {}).get(k)
+                if old_v != new_v:
+                    diffs.append(f"{k}: {old_v} -> {new_v}")
+            changes = "; ".join(diffs)
+        ws.append([log.id, log.timestamp, log.table_name, log.record_id,
+                  log.action, user_label, changes])
+    _autosize(ws, columns)
+    return (f"Audit_Trail_{datetime.now():%Y%m%d}.xlsx", _to_bytes(wb))
+
+
 # Registry used by both manual export routes and the scheduled emailer.
 REPORT_GENERATORS = {
     "RPT_VEHICLE_REGISTER": generate_vehicle_register_xlsx,
     "RPT_PMS_COMPLIANCE": generate_pms_compliance_xlsx,
     "RPT_REGISTRATION_EXPIRY": generate_registration_expiry_xlsx,
     "RPT_MAINTENANCE_COST_SUMMARY": generate_maintenance_cost_summary_xlsx,
+    "RPT_AUDIT_TRAIL": generate_audit_trail_xlsx,
 }

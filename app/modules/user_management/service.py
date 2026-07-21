@@ -32,6 +32,9 @@ class UserService:
             department_id=department_id,
             must_change_password=must_change_password)
         self._assign_roles(user, role_ids or [])
+        db.session.flush()
+        from app.core.security.password_policy import PasswordPolicyService
+        PasswordPolicyService().record_password_change(user, user.password_hash)
         db.session.commit()
         return user
 
@@ -55,6 +58,9 @@ class UserService:
             user.department_id = department_id
         if password:
             user.password_hash = hash_password(password)
+            from app.core.security.password_policy import PasswordPolicyService
+            PasswordPolicyService().record_password_change(
+                user, user.password_hash)
         if role_ids is not None:
             user.roles.clear()
             self._assign_roles(user, role_ids)

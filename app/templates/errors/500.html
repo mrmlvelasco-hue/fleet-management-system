@@ -2,8 +2,15 @@
 {% block title %}500{% endblock %}
 {% set body %}
 <div class="text-center py-5">
-  <h1 class="display-4">500</h1>
+  <h1 class="display-4 text-danger"><i class="bi bi-exclamation-triangle"></i> 500</h1>
   <p class="lead">Something went wrong on our side.</p>
+  {% if reference %}
+  <p class="text-muted">
+    Reference code: <strong class="user-select-all">{{ reference }}</strong><br>
+    <span class="small">Please take a screenshot of this page (including the reference
+    code above) and send it to your administrator.</span>
+  </p>
+  {% endif %}
   <a class="btn btn-primary" href="{{ url_for('main.dashboard') }}">Back to Dashboard</a>
 </div>
 {% endset %}
