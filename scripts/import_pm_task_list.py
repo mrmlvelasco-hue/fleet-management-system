@@ -308,22 +308,63 @@ def reset_pm_data() -> dict:
     starting a clean re-migration, per the explicit request to "delete
     all the template in the table and re-migrate again" (e.g. after
     fixing a database character-set issue that corrupted a previous
-    import). Deletes children before parents in explicit bulk statements
-    (PMScopeTemplate.items has ORM-level cascade, but a bulk .delete()
-    query bypasses that -- it's a raw SQL DELETE, not an object-by-object
-    ORM operation -- so the three tables are cleared in FK-safe order
-    here instead of relying on it).
+    import).
+
+    Real bug fixed here: the first version of this function only
+    cleared PMScopeItem -> PMScopeTemplate -> PMSchedule (the three
+    tables actually being reset), but missed that OTHER tables
+    reference these by foreign key too:
+      - Vehicle.pm_schedule_id ("Assigned PM Template" on Vehicle Master)
+      - MaintenanceOrder.pm_schedule_id
+      - MaintenanceOrder.scope_template_id
+    On MySQL (which enforces FK constraints by default, unlike SQLite's
+    more lenient default), deleting a referenced pm_scope_templates row
+    while a real MaintenanceOrder still points at it via
+    scope_template_id fails outright with "Cannot delete or update a
+    parent row: a foreign key constraint fails" -- exactly the reported
+    error. This does NOT delete those Vehicle/MaintenanceOrder rows (no
+    transaction history is lost) -- it only detaches their reference to
+    the specific template row being replaced, which is precisely what
+    "wipe the PM catalog and re-migrate fresh" means: the actual
+    completed work orders and their own recorded checklist data stay
+    exactly as they were; only the link to the OLD catalog entry (which
+    is about to be replaced by a freshly re-imported one) is cleared.
 
     This is intentionally its own explicit opt-in step (--reset flag),
-    never automatic, since it deletes ALL PM schedule data, not just
-    rows from a specific prior import run."""
+    never automatic, since it touches real Vehicle/MaintenanceOrder rows
+    (only to null a reference, not delete them) in addition to wiping
+    all PM schedule data."""
     from app.modules.maintenance_config.models import (
         PMSchedule, PMScopeTemplate, PMScopeItem)
+    from app.modules.master_data.vehicle.models import Vehicle
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+
     counts = {
         "pm_scope_items": PMScopeItem.query.count(),
         "pm_scope_templates": PMScopeTemplate.query.count(),
         "pm_schedules": PMSchedule.query.count(),
+        "vehicles_unlinked": Vehicle.query.filter(
+            Vehicle.pm_schedule_id.isnot(None)).count(),
+        "maintenance_orders_unlinked": MaintenanceOrder.query.filter(
+            db.or_(MaintenanceOrder.pm_schedule_id.isnot(None),
+                  MaintenanceOrder.scope_template_id.isnot(None))).count(),
     }
+
+    # Detach external references FIRST -- these updates, not deletes, so
+    # no Vehicle or MaintenanceOrder row is touched beyond this one
+    # column each.
+    Vehicle.query.filter(Vehicle.pm_schedule_id.isnot(None)).update(
+        {"pm_schedule_id": None})
+    MaintenanceOrder.query.filter(
+        MaintenanceOrder.pm_schedule_id.isnot(None)).update(
+        {"pm_schedule_id": None})
+    MaintenanceOrder.query.filter(
+        MaintenanceOrder.scope_template_id.isnot(None)).update(
+        {"scope_template_id": None})
+    db.session.commit()
+
+    # Now the three PM tables themselves, children before parents.
     PMScopeItem.query.delete()
     PMScopeTemplate.query.delete()
     PMSchedule.query.delete()
@@ -347,7 +388,11 @@ if __name__ == "__main__":
                 deleted = reset_pm_data()
                 print(f"Reset: deleted {deleted['pm_schedules']} PM "
                      f"schedules, {deleted['pm_scope_templates']} scope "
-                     f"templates, {deleted['pm_scope_items']} scope items.")
+                     f"templates, {deleted['pm_scope_items']} scope items. "
+                     f"Detached (not deleted) the old template reference "
+                     f"from {deleted['vehicles_unlinked']} vehicles and "
+                     f"{deleted['maintenance_orders_unlinked']} maintenance "
+                     f"orders that pointed at the old catalog.")
         result = import_pm_task_list(path, dry_run=dry)
         for k, v in result.items():
             if k != "samples":
