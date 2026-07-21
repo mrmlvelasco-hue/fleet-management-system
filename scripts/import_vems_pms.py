@@ -13,8 +13,16 @@ a 5,000km base = a 20,000km recurring interval).
 annual renewal, already covered by our dedicated Vehicle Registration
 transaction module, not a workshop PM task.
 """
+import os
 import re
+import sys
 from collections import defaultdict
+
+# See import_pm_task_list.py for why this is needed -- running this
+# script standalone (not through the test suite, which handles the path
+# itself) otherwise fails to import `app` at all, or worse, silently
+# resolves it to an unrelated pip-installed package of the same name.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import openpyxl
 

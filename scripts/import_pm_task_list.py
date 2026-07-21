@@ -51,8 +51,25 @@ Reads columns by HEADER NAME, not positional index.
 "Vehicle Registration" rows are excluded — LTO annual renewal, already
 covered by the dedicated Vehicle Registration transaction module.
 """
+import os
 import re
+import sys
 from collections import defaultdict
+
+# Make sure THIS project's app/ package is what gets imported, regardless
+# of the current working directory or PYTHONPATH -- and regardless of
+# whether some unrelated pip-installed package also happens to be named
+# "app" (this really happened during testing: an ImportStringError
+# traceback showed Python resolving `app` to
+# .venv\Lib\site-packages\app\__init__.py instead of this project's own
+# app/ folder). Inserting the real project root at sys.path[0] (the
+# directory ABOVE this scripts/ folder) makes the local package win
+# every time, and removes any dependency on how the script happens to be
+# invoked (bare `python scripts\...py`, a different cwd, no PYTHONPATH
+# set at all, etc.) -- the previous version of this script assumed the
+# caller had already arranged that, which silently wasn't true the
+# moment it was actually run standalone from PowerShell.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import openpyxl
 
