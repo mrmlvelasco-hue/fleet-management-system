@@ -627,17 +627,24 @@ def maintenanceorder_new():
                 vendor_id=int(f["vendor_id"]) if f.get("vendor_id") else None,
                 estimated_cost=f.get("estimated_cost") or None,
                 driver_id=int(f["driver_id"]) if f.get("driver_id") else None,
+                destination_branch_id=int(f["destination_branch_id"])
+                                     if f.get("destination_branch_id") else None,
+                disposal_value=f.get("disposal_value") or None,
+                disposal_recipient=f.get("disposal_recipient") or None,
                 user=current_user)
             flash("Maintenance Order created.", "success")
             return redirect(url_for("transactions.maintenanceorder_list"))
         except (DateFormatError, RequiredFieldError, InvalidOrderCategoryError) as e:
             flash(str(e), "danger")
+    from app.modules.master_data.org.models import Branch
     return render_template("transactions/maintenanceorder_form.html",
                            maintenance_types=maintenance_types,
                            transaction_types_by_group=transaction_types_by_group,
                            scope_templates=scope_templates,
                            prefill_vehicle=prefill_vehicle, prefill=prefill,
                            due_scope_template_id=due_scope_template_id,
+                           branches=Branch.query.filter_by(is_active=True)
+                                   .order_by(Branch.name).all(),
                            title="New Maintenance Order")
 
 
@@ -649,6 +656,48 @@ def maintenanceorder_detail(oid):
     if item is None:
         abort(403)
     return render_template("transactions/maintenanceorder_detail.html", item=item)
+
+
+@bp.route("/maintenance-orders/<int:oid>/print-disposal")
+@login_required
+@require_permission("maintenanceorder.view")
+def maintenanceorder_print_disposal(oid):
+    """Asset Disposal Report (ADR) — the retirement-stage document,
+    completing the Acquisition-to-Retirement asset lifecycle. Only
+    meaningful for a completed Disposal-group order."""
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    item = db.session.get(MaintenanceOrder, oid)
+    if item is None or not item.disposal_reference_number:
+        flash("This order has no disposal reference number — the Asset "
+             "Disposal Report only applies to completed Disposal-group "
+             "orders.", "warning")
+        return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+    company = CompanyProfileService().get()
+    return render_template("transactions/maintenanceorder_print_disposal.html",
+                           item=item, company=company,
+                           generated_at=datetime.now())
+
+
+@bp.route("/maintenance-orders/<int:oid>/print-transfer")
+@login_required
+@require_permission("maintenanceorder.view")
+def maintenanceorder_print_transfer(oid):
+    """Asset Transfer Report (ATR) — the branch-to-branch vehicle
+    ownership/custody transfer document, only meaningful for a
+    Relocation/Transfer order that has a destination branch set."""
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    item = db.session.get(MaintenanceOrder, oid)
+    if item is None or not item.destination_branch_id:
+        flash("This order has no destination branch set — the Asset "
+             "Transfer Report only applies to Relocation/Transfer orders.",
+             "warning")
+        return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+    company = CompanyProfileService().get()
+    return render_template("transactions/maintenanceorder_print_transfer.html",
+                           item=item, company=company,
+                           generated_at=datetime.now())
 
 
 @bp.route("/maintenance-orders/<int:oid>/print")

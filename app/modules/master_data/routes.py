@@ -660,8 +660,11 @@ def vehiclemodel_deactivate(mid):
 @login_required
 @require_permission("vehicle.view")
 def vehicle_list():
-    items = VehicleService().list(include_inactive=True, user=current_user)
-    return render_template("master_data/vehicle_list.html", items=items)
+    show_disposed = request.args.get("show_disposed") == "1"
+    items = VehicleService().list(include_inactive=True, user=current_user,
+                                  include_disposed=show_disposed)
+    return render_template("master_data/vehicle_list.html", items=items,
+                           show_disposed=show_disposed)
 
 
 @bp.route("/vehicles/<int:vid>/print")

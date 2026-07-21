@@ -40,6 +40,7 @@ def seed_all(admin_password):
     _seed_email_templates()
     _seed_notification_rules()
     _seed_reports()
+    _seed_atr_numbering()
     _migrate_report_permissions_from_data_permissions()
     db.session.commit()
     click.echo("Default system parameters, dashboard widgets, lookups, "
@@ -397,6 +398,42 @@ def _seed_reports() -> None:
     ReportRegistryService().seed_builtin()
 
 
+def _seed_atr_numbering() -> None:
+    """Seed the ATR (Asset Transfer Report) and ADR (Asset Disposal
+    Report) document types + numbering schemes -- ATR-2026-0001 /
+    ADR-2026-0001 style -- so a branch-to-branch vehicle transfer or a
+    vehicle retirement/disposal, both driven off an Operational MO, has
+    its own printable reference number. Same pattern as ATD/PR/TT each
+    having their own series. Every other DocumentType/NumberingScheme in
+    this app is configured manually via System Administration -> Document
+    Type Maintenance, but these two are seeded here so the Asset Transfer
+    Report and Asset Disposal Report print out of the box without
+    requiring that manual setup step first."""
+    from app.modules.document_config.models import DocumentType, NumberingScheme
+
+    for code, name, description in [
+        ("ATR", "Asset Transfer Report",
+         "Branch-to-branch vehicle transfer reference, generated from a "
+         "Relocation/Transfer Maintenance Order."),
+        ("ADR", "Asset Disposal Report",
+         "Vehicle retirement/disposal reference, generated from a "
+         "Disposal-group Maintenance Order."),
+    ]:
+        dt = DocumentType.query.filter_by(code=code).first()
+        if dt is None:
+            dt = DocumentType(code=code, name=name, requires_approval=False,
+                              auto_numbering=True, printable=True,
+                              mobile_available=False, attachment_allowed=False,
+                              description=description)
+            db.session.add(dt)
+            db.session.flush()
+        if dt.numbering_scheme is None:
+            db.session.add(NumberingScheme(
+                document_type_id=dt.id, prefix=code, include_year=True,
+                include_month=False, digit_count=4, separator="-",
+                reset_policy="YEARLY"))
+
+
 def _seed_lookups() -> None:
     """Sync all module-registered lookup types (FUEL_TYPE, LICENSE_TYPE, etc.)
     Must import the master_data routes module first so its lookup
@@ -456,6 +493,8 @@ def _seed_transaction_types() -> None:
         ("DIS-CARNAPPED", "Carnapped", "OPERATIONAL", "DISPOSAL"),
         ("DIS-TOTAL-LOSS", "Total Loss / Wreck", "OPERATIONAL", "DISPOSAL"),
         ("DIS-UNECONOMICAL", "Uneconomical to Repair", "OPERATIONAL", "DISPOSAL"),
+        ("DIS-SOLD", "Sold / Auctioned", "OPERATIONAL", "DISPOSAL"),
+        ("DIS-DONATED", "Donated", "OPERATIONAL", "DISPOSAL"),
 
         ("ACC-APPLICATION", "Application", "OPERATIONAL", "ACCESSORIES"),
         ("ACC-INSTALLATION", "Installation", "OPERATIONAL", "ACCESSORIES"),

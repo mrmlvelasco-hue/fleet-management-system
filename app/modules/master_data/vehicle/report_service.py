@@ -12,9 +12,12 @@ class VehicleRegisterReportService:
     def get_rows(self, user=None, include_inactive=False) -> list:
         """One dict per vehicle, already carrying the display fields the
         report needs (avoids re-querying relationships per row in the
-        template)."""
+        template). Always includes disposed vehicles -- unlike the
+        active-fleet Vehicle Master list, this report is meant to be a
+        complete register/audit trail, so a retired vehicle shouldn't
+        just disappear from it."""
         vehicles = VehicleService().list(
-            include_inactive=include_inactive, user=user)
+            include_inactive=include_inactive, user=user, include_disposed=True)
         rows = []
         for v in vehicles:
             rows.append({

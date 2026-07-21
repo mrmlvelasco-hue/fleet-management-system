@@ -69,6 +69,44 @@ class MaintenanceOrder(db.Model, BaseModel):
     # operative record depending on which document your process uses.
     driver_id = db.Column(db.Integer, db.ForeignKey("drivers.id"),
                           nullable=True)
+    # Used by Operational/Deployment orders with Transaction Type
+    # Relocation/Transfer -- the vehicle's destination branch. On
+    # completion, this both updates Vehicle.branch_id (the vehicle is
+    # now physically/organizationally at the new branch) and generates
+    # transfer_reference_number, printed as the "ATR No." on the Asset
+    # Transfer Report (see driver_print-style print route in routes.py).
+    destination_branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
+                                      nullable=True)
+    # Snapshot of the vehicle's branch AT THE TIME this order was
+    # created -- needed because completion updates Vehicle.branch_id to
+    # the destination, so by the time the Asset Transfer Report is
+    # printed, the vehicle's CURRENT branch is already the new one, not
+    # the "From" branch the report needs to show.
+    origin_branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
+                                 nullable=True)
+    # Generated once, at completion, via AutoNumberingService.generate("ATR")
+    # -- a separate series from the MO's own document_number (MO-2026-...)
+    # since the Asset Transfer Report is treated as its own printable
+    # document, following the pattern of ATD/PR/TT each having their own
+    # numbering series.
+    transfer_reference_number = db.Column(db.String(40), nullable=True)
+    # Retirement/Disposal -- completes the Acquisition-to-Retirement asset
+    # lifecycle. The disposal REASON/METHOD is the selected Transaction
+    # Type itself (Scrappage/Carnapped/Total Loss/Uneconomical/Sold/
+    # Donated -- the DISPOSAL transaction-type group), not a separate
+    # field, so there's exactly one place to record it. These two fields
+    # capture what the transaction type alone can't:
+    disposal_value = db.Column(db.Numeric(18, 2), nullable=True)
+    # Optional (per client decision) -- proceeds/value for asset
+    # accounting, meaningful mainly for Sold/Auctioned/Donated/Total
+    # Loss (insurance settlement), less so for Scrappage/Carnapped.
+    disposal_recipient = db.Column(db.String(150), nullable=True)
+    # Buyer, auction house, donation recipient, or insurance company --
+    # optional context, not required for any disposal method.
+    disposal_reference_number = db.Column(db.String(40), nullable=True)
+    # Generated once, at completion, via AutoNumberingService.generate("ADR")
+    # -- printed as the "ADR No." on the Asset Disposal Report, the
+    # retirement-stage counterpart to the Asset Transfer Report's ATR No.
     estimated_cost = db.Column(db.Numeric(18, 2), nullable=True)
     actual_cost = db.Column(db.Numeric(18, 2), nullable=True)
 
@@ -88,6 +126,9 @@ class MaintenanceOrder(db.Model, BaseModel):
     scope_template = db.relationship("PMScopeTemplate")
     vendor = db.relationship("Vendor")
     driver = db.relationship("Driver")
+    destination_branch = db.relationship("Branch",
+                                         foreign_keys=[destination_branch_id])
+    origin_branch = db.relationship("Branch", foreign_keys=[origin_branch_id])
     requester = db.relationship("User", foreign_keys=[requested_by])
     approval_instance = db.relationship("ApprovalInstance")
     checklist_items = db.relationship(

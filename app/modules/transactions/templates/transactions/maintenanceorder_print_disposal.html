@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Asset Disposal Report — {{ item.disposal_reference_number }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #111; font-size: 13px; }
+    .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
+    .letterhead h1 { font-size: 18px; margin: 0; }
+    .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
+    table.info { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    table.info td { padding: 8px 10px; border: 1px solid #999; }
+    table.info td.label { font-weight: bold; width: 25%; background: #f2f2f2; }
+    .retired-banner { text-align: center; border: 2px solid #dc3545; border-radius: 6px;
+                     padding: 10px; margin: 20px 0; color: #dc3545; font-weight: bold;
+                     font-size: 14px; letter-spacing: .05em; }
+    .signature-row { display: flex; justify-content: space-between; margin-top: 60px; }
+    .signature-block { text-align: center; width: 30%; }
+    .signature-line { border-top: 1px solid #333; margin-top: 40px; padding-top: 4px; }
+    .no-print { text-align: center; margin-bottom: 20px; }
+    .footer-note { text-align: center; color: #888; font-size: 10px; margin-top: 30px; }
+    @media print { .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
+  <div class="letterhead">
+    <h1>{{ company.company_name if company else 'Company Name' }}</h1>
+    <div>{{ company.address_line1 if company else '' }}{% if company and company.city %}, {{ company.city }}{% endif %}</div>
+  </div>
+  <div class="doc-title">ASSET DISPOSAL REPORT</div>
+
+  <table class="info">
+    <tr><td class="label">ADR No.</td><td>{{ item.disposal_reference_number }}</td></tr>
+    <tr><td class="label">Vehicle</td><td>{{ item.vehicle.brand }} {{ item.vehicle.model }} {{ item.vehicle.variant or '' }}
+        ({{ item.vehicle.plate_number or item.vehicle.conduction_number }})</td></tr>
+    <tr><td class="label">Disposal Reason</td><td>{{ item.transaction_type.name if item.transaction_type else '—' }}</td></tr>
+    <tr><td class="label">Disposal Date</td><td>{{ item.completed_date or item.scheduled_date }}</td></tr>
+    <tr><td class="label">Reference MO</td><td>{{ item.document_number or '(draft)' }}</td></tr>
+    {% if item.disposal_value %}
+    <tr><td class="label">Disposal Value</td><td>{{ '%.2f'|format(item.disposal_value) }}</td></tr>
+    {% endif %}
+    {% if item.disposal_recipient %}
+    <tr><td class="label">Recipient</td><td>{{ item.disposal_recipient }}</td></tr>
+    {% endif %}
+    <tr><td class="label">Branch (at disposal)</td><td>{{ item.vehicle.branch.name if item.vehicle.branch else '—' }}</td></tr>
+  </table>
+
+  <div class="retired-banner">THIS VEHICLE HAS BEEN RETIRED FROM ACTIVE FLEET SERVICE</div>
+
+  {% if item.description %}
+  <table class="info">
+    <tr><td class="label">Remarks</td><td>{{ item.description }}</td></tr>
+  </table>
+  {% endif %}
+
+  <div class="signature-row">
+    <div class="signature-block">
+      <div class="signature-line">Prepared By</div>
+    </div>
+    <div class="signature-block">
+      <div class="signature-line">Verified By</div>
+    </div>
+    <div class="signature-block">
+      <div class="signature-line">Approved By</div>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    Generated {{ generated_at.strftime('%B %d, %Y %I:%M %p') }} — Fleet Management System
+  </div>
+</body>
+</html>

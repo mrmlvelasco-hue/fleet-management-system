@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Asset Transfer Report — {{ item.transfer_reference_number }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #111; font-size: 13px; }
+    .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
+    .letterhead h1 { font-size: 18px; margin: 0; }
+    .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
+    table.info { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    table.info td { padding: 8px 10px; border: 1px solid #999; }
+    table.info td.label { font-weight: bold; width: 25%; background: #f2f2f2; }
+    .transfer-flow { display: flex; align-items: center; justify-content: center; gap: 24px;
+                    margin: 24px 0; }
+    .transfer-box { border: 2px solid #333; border-radius: 6px; padding: 14px 24px;
+                   text-align: center; min-width: 220px; }
+    .transfer-box .label { font-size: 10px; text-transform: uppercase; color: #666;
+                          letter-spacing: .05em; margin-bottom: 4px; }
+    .transfer-box .value { font-weight: bold; font-size: 14px; }
+    .transfer-arrow { font-size: 28px; color: #333; }
+    .signature-row { display: flex; justify-content: space-between; margin-top: 60px; }
+    .signature-block { text-align: center; width: 30%; }
+    .signature-line { border-top: 1px solid #333; margin-top: 40px; padding-top: 4px; }
+    .no-print { text-align: center; margin-bottom: 20px; }
+    .footer-note { text-align: center; color: #888; font-size: 10px; margin-top: 30px; }
+    @media print { .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
+  <div class="letterhead">
+    <h1>{{ company.company_name if company else 'Company Name' }}</h1>
+    <div>{{ company.address_line1 if company else '' }}{% if company and company.city %}, {{ company.city }}{% endif %}</div>
+  </div>
+  <div class="doc-title">ASSET TRANSFER REPORT</div>
+
+  <table class="info">
+    <tr><td class="label">ATR No.</td><td>{{ item.transfer_reference_number or '(not yet generated — complete this order first)' }}</td></tr>
+    <tr><td class="label">Vehicle</td><td>{{ item.vehicle.brand }} {{ item.vehicle.model }} {{ item.vehicle.variant or '' }}
+        ({{ item.vehicle.plate_number or item.vehicle.conduction_number }})</td></tr>
+    <tr><td class="label">Transfer Date</td><td>{{ item.completed_date or item.scheduled_date }}</td></tr>
+    <tr><td class="label">Reference MO</td><td>{{ item.document_number or '(draft)' }}</td></tr>
+  </table>
+
+  <div class="transfer-flow">
+    <div class="transfer-box">
+      <div class="label">From</div>
+      <div class="value">{{ item.origin_branch.name if item.origin_branch else (item.vehicle.branch.name if item.vehicle.branch else '—') }}</div>
+    </div>
+    <div class="transfer-arrow">&rarr;</div>
+    <div class="transfer-box">
+      <div class="label">To</div>
+      <div class="value">{{ item.destination_branch.name if item.destination_branch else '—' }}</div>
+    </div>
+  </div>
+
+  {% if item.description %}
+  <table class="info">
+    <tr><td class="label">Remarks</td><td>{{ item.description }}</td></tr>
+  </table>
+  {% endif %}
+
+  <div class="signature-row">
+    <div class="signature-block">
+      <div class="signature-line">Released By</div>
+    </div>
+    <div class="signature-block">
+      <div class="signature-line">Received By</div>
+    </div>
+    <div class="signature-block">
+      <div class="signature-line">Approved By</div>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    Generated {{ generated_at.strftime('%B %d, %Y %I:%M %p') }} — Fleet Management System
+  </div>
+</body>
+</html>
