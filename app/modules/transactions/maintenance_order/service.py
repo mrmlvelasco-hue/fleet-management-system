@@ -64,6 +64,11 @@ class MaintenanceOrderService(BaseTransactionService):
     model = MaintenanceOrder
     document_type_code = "MO"
     reference_table = "maintenance_orders"
+    # Matches exactly what maintenanceorder_list.html accesses per row
+    # (o.vehicle, o.maintenance_type, o.transaction_type) -- without
+    # this, a list of N orders triggered up to 3*N extra lazy-load
+    # queries just to render the list page.
+    list_eager_load = ["vehicle", "maintenance_type", "transaction_type"]
 
     def create(self, *, vehicle_id, scheduled_date, user,
                order_category="MAINTENANCE", maintenance_type_id=None,

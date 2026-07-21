@@ -32,10 +32,42 @@ def _build_database_uri() -> str:
     return "sqlite:///fms_dev.db"
 
 
+def _build_engine_options(uri: str) -> dict:
+    """pool_size/max_overflow/pool_recycle are QueuePool (MySQL) options
+    -- SQLite's StaticPool/NullPool don't accept them at all and raise
+    TypeError on create_engine() if passed, so these are only included
+    for an actual MySQL URI. pool_pre_ping is safe and useful either
+    way, so it always applies."""
+    options = {"pool_pre_ping": True}
+    if uri.startswith("mysql"):
+        options.update({
+            "pool_recycle": int(os.environ.get("DB_POOL_RECYCLE_SECONDS", "280")),
+            "pool_size": int(os.environ.get("DB_POOL_SIZE", "10")),
+            "max_overflow": int(os.environ.get("DB_MAX_OVERFLOW", "20")),
+        })
+    return options
+
+
 class BaseConfig:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_DATABASE_URI = _build_database_uri()
+    # Without this, SQLAlchemy uses its bare defaults (pool_size=5,
+    # max_overflow=10, no recycle, no pre-ping) -- fine for one person
+    # testing locally, but a real gap for multiple concurrent users
+    # against MySQL specifically: MySQL closes idle connections after
+    # `wait_timeout` (often much less than MySQL's own 8-hour default on
+    # shared/managed hosts), and a connection sitting idle in the pool
+    # past that point fails the NEXT request that tries to reuse it with
+    # "MySQL server has gone away" -- intermittently, under real traffic
+    # patterns, not during quick manual testing where connections are
+    # reused immediately. pool_pre_ping adds a lightweight check before
+    # handing out a pooled connection and transparently reconnects if it
+    # died for any other reason (network blip, DB restart) too.
+    # pool_size/max_overflow are configurable per deployment since the
+    # right number depends on how many worker processes x threads the
+    # WSGI server runs and MySQL's own max_connections limit.
+    SQLALCHEMY_ENGINE_OPTIONS = _build_engine_options(SQLALCHEMY_DATABASE_URI)
     PERMANENT_SESSION_LIFETIME = timedelta(
         minutes=int(os.environ.get("SESSION_TIMEOUT_MINUTES", "30"))
     )
@@ -55,6 +87,12 @@ class TestingConfig(BaseConfig):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite://"  # in-memory
     WTF_CSRF_ENABLED = False
+    # BaseConfig computed SQLALCHEMY_ENGINE_OPTIONS from ITS OWN URI
+    # (MySQL or the dev SQLite fallback) before this override took
+    # effect, so it must be recomputed here against the actual in-memory
+    # SQLite URI this class uses -- otherwise it would inherit
+    # MySQL-only pool options that StaticPool rejects outright.
+    SQLALCHEMY_ENGINE_OPTIONS = _build_engine_options(SQLALCHEMY_DATABASE_URI)
 
 
 class ProductionConfig(BaseConfig):
