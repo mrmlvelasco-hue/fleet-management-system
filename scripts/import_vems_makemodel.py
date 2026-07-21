@@ -2,6 +2,15 @@
 'Make and Model' sheet into our VehicleBrand/VehicleModel master tables.
 Idempotent — safe to re-run; existing Brand/Model names are skipped.
 """
+import os
+import sys
+
+# See import_pm_task_list.py for why this is needed -- running this
+# script standalone otherwise fails to import `app` at all, or worse,
+# silently resolves it to an unrelated pip-installed package of the
+# same name.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import openpyxl
 
 from app.extensions import db
