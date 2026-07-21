@@ -106,6 +106,7 @@ def users_edit(user_id):
         flash("User not found.", "warning")
         return redirect(url_for("user_management.users_list"))
     form = UserForm(obj=user)
+    form._editing_user = user
     _populate_user_form(form)
     if form.validate_on_submit():
         UserService().update_user(

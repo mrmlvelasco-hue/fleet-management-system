@@ -88,19 +88,45 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.cli import register_cli
     register_cli(app)
 
-    from flask import render_template
+    from flask import render_template, request, jsonify
+    import uuid, logging
+
+    def _wants_json() -> bool:
+        """True for fetch/$.ajax calls, so they get a JSON body the
+        global SweetAlert handler in base.html can show a popup from,
+        instead of an HTML error page landing inside a background
+        request the person never sees."""
+        return (request.headers.get("X-Requested-With") == "XMLHttpRequest"
+               or request.accept_mimetypes.best == "application/json")
 
     @app.errorhandler(403)
     def forbidden(_e):
+        if _wants_json():
+            return jsonify(error="You don't have permission to do that.",
+                          error_type="FORBIDDEN"), 403
         return render_template("errors/403.html"), 403
 
     @app.errorhandler(404)
     def not_found(_e):
+        if _wants_json():
+            return jsonify(error="That wasn't found.",
+                          error_type="NOT_FOUND"), 404
         return render_template("errors/404.html"), 404
 
     @app.errorhandler(500)
-    def server_error(_e):
-        return render_template("errors/500.html"), 500
+    def server_error(e):
+        # A short reference code the person can read off the screen (or
+        # a screenshot) and give you, so you can find the matching
+        # traceback in the server log without them needing to describe
+        # what happened technically.
+        ref = uuid.uuid4().hex[:8].upper()
+        logging.getLogger(__name__).exception(
+            "Unhandled 500 [ref=%s] at %s: %s", ref, request.path, e)
+        if _wants_json():
+            return jsonify(
+                error="Something went wrong on our side.",
+                error_type="SERVER_ERROR", reference=ref), 500
+        return render_template("errors/500.html", reference=ref), 500
 
     @app.template_global()
     def lookup_user(user_id):

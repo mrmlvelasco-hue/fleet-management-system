@@ -487,3 +487,88 @@ window.formatMoneyInput = function (selector) {
     }
   });
 };
+
+// ── Global error popups ──────────────────────────────────────────────────
+// Any AJAX call that fails (server error, permission error, or the request
+// never reaching the server at all -- offline, timeout, DNS, etc.) shows a
+// SweetAlert2 popup instead of failing silently or leaving a raw browser
+// error in the console that only a developer would ever see. The person
+// can then screenshot the popup (it includes a reference code for 500s)
+// and send it in, rather than trying to describe "it didn't work."
+(function () {
+  function showErrorPopup(payload, statusCode) {
+    var title, text, icon;
+    if (statusCode === 0 || payload === null) {
+      // The request never got a response at all -- offline, DNS failure,
+      // server unreachable, request timed out, etc. Distinct from the
+      // server responding WITH an error, since the fix is different
+      // (check your connection) vs (something's wrong on our side).
+      title = "Connection Problem";
+      text = "Could not reach the server. Please check your internet "
+           + "connection and try again. If this keeps happening, take a "
+           + "screenshot of this message and send it to your administrator.";
+      icon = "error";
+    } else if (statusCode === 403) {
+      title = "Not Allowed";
+      text = payload.error || "You don't have permission to do that.";
+      icon = "warning";
+    } else if (statusCode === 404) {
+      title = "Not Found";
+      text = payload.error || "That wasn't found.";
+      icon = "warning";
+    } else {
+      title = "Something Went Wrong";
+      text = payload.error || "An unexpected error occurred.";
+      if (payload.reference) {
+        text += "\n\nReference code: " + payload.reference
+              + " — please include this if you report the issue.";
+      }
+      icon = "error";
+    }
+    if (window.Swal) {
+      Swal.fire({ title: title, text: text, icon: icon,
+        confirmButtonText: "OK" });
+    } else {
+      // SweetAlert2 itself failed to load (e.g. offline, CDN blocked) --
+      // fall back to a plain alert so the person still sees SOMETHING
+      // rather than nothing.
+      window.alert(title + "\n\n" + text);
+    }
+  }
+
+  // jQuery-based calls (DataTables server-side processing, $.ajax/$.post
+  // used throughout the app's own AJAX endpoints).
+  if (window.jQuery) {
+    jQuery(document).ajaxError(function (_event, jqXHR) {
+      if (jqXHR.status === 0) {
+        showErrorPopup(null, 0);
+        return;
+      }
+      if (jqXHR.status < 400) return; // not actually an error
+      var payload = {};
+      try { payload = JSON.parse(jqXHR.responseText); } catch (e) { /* not JSON */ }
+      showErrorPopup(payload, jqXHR.status);
+    });
+  }
+
+  // Native fetch() calls -- wrap once, globally, so individual call sites
+  // don't each need their own error handling to get this behavior.
+  var _origFetch = window.fetch;
+  if (_origFetch) {
+    window.fetch = function () {
+      return _origFetch.apply(this, arguments).then(function (response) {
+        if (!response.ok) {
+          response.clone().json().then(function (payload) {
+            showErrorPopup(payload, response.status);
+          }).catch(function () {
+            showErrorPopup({}, response.status);
+          });
+        }
+        return response;
+      }).catch(function (err) {
+        showErrorPopup(null, 0);
+        throw err;
+      });
+    };
+  }
+})();

@@ -26,8 +26,18 @@ def login():
             flash("Invalid username or password.", "danger")
             return render_template("auth/login.html", form=form)
         login_user(user, remember=form.remember_me.data)
-        if user.must_change_password:
+        from app.core.security.password_policy import PasswordPolicyService
+        policy = PasswordPolicyService()
+        if user.must_change_password or policy.is_expired(user):
+            if not user.must_change_password:
+                flash("Your password has expired. Please set a new one "
+                     "to continue.", "warning")
             return redirect(url_for("auth.change_password"))
+        if policy.is_expiring_soon(user):
+            days_left = policy.days_until_expiry(user)
+            flash(f"Your password expires in {days_left} day"
+                 f"{'s' if days_left != 1 else ''}. Consider changing it "
+                 f"soon under your profile.", "warning")
         next_url = request.args.get("next")
         return redirect(next_url or url_for("main.dashboard"))
     return render_template("auth/login.html", form=form)
@@ -52,6 +62,9 @@ def change_password():
         else:
             current_user.password_hash = hash_password(form.new_password.data)
             current_user.must_change_password = False
+            from app.core.security.password_policy import PasswordPolicyService
+            PasswordPolicyService().record_password_change(
+                current_user, current_user.password_hash)
             db.session.commit()
             flash("Password updated.", "success")
             return redirect(url_for("main.dashboard"))

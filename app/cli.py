@@ -184,6 +184,11 @@ def _seed_system_parameters() -> None:
          "Company-owned vehicle budget, year 4"),
         ("COMPANY_OWNED_BUDGET_Y5", "4000", "DECIMAL", "COMPANY_OWNED_BUDGET",
          "Company-owned vehicle budget, year 5"),
+        ("BUDGET_TRACKING_MODE", "PER_YEAR", "STRING", "CAR_PLAN_BUDGET",
+         "PER_YEAR (each vehicle-year's spend is checked only against that "
+         "year's own Y-tier budget, no carryover) or ACCUMULATED (Y1..current "
+         "tiers summed into one lifetime pool vs total spend to date). See "
+         "app/core/maintenance/budget_service.py for the full rationale."),
 
         # ── Finance (VEMS: Other Setting) — read by Vehicle Registration
         ("VAT_RATE", "12", "DECIMAL", "FINANCE",

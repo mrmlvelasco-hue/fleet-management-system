@@ -1043,9 +1043,52 @@ def driver_detail(did):
     if item is None:
         abort(403)
     attachments = _attachment_rows("drivers", did)
+    from app.modules.master_data.driver.models import EmergencyContact
+    emergency_contacts = (EmergencyContact.query
+                         .filter_by(person_record_id=did, is_active=True)
+                         .order_by(EmergencyContact.id).all())
+    from app.modules.master_data.vehicle.models import Vehicle
+    assigned_vehicles = (Vehicle.query
+                        .filter_by(assigned_driver_id=did, is_active=True)
+                        .all())
     return render_template("master_data/driver_detail.html",
                            item=item, driver=item, attachments=attachments,
+                           emergency_contacts=emergency_contacts,
+                           assigned_vehicles=assigned_vehicles,
                            today=date.today())
+
+
+@bp.route("/drivers/<int:did>/print")
+@login_required
+@require_permission("driver.view")
+def driver_print(did):
+    """Driver / Assignee Profile — corporate letterhead print/PDF,
+    organized identically to the entry form's sections so what's printed
+    always matches what's editable."""
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    from app.modules.master_data.driver.models import EmergencyContact
+    from app.modules.master_data.vehicle.models import Vehicle
+
+    item = DriverService().get_visible(did, current_user)
+    if item is None:
+        abort(403)
+
+    company = CompanyProfileService().get()
+    emergency_contacts = (EmergencyContact.query
+                         .filter_by(person_record_id=did, is_active=True)
+                         .order_by(EmergencyContact.id).all())
+    assigned_vehicles = (Vehicle.query
+                        .filter_by(assigned_driver_id=did, is_active=True)
+                        .all())
+    photo = next((a for a in _attachment_rows("drivers", did)
+                 if (a.mime_type or "").startswith("image/")), None)
+
+    return render_template("master_data/driver_print.html", item=item,
+                           company=company, photo=photo,
+                           emergency_contacts=emergency_contacts,
+                           assigned_vehicles=assigned_vehicles,
+                           generated_at=datetime.now(), today=date.today())
 
 
 @bp.route("/drivers/new", methods=["GET", "POST"])

@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Driver / Assignee Profile — {{ item.full_name }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; color: #111; font-size: 13px; }
+    .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
+    .letterhead h1 { font-size: 18px; margin: 0; }
+    .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
+    h6.section { text-transform: uppercase; font-size: 11px; letter-spacing: .05em; color: #555;
+                border-bottom: 1px solid #ccc; padding-bottom: 3px; margin: 18px 0 8px; }
+    table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    table.info td { padding: 5px 8px; border: 1px solid #999; }
+    table.info td.label { font-weight: bold; width: 22%; background: #f2f2f2; }
+    table.grid { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    table.grid th, table.grid td { padding: 5px 7px; border: 1px solid #999; text-align: left; font-size: 11px; }
+    table.grid th { background: #f2f2f2; }
+    .photo-block { text-align: center; }
+    .photo-block img { max-width: 140px; max-height: 160px; border: 1px solid #999; object-fit: cover; }
+    .photo-placeholder { width: 120px; height: 140px; border: 1px dashed #999;
+                        display: flex; align-items: center; justify-content: center; color: #999;
+                        font-size: 10px; text-align: center; }
+    .top-layout { display: flex; gap: 24px; align-items: flex-start; }
+    .top-layout .id-block { flex: 1; }
+    .status-pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10px;
+                  font-weight: bold; color: #fff; background: #198754; }
+    .status-INACTIVE, .status-SUSPENDED { background: #dc3545; }
+    .no-print { text-align: center; margin-bottom: 20px; }
+    .footer-note { text-align: center; color: #888; font-size: 10px; margin-top: 30px; }
+    @media print {
+      .no-print { display: none; }
+      h6.section { page-break-after: avoid; break-after: avoid; }
+      table.info, table.grid { page-break-inside: avoid; break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
+  <div class="letterhead">
+    <h1>{{ company.company_name if company else 'Company Name' }}</h1>
+    <div>{{ company.address_line1 if company else '' }}{% if company and company.city %}, {{ company.city }}{% endif %}</div>
+  </div>
+  <div class="doc-title">DRIVER / ASSIGNEE PROFILE</div>
+
+  <div class="top-layout">
+    <div class="photo-block">
+      {% if photo %}
+      <img src="{{ url_for('master_data.attachment_view', att_id=photo.id) }}" alt="Photo">
+      {% else %}
+      <div class="photo-placeholder">No photo on file</div>
+      {% endif %}
+    </div>
+    <div class="id-block">
+      <div style="font-weight:bold; font-size:15px;">{{ item.full_name }}{% if item.nickname %} ("{{ item.nickname }}"){% endif %}</div>
+      <div>{{ item.person_id or '—' }} &middot; {{ item.employee_number }}</div>
+      <div>{{ item.assignee_type.replace('_', ' ').title() if item.assignee_type else '—' }} &middot;
+        <span class="status-pill status-{{ item.status }}">{{ item.status }}</span></div>
+    </div>
+  </div>
+
+  <h6 class="section">Organization Information</h6>
+  <table class="info">
+    <tr><td class="label">Branch</td><td>{{ item.branch.name if item.branch else '—' }}</td>
+        <td class="label">Department</td><td>{{ item.department.name if item.department else '—' }}</td></tr>
+    <tr><td class="label">Section</td><td>{{ item.section or '—' }}</td>
+        <td class="label">Position</td><td>{{ item.position or '—' }}</td></tr>
+    <tr><td class="label">Job Title</td><td>{{ item.job_title or '—' }}</td>
+        <td class="label">Cost Center</td><td>{{ item.cost_center or '—' }}</td></tr>
+    <tr><td class="label">Employment Status</td><td>{{ item.employment_status or '—' }}</td>
+        <td class="label">Employment Type</td><td>{{ item.employment_type or '—' }}</td></tr>
+  </table>
+
+  {% if item.assignee_type == 'DRIVER' %}
+  <h6 class="section">License Information</h6>
+  <table class="info">
+    <tr><td class="label">License No.</td><td>{{ item.license_number or '—' }}</td>
+        <td class="label">License Type</td><td>{{ item.license_type or '—' }}</td></tr>
+    <tr><td class="label">License Expiry</td>
+        <td colspan="3">{{ item.license_expiry or '—' }}
+          {% if item.license_expiry and item.license_expiry < today %}(EXPIRED){% endif %}</td></tr>
+  </table>
+  {% endif %}
+
+  <h6 class="section">Contact Information</h6>
+  <table class="info">
+    <tr><td class="label">Mobile</td><td>{{ item.phone or '—' }}</td>
+        <td class="label">Office</td><td>{{ item.office_number or '—' }}</td></tr>
+    <tr><td class="label">Home</td><td>{{ item.home_number or '—' }}</td>
+        <td class="label">Email</td><td>{{ item.email or '—' }}</td></tr>
+    <tr><td class="label">Address</td><td colspan="3">{{ item.complete_address or '—' }}</td></tr>
+  </table>
+
+  {% if item.assignee_type in ('THIRD_PARTY_DELIVERY', 'CONSULTANT') %}
+  <h6 class="section">Business Information</h6>
+  <table class="info">
+    <tr><td class="label">Business Name</td><td>{{ item.business_name or '—' }}</td>
+        <td class="label">Business Contact</td><td>{{ item.business_contact_no or '—' }}</td></tr>
+    <tr><td class="label">Business Address</td><td colspan="3">{{ item.business_address or '—' }}</td></tr>
+  </table>
+  {% endif %}
+
+  <h6 class="section">Emergency Contacts &amp; References</h6>
+  <table class="info">
+    <tr><td class="label">Primary Contact</td><td>{{ item.emergency_contact_person or '—' }}</td>
+        <td class="label">Contact Number</td><td>{{ item.emergency_contact_number or '—' }}</td></tr>
+  </table>
+  {% if emergency_contacts %}
+  <table class="grid">
+    <thead><tr><th>Name</th><th>Relationship</th><th>Contact Number</th></tr></thead>
+    <tbody>
+      {% for ec in emergency_contacts %}
+      <tr><td>{{ ec.contact_name }}</td><td>{{ ec.relationship_type or '—' }}</td><td>{{ ec.contact_number or '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if assigned_vehicles %}
+  <h6 class="section">Currently Assigned Vehicle(s)</h6>
+  <table class="grid">
+    <thead><tr><th>Plate No.</th><th>Make</th><th>Model</th><th>Branch</th></tr></thead>
+    <tbody>
+      {% for v in assigned_vehicles %}
+      <tr><td>{{ v.plate_number or v.conduction_number }}</td><td>{{ v.brand }}</td>
+          <td>{{ v.model }}</td><td>{{ v.branch.name if v.branch else '—' }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <div class="footer-note">
+    Generated {{ generated_at.strftime('%B %d, %Y %I:%M %p') }} — Fleet Management System
+  </div>
+</body>
+</html>

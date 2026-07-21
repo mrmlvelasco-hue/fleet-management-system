@@ -77,5 +77,47 @@
     </tfoot>
   </table>
 </div>
+
+{% if budget_rows %}
+<h2 class="h5 mt-4 mb-2">Budget Utilization by Vehicle</h2>
+<p class="text-muted small">
+  Mode: <strong>{{ budget_rows[0].mode.replace('_', ' ').title() }}</strong> —
+  {% if budget_rows[0].mode == 'PER_YEAR' %}
+  each vehicle-year is checked against its own Y-tier budget, no carryover.
+  {% else %}
+  Y1 through the vehicle's current year are summed into one lifetime budget pool.
+  {% endif %}
+  Only vehicles with a Car Plan/Company Owned classification and a known
+  acquisition date are shown here — others don't have a budget tier to compare against.
+</p>
+<div class="table-responsive">
+  <table class="table table-sm table-bordered">
+    <thead class="table-light">
+      <tr><th>Plate No.</th><th>Classification</th><th>Year</th><th>Period</th>
+          <th>Budget</th><th>Spent</th><th>Remaining</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for b in budget_rows %}
+      <tr>
+        <td>{{ b.vehicle.plate_number or b.vehicle.conduction_number }}</td>
+        <td>{{ b.classification.replace('_', ' ').title() }}</td>
+        <td>Y{{ b.current_year }}</td>
+        <td class="small">{{ b.period_start }} – {{ b.period_end }}</td>
+        <td class="text-end">{{ '%.2f'|format(b.budget) }}</td>
+        <td class="text-end">{{ '%.2f'|format(b.spent) }}</td>
+        <td class="text-end">{{ '%.2f'|format(b.remaining) }}</td>
+        <td>
+          {% if b.over_budget %}
+          <span class="badge text-bg-danger">Over Budget</span>
+          {% else %}
+          <span class="badge text-bg-success">Within Budget</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 <style>@media print { .no-print { display: none; } }</style>
 {% endblock %}

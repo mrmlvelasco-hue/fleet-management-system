@@ -131,7 +131,7 @@
         {% endif %}
         {% if current_user.has_permission('driver.view') %}
         <li><a href="{{ url_for('master_data.driver_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.driver_') }}">
-          <i class="fms-nav-link__icon bi bi-person-badge"></i><span class="sidebar-label">Drivers</span></a></li>
+          <i class="fms-nav-link__icon bi bi-person-badge"></i><span class="sidebar-label">Driver / Assignee Master</span></a></li>
         {% endif %}
         {% if current_user.has_permission('tire.view') %}
         <li><a href="{{ url_for('master_data.tire_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('master_data.tire_') }}">

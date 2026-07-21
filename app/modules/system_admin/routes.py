@@ -453,6 +453,19 @@ def audit_trail():
                            filters=request.args)
 
 
+@bp.route("/audit-trail/export.xlsx")
+@login_required
+@require_permission("audittrail.view")
+def audit_trail_export():
+    from flask import send_file
+    from io import BytesIO
+    from app.core.reporting.generators import generate_audit_trail_xlsx
+    filename, data = generate_audit_trail_xlsx(dict(request.args))
+    return send_file(BytesIO(data), as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument"
+                              ".spreadsheetml.sheet")
+
+
 # ── Dashboard Config ───────────────────────────────────────────────────────
 
 @bp.route("/dashboard-config", methods=["GET", "POST"])
@@ -766,10 +779,27 @@ def report_maintenance_cost_summary():
              if scope_svc.covers(current_user.id, branch_id=o.vehicle.branch_id)]
     total = sum(float(o.actual_cost or 0) for o in orders)
 
+    # Budget Utilization by Vehicle -- one row per DISTINCT vehicle
+    # appearing in the (filtered) line items above, not a separate
+    # unfiltered query, so the summary always matches whatever the
+    # filters narrowed the detail rows down to.
+    from app.core.maintenance.budget_service import VehicleBudgetService
+    budget_svc = VehicleBudgetService()
+    seen_vehicle_ids = set()
+    budget_rows = []
+    for o in orders:
+        if o.vehicle_id in seen_vehicle_ids:
+            continue
+        seen_vehicle_ids.add(o.vehicle_id)
+        status = budget_svc.get_budget_status(o.vehicle)
+        if status["applicable"]:
+            budget_rows.append({"vehicle": o.vehicle, **status})
+
     return render_template("system_admin/report_maintenance_cost_summary.html",
                            orders=orders, total=total, filters=filters,
                            branches=_branch_choices(),
                            vehicle_types=_vehicle_type_choices(),
+                           budget_rows=budget_rows,
                            generated_at=datetime.now())
 
 
