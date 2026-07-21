@@ -9,6 +9,7 @@ status itself lives entirely on the ApprovalInstance.
 """
 from app.extensions import db
 from app.core.approval.engine import ApprovalEngine
+from sqlalchemy.orm import joinedload
 
 
 class NotVisibleError(Exception):
@@ -139,8 +140,23 @@ class BaseTransactionService:
                DocumentComment.recipient_id == user.id)
         ).first() is not None
 
+    # Subclasses override with the relationship names their own list
+    # template actually renders per row (e.g. ["vehicle",
+    # "maintenance_type"]) -- avoids the classic N+1 query problem where
+    # a list page triggers one extra lazy-load query PER ROW for each
+    # relationship the template accesses, which multiplies badly under
+    # real concurrent traffic (more simultaneous DB connections held for
+    # longer, not just more total queries). Empty by default so this is
+    # opt-in per module rather than guessing which relations to eager-
+    # load for every single transaction type.
+    list_eager_load = []
+
     def list(self, include_inactive: bool = True, user=None):
         query = db.session.query(self.model)
+        if self.list_eager_load:
+            query = query.options(
+                *[joinedload(getattr(self.model, rel))
+                 for rel in self.list_eager_load])
         if not include_inactive:
             query = query.filter(self.model.is_active.is_(True))
         records = query.order_by(self.model.id.desc()).all()

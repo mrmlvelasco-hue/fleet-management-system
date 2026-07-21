@@ -275,7 +275,12 @@ class VehicleService:
 
     def list(self, include_inactive=False, branch_id=None, user=None,
              include_disposed=False):
-        q = Vehicle.query
+        from sqlalchemy.orm import joinedload
+        # Matches exactly what vehicle_list.html accesses per row
+        # (v.vehicle_type.name, v.branch.name) -- without this, listing
+        # N vehicles triggered up to 2*N extra lazy-load queries.
+        q = Vehicle.query.options(
+            joinedload(Vehicle.vehicle_type), joinedload(Vehicle.branch))
         if not include_inactive:
             q = q.filter_by(is_active=True)
         if not include_disposed:
