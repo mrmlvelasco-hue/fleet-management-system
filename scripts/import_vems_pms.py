@@ -24,6 +24,17 @@ from collections import defaultdict
 # resolves it to an unrelated pip-installed package of the same name.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# See import_pm_task_list.py for the full explanation: without this, a
+# raw script invocation silently falls back to an unmigrated local
+# SQLite file instead of the real configured (e.g. MySQL) database,
+# since only the `flask` CLI auto-loads .env, not a bare `python
+# script.py` run.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 import openpyxl
 
 from app.extensions import db

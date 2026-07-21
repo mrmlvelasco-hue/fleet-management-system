@@ -71,6 +71,25 @@ from collections import defaultdict
 # moment it was actually run standalone from PowerShell.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# The `flask` CLI (flask db upgrade, flask seed all, ...) auto-loads a
+# .env file for you -- that's WHY `flask db upgrade` correctly reached
+# the real MySQL database and added the new columns there. A raw
+# `python scripts\...py` invocation does NOT go through that CLI
+# bootstrapping at all, so DATABASE_URL/DB_* env vars from .env were
+# simply never set in that process -- config.py's own fallback then
+# silently defaulted to a brand-new, never-migrated
+# sqlite:///fms_dev.db, which is exactly the "no such column:
+# pm_schedules.interval_hours" error: that column really does exist on
+# the real MySQL database (confirmed via SHOW CREATE TABLE), just not on
+# this accidental, empty, unrelated SQLite file this script ended up
+# talking to instead. Loading .env here ourselves makes this script
+# connect to the exact same database `flask` commands do, every time.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 import openpyxl
 
 from app.extensions import db

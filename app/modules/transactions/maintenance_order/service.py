@@ -71,7 +71,8 @@ class MaintenanceOrderService(BaseTransactionService):
                pm_schedule_id=None, description=None, odometer_at_service=None,
                assigned_mechanic=None, vendor_id=None, estimated_cost=None,
                driver_id=None, destination_branch_id=None,
-               disposal_value=None, disposal_recipient=None):
+               disposal_value=None, disposal_recipient=None,
+               assignment_classification=None):
         from app.modules.master_data.vehicle.models import Vehicle
         vehicle = db.session.get(Vehicle, vehicle_id)
         # Snapshot the vehicle's CURRENT branch as the "From" for the
@@ -126,6 +127,7 @@ class MaintenanceOrderService(BaseTransactionService):
             driver_id=driver_id, destination_branch_id=destination_branch_id,
             origin_branch_id=origin_branch_id,
             disposal_value=disposal_value, disposal_recipient=disposal_recipient,
+            assignment_classification=assignment_classification,
             requested_by=user.id if user else None)
         db.session.add(order)
         db.session.flush()

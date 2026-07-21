@@ -107,6 +107,11 @@ class MaintenanceOrder(db.Model, BaseModel):
     # Generated once, at completion, via AutoNumberingService.generate("ADR")
     # -- printed as the "ADR No." on the Asset Disposal Report, the
     # retirement-stage counterpart to the Asset Transfer Report's ATR No.
+    # PERK | TOOL_OF_THE_TRADE | OPERATIONS_SERVICE_UNIT | EDS_UNIT --
+    # which of the four entitlement categories on the Vehicle Assignment
+    # Memo applies to this handover. Only meaningful for
+    # Assignment/Reassignment transaction types, alongside driver_id.
+    assignment_classification = db.Column(db.String(30), nullable=True)
     estimated_cost = db.Column(db.Numeric(18, 2), nullable=True)
     actual_cost = db.Column(db.Numeric(18, 2), nullable=True)
 
