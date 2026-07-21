@@ -7,11 +7,23 @@
 {% block content %}
 <div class="d-flex justify-content-between mb-3">
   <h1 class="h3">{{ item.document_number or 'Draft Maintenance Order' }}</h1>
-  {% if current_user.has_permission('maintenanceorder.print') %}
-  <a class="btn btn-outline-secondary" target="_blank"
-     href="{{ url_for('transactions.maintenanceorder_print', oid=item.id) }}">
-    <i class="bi bi-printer me-1"></i>Print</a>
-  {% endif %}
+  <div class="d-flex gap-2">
+    {% if item.destination_branch_id %}
+    <a class="btn btn-outline-primary" target="_blank"
+       href="{{ url_for('transactions.maintenanceorder_print_transfer', oid=item.id) }}">
+      <i class="bi bi-arrow-left-right me-1"></i>Print Asset Transfer Report</a>
+    {% endif %}
+    {% if item.disposal_reference_number %}
+    <a class="btn btn-outline-danger" target="_blank"
+       href="{{ url_for('transactions.maintenanceorder_print_disposal', oid=item.id) }}">
+      <i class="bi bi-trash me-1"></i>Print Asset Disposal Report</a>
+    {% endif %}
+    {% if current_user.has_permission('maintenanceorder.print') %}
+    <a class="btn btn-outline-secondary" target="_blank"
+       href="{{ url_for('transactions.maintenanceorder_print', oid=item.id) }}">
+      <i class="bi bi-printer me-1"></i>Print</a>
+    {% endif %}
+  </div>
 </div>
 <div class="row g-3">
   <div class="col-md-6">

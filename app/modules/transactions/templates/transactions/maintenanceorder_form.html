@@ -119,6 +119,34 @@
       service custody).
     </div>
   </div>
+  <div class="col-md-6" id="moDestinationBranchFieldWrapper" style="display:none;">
+    <label class="form-label">Destination Branch</label>
+    <select name="destination_branch_id" id="moDestinationBranchSelect" class="form-select">
+      <option value="">— Select destination branch —</option>
+      {% for b in branches %}
+      <option value="{{ b.id }}">{{ b.name }}</option>
+      {% endfor %}
+    </select>
+    <div class="form-text">
+      This is the "Asset Transfer Report" (ATR) — completing this order
+      will move the vehicle to this branch and generate a printable ATR
+      reference number, for a formal branch-to-branch ownership/custody
+      transfer.
+    </div>
+  </div>
+  <div class="col-md-6" id="moDisposalFieldsWrapper" style="display:none;">
+    <label class="form-label">Disposal Value <span class="text-muted small">(optional)</span></label>
+    <input type="number" step="0.01" name="disposal_value" class="form-control" placeholder="0.00">
+    <label class="form-label mt-2">Disposal Recipient <span class="text-muted small">(optional)</span></label>
+    <input type="text" name="disposal_recipient" class="form-control"
+           placeholder="Buyer, auction house, donation recipient, or insurance company">
+    <div class="form-text">
+      This is the "Asset Disposal Report" (ADR) — completing this order
+      will retire the vehicle (status: Disposed) and generate a printable
+      ADR reference number. The disposal reason is the Transaction Type
+      selected above.
+    </div>
+  </div>
   <div class="col-12"><label class="form-label">Description</label>
     <textarea name="description" class="form-control" rows="2"></textarea></div>
   <div class="col-12">
@@ -178,6 +206,44 @@
         { placeholder: "Type employee number or name...", allowClear: true });
       $("#moTransactionTypeSelect").on("change", toggleDriverField);
       toggleDriverField();
+
+      // Destination Branch ("Asset Transfer Report") only makes sense
+      // for the branch-to-branch movement transaction types -- a plain
+      // reassignment or a simple driver assignment isn't necessarily
+      // moving the vehicle to a different branch at all.
+      var TRANSFER_CODES = ["DEP-RELOCATION", "DEP-TRANSFER"];
+      function toggleDestinationBranchField() {
+        var $opt = $("#moTransactionTypeSelect option:selected");
+        var code = $opt.attr("data-code");
+        var $wrapper = $("#moDestinationBranchFieldWrapper");
+        if (TRANSFER_CODES.indexOf(code) !== -1) {
+          $wrapper.show();
+        } else {
+          $wrapper.hide();
+          $("#moDestinationBranchSelect").val("");
+        }
+      }
+      $("#moTransactionTypeSelect").on("change", toggleDestinationBranchField);
+      toggleDestinationBranchField();
+
+      // Disposal fields ("Asset Disposal Report") show for any
+      // DISPOSAL-group transaction type -- all share the "DIS-" code
+      // prefix (Scrappage, Carnapped, Total Loss, Uneconomical, Sold,
+      // Donated), so a simple prefix check covers the whole group
+      // without needing to hardcode each individual code.
+      function toggleDisposalFields() {
+        var $opt = $("#moTransactionTypeSelect option:selected");
+        var code = $opt.attr("data-code") || "";
+        var $wrapper = $("#moDisposalFieldsWrapper");
+        if (code.indexOf("DIS-") === 0) {
+          $wrapper.show();
+        } else {
+          $wrapper.hide();
+          $("#moDisposalFieldsWrapper input").val("");
+        }
+      }
+      $("#moTransactionTypeSelect").on("change", toggleDisposalFields);
+      toggleDisposalFields();
 
       function refreshVehicleInfoPanel(vehicleId) {
         if (!vehicleId) {

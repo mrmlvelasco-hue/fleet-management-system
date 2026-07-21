@@ -70,7 +70,17 @@ class MaintenanceOrderService(BaseTransactionService):
                transaction_type_id=None, scope_template_id=None,
                pm_schedule_id=None, description=None, odometer_at_service=None,
                assigned_mechanic=None, vendor_id=None, estimated_cost=None,
-               driver_id=None):
+               driver_id=None, destination_branch_id=None,
+               disposal_value=None, disposal_recipient=None):
+        from app.modules.master_data.vehicle.models import Vehicle
+        vehicle = db.session.get(Vehicle, vehicle_id)
+        # Snapshot the vehicle's CURRENT branch as the "From" for the
+        # Asset Transfer Report -- must be captured now, at creation,
+        # since completion will update Vehicle.branch_id to the
+        # destination, and by then the vehicle's current branch would
+        # already be the new one, not the "From" branch being reported.
+        origin_branch_id = (vehicle.branch_id if destination_branch_id
+                           and vehicle else None)
         # Per the spec: "Not every Maintenance Order represents vehicle
         # maintenance. Administrative, Deployment, Disposal, and
         # Accessories are valid Maintenance Orders" — Operational orders
@@ -113,7 +123,9 @@ class MaintenanceOrderService(BaseTransactionService):
             scheduled_date=scheduled_date,
             assigned_mechanic=assigned_mechanic, vendor_id=vendor_id,
             estimated_cost=estimated_cost, status="DRAFT",
-            driver_id=driver_id,
+            driver_id=driver_id, destination_branch_id=destination_branch_id,
+            origin_branch_id=origin_branch_id,
+            disposal_value=disposal_value, disposal_recipient=disposal_recipient,
             requested_by=user.id if user else None)
         db.session.add(order)
         db.session.flush()
@@ -200,5 +212,41 @@ class MaintenanceOrderService(BaseTransactionService):
             from app.modules.master_data.vehicle.assignment_hooks import (
                 assign_driver_to_vehicle)
             assign_driver_to_vehicle(order.vehicle_id, order.driver_id)
+
+        # "Asset Transfer Report" workflow: an Operational order with a
+        # Destination Branch set (Relocation/Transfer transaction types)
+        # moves the vehicle to that branch on completion, and generates
+        # a dedicated ATR-2026-NNNN reference number the first time it's
+        # completed (not regenerated on any later re-save).
+        if order.destination_branch_id:
+            from app.modules.master_data.vehicle.assignment_hooks import (
+                transfer_vehicle_branch)
+            transfer_vehicle_branch(order.vehicle_id, order.destination_branch_id)
+            if not order.transfer_reference_number:
+                from app.core.numbering.numbering_service import (
+                    AutoNumberingService)
+                order.transfer_reference_number = (
+                    AutoNumberingService().generate("ATR"))
+                db.session.commit()
+
+        # "Asset Disposal Report" workflow: completing an order whose
+        # Transaction Type belongs to the DISPOSAL group retires the
+        # vehicle (status -> DISPOSED, already correctly excluded from
+        # PM/registration due-calculations and hidden from active lists
+        # elsewhere) and generates a dedicated ADR-2026-NNNN reference
+        # number, the retirement-stage counterpart to the Asset Transfer
+        # Report's ATR No. The disposal REASON/METHOD is the transaction
+        # type itself (Scrappage/Carnapped/Total Loss/Uneconomical/Sold/
+        # Donated) -- disposal_value/disposal_recipient only add what the
+        # transaction type alone can't capture.
+        if (order.transaction_type
+                and order.transaction_type.group == "DISPOSAL"):
+            order.vehicle.status = "DISPOSED"
+            if not order.disposal_reference_number:
+                from app.core.numbering.numbering_service import (
+                    AutoNumberingService)
+                order.disposal_reference_number = (
+                    AutoNumberingService().generate("ADR"))
+            db.session.commit()
 
         return order

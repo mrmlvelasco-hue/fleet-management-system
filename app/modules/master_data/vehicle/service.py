@@ -273,10 +273,20 @@ class VehicleService:
             return obj
         return None
 
-    def list(self, include_inactive=False, branch_id=None, user=None):
+    def list(self, include_inactive=False, branch_id=None, user=None,
+             include_disposed=False):
         q = Vehicle.query
         if not include_inactive:
             q = q.filter_by(is_active=True)
+        if not include_disposed:
+            # Retired vehicles stay is_active=True (disposal isn't a soft
+            # delete -- the record must remain fully intact for audit and
+            # for reports like Vehicle Register Details, which query
+            # regardless of this list() method), but shouldn't clutter
+            # the everyday active-fleet list. Explicit opt-in surfaces
+            # them again when actually needed (e.g. looking up disposal
+            # history for a specific vehicle).
+            q = q.filter(Vehicle.status != "DISPOSED")
         if branch_id:
             q = q.filter_by(branch_id=branch_id)
         records = q.order_by(Vehicle.brand, Vehicle.model).all()

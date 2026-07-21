@@ -48,6 +48,22 @@ def assign_driver_to_vehicle(vehicle_id: int, driver_id: int) -> None:
     db.session.commit()
 
 
+def transfer_vehicle_branch(vehicle_id: int, destination_branch_id: int) -> None:
+    """Moves a vehicle to a new branch -- called from
+    MaintenanceOrderService.complete() when an Operational order
+    (Transaction Type Relocation/Transfer) with a destination branch set
+    is completed. Same no-op-on-missing-data safety as
+    assign_driver_to_vehicle above."""
+    if not vehicle_id or not destination_branch_id:
+        return
+    from app.modules.master_data.vehicle.models import Vehicle
+    vehicle = db.session.get(Vehicle, vehicle_id)
+    if vehicle is None:
+        return
+    vehicle.branch_id = destination_branch_id
+    db.session.commit()
+
+
 def _on_approval_event(event_name: str, instance) -> None:
     if event_name != "approved_final":
         return

@@ -7,6 +7,9 @@
   <div class="d-flex gap-2">
     <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_register_report') }}">
       <i class="bi bi-file-earmark-text me-1"></i>Register Report</a>
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('master_data.vehicle_list', show_disposed=0 if show_disposed else 1) }}">
+      <i class="bi bi-trash me-1"></i>{{ 'Hide' if show_disposed else 'Show' }} Disposed Vehicles</a>
     {% if current_user.has_permission('vehicle.create') %}
     <a class="btn btn-primary" href="{{ url_for('master_data.vehicle_new') }}">
       <i class="bi bi-plus-lg me-1"></i>New Vehicle</a>

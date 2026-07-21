@@ -11,11 +11,13 @@ so it stays correct if a column's length is ever changed, and it would
 have caught the BUDGET_TRACKING_MODE bug before it ever reached a real
 MySQL server.
 """
-from app.cli import _seed_system_parameters, _seed_email_templates
+from app.cli import (_seed_system_parameters, _seed_email_templates,
+                     _seed_atr_numbering)
 from app.modules.system_admin.models import SystemParameter, EmailTemplate
 from app.modules.system_admin.services.report_registry_service import (
     ReportRegistryService)
 from app.modules.system_admin.models import ReportConfig
+from app.modules.document_config.models import DocumentType
 
 
 def _assert_fits(model, column_name, rows_query):
@@ -59,3 +61,9 @@ def test_all_seeded_report_config_descriptions_fit_the_column(db):
     ReportRegistryService().seed_builtin()
     db.session.commit()
     _assert_fits(ReportConfig, "description", ReportConfig.query)
+
+
+def test_all_seeded_document_type_descriptions_fit_the_column(db):
+    _seed_atr_numbering()  # seeds the ATR/ADR document types
+    db.session.commit()
+    _assert_fits(DocumentType, "description", DocumentType.query)
