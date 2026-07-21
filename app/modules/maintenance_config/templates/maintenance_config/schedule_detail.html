@@ -46,6 +46,9 @@
         <dd class="col-sm-7"><span class="badge text-bg-info">{{ item.trigger_mode }}</span></dd>
         <dt class="col-sm-5">Interval KM</dt><dd class="col-sm-7">{{ "{:,}".format(item.interval_km) if item.interval_km else '—' }}</dd>
         <dt class="col-sm-5">Interval Days</dt><dd class="col-sm-7">{{ item.interval_days or '—' }}</dd>
+        <dt class="col-sm-5">Interval Hours</dt>
+        <dd class="col-sm-7">{{ item.interval_hours or '—' }}
+          {% if item.interval_hours %}<span class="text-muted small">(engine hours — not yet used by due-calculation)</span>{% endif %}</dd>
         <dt class="col-sm-5">Priority</dt><dd class="col-sm-7">{{ item.priority }}</dd>
         <dt class="col-sm-5">Next PMS Generation</dt><dd class="col-sm-7">{{ item.next_pms_generation }}</dd>
         <dt class="col-sm-5">Due Calculation Method</dt><dd class="col-sm-7">{{ item.next_due_calculation_method }}</dd>
@@ -59,6 +62,19 @@
     </div></div>
   </div>
 </div>
+
+{% if item.work_description_template %}
+<div class="card mt-3"><div class="card-header">Work Description Template</div>
+  <div class="card-body">
+    <p class="mb-1">{{ item.work_description_template }}</p>
+    <p class="text-muted small mb-0">
+      Pre-fills a Maintenance Order's description when created against this
+      schedule, with pm2-pm9 tokens resolved to the actual vehicle/driver/
+      branch at that time.
+    </p>
+  </div>
+</div>
+{% endif %}
 
 {% if item.scope_templates %}
 <div class="card mt-3"><div class="card-header">Linked Scope Templates</div>
