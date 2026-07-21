@@ -86,9 +86,10 @@ class PMScheduleService:
                effective_date=None, sequence_position=None,
                next_pms_generation="AUTO_SCHEDULE",
                next_due_calculation_method="ACTUAL_COMPLETION",
-               interval_km=None, interval_days=None, priority="MEDIUM",
-               notify_before_km=None, notify_before_days=None,
-               escalate_if_overdue=True):
+               interval_km=None, interval_days=None, interval_hours=None,
+               priority="MEDIUM", notify_before_km=None,
+               notify_before_days=None, escalate_if_overdue=True,
+               work_description_template=None):
         _validate_schedule(trigger_mode, interval_km, interval_days)
         sched = PMSchedule(
             vehicle_type_id=vehicle_type_id,
@@ -106,10 +107,12 @@ class PMScheduleService:
             next_due_calculation_method=next_due_calculation_method,
             maintenance_type_id=maintenance_type_id,
             trigger_mode=trigger_mode, interval_km=interval_km,
-            interval_days=interval_days, priority=priority,
+            interval_days=interval_days, interval_hours=interval_hours,
+            priority=priority,
             notify_before_km=notify_before_km,
             notify_before_days=notify_before_days,
-            escalate_if_overdue=escalate_if_overdue)
+            escalate_if_overdue=escalate_if_overdue,
+            work_description_template=work_description_template)
         db.session.add(sched)
         db.session.commit()
         return sched
