@@ -65,6 +65,7 @@ for _code, _desc in [
     ("reportpmscompliance.view", "View PMS Compliance / Due report"),
     ("reportregistrationexpiry.view", "View Registration Expiry report"),
     ("reportmaintenancecost.view", "View Maintenance Cost Summary report"),
+    ("reportvehicleactivity.view", "View Vehicle Activity History report"),
 ]:
     _m, _a = _code.split(".")
     registry.register(_code, _m, _a, _desc)

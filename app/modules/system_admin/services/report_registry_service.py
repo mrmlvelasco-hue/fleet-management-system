@@ -110,6 +110,18 @@ BUILTIN_REPORTS = [
         "kind": "LIST",
         "needs_document": False,
     },
+    {
+        "report_code": "RPT_VEHICLE_ACTIVITY_HISTORY",
+        "name": "Vehicle Activity History",
+        "description": "Full lifecycle timeline (acquisition, PMS, repairs, "
+                       "transfers, tire/battery replacements), utilization "
+                       "summary, and outlet/custodian history for one or "
+                       "more selected vehicles by plate number.",
+        "template_path": "endpoint:master_data.report_vehicle_activity_history",
+        "permission": "reportvehicleactivity.view",
+        "kind": "LIST",
+        "needs_document": False,
+    },
 ]
 
 

@@ -1,0 +1,88 @@
+{% extends "layout/base.html" %}
+{% block title %}Vehicle Activity History Report{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Vehicle Activity History Report</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Vehicle Activity History Report</h1>
+  {% if selected_ids %}
+  <div class="d-flex gap-2 no-print">
+    <a class="btn btn-sm btn-outline-success"
+       href="{{ url_for('master_data.report_vehicle_activity_history_export', vehicle_ids=selected_ids) }}">
+      <i class="bi bi-file-earmark-excel me-1"></i>Export to Excel</a>
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+      <i class="bi bi-printer me-1"></i>Print / Save as PDF</button>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card mb-3 no-print"><div class="card-body">
+  <form method="get" class="row g-2 align-items-end">
+    <div class="col-md-8">
+      <label class="form-label">Plate / Conduction Number <span class="text-muted small">(select one or more)</span></label>
+      <select name="vehicle_ids" id="vehicleActivitySelect" class="form-select" multiple>
+        {% for s in sections %}
+        <option value="{{ s.vehicle.id }}" selected>
+          {{ s.vehicle.plate_number or s.vehicle.conduction_number }} — {{ s.vehicle.brand }} {{ s.vehicle.model }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-primary" type="submit">Generate Report</button>
+    </div>
+  </form>
+</div></div>
+
+<style>
+  h6.section { text-transform: uppercase; font-size: 11px; letter-spacing: .05em; color: #555;
+              border-bottom: 1px solid #ccc; padding-bottom: 3px; margin: 18px 0 8px; }
+  table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  table.info td { padding: 5px 8px; border: 1px solid #999; }
+  table.info td.label { font-weight: bold; width: 22%; background: #f2f2f2; }
+  table.grid { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  table.grid th, table.grid td { padding: 5px 7px; border: 1px solid #999; text-align: left; font-size: 12px; }
+  table.grid th { background: #f2f2f2; }
+  .vehicle-block { border: 1px solid #ddd; border-radius: 6px; padding: 16px; margin-bottom: 24px; }
+  @media print { .no-print { display: none; } .vehicle-block { page-break-after: always; border: none; } }
+</style>
+
+{% if not sections %}
+<p class="text-muted">Select one or more vehicles above and click Generate Report.</p>
+{% endif %}
+
+{% for s in sections %}
+<div class="vehicle-block">
+  <h5>{{ s.vehicle.plate_number or s.vehicle.conduction_number }} — {{ s.vehicle.brand }} {{ s.vehicle.model }} {{ s.vehicle.variant or '' }} ({{ s.vehicle.year }})</h5>
+  <h6 class="section">Vehicle Master Information</h6>
+  <table class="info">
+    <tr><td class="label">Plate No.</td><td>{{ s.vehicle.plate_number or s.vehicle.conduction_number }}</td>
+        <td class="label">Vehicle</td><td>{{ s.vehicle.brand }} {{ s.vehicle.model }} {{ s.vehicle.variant or '' }}</td></tr>
+    <tr><td class="label">Year Model</td><td>{{ s.vehicle.year }}</td>
+        <td class="label">Engine No.</td><td>{{ s.vehicle.engine_number or '—' }}</td></tr>
+    <tr><td class="label">Chassis No.</td><td>{{ s.vehicle.chassis_number or '—' }}</td>
+        <td class="label">Acquisition Cost</td>
+        <td>{{ '%.2f'|format(s.vehicle.acquisition_cost) if s.vehicle.acquisition_cost else '—' }}</td></tr>
+    <tr><td class="label">Current Status</td><td colspan="3">{{ s.vehicle.status }}</td></tr>
+  </table>
+
+  {% with item=s.vehicle, activity_rows=s.activity_rows, utilization=s.utilization, outlet_history=s.outlet_history %}
+  {% include "master_data/_vehicle_activity_history_sections.html" %}
+  {% endwith %}
+</div>
+{% endfor %}
+
+{% if sections %}
+<p class="text-muted small no-print">Generated {{ generated_at.strftime('%B %d, %Y %I:%M %p') }} — Fleet Management System</p>
+{% endif %}
+
+{% block scripts %}
+<script>
+if (window.jQuery) {
+  jQuery(function () {
+    initAjaxSelect("#vehicleActivitySelect", "{{ url_for('api_search.search_vehicles') }}",
+      { placeholder: "Type plate/conduction number...", multiple: true });
+  });
+}
+</script>
+{% endblock %}
+{% endblock %}
