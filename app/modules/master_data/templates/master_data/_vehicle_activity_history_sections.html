@@ -1,0 +1,67 @@
+{# Reusable across the Vehicle Profile print (one vehicle) and the
+   standalone Vehicle Activity History Report (one or many vehicles).
+   Expects: item (Vehicle), activity_rows, utilization, outlet_history #}
+
+<h6 class="section">Vehicle Activity History Report</h6>
+{% if activity_rows %}
+<table class="grid">
+  <thead>
+    <tr>
+      <th>Date</th><th>Activity Type</th><th>Outlet/Department</th>
+      <th>Assigned To</th><th>Description</th><th>Cost</th><th>Odometer</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in activity_rows %}
+    <tr>
+      <td>{{ r.date }}</td>
+      <td>{{ r.activity_type }}</td>
+      <td>{{ r.outlet }}</td>
+      <td>{{ r.assigned_to or '—' }}</td>
+      <td>{{ r.description }}</td>
+      <td>{{ '%.2f'|format(r.cost) if r.cost is not none else '—' }}</td>
+      <td>{{ r.odometer if r.odometer is not none else '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:#888;">No activity on record for this vehicle.</p>
+{% endif %}
+
+<h6 class="section">Vehicle Utilization Summary</h6>
+<table class="info">
+  <tr><td class="label">Total Transfers</td><td>{{ utilization.total_transfers }}</td>
+      <td class="label">PMS Activities</td><td>{{ utilization.pms_count }}</td></tr>
+  <tr><td class="label">Repair Activities</td><td>{{ utilization.repair_count }}</td>
+      <td class="label">Tire Replacements</td><td>{{ utilization.tire_replacements }}</td></tr>
+  <tr><td class="label">Battery Replacements</td><td>{{ utilization.battery_replacements }}</td>
+      <td class="label">Total Maintenance Cost</td>
+      <td>{{ '%.2f'|format(utilization.total_maintenance_cost) }}</td></tr>
+  <tr><td class="label">No. of Assigned Outlets</td><td>{{ utilization.assigned_outlets_count }}</td>
+      <td class="label">Vehicle Age</td>
+      <td>{{ utilization.vehicle_age_years ~ ' Years' if utilization.vehicle_age_years is not none else '—' }}</td></tr>
+  <tr><td class="label">Current Odometer</td>
+      <td colspan="3">{{ utilization.current_odometer }} KM</td></tr>
+</table>
+
+<h6 class="section">Outlet Assignment History</h6>
+{% if outlet_history %}
+<table class="grid">
+  <thead>
+    <tr><th>From Date</th><th>To Date</th><th>Outlet</th><th>Custodian</th></tr>
+  </thead>
+  <tbody>
+    {% for seg in outlet_history %}
+    <tr>
+      <td>{{ seg.from_date or '—' }}</td>
+      <td>{{ seg.to_date or 'Present' }}</td>
+      <td>{{ seg.outlet }}</td>
+      <td>{{ seg.custodian }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:#888;">No outlet assignment history on record.</p>
+{% endif %}

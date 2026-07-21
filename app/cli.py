@@ -42,6 +42,7 @@ def seed_all(admin_password):
     _seed_reports()
     _seed_atr_numbering()
     _migrate_report_permissions_from_data_permissions()
+    _migrate_vehicle_activity_report_permission()
     db.session.commit()
     click.echo("Default system parameters, dashboard widgets, lookups, "
                "email templates and notification rules seeded.")
@@ -86,6 +87,39 @@ def _migrate_report_permissions_from_data_permissions() -> None:
         new_perm = Permission.query.filter_by(code=new_code).first()
         if old_perm is None or new_perm is None:
             continue
+        for role in old_perm.roles:
+            if new_perm not in role.permissions:
+                role.permissions.append(new_perm)
+
+    if marker is None:
+        db.session.add(SystemParameter(
+            code=marker_code, value="true", data_type="STRING",
+            group_name="INTERNAL", is_editable=False,
+            description="Internal one-time migration marker — do not edit."))
+    else:
+        marker.value = "true"
+
+
+def _migrate_vehicle_activity_report_permission() -> None:
+    """Same one-time-only pattern as
+    _migrate_report_permissions_from_data_permissions() above, but as its
+    OWN separate marker -- the V1 marker was already consumed on any
+    install that ran `flask seed all` before this report existed, so
+    reusing that same marker would mean this new permission never gets
+    auto-granted to existing roles at all. Grants reportvehicleactivity.view
+    to any role that already had vehicle.view, once, so nobody has to
+    manually re-check it in Role Management after upgrading."""
+    from app.modules.system_admin.models import SystemParameter
+    from app.modules.user_management.models import Permission
+
+    marker_code = "REPORT_PERMISSIONS_MIGRATED_V2_VEHICLE_ACTIVITY"
+    marker = SystemParameter.query.filter_by(code=marker_code).first()
+    if marker is not None and marker.value == "true":
+        return
+
+    old_perm = Permission.query.filter_by(code="vehicle.view").first()
+    new_perm = Permission.query.filter_by(code="reportvehicleactivity.view").first()
+    if old_perm is not None and new_perm is not None:
         for role in old_perm.roles:
             if new_perm not in role.permissions:
                 role.permissions.append(new_perm)

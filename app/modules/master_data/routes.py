@@ -667,6 +667,56 @@ def vehicle_list():
                            show_disposed=show_disposed)
 
 
+@bp.route("/reports/vehicle-activity-history")
+@login_required
+@require_permission("reportvehicleactivity.view")
+def report_vehicle_activity_history():
+    """Vehicle Activity History Report — full lifecycle timeline,
+    utilization summary, and outlet/custodian history for one or more
+    selected vehicles by plate number. Reuses the exact same service and
+    template partial as the single-vehicle Vehicle Profile print, so a
+    person can pull this for one vehicle or compare several at once."""
+    from app.core.vehicle_activity_history_service import (
+        VehicleActivityHistoryService)
+
+    vehicle_ids = [int(v) for v in request.args.getlist("vehicle_ids") if v]
+    vehicles = []
+    if vehicle_ids:
+        vehicles = [v for v in
+                   (VehicleService().get_visible(vid, current_user)
+                   for vid in vehicle_ids) if v is not None]
+
+    activity_svc = VehicleActivityHistoryService()
+    sections = []
+    for v in vehicles:
+        rows = activity_svc.get_activity_rows(v)
+        sections.append({
+            "vehicle": v, "activity_rows": rows,
+            "utilization": activity_svc.get_utilization_summary(v, rows),
+            "outlet_history": activity_svc.get_outlet_history(v),
+        })
+
+    return render_template("master_data/report_vehicle_activity_history.html",
+                           sections=sections, selected_ids=vehicle_ids,
+                           generated_at=datetime.now())
+
+
+@bp.route("/reports/vehicle-activity-history/export.xlsx")
+@login_required
+@require_permission("reportvehicleactivity.view")
+def report_vehicle_activity_history_export():
+    from flask import send_file
+    from io import BytesIO
+    from app.core.reporting.generators import (
+        generate_vehicle_activity_history_xlsx)
+    vehicle_ids = [int(v) for v in request.args.getlist("vehicle_ids") if v]
+    filename, data = generate_vehicle_activity_history_xlsx(
+        vehicle_ids, user=current_user)
+    return send_file(BytesIO(data), as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument"
+                              ".spreadsheetml.sheet")
+
+
 @bp.route("/vehicles/<int:vid>/print")
 @login_required
 @require_permission("vehicle.view")
@@ -695,9 +745,19 @@ def vehicle_print(vid):
     except Exception:
         pass
 
+    from app.core.vehicle_activity_history_service import (
+        VehicleActivityHistoryService)
+    activity_svc = VehicleActivityHistoryService()
+    activity_rows = activity_svc.get_activity_rows(item)
+    utilization = activity_svc.get_utilization_summary(item, activity_rows)
+    outlet_history = activity_svc.get_outlet_history(item)
+
     return render_template("master_data/vehicle_print.html", item=item,
                            company=company, attachments=attachments,
                            mo_history=mo_history,
+                           activity_rows=activity_rows,
+                           utilization=utilization,
+                           outlet_history=outlet_history,
                            generated_at=datetime.now())
 
 

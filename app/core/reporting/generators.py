@@ -284,6 +284,90 @@ def generate_audit_trail_xlsx(filters: dict = None, user=None):
     return (f"Audit_Trail_{datetime.now():%Y%m%d}.xlsx", _to_bytes(wb))
 
 
+def generate_vehicle_activity_history_xlsx(vehicle_ids: list, user=None):
+    """One sheet per selected vehicle: Vehicle Master Information, the
+    full Activity History timeline, the Utilization Summary, and the
+    Outlet Assignment History. Deliberately NOT part of REPORT_GENERATORS/
+    the scheduled-report emailer -- this report's "filter" is a specific
+    list of vehicle ids picked by the person running it, which doesn't
+    fit the scheduler's generic branch/status/date filters model (there's
+    no sensible recurring schedule for "always email me these 3 specific
+    vehicles")."""
+    from app.core.vehicle_activity_history_service import (
+        VehicleActivityHistoryService)
+    from app.modules.master_data.vehicle.models import Vehicle
+
+    activity_svc = VehicleActivityHistoryService()
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    for vid in vehicle_ids:
+        from app.extensions import db as _db
+        vehicle = _db.session.get(Vehicle, vid)
+        if vehicle is None:
+            continue
+        sheet_name = (vehicle.plate_number or vehicle.conduction_number
+                     or f"Vehicle {vid}")[:31]  # Excel sheet name limit
+        ws = wb.create_sheet(title=sheet_name)
+
+        ws.append(["Vehicle Master Information"])
+        ws.cell(ws.max_row, 1).font = Font(bold=True, size=13)
+        ws.append(["Plate No.", vehicle.plate_number or vehicle.conduction_number,
+                   "Vehicle", f"{vehicle.brand} {vehicle.model} {vehicle.variant or ''}"])
+        ws.append(["Year Model", vehicle.year, "Engine No.", vehicle.engine_number or "—"])
+        ws.append(["Chassis No.", vehicle.chassis_number or "—",
+                   "Acquisition Cost", float(vehicle.acquisition_cost) if vehicle.acquisition_cost else None])
+        ws.append(["Current Status", vehicle.status])
+        ws.append([])
+
+        rows = activity_svc.get_activity_rows(vehicle)
+        ws.append(["Vehicle Activity History"])
+        ws.cell(ws.max_row, 1).font = Font(bold=True, size=12)
+        header_row = ws.max_row + 1
+        ws.append(["Date", "Activity Type", "Outlet/Department", "Assigned To",
+                  "Description", "Cost", "Odometer"])
+        _style_header_row(ws, header_row, 7)
+        for r in rows:
+            ws.append([r["date"], r["activity_type"], r["outlet"],
+                      r["assigned_to"] or "—", r["description"],
+                      float(r["cost"]) if r["cost"] is not None else None,
+                      r["odometer"]])
+        ws.append([])
+
+        util = activity_svc.get_utilization_summary(vehicle, rows)
+        ws.append(["Vehicle Utilization Summary"])
+        ws.cell(ws.max_row, 1).font = Font(bold=True, size=12)
+        ws.append(["Total Transfers", util["total_transfers"]])
+        ws.append(["PMS Activities", util["pms_count"]])
+        ws.append(["Repair Activities", util["repair_count"]])
+        ws.append(["Tire Replacements", util["tire_replacements"]])
+        ws.append(["Battery Replacements", util["battery_replacements"]])
+        ws.append(["Total Maintenance Cost", float(util["total_maintenance_cost"])])
+        ws.append(["No. of Assigned Outlets", util["assigned_outlets_count"]])
+        ws.append(["Vehicle Age (Years)", util["vehicle_age_years"]])
+        ws.append(["Current Odometer", util["current_odometer"]])
+        ws.append([])
+
+        outlet_history = activity_svc.get_outlet_history(vehicle)
+        ws.append(["Outlet Assignment History"])
+        ws.cell(ws.max_row, 1).font = Font(bold=True, size=12)
+        header_row2 = ws.max_row + 1
+        ws.append(["From Date", "To Date", "Outlet", "Custodian"])
+        _style_header_row(ws, header_row2, 4)
+        for seg in outlet_history:
+            ws.append([seg["from_date"], seg["to_date"] or "Present",
+                      seg["outlet"], seg["custodian"]])
+
+        for col in "ABCDEFG":
+            ws.column_dimensions[col].width = 20
+
+    if not wb.sheetnames:
+        wb.create_sheet(title="No Vehicles Selected")
+
+    return (f"Vehicle_Activity_History_{datetime.now():%Y%m%d}.xlsx",
+           _to_bytes(wb))
+
+
 # Registry used by both manual export routes and the scheduled emailer.
 REPORT_GENERATORS = {
     "RPT_VEHICLE_REGISTER": generate_vehicle_register_xlsx,

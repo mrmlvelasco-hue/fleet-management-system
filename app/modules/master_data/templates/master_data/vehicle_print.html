@@ -98,6 +98,8 @@
   <p style="color:#888;">No files attached for this vehicle.</p>
   {% endif %}
 
+  {% include "master_data/_vehicle_activity_history_sections.html" %}
+
   <h6 class="section">Maintenance Order History ({{ mo_history|length }})</h6>
   {% if mo_history %}
   <table class="grid">
