@@ -194,3 +194,67 @@ def test_reset_then_reimport_produces_a_clean_result(db):
 
     from app.modules.maintenance_config.models import PMSchedule
     assert PMSchedule.query.count() == stats["packages_created"]
+
+
+def test_reset_detaches_external_references_instead_of_failing(db):
+    """Regression test for a real production error: a Vehicle's
+    'Assigned PM Template' (pm_schedule_id) and a real MaintenanceOrder's
+    pm_schedule_id/scope_template_id all reference these tables by
+    foreign key. On MySQL (unlike SQLite's more lenient default), a bulk
+    DELETE against a still-referenced pm_scope_templates row fails
+    outright with 'Cannot delete or update a parent row: a foreign key
+    constraint fails'. reset_pm_data() must detach (not fail on) these
+    external references, and must NOT delete the Vehicle/MaintenanceOrder
+    rows themselves -- only null the one stale column each."""
+    from datetime import date
+    from import_pm_task_list import reset_pm_data
+    from app.cli import _seed_transaction_types
+    from app.modules.maintenance_config.models import PMSchedule, PMScopeTemplate
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.master_data.reference.service import VehicleTypeService
+    from app.modules.master_data.org.service import BranchService
+    from app.modules.master_data.vehicle.models import Vehicle
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder, TransactionType)
+
+    _seed_transaction_types()
+    db.session.commit()
+    import_pm_task_list("/mnt/user-data/uploads/PM_Task_List.xlsx",
+                        dry_run=False, limit_groups=1)
+    sched = PMSchedule.query.first()
+    tpl = PMScopeTemplate.query.first()
+
+    branch = BranchService().create(code="BR-RESETTEST", name="Reset Test Branch")
+    vtype = VehicleTypeService().create(code="LV-RESETTEST", name="Light",
+                                        category="LIGHT")
+    vehicle = VehicleService().create(
+        vehicle_type_id=vtype.id, brand="Toyota", model="Hilux", year=2020,
+        branch_id=branch.id, conduction_number="RESET-000")
+    vehicle.pm_schedule_id = sched.id
+    tt = TransactionType.query.filter_by(code="ADM-MIGRATE-EXPENSE").first()
+    mo = MaintenanceOrder(
+        vehicle_id=vehicle.id, order_category="OPERATIONAL",
+        transaction_type_id=tt.id, scheduled_date=date.today(),
+        status="DRAFT", pm_schedule_id=sched.id, scope_template_id=tpl.id)
+    db.session.add(mo)
+    db.session.commit()
+    mo_id, vehicle_id = mo.id, vehicle.id
+
+    # Must not raise (this is exactly what raised IntegrityError before
+    # the fix).
+    deleted = reset_pm_data()
+    assert deleted["vehicles_unlinked"] >= 1
+    assert deleted["maintenance_orders_unlinked"] >= 1
+
+    # The referencing rows themselves must still exist -- only the
+    # column pointing at the now-deleted template is cleared.
+    surviving_vehicle = db.session.get(Vehicle, vehicle_id)
+    surviving_mo = db.session.get(MaintenanceOrder, mo_id)
+    assert surviving_vehicle is not None
+    assert surviving_mo is not None
+    assert surviving_vehicle.pm_schedule_id is None
+    assert surviving_mo.pm_schedule_id is None
+    assert surviving_mo.scope_template_id is None
+
+    assert PMSchedule.query.count() == 0
+    assert PMScopeTemplate.query.count() == 0
