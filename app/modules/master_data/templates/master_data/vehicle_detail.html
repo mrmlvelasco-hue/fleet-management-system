@@ -67,8 +67,8 @@
           <a href="{{ url_for('transactions.maintenanceorder_detail', oid=m.id) }}">{{ m.document_number }}</a>
           {% else %}{{ m.document_number }}{% endif %}
         </td>
-        <td><span class="badge text-bg-{{ 'info' if m.category in ['PM', 'PREVENTIVE'] else 'warning' if m.category in ['CM', 'CORRECTIVE'] else 'secondary' }}">{{ m.category or '—' }}</span></td>
-        <td>{{ m.maintenance_type.name }}</td>
+        <td><span class="badge text-bg-{{ 'info' if m.category in ['PM', 'PREVENTIVE'] else 'warning' if m.category in ['CM', 'CORRECTIVE'] else 'secondary' }}">{{ m.category or m.order_category or '—' }}</span></td>
+        <td>{{ m.maintenance_type.name if m.maintenance_type else (m.transaction_type.name if m.transaction_type else '—') }}</td>
         <td>{{ "{:,.2f}".format(m.actual_cost) if m.actual_cost else '—' }}</td>
         <td>{{ m.vendor.name if m.vendor else '—' }}</td>
       </tr>

@@ -91,3 +91,49 @@ def get_view_url(reference_table: str, reference_id: int) -> str | None:
         return url_for(endpoint, **kwargs)
     except Exception:
         return None
+
+
+def get_worklist_labels(reference_table: str, reference_id: int) -> dict:
+    """Plate number + a human-readable type/purpose label for a document,
+    for the "For My Action" dashboard worklist — so an approver can tell
+    at a glance which vehicle and what kind of request each entry is
+    without opening it first. Generic across every transaction module
+    rather than special-cased per type, since ApprovalTask.reference_table
+    can be any of them: looks for a `vehicle` relationship for the plate,
+    and tries transaction_type/maintenance_type/purpose/category in that
+    order for the label. Returns {"plate_number": None, "type_label": None}
+    (both silently absent, never raising) if the table isn't registered
+    or the record has nothing matching."""
+    result = {"plate_number": None, "type_label": None}
+    entry = _REGISTRY.get(reference_table)
+    if entry is None:
+        return result
+    module_path, class_name, _ = entry
+    try:
+        import importlib
+        module = importlib.import_module(module_path)
+        model = getattr(module, class_name)
+        from app.extensions import db
+        record = db.session.get(model, reference_id)
+        if record is None:
+            return result
+
+        vehicle = getattr(record, "vehicle", None)
+        if vehicle is not None:
+            result["plate_number"] = (getattr(vehicle, "plate_number", None)
+                                     or getattr(vehicle, "conduction_number", None))
+
+        for attr in ("transaction_type", "maintenance_type"):
+            related = getattr(record, attr, None)
+            if related is not None and getattr(related, "name", None):
+                result["type_label"] = related.name
+                break
+        else:
+            for attr in ("purpose", "category", "registration_type"):
+                value = getattr(record, attr, None)
+                if value:
+                    result["type_label"] = str(value).replace("_", " ").title()
+                    break
+    except Exception:
+        pass
+    return result

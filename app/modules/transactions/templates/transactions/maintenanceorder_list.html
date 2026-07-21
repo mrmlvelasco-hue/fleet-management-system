@@ -20,8 +20,8 @@
     <tr>
       <td>{{ o.document_number or '—' }}</td>
       <td>{{ o.vehicle.plate_number or o.vehicle.conduction_number if o.vehicle else '—' }}</td>
-      <td>{{ o.maintenance_type.name }}</td>
-      <td><span class="badge text-bg-{{ 'info' if o.category in ['PM', 'PREVENTIVE'] else 'warning' }}">{{ o.category }}</span></td>
+      <td>{{ o.maintenance_type.name if o.maintenance_type else (o.transaction_type.name if o.transaction_type else '—') }}</td>
+      <td><span class="badge text-bg-{{ 'info' if o.category in ['PM', 'PREVENTIVE'] else 'warning' if o.category in ['CM', 'CORRECTIVE'] else 'secondary' }}">{{ o.category or o.order_category or '—' }}</span></td>
       <td>{{ o.scheduled_date }}</td>
       <td><span class="badge text-bg-{{ 'success' if o.status=='COMPLETED' else 'primary' if o.status=='IN_PROGRESS' else 'danger' if o.status=='CANCELLED' else 'secondary' }}">{{ o.status }}</span></td>
       <td>{{ o.requester.full_name if o.requester else '—' }}</td>

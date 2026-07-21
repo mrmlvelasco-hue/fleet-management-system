@@ -92,15 +92,21 @@ def dashboard():
     for_my_action = []
     if "MY_ACTIONS" in visible_codes or not _widget_exists("MY_ACTIONS"):
         my_tasks = ApprovalTaskService().list_for_user(current_user)
-        for_my_action = [{
-            "document_number": t.document_number or "(no number)",
-            "document_type": t.document_type.name if t.document_type else "",
-            "requester": t.requester.full_name if t.requester else "Unknown",
-            "created_at": t.created_at,
-            "aging": _aging_label(t.created_at),
-            "level_number": t.level_number,
-            "url": resolve_task_url(t),
-        } for t in my_tasks]
+        from app.core.reference_resolver import get_worklist_labels
+        for_my_action = []
+        for t in my_tasks:
+            labels = get_worklist_labels(t.reference_table, t.reference_id)
+            for_my_action.append({
+                "document_number": t.document_number or "(no number)",
+                "document_type": t.document_type.name if t.document_type else "",
+                "plate_number": labels["plate_number"],
+                "type_label": labels["type_label"],
+                "requester": t.requester.full_name if t.requester else "Unknown",
+                "created_at": t.created_at,
+                "aging": _aging_label(t.created_at),
+                "level_number": t.level_number,
+                "url": resolve_task_url(t),
+            })
 
     # "Vehicle List" panel (VEHICLE_LIST widget) — the compact recent-fleet
     # table the client asked to have as a dashboard option.
