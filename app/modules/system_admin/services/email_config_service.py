@@ -4,10 +4,14 @@ sending, gated behind an admin-configurable enable switch and settings.
 """
 import smtplib
 import ssl
+import time
+import logging
 from email.message import EmailMessage
 
 from app.extensions import db
 from app.modules.system_admin.models import EmailConfig
+
+logger = logging.getLogger(__name__)
 
 # Never let an unreachable/misconfigured SMTP server hang the request (or a
 # Celery worker) indefinitely. Kept modest (not 20-30s) because
@@ -92,31 +96,51 @@ class EmailSenderService:
         port = int(config.smtp_port or 587)
         context = ssl.create_default_context()
 
-        # Port 465 = implicit SSL ("SMTPS"): the connection is encrypted from
-        # the very first byte, so we must use SMTP_SSL and must NOT call
-        # starttls(). The previous code always used plain SMTP() + starttls(),
-        # which hangs forever against a 465 endpoint (Hostinger, Gmail SSL,
-        # etc.) because the server is waiting for a TLS handshake, not a plain
-        # EHLO. This was the "browser just keeps loading" symptom.
-        if port == 465:
-            with smtplib.SMTP_SSL(config.smtp_host, port,
-                                  timeout=SMTP_TIMEOUT_SECONDS,
-                                  context=context) as server:
-                if config.smtp_username:
-                    server.login(config.smtp_username, config.smtp_password)
-                server.send_message(msg)
-        else:
-            # 587 (submission) or 25: start plaintext, optionally upgrade with
-            # STARTTLS. use_tls drives whether we attempt the upgrade.
-            with smtplib.SMTP(config.smtp_host, port,
-                              timeout=SMTP_TIMEOUT_SECONDS) as server:
-                server.ehlo()
-                if config.use_tls:
-                    server.starttls(context=context)
+        def _do_send():
+            # Port 465 = implicit SSL ("SMTPS"): the connection is encrypted
+            # from the very first byte, so we must use SMTP_SSL and must NOT
+            # call starttls(). The previous code always used plain SMTP() +
+            # starttls(), which hangs forever against a 465 endpoint
+            # (Hostinger, Gmail SSL, etc.) because the server is waiting for
+            # a TLS handshake, not a plain EHLO. This was the "browser just
+            # keeps loading" symptom.
+            if port == 465:
+                with smtplib.SMTP_SSL(config.smtp_host, port,
+                                      timeout=SMTP_TIMEOUT_SECONDS,
+                                      context=context) as server:
+                    if config.smtp_username:
+                        server.login(config.smtp_username, config.smtp_password)
+                    server.send_message(msg)
+            else:
+                # 587 (submission) or 25: start plaintext, optionally upgrade
+                # with STARTTLS. use_tls drives whether we attempt the upgrade.
+                with smtplib.SMTP(config.smtp_host, port,
+                                  timeout=SMTP_TIMEOUT_SECONDS) as server:
                     server.ehlo()
-                if config.smtp_username:
-                    server.login(config.smtp_username, config.smtp_password)
-                server.send_message(msg)
+                    if config.use_tls:
+                        server.starttls(context=context)
+                        server.ehlo()
+                    if config.smtp_username:
+                        server.login(config.smtp_username, config.smtp_password)
+                    server.send_message(msg)
+
+        # One retry with a short pause for exactly this failure pattern: a
+        # timeout specifically on RCPT TO (i.e. connect/login already
+        # succeeded fine) usually means the RECEIVING mail server for this
+        # particular recipient was momentarily slow/greylisting the
+        # connection -- not a real SMTP config problem, since a fresh
+        # connection moments later commonly succeeds. Retrying the whole
+        # connection (not just the one command) since a stale connection
+        # after a mid-transaction timeout can't safely be reused.
+        try:
+            _do_send()
+        except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError,
+               TimeoutError, OSError) as e:
+            logger.warning(
+                "SMTP send failed (%s), retrying once after a short pause: %s",
+                type(e).__name__, e)
+            time.sleep(2)
+            _do_send()
 
 
 def _strip_html(html: str) -> str:
