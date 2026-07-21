@@ -114,3 +114,56 @@ def test_send_skips_starttls_and_login_when_not_configured(mock_smtp_cls, db):
 
     mock_server.starttls.assert_not_called()
     mock_server.login.assert_not_called()
+
+
+@patch("app.modules.system_admin.services.email_config_service.time.sleep")
+@patch("app.modules.system_admin.services.email_config_service.smtplib.SMTP")
+def test_send_retries_once_after_a_transient_disconnect(
+        mock_smtp_cls, mock_sleep, db):
+    """Regression test for a real production report: a genuine SMTP
+    timeout on RCPT TO (connect/login already succeeded -- only the
+    per-recipient step timed out, e.g. a slow/greylisting receiving mail
+    server) should be retried once with a fresh connection rather than
+    surfacing as a hard failure on the first hiccup."""
+    import smtplib
+    EmailConfigService().update(
+        smtp_host="smtp.example.com", smtp_port=587, use_tls=True,
+        smtp_username="u", smtp_password="p",
+        from_email="fleet@example.com", is_enabled=True)
+
+    good_server = MagicMock()
+    good_cm = MagicMock()
+    good_cm.__enter__ = MagicMock(return_value=good_server)
+    good_cm.__exit__ = MagicMock(return_value=False)
+
+    mock_smtp_cls.side_effect = [
+        smtplib.SMTPServerDisconnected(
+            "Connection unexpectedly closed: The read operation timed out"),
+        good_cm,
+    ]
+
+    EmailSenderService().send(to_email="a@example.com", subject="Hi",
+                              body_html="<p>Hi</p>")
+
+    assert mock_smtp_cls.call_count == 2
+    mock_sleep.assert_called_once()
+    good_server.send_message.assert_called_once()
+
+
+@patch("app.modules.system_admin.services.email_config_service.time.sleep")
+@patch("app.modules.system_admin.services.email_config_service.smtplib.SMTP")
+def test_send_raises_if_both_attempts_fail(mock_smtp_cls, mock_sleep, db):
+    """A persistent failure (not just a one-off hiccup) must still
+    surface as an error -- the retry is a single grace attempt, not a
+    silent swallow of real problems."""
+    import smtplib
+    EmailConfigService().update(
+        smtp_host="smtp.example.com", smtp_port=587, use_tls=True,
+        smtp_username="u", smtp_password="p",
+        from_email="fleet@example.com", is_enabled=True)
+    mock_smtp_cls.side_effect = smtplib.SMTPServerDisconnected("still down")
+
+    with pytest.raises(smtplib.SMTPServerDisconnected):
+        EmailSenderService().send(to_email="a@example.com", subject="Hi",
+                                  body_html="<p>Hi</p>")
+    assert mock_smtp_cls.call_count == 2
