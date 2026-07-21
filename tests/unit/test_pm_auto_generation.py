@@ -163,3 +163,30 @@ def test_auto_generation_uses_schedule_linked_scope_template(db, env):
     order = MaintenanceOrder.query.filter_by(vehicle_id=vehicle.id).first()
     assert len(order.checklist_items) == 1
     assert order.checklist_items[0].activity_code == "OIL"
+
+
+def test_auto_generated_order_gets_description_from_schedule_template(db, env):
+    """Real gap fixed: an auto-generated PMS order previously got no
+    description at all, even when its PMSchedule has a migrated
+    work_description_template -- the whole point of migrating that
+    field was for it to actually show up on the resulting Maintenance
+    Order, not just sit unused in the schedule. pm2-pm9 tokens must be
+    resolved against the actual vehicle, not left as literal
+    placeholders."""
+    branch, vt, mt, admin_user = env
+    schedule = PMScheduleService().list()[0]
+    schedule.next_pms_generation = "AUTO_MO"
+    schedule.work_description_template = (
+        "5,000 km servicing of pm2 pm3 with Plate no. pm4")
+    db.session.commit()
+
+    vehicle = _make_vehicle(branch, vt, 5200, "6")
+    vehicle.brand, vehicle.model = "Toyota", "Hilux"
+    vehicle.plate_number = "AUTO-DESC-TEST"
+    db.session.commit()
+
+    auto_generate_due_maintenance_orders()
+    order = MaintenanceOrder.query.filter_by(vehicle_id=vehicle.id).first()
+    assert order.description is not None
+    assert "AUTO-DESC-TEST" in order.description  # pm4 resolved
+    assert "pm4" not in order.description  # no literal token left over

@@ -414,3 +414,24 @@ body.dark-mode .fms-sidebar { background: #0b131b; border-right-color: #1b2836; 
 /* Accessibility: visible focus + reduced motion */
 :focus-visible { outline: 2px solid var(--od-teal); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* --------------------------------------------------------------------------
+   14. Global print rules
+   --------------------------------------------------------------------------
+   Dedicated print pages (Vehicle Profile, Asset Transfer/Disposal Report,
+   Vehicle Assignment Memo, the plain MO print, etc.) are their own
+   standalone HTML documents with no sidebar/topnav in the markup at all,
+   so they're unaffected by this and don't need it.
+
+   This covers every OTHER page in the app: if someone prints (or "Save as
+   PDF"s) a regular page directly -- the MO detail page, a list page, the
+   dashboard, anything that uses the normal app layout -- the sidebar,
+   top bar, breadcrumb trail, and footer would otherwise show up in the
+   printout too, since nothing was hiding them for the print media type
+   until now. */
+@media print {
+  #fmsSidebar, .fms-topbar, nav[aria-label="breadcrumb"],
+  footer, .no-print, .btn, button { display: none !important; }
+  #fms-wrapper, main { width: 100% !important; margin: 0 !important; padding: 0 !important; }
+  body { background: #fff !important; }
+}
