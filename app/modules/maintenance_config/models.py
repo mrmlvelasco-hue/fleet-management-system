@@ -47,7 +47,24 @@ class PMSchedule(db.Model, BaseModel):
     trigger_mode = db.Column(db.String(10), nullable=False, default="HYBRID")
     interval_km = db.Column(db.Integer, nullable=True)
     interval_days = db.Column(db.Integer, nullable=True)
+    # Captured but not yet consumed by the due-calculation engine — that
+    # only evaluates trigger_mode KM/CALENDAR/HYBRID today. Added so
+    # engine-hours-based PM intervals (e.g. "Every 500 Hours") from a
+    # migrated source aren't silently dropped; wiring this into due
+    # calculation (using Vehicle.current_engine_hours) is a separate,
+    # deliberately deferred follow-up.
+    interval_hours = db.Column(db.Integer, nullable=True)
     priority = db.Column(db.String(10), default="MEDIUM", nullable=False)
+    # The parameterized work-order description template for this package
+    # (e.g. "First 1,000 km servicing of pm2 pm3 with Plate no. pm4..."),
+    # using the same pm2-pm9 token convention already resolved uniformly
+    # across every transaction module's print reports. Pre-fills a
+    # Maintenance Order's description when it's created against this
+    # schedule. Previously nowhere to migrate this into at all — a real
+    # gap, not a display bug: the per-package template text was simply
+    # discarded during import, every migrated PM package losing its
+    # actual work description down to just a generic category name.
+    work_description_template = db.Column(db.Text, nullable=True)
 
     # Per-template alert overrides — fall back to the global SystemParameters
     # PM_DUE_SOON_KM / PM_DUE_SOON_DAYS when NULL.
