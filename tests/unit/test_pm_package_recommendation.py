@@ -161,3 +161,28 @@ def test_no_schedule_returns_good_with_reason(db):
     assert rec["recommended_package"] is None
     assert rec["status"] == "GOOD"
     assert rec["reason"]
+
+
+def test_profile_ordering_sorts_null_sequence_last_without_nulls_last_sql(db):
+    """Regression for a real production MySQL crash (1064 syntax error):
+    the profile-package ordering must NOT emit the `NULLS LAST` SQL
+    keyword, which MySQL rejects (only PostgreSQL/Oracle/SQLite accept
+    it) -- so it must sort in Python, not via SQL ORDER BY. A package
+    with a NULL sequence_position (which really occurs in imported data)
+    must sort LAST, and the whole thing must not raise on any dialect."""
+    from app.modules.maintenance_config.service import PMScheduleService
+    mt = MaintenanceTypeService().create(code="PMS-NULLSEQ", name="PMS",
+                                         category="PREVENTIVE")
+    p_seq2 = PMScheduleService().create(
+        maintenance_type_id=mt.id, trigger_mode="KM", interval_km=5000,
+        profile_code="NULLSEQ-PROF", sequence_position=2)
+    p_seq1 = PMScheduleService().create(
+        maintenance_type_id=mt.id, trigger_mode="KM", interval_km=1000,
+        profile_code="NULLSEQ-PROF", sequence_position=1)
+    p_null = PMScheduleService().create(
+        maintenance_type_id=mt.id, trigger_mode="KM", interval_km=5000,
+        profile_code="NULLSEQ-PROF", sequence_position=None)
+
+    ordered = PMPackageRecommendationService()._profile_packages(p_seq2)
+    positions = [p.sequence_position for p in ordered]
+    assert positions == [1, 2, None]  # NULL sorts last, no crash

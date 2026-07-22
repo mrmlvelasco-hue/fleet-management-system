@@ -51,10 +51,21 @@ class PMPackageRecommendationService:
         a standalone single-package schedule -- its own one-item cycle."""
         if not schedule.profile_code:
             return [schedule]
-        return (PMSchedule.query
+        # NOTE: sort in PYTHON, not via SQL ORDER BY ... NULLS LAST.
+        # `.nullslast()` emits the `NULLS LAST` keyword, which PostgreSQL
+        # and SQLite accept but MySQL rejects outright with a 1064 syntax
+        # error (this exact crash happened on the production MySQL
+        # database while passing locally on SQLite). This matches the
+        # already-established portable pattern in
+        # PMScheduleService.get_profile() for the very same reason -- a
+        # profile's package count is always small, so sorting after
+        # fetching is cheap and fully dialect-independent. NULL
+        # sequence_position sorts last.
+        rows = (PMSchedule.query
                .filter_by(profile_code=schedule.profile_code, is_active=True)
-               .order_by(PMSchedule.sequence_position.asc().nullslast())
                .all())
+        return sorted(rows, key=lambda r: (
+            r.sequence_position is None, r.sequence_position or 0))
 
     def _last_completed_package(self, vehicle_id: int, packages: list):
         """The most recently COMPLETED MO whose pm_schedule_id is one of
