@@ -110,6 +110,55 @@ class PMPackageRecommendationService:
             return packages[-1]
         return packages[idx + 1]
 
+    def _select_by_milestone(self, packages, current_km, last_order):
+        """When packages carry cumulative_km milestones (5,000 / 10,000 /
+        ... / 65,000 / 105,000), pick the package the vehicle actually
+        needs by ODOMETER -- the first milestone strictly greater than
+        where the vehicle has already been serviced (or, with no history,
+        the first milestone at/above the current odometer). This is what
+        makes a 65,000 km vehicle land on the 65,000-km package (seq 14)
+        instead of the last package in the list (seq 22 = 105,000 km).
+
+        Returns (package, is_beyond_last): is_beyond_last is True when the
+        vehicle's odometer is past EVERY defined milestone -- in which
+        case the LAST package is returned as a sensible default and the
+        fleet manager decides which package to actually apply (the scope
+        can't be auto-matched beyond the end of the defined cycle).
+
+        Returns (None, False) if no package has a cumulative_km at all,
+        signalling the caller to fall back to interval-step math.
+        """
+        milestoned = [p for p in packages if p.cumulative_km is not None]
+        if not milestoned:
+            return None, False
+        milestoned.sort(key=lambda p: p.cumulative_km)
+
+        if last_order is not None and last_order.odometer_at_service is not None:
+            # WITH history: the next package is the first milestone
+            # strictly above what was last serviced. If the vehicle has
+            # since driven past that milestone without servicing, that
+            # missed milestone is what's due (overdue) -- we don't skip
+            # ahead. This keeps a missed service visible.
+            floor = last_order.odometer_at_service
+            candidate = next((p for p in milestoned
+                            if p.cumulative_km > floor), None)
+        else:
+            # NO history: measure FORWARD from where the vehicle is now
+            # (don't dump a backlog of every past milestone). The next
+            # package is the first milestone AT OR ABOVE the current
+            # odometer -- so a 65,000 km vehicle lands on the 65,000-km
+            # package, a 62,000 km vehicle on the 65,000-km package, etc.
+            candidate = next((p for p in milestoned
+                            if p.cumulative_km >= current_km), None)
+
+        if candidate is None:
+            # Past every defined milestone -> return the last package as
+            # a default; the fleet manager decides which to actually
+            # apply (scope can't be auto-matched beyond the defined
+            # cycle).
+            return milestoned[-1], True
+        return candidate, False
+
     def recommend(self, vehicle, maintenance_type_id=None,
                   as_of_date=None) -> dict:
         """Structured recommendation for the vehicle's next PM package.
@@ -121,6 +170,7 @@ class PMPackageRecommendationService:
           due_date (date | None)
           status ("UPCOMING" | "DUE" | "OVERDUE" | "GOOD")
           reason (str)
+          beyond_defined_cycle (bool)  # fleet manager should choose
         """
         as_of_date = as_of_date or date.today()
         schedules = self._due_svc._applicable_schedules(
@@ -134,8 +184,22 @@ class PMPackageRecommendationService:
 
         last_pkg, last_order = self._last_completed_package(
             vehicle.id, packages)
-        next_pkg = self._next_package(
-            packages, last_pkg, current_km=vehicle.current_odometer or 0)
+        current_km = vehicle.current_odometer or 0
+
+        # Prefer milestone-based selection (cumulative_km) -- this is the
+        # correct, unambiguous way to pick the package for a vehicle at a
+        # given odometer. Fall back to sequence-based selection only when
+        # the profile has no cumulative_km data at all (e.g. older
+        # imports before this field, or purely calendar-based profiles).
+        beyond_defined_cycle = False
+        milestone_pkg, beyond = self._select_by_milestone(
+            packages, current_km, last_order)
+        if milestone_pkg is not None:
+            next_pkg = milestone_pkg
+            beyond_defined_cycle = beyond
+        else:
+            next_pkg = self._next_package(
+                packages, last_pkg, current_km=current_km)
 
         # Baseline: last completed service's odometer/date, or the
         # vehicle's captured legacy baseline, or (last resort) its
@@ -155,39 +219,39 @@ class PMPackageRecommendationService:
             base_km = vehicle.current_odometer or 0
             base_date = as_of_date
 
-        current_km = vehicle.current_odometer or 0
         due_odometer = None
         due_date = None
         km_due = km_overdue = date_due = date_overdue = False
 
         notify_km, notify_days = self._notify_windows(next_pkg)
 
-        if next_pkg.trigger_mode in ("KM", "HYBRID") and next_pkg.interval_km:
-            interval = next_pkg.interval_km
-            # PM packages are fixed odometer MILESTONES (every 5,000 km:
-            # at 5,000 / 10,000 / ... / 60,000 / 65,000), NOT "last
-            # service odometer + interval".
-            #
-            # The due milestone is the next multiple of the interval
-            # STRICTLY ABOVE the anchor (the last serviced odometer when
-            # history is known, else the current odometer so a fresh
-            # high-odometer vehicle is measured forward rather than
-            # backlogged).
-            if last_order is not None or vehicle.last_pm_odometer is not None:
-                anchor = base_km
-            else:
-                anchor = current_km
-            due_odometer = ((anchor // interval) + 1) * interval
-            # If the vehicle has ALREADY driven past that next milestone,
-            # it's overdue AT that milestone -- we do NOT skip ahead to a
-            # future milestone (that would hide a missed service). This
-            # is the user's rule: a vehicle past its due KM is flagged
-            # overdue, and the recommended package is the one it should
-            # already have had.
-            if current_km >= due_odometer:
-                km_overdue = True
-            elif current_km >= due_odometer - notify_km:
-                km_due = True
+        if next_pkg.trigger_mode in ("KM", "HYBRID"):
+            if next_pkg.cumulative_km is not None:
+                # The package's own absolute milestone IS the due
+                # odometer -- no interval arithmetic needed. This is the
+                # correct, unambiguous value (65,000 for the 65,000-km
+                # package), and it's why a vehicle at 65,000 km lands on
+                # the right package instead of the last one in the list.
+                due_odometer = next_pkg.cumulative_km
+            elif next_pkg.interval_km:
+                # Fallback for profiles with no cumulative_km data: the
+                # next interval-multiple strictly above the anchor.
+                interval = next_pkg.interval_km
+                if last_order is not None or vehicle.last_pm_odometer is not None:
+                    anchor = base_km
+                else:
+                    anchor = current_km
+                due_odometer = ((anchor // interval) + 1) * interval
+
+            if due_odometer is not None:
+                # At/within the notify window before the milestone = DUE
+                # (do it now, on time). Strictly PAST the milestone =
+                # OVERDUE (a missed service). Being exactly AT the
+                # milestone is on-time, so it's DUE, not overdue.
+                if current_km > due_odometer:
+                    km_overdue = True
+                elif current_km >= due_odometer - notify_km:
+                    km_due = True
 
         if next_pkg.trigger_mode in ("CALENDAR", "HYBRID") and next_pkg.interval_days:
             due_date = base_date + timedelta(days=next_pkg.interval_days)
@@ -211,6 +275,10 @@ class PMPackageRecommendationService:
         reason = self._build_reason(
             status, due_by, current_km, due_odometer, due_date, as_of_date,
             km_overdue, km_due, date_overdue, date_due, last_pkg)
+        if beyond_defined_cycle:
+            reason = ("Vehicle is beyond the last defined PM package in this "
+                     "profile — showing the final package; the fleet manager "
+                     "should confirm which package to apply. " + reason)
 
         return {
             "recommended_package": next_pkg,
@@ -219,6 +287,7 @@ class PMPackageRecommendationService:
             "due_date": due_date,
             "status": status,
             "reason": reason,
+            "beyond_defined_cycle": beyond_defined_cycle,
         }
 
     def _notify_windows(self, pkg):
@@ -285,4 +354,5 @@ class PMPackageRecommendationService:
     def _empty(self, reason: str) -> dict:
         return {"recommended_package": None, "due_by": None,
                "due_odometer": None, "due_date": None,
-               "status": "GOOD", "reason": reason}
+               "status": "GOOD", "reason": reason,
+               "beyond_defined_cycle": False}

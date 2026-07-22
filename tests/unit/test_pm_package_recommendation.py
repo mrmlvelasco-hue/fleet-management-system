@@ -178,6 +178,103 @@ def test_no_schedule_returns_good_with_reason(db):
     assert rec["reason"]
 
 
+@pytest.fixture()
+def milestone_profile(db):
+    """A realistic milestone profile mirroring the real Strada data: a
+    first-service package, then packages at cumulative 5,000 / 10,000 /
+    ... / 65,000 / 70,000 km. Every package has interval_km=5,000 (the
+    constant recurring step) but a DISTINCT cumulative_km -- which is the
+    field that actually identifies the package for a given odometer."""
+    vt = VehicleTypeService().create(code="LV-MILE", name="Light",
+                                     category="LIGHT")
+    mt = MaintenanceTypeService().create(code="PMS-MILE", name="PMS",
+                                         category="PREVENTIVE")
+    branch = BranchService().create(code="BR-MILE", name="Mile Branch")
+    pkgs = []
+    # seq 1 = first 1,000 km, then 5,000-step milestones through 70,000
+    p1 = PMScheduleService().create(
+        maintenance_type_id=mt.id, trigger_mode="HYBRID", interval_km=1000,
+        interval_days=30, profile_code="MILE-PROF", sequence_position=1,
+        cumulative_km=1000)
+    pkgs.append(p1)
+    for i, milestone in enumerate(range(5000, 70001, 5000), start=2):
+        pkgs.append(PMScheduleService().create(
+            maintenance_type_id=mt.id, trigger_mode="HYBRID",
+            interval_km=5000, interval_days=90, profile_code="MILE-PROF",
+            sequence_position=i, cumulative_km=milestone))
+    v = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Mitsubishi", model="Strada", year=2013,
+        branch_id=branch.id, conduction_number="WIE231")
+    v.pm_schedule_id = p1.id
+    from app.extensions import db as _db
+    _db.session.commit()
+    return vt, mt, pkgs, v
+
+
+def test_milestone_64999_selects_the_65000_package_not_the_last(
+        db, milestone_profile):
+    """The reported bug: a 65,000 km Strada was auto-selecting Package 22
+    (the last in the list) instead of the 65,000-km package. With
+    cumulative_km milestones, a vehicle at 64,999 km must land on the
+    65,000-km package and be DUE."""
+    vt, mt, pkgs, v = milestone_profile
+    v.current_odometer = 64999
+    from app.extensions import db as _db
+    _db.session.commit()
+
+    rec = PMPackageRecommendationService().recommend(v)
+    assert rec["recommended_package"].cumulative_km == 65000
+    assert rec["due_odometer"] == 65000
+    assert rec["status"] == "DUE"
+    # Must NOT be the last package in the list.
+    assert rec["recommended_package"] is not pkgs[-1]
+
+
+def test_milestone_exactly_at_milestone_is_due_not_overdue(
+        db, milestone_profile):
+    vt, mt, pkgs, v = milestone_profile
+    v.current_odometer = 65000
+    from app.extensions import db as _db
+    _db.session.commit()
+    rec = PMPackageRecommendationService().recommend(v)
+    assert rec["recommended_package"].cumulative_km == 65000
+    assert rec["status"] == "DUE"
+
+
+def test_milestone_just_past_advances_to_next_package(db, milestone_profile):
+    vt, mt, pkgs, v = milestone_profile
+    v.current_odometer = 65001
+    from app.extensions import db as _db
+    _db.session.commit()
+    rec = PMPackageRecommendationService().recommend(v)
+    assert rec["recommended_package"].cumulative_km == 70000
+    assert rec["status"] == "UPCOMING"
+
+
+def test_milestone_new_vehicle_gets_first_service(db, milestone_profile):
+    vt, mt, pkgs, v = milestone_profile
+    v.current_odometer = 100
+    from app.extensions import db as _db
+    _db.session.commit()
+    rec = PMPackageRecommendationService().recommend(v)
+    assert rec["recommended_package"].cumulative_km == 1000
+
+
+def test_milestone_beyond_last_package_flags_fleet_manager_decision(
+        db, milestone_profile):
+    """Past the last defined milestone (70,000 km here): return the last
+    package as a default and flag beyond_defined_cycle so the fleet
+    manager decides which package to apply."""
+    vt, mt, pkgs, v = milestone_profile
+    v.current_odometer = 999999
+    from app.extensions import db as _db
+    _db.session.commit()
+    rec = PMPackageRecommendationService().recommend(v)
+    assert rec["beyond_defined_cycle"] is True
+    assert rec["recommended_package"] is pkgs[-1]
+    assert "fleet manager" in rec["reason"].lower()
+
+
 def test_profile_ordering_sorts_null_sequence_last_without_nulls_last_sql(db):
     """Regression for a real production MySQL crash (1064 syntax error):
     the profile-package ordering must NOT emit the `NULLS LAST` SQL
