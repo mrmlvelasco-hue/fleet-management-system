@@ -219,20 +219,27 @@ class PMScopeTemplateService:
         return results
 
     def get_next_due_scope_template(self, vehicle, maintenance_type_id=None):
-        """Among this vehicle's applicable schedules, whichever one the
-        due-calculation logic considers 'the' current schedule (the
-        specific package actually next due for THIS vehicle's mileage,
-        not just any package that generically applies to this Brand/
-        Model) — so a fleet admin creating an MO manually gets a sensible
-        default instead of an arbitrary first match."""
-        from app.core.maintenance.due_calculation_service import (
-            PMDueCalculationService)
-        status = PMDueCalculationService().get_due_status(
-            vehicle, maintenance_type_id=maintenance_type_id)
-        schedule = status.get("schedule")
-        if schedule is None or not schedule.scope_templates:
+        """Among this vehicle's applicable schedules, the scope template
+        of the specific PACKAGE that's actually next due for THIS
+        vehicle (correctly sequenced within the PMS Profile cycle -- the
+        package AFTER the last completed one, not just the first schedule
+        that generically applies) -- so a fleet admin creating an MO
+        manually gets the right default auto-selected."""
+        rec = self.get_next_due_recommendation(vehicle, maintenance_type_id)
+        pkg = rec.get("recommended_package") if rec else None
+        if pkg is None or not pkg.scope_templates:
             return None
-        return schedule.scope_templates[0]
+        return pkg.scope_templates[0]
+
+    def get_next_due_recommendation(self, vehicle, maintenance_type_id=None):
+        """Full structured recommendation (package, status, due-by, due
+        odometer/date, reason) for the vehicle's next PM package -- used
+        both to auto-select the scope template and to show the fleet
+        admin WHY it was selected on the MO form."""
+        from app.core.maintenance.pm_package_recommendation_service import (
+            PMPackageRecommendationService)
+        return PMPackageRecommendationService().recommend(
+            vehicle, maintenance_type_id=maintenance_type_id)
 
     def create(self, *, maintenance_type_id, name, items,
                description=None, pm_schedule_id=None):
