@@ -90,9 +90,13 @@ def test_no_maintenance_type_filter_still_excludes_other_vehicles(db, env):
 
 
 def test_next_due_schedule_identified_correctly(db, env):
-    """The 'which package is actually next due' logic -- a vehicle at
-    1500km (past Package 1's 1000km threshold, not yet at Package 2's
-    2000km) should identify Package 1 as due."""
+    """The 'which package is actually next due' logic under the fixed-
+    odometer MILESTONE model. A Ford at 1,500 km has already passed
+    Package 1's 1,000 km first-service milestone, so the next due package
+    is the recurring Package 2 (2,000 km) -- its scope template is what
+    should be auto-selected. (Under the earlier, incorrect 'baseline +
+    interval' model this returned Package 1; the milestone model is what
+    the user confirmed they want.)"""
     branch, vt, mt, vehicle, sched1, sched2 = env
     vehicle.current_odometer = 1500
     db.session.commit()
@@ -100,4 +104,4 @@ def test_next_due_schedule_identified_correctly(db, env):
     due_template = PMScopeTemplateService().get_next_due_scope_template(
         vehicle, maintenance_type_id=mt.id)
     assert due_template is not None
-    assert due_template.name == "Ford Escape Package 1"
+    assert due_template.name == "Ford Escape Package 2"
