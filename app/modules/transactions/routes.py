@@ -600,8 +600,11 @@ def maintenanceorder_new():
     # re-fetches it the moment a vehicle is picked.
     scope_templates = []
     due_scope_template_id = None
+    pm_recommendation = None
     if prefill_vehicle:
         scope_templates = PMScopeTemplateService().list_applicable_for_vehicle(
+            prefill_vehicle, maintenance_type_id=prefill["maintenance_type_id"])
+        pm_recommendation = PMScopeTemplateService().get_next_due_recommendation(
             prefill_vehicle, maintenance_type_id=prefill["maintenance_type_id"])
         due_template = PMScopeTemplateService().get_next_due_scope_template(
             prefill_vehicle, maintenance_type_id=prefill["maintenance_type_id"])
@@ -644,6 +647,7 @@ def maintenanceorder_new():
                            scope_templates=scope_templates,
                            prefill_vehicle=prefill_vehicle, prefill=prefill,
                            due_scope_template_id=due_scope_template_id,
+                           pm_recommendation=pm_recommendation,
                            branches=Branch.query.filter_by(is_active=True)
                                    .order_by(Branch.name).all(),
                            title="New Maintenance Order")

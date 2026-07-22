@@ -76,6 +76,26 @@
     <div class="form-text" id="moScopeTemplateHint">
       {% if not prefill_vehicle %}Select a vehicle first to see its applicable PM packages.{% endif %}
     </div>
+    {% if pm_recommendation and pm_recommendation.recommended_package %}
+    {% set _st = pm_recommendation.status %}
+    <div class="alert {{ 'alert-danger' if _st == 'OVERDUE' else 'alert-warning' if _st == 'DUE' else 'alert-info' }} py-2 px-3 mt-2 mb-0" id="moPmRecommendation">
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge {{ 'text-bg-danger' if _st == 'OVERDUE' else 'text-bg-warning' if _st == 'DUE' else 'text-bg-info' }}">{{ _st }}</span>
+        <strong>Recommended PM package auto-selected</strong>
+      </div>
+      <div class="small mt-1">
+        <div>Due by:
+          {% if pm_recommendation.due_by == 'BOTH' %}KM or Date (whichever comes first)
+          {% elif pm_recommendation.due_by == 'KM' %}Kilometers
+          {% elif pm_recommendation.due_by == 'MONTHS' %}Calendar (months)
+          {% else %}—{% endif %}
+        </div>
+        {% if pm_recommendation.due_odometer %}<div>Due odometer: {{ "{:,}".format(pm_recommendation.due_odometer) }} km</div>{% endif %}
+        {% if pm_recommendation.due_date %}<div>Due date: {{ pm_recommendation.due_date }}</div>{% endif %}
+        <div class="text-muted">{{ pm_recommendation.reason }}</div>
+      </div>
+    </div>
+    {% endif %}
     <div class="card card-body p-2 mt-2" id="moWorkDescriptionPanel" style="display:none;">
       <div class="small text-uppercase text-muted fw-semibold mb-1">Work Description Template</div>
       <p class="mb-1" id="moWorkDescriptionText"></p>
