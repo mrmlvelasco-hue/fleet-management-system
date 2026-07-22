@@ -76,6 +76,15 @@
     <div class="form-text" id="moScopeTemplateHint">
       {% if not prefill_vehicle %}Select a vehicle first to see its applicable PM packages.{% endif %}
     </div>
+    <div class="card card-body p-2 mt-2" id="moWorkDescriptionPanel" style="display:none;">
+      <div class="small text-uppercase text-muted fw-semibold mb-1">Work Description Template</div>
+      <p class="mb-1" id="moWorkDescriptionText"></p>
+      <p class="text-muted small mb-1">
+        Pre-fills a Maintenance Order's description when created against this
+        schedule, with pm2-pm9 tokens resolved to the actual vehicle/driver/branch at that time.
+      </p>
+      {% include "layout/_pm_parameter_legend.html" %}
+    </div>
     <div class="mt-2" id="moScopeDetailsWrapper" style="display:none;">
       <button class="btn btn-sm btn-outline-secondary" type="button"
               data-bs-toggle="collapse" data-bs-target="#moScopeDetailsCollapse">
@@ -103,7 +112,7 @@
     <input type="number" name="odometer_at_service" class="form-control"
            value="{{ prefill.odometer_at_service or '' }}"></div>
   <div class="col-md-4"><label class="form-label">Estimated Cost</label>
-    <input type="number" step="0.01" name="estimated_cost" class="form-control"></div>
+    <input type="text" inputmode="decimal" name="estimated_cost" class="form-control js-money" placeholder="0.00"></div>
   <div class="col-md-6"><label class="form-label">Assigned Mechanic</label>
     <input type="text" name="assigned_mechanic" class="form-control"></div>
   <div class="col-md-6" id="moDriverFieldWrapper" style="display:none;">
@@ -145,7 +154,7 @@
   </div>
   <div class="col-md-6" id="moDisposalFieldsWrapper" style="display:none;">
     <label class="form-label">Disposal Value <span class="text-muted small">(optional)</span></label>
-    <input type="number" step="0.01" name="disposal_value" class="form-control" placeholder="0.00">
+    <input type="text" inputmode="decimal" name="disposal_value" class="form-control js-money" placeholder="0.00">
     <label class="form-label mt-2">Disposal Recipient <span class="text-muted small">(optional)</span></label>
     <input type="text" name="disposal_recipient" class="form-control"
            placeholder="Buyer, auction house, donation recipient, or insurance company">
@@ -335,7 +344,7 @@
         fetch("{{ url_for('api_search.get_pm_scope_template_details', template_id=0) }}".replace("0", templateId))
           .then(function (r) { return r.json(); })
           .then(function (data) {
-            if (!data.found) { $wrapper.hide(); return; }
+            if (!data.found) { $wrapper.hide(); $("#moWorkDescriptionPanel").hide(); return; }
             var rows = data.items.map(function (i) {
               return "<tr><td>" + i.sort_order + "</td>"
                 + '<td><span class="badge text-bg-secondary">' + i.activity_code + "</span></td>"
@@ -345,9 +354,18 @@
             }).join("");
             $("#moScopeDetailsTable tbody").html(rows);
             $wrapper.show();
+            if (data.work_description) {
+              $("#moWorkDescriptionText").text(data.work_description);
+              $("#moWorkDescriptionPanel").show();
+            } else {
+              $("#moWorkDescriptionPanel").hide();
+            }
           });
       }
-      $("#moScopeTemplateSelect").on("change", refreshScopeDetails);
+      $("#moScopeTemplateSelect").on("change", function () {
+        refreshScopeDetails();
+        if (!$(this).val()) { $("#moWorkDescriptionPanel").hide(); }
+      });
       // Initial state on page load, in case a scope template is already
       // pre-selected (e.g. the auto-selected "next due" package).
       refreshScopeDetails();

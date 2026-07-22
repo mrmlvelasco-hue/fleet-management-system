@@ -180,6 +180,25 @@ def create_app(config_name: str | None = None) -> Flask:
         from app.core.reporting.token_resolver import resolve_pm_tokens
         return resolve_pm_tokens(text, vehicle=vehicle)
 
+    @app.template_filter("peso")
+    def peso_filter(value, symbol=True):
+        """Consistent currency formatting across every UI and print
+        template: thousands separators and exactly 2 decimals, e.g.
+        950000 -> "₱950,000.00". Returns an em dash for None/blank so
+        empty money fields render consistently rather than as "None" or
+        an empty cell. Accepts Decimal, float, int, or a numeric string;
+        a non-numeric value is returned unchanged rather than raising, so
+        one bad row never breaks a whole report."""
+        if value is None or value == "":
+            return "—"
+        from decimal import Decimal, InvalidOperation
+        try:
+            amount = Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return value
+        formatted = "{:,.2f}".format(amount)
+        return f"₱{formatted}" if symbol else formatted
+
     return app
 
 

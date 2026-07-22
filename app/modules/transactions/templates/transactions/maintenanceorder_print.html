@@ -87,6 +87,9 @@
   {% if effective_description %}
   <h6 class="section">Work Description</h6>
   <div class="remarks-box">{{ effective_description|pm_tokens(item.vehicle) }}</div>
+  {% if 'pm' in effective_description and item.pm_schedule and item.pm_schedule.work_description_template %}
+  <div style="margin-top:4px;">{% include "layout/_pm_parameter_legend.html" %}</div>
+  {% endif %}
   {% endif %}
 
   {% if item.checklist_items %}

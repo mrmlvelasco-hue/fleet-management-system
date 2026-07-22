@@ -236,9 +236,13 @@ def get_pm_scope_template_details(template_id):
     if tmpl is None:
         return jsonify({"found": False})
     items = sorted(tmpl.items, key=lambda i: i.sort_order)
+    work_description = None
+    if tmpl.pm_schedule and tmpl.pm_schedule.work_description_template:
+        work_description = tmpl.pm_schedule.work_description_template
     return jsonify({
         "found": True,
         "name": tmpl.name,
+        "work_description": work_description,
         "items": [{
             "sort_order": i.sort_order,
             "activity_code": i.activity_code,

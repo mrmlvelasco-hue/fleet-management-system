@@ -82,7 +82,7 @@
         <div class="col-6"><label class="form-label small">Completed Date</label>
           <input type="date" name="completed_date" class="form-control form-control-sm" required></div>
         <div class="col-6"><label class="form-label small">Actual Cost</label>
-          <input type="number" step="0.01" name="actual_cost" class="form-control form-control-sm"></div>
+          <input type="text" inputmode="decimal" name="actual_cost" class="form-control form-control-sm js-money" placeholder="0.00"></div>
         <div class="col-12"><button class="btn btn-sm btn-success">Mark Complete</button></div>
       </form>
       {% endif %}
@@ -170,10 +170,12 @@
         if (data.ok) {
           setRow(btn.closest('[data-checklist-row]'), data.is_done);
         } else {
-          alert(data.error || 'Could not update this item.');
+          Swal.fire({title: data.error || 'Could not update this item.',
+                    icon: 'error'});
         }
       })
-      .catch(() => alert('Network error updating checklist item.'))
+      .catch(() => Swal.fire({title: 'Network error updating checklist item.',
+                              icon: 'error'}))
       .finally(() => { btn.disabled = false; });
   });
 
@@ -182,26 +184,34 @@
       const url = btn.getAttribute('data-checklist-mark-all');
       const done = btn.dataset.done;
       const label = done === '1' ? 'Mark ALL items as done?' : 'Undo ALL items?';
-      if (!confirm(label)) return;
-      btn.disabled = true;
-      fetch(url, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'csrf_token=' + encodeURIComponent(csrfToken) + '&done=' + done
-      })
-        .then(r => r.json())
-        .then(data => {
-          if (data.ok) {
-            data.items.forEach(function (it) {
-              const row = document.querySelector('[data-checklist-row="' + it.item_id + '"]');
-              if (row) setRow(row, it.is_done);
-            });
-          } else {
-            alert(data.error || 'Could not update the checklist.');
-          }
+      Swal.fire({
+        title: label, icon: 'question',
+        showCancelButton: true, confirmButtonText: 'Yes',
+        cancelButtonText: 'Cancel'
+      }).then(function (result) {
+        if (!result.isConfirmed) return;
+        btn.disabled = true;
+        fetch(url, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: 'csrf_token=' + encodeURIComponent(csrfToken) + '&done=' + done
         })
-        .catch(() => alert('Network error updating the checklist.'))
-        .finally(() => { btn.disabled = false; });
+          .then(r => r.json())
+          .then(data => {
+            if (data.ok) {
+              data.items.forEach(function (it) {
+                const row = document.querySelector('[data-checklist-row="' + it.item_id + '"]');
+                if (row) setRow(row, it.is_done);
+              });
+            } else {
+              Swal.fire({title: data.error || 'Could not update the checklist.',
+                        icon: 'error'});
+            }
+          })
+          .catch(() => Swal.fire({title: 'Network error updating the checklist.',
+                                  icon: 'error'}))
+          .finally(() => { btn.disabled = false; });
+      });
     });
   });
 })();

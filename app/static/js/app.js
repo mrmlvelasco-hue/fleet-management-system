@@ -460,6 +460,8 @@
 // server always receives a plain decimal number.
 window.formatMoneyInput = function (selector) {
   document.querySelectorAll(selector).forEach(function (input) {
+    if (input.dataset.moneyBound === "1") return;  // idempotent
+    input.dataset.moneyBound = "1";
     function formatValue(raw) {
       var cleaned = raw.replace(/[^0-9.]/g, "");
       var firstDot = cleaned.indexOf(".");
@@ -480,12 +482,30 @@ window.formatMoneyInput = function (selector) {
       input.setSelectionRange(newPos, newPos);
     });
     var form = input.closest("form");
-    if (form) {
+    if (form && !form.dataset.moneyStripBound) {
+      form.dataset.moneyStripBound = "1";
       form.addEventListener("submit", function () {
-        input.value = input.value.replace(/,/g, "");
+        form.querySelectorAll("[data-money-bound='1']").forEach(function (el) {
+          el.value = el.value.replace(/,/g, "");
+        });
       });
     }
   });
+};
+
+// Auto-apply comma formatting to every currency field marked with the
+// `js-money` class, so a person typing "950000" sees "950,000.00" live
+// in ANY currency entry field app-wide -- not just the one vehicle
+// acquisition-cost field that was wired up by hand originally. New
+// currency inputs only need the js-money class (and type="text"
+// inputmode="decimal", since an HTML5 type="number" input is spec-
+// forbidden from ever displaying a comma at all). Also re-run after
+// dynamically added rows (e.g. Purchase Request / invoice line items).
+document.addEventListener("DOMContentLoaded", function () {
+  if (window.formatMoneyInput) window.formatMoneyInput(".js-money");
+});
+window.applyMoneyFormatting = function () {
+  if (window.formatMoneyInput) window.formatMoneyInput(".js-money");
 };
 
 // ── Global error popups ──────────────────────────────────────────────────

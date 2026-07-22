@@ -1,0 +1,27 @@
+{# PM Work Description Parameter legend -- the pm2-pm9 -> source-field
+   mapping, shown wherever a work_description_template containing these
+   tokens is displayed, so a reader knows what each pmN placeholder
+   resolves to. Single source of truth: this list mirrors
+   PM_TOKEN_LABELS in app/core/reporting/token_resolver.py (the same
+   mapping the resolver actually uses at print time), kept here as a
+   plain static legend since it's fixed reference documentation, not
+   live data. #}
+<table class="pm-param-legend" style="border-collapse:collapse; font-size:11px; margin-top:6px;">
+  <tbody>
+    <tr>
+      <td style="padding:2px 10px 2px 0;"><strong>pm2</strong> = Vehicle Make</td>
+      <td style="padding:2px 10px;"><strong>pm5</strong> = Assignee</td>
+      <td style="padding:2px 10px;"><strong>pm8</strong> = Last Work Order</td>
+    </tr>
+    <tr>
+      <td style="padding:2px 10px 2px 0;"><strong>pm3</strong> = Vehicle Model</td>
+      <td style="padding:2px 10px;"><strong>pm6</strong> = Sales Office / Branch</td>
+      <td style="padding:2px 10px;"><strong>pm9</strong> = Last Work Order Date</td>
+    </tr>
+    <tr>
+      <td style="padding:2px 10px 2px 0;"><strong>pm4</strong> = Vehicle Plate Number</td>
+      <td style="padding:2px 10px;"><strong>pm7</strong> = Assignee Position</td>
+      <td style="padding:2px 10px;"></td>
+    </tr>
+  </tbody>
+</table>
