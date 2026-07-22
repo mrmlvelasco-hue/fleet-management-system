@@ -66,24 +66,39 @@ def test_new_vehicle_recommends_first_package(db, vehicle, profile):
 
     rec = PMPackageRecommendationService().recommend(vehicle)
     assert rec["recommended_package"].sequence_position == 1
-    assert rec["due_odometer"] == 1900  # 900 baseline + 1000 interval
+    assert rec["due_odometer"] == 1000  # first-service MILESTONE at 1,000 km
     assert rec["status"] in ("UPCOMING", "DUE")
     assert rec["due_by"] == "BOTH"
 
 
-def test_high_odometer_no_history_does_not_dump_backlog(db, vehicle, profile):
-    """The explicit requirement: a 60,000km vehicle with no logged PM
-    history must be measured forward (next package only), NOT flagged
-    with every interval from 1,000km up as overdue."""
+def test_high_odometer_no_history_uses_recurring_package_next_milestone(
+        db, vehicle, profile):
+    """The user's actual scenario: an existing 60,000 km fleet vehicle
+    entered with no logged PM history must be recommended the RECURRING
+    package's NEXT MILESTONE (65,000 km on a 5,000 km interval) -- not
+    its long-past 'first 1,000 km' service, and not a backlog."""
     vehicle.current_odometer = 60000
     from app.extensions import db as _db
     _db.session.commit()
 
     rec = PMPackageRecommendationService().recommend(vehicle)
-    # Next due is measured FORWARD from 60,000, not a backlog.
-    assert rec["due_odometer"] == 61000  # 60000 + 1000 (first package)
+    assert rec["recommended_package"].interval_km == 5000  # recurring, not first
+    assert rec["due_odometer"] == 65000  # next 5,000 milestone above 60,000
     assert rec["status"] == "UPCOMING"
-    assert "61,000" in rec["reason"]
+
+
+def test_64999_km_is_due_at_the_65000_milestone(db, vehicle, profile):
+    """The exact example the user gave: at 64,999 km on a 5,000 km
+    interval, the next PM is the 65,000 km milestone, and it's DUE
+    (within the notify window) -- so a fleet person can create the PM in
+    advance."""
+    vehicle.current_odometer = 64999
+    from app.extensions import db as _db
+    _db.session.commit()
+
+    rec = PMPackageRecommendationService().recommend(vehicle)
+    assert rec["due_odometer"] == 65000
+    assert rec["status"] == "DUE"
 
 
 def test_after_completing_first_package_recommends_second(
@@ -100,12 +115,12 @@ def test_after_completing_first_package_recommends_second(
     from app.extensions import db as _db
     _db.session.commit()
 
-    vehicle.current_odometer = 5900
+    vehicle.current_odometer = 4200
     _db.session.commit()
 
     rec = PMPackageRecommendationService().recommend(vehicle)
     assert rec["recommended_package"].sequence_position == 2
-    assert rec["due_odometer"] == 6000  # 1000 last service + 5000 interval
+    assert rec["due_odometer"] == 5000  # next 5,000 milestone
 
 
 def test_km_overdue_flagged(db, vehicle, profile):
@@ -116,11 +131,11 @@ def test_km_overdue_flagged(db, vehicle, profile):
                     scheduled_date=date.today(), user=None)
     mo.status = "COMPLETED"
     mo.completed_date = date.today()
-    mo.odometer_at_service = 1000
+    mo.odometer_at_service = 5000
     from app.extensions import db as _db
     _db.session.commit()
 
-    vehicle.current_odometer = 6100  # past the 6000 due
+    vehicle.current_odometer = 10100  # past the 10,000 milestone
     _db.session.commit()
 
     rec = PMPackageRecommendationService().recommend(vehicle)
@@ -142,7 +157,7 @@ def test_date_overdue_flagged_even_when_km_not_due(db, vehicle, profile):
     from app.extensions import db as _db
     _db.session.commit()
 
-    vehicle.current_odometer = 3000  # well under the 6000 KM due
+    vehicle.current_odometer = 3000  # under the 5,000 km milestone
     _db.session.commit()
 
     rec = PMPackageRecommendationService().recommend(vehicle)

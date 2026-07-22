@@ -83,13 +83,25 @@ class PMPackageRecommendationService:
         pkg = next((p for p in packages if p.id == order.pm_schedule_id), None)
         return pkg, order
 
-    def _next_package(self, packages: list, last_pkg) -> "PMSchedule":
-        """The package after last_pkg in sequence order. If last_pkg is
-        the final one (or None), settle onto the last package in the
-        cycle -- the recurring steady-state package -- for `None`, the
-        first package (the cycle's entry point)."""
+    def _next_package(self, packages: list, last_pkg, current_km=0) -> "PMSchedule":
+        """The package after last_pkg in sequence order. Special-cases
+        the no-history vehicle: package[0] is typically the one-time
+        "first N km" service (e.g. first 1,000 km), which only makes
+        sense for a genuinely new vehicle. A no-history vehicle that's
+        ALREADY well past that first-service interval (e.g. an existing
+        60,000 km fleet vehicle being entered into the system for the
+        first time) should settle straight onto the RECURRING steady-
+        state package, not be told its "first 1,000 km" service is next.
+        """
         if last_pkg is None:
-            return packages[0]
+            first = packages[0]
+            # If the vehicle is still within its first-service interval,
+            # the first-service package is correct. Otherwise jump to the
+            # recurring package (the last row of the pre-expanded cycle).
+            if (first.interval_km and current_km
+                    and current_km > first.interval_km):
+                return packages[-1]
+            return first
         idx = next((i for i, p in enumerate(packages) if p.id == last_pkg.id),
                   None)
         if idx is None or idx + 1 >= len(packages):
@@ -122,7 +134,8 @@ class PMPackageRecommendationService:
 
         last_pkg, last_order = self._last_completed_package(
             vehicle.id, packages)
-        next_pkg = self._next_package(packages, last_pkg)
+        next_pkg = self._next_package(
+            packages, last_pkg, current_km=vehicle.current_odometer or 0)
 
         # Baseline: last completed service's odometer/date, or the
         # vehicle's captured legacy baseline, or (last resort) its
@@ -150,7 +163,27 @@ class PMPackageRecommendationService:
         notify_km, notify_days = self._notify_windows(next_pkg)
 
         if next_pkg.trigger_mode in ("KM", "HYBRID") and next_pkg.interval_km:
-            due_odometer = base_km + next_pkg.interval_km
+            interval = next_pkg.interval_km
+            # PM packages are fixed odometer MILESTONES (every 5,000 km:
+            # at 5,000 / 10,000 / ... / 60,000 / 65,000), NOT "last
+            # service odometer + interval".
+            #
+            # The due milestone is the next multiple of the interval
+            # STRICTLY ABOVE the anchor (the last serviced odometer when
+            # history is known, else the current odometer so a fresh
+            # high-odometer vehicle is measured forward rather than
+            # backlogged).
+            if last_order is not None or vehicle.last_pm_odometer is not None:
+                anchor = base_km
+            else:
+                anchor = current_km
+            due_odometer = ((anchor // interval) + 1) * interval
+            # If the vehicle has ALREADY driven past that next milestone,
+            # it's overdue AT that milestone -- we do NOT skip ahead to a
+            # future milestone (that would hide a missed service). This
+            # is the user's rule: a vehicle past its due KM is flagged
+            # overdue, and the recommended package is the one it should
+            # already have had.
             if current_km >= due_odometer:
                 km_overdue = True
             elif current_km >= due_odometer - notify_km:
