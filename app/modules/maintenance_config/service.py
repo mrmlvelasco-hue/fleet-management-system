@@ -87,6 +87,7 @@ class PMScheduleService:
                next_pms_generation="AUTO_SCHEDULE",
                next_due_calculation_method="ACTUAL_COMPLETION",
                interval_km=None, interval_days=None, interval_hours=None,
+               cumulative_km=None,
                priority="MEDIUM", notify_before_km=None,
                notify_before_days=None, escalate_if_overdue=True,
                work_description_template=None):
@@ -108,6 +109,7 @@ class PMScheduleService:
             maintenance_type_id=maintenance_type_id,
             trigger_mode=trigger_mode, interval_km=interval_km,
             interval_days=interval_days, interval_hours=interval_hours,
+            cumulative_km=cumulative_km,
             priority=priority,
             notify_before_km=notify_before_km,
             notify_before_days=notify_before_days,

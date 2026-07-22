@@ -93,6 +93,9 @@
         {% if pm_recommendation.due_odometer %}<div>Due odometer: {{ "{:,}".format(pm_recommendation.due_odometer) }} km</div>{% endif %}
         {% if pm_recommendation.due_date %}<div>Due date: {{ pm_recommendation.due_date }}</div>{% endif %}
         <div class="text-muted">{{ pm_recommendation.reason }}</div>
+        {% if pm_recommendation.beyond_defined_cycle %}
+        <div class="mt-1 fw-semibold">⚠ This vehicle is beyond the last defined PM package — please confirm the correct package to apply.</div>
+        {% endif %}
       </div>
     </div>
     {% endif %}

@@ -111,6 +111,27 @@ CATEGORY_TO_MTYPE = {
 }
 
 
+def _cumulative_km_from_work_description(work_desc: str):
+    """Extracts the absolute cumulative odometer milestone from a work-
+    description like "65,000 km servicing of ..." or "First 1,000 km
+    servicing ..." -> 65000 / 1000. This is the number that actually
+    identifies WHICH package a vehicle at a given odometer needs (the
+    per-package interval_km is a constant 5,000 recurring STEP and can't
+    distinguish the 65,000-km package from the 105,000-km one). Returns
+    None if no "<number> km" milestone is present (e.g. a purely
+    calendar-based package), so the recommendation logic can fall back
+    to interval math."""
+    if not work_desc:
+        return None
+    m = re.search(r"([\d,]+)\s*km\b", str(work_desc), re.IGNORECASE)
+    if not m:
+        return None
+    try:
+        return int(m.group(1).replace(",", ""))
+    except ValueError:
+        return None
+
+
 def _split_scope_into_items(scope_text: str) -> list:
     """Splits VEMS's numbered checklist text ('1. Foo  2. Bar') into
     individual activity strings."""
@@ -277,6 +298,7 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
                     sequence_position=seq_pos,
                     interval_km=interval_km, interval_days=interval_days,
                     interval_hours=interval_hours,
+                    cumulative_km=_cumulative_km_from_work_description(work_desc),
                     work_description_template=(str(work_desc) if work_desc else None),
                     priority="MEDIUM")
                 if activity_texts:
@@ -301,6 +323,28 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
     stats["unrecognized_frequency_codes"] = sorted(
         stats["unrecognized_frequency_codes"])
     return stats
+
+
+def backfill_cumulative_km() -> dict:
+    """Populate cumulative_km on existing PMSchedule rows from their
+    already-stored work_description_template, for installs that imported
+    BEFORE the cumulative_km field existed -- so they don't have to wipe
+    and re-import to get correct package selection. Only touches rows
+    where cumulative_km is currently NULL and a milestone can be parsed;
+    idempotent and safe to re-run."""
+    from app.modules.maintenance_config.models import PMSchedule
+    updated = 0
+    scanned = 0
+    for sched in PMSchedule.query.filter(
+            PMSchedule.cumulative_km.is_(None),
+            PMSchedule.work_description_template.isnot(None)).all():
+        scanned += 1
+        km = _cumulative_km_from_work_description(sched.work_description_template)
+        if km is not None:
+            sched.cumulative_km = km
+            updated += 1
+    db.session.commit()
+    return {"scanned": scanned, "updated": updated}
 
 
 def reset_pm_data() -> dict:
@@ -378,8 +422,16 @@ if __name__ == "__main__":
     path = sys.argv[1] if len(sys.argv) > 1 else "PM_Task_List.xlsx"
     dry = "--dry-run" in sys.argv
     do_reset = "--reset" in sys.argv
+    do_backfill = "--backfill-cumulative-km" in sys.argv
     app = create_app()
     with app.app_context():
+        if do_backfill:
+            # Standalone: fix existing data in place, no re-import needed.
+            result = backfill_cumulative_km()
+            print(f"Backfilled cumulative_km: scanned {result['scanned']} "
+                 f"schedules with a work description, updated "
+                 f"{result['updated']} of them.")
+            sys.exit(0)
         if do_reset:
             if dry:
                 print("--reset ignored during --dry-run (nothing is ever "

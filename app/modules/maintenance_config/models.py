@@ -54,6 +54,19 @@ class PMSchedule(db.Model, BaseModel):
     # calculation (using Vehicle.current_engine_hours) is a separate,
     # deliberately deferred follow-up.
     interval_hours = db.Column(db.Integer, nullable=True)
+    # The absolute cumulative odometer MILESTONE this package is
+    # performed at (e.g. 5,000 / 10,000 / ... / 65,000 / 105,000 km),
+    # as distinct from interval_km which is the recurring STEP between
+    # packages (a constant 5,000 for every recurring package). This is
+    # what actually identifies WHICH package a vehicle at a given
+    # odometer needs -- a vehicle at 65,000 km needs the 65,000-km
+    # milestone package, not "the last package in the list". Populated at
+    # import time from the source work-description text ("65,000 km
+    # servicing of ..."); nullable because not every schedule is
+    # milestone-based (calendar-only or standalone schedules leave it
+    # blank, and the recommendation service falls back to interval math
+    # when it's absent).
+    cumulative_km = db.Column(db.Integer, nullable=True, index=True)
     priority = db.Column(db.String(10), default="MEDIUM", nullable=False)
     # The parameterized work-order description template for this package
     # (e.g. "First 1,000 km servicing of pm2 pm3 with Plate no. pm4..."),
