@@ -702,24 +702,43 @@ def maintenanceorder_print_vam(oid):
 
     company = CompanyProfileService().get()
 
-    approval_steps = []
+    # Endorsed By = the person who INITIATED the memo (the MO's requester)
+    # with the CREATED date. Approved By = the actual final approver from
+    # the approval trail with the APPROVAL date. These are two different
+    # people playing two different roles on the form -- the earlier
+    # version wrongly pulled BOTH rows from the approval trail, which
+    # left "Approved by" blank whenever there was only one approval level
+    # and put the approver (not the initiator) on the "Endorsed by" line.
+    endorsed_by = None
+    if item.requester:
+        role_name = (item.requester.roles[0].name
+                    if item.requester.roles else "")
+        endorsed_by = {
+            "name": item.requester.full_name, "title": role_name,
+            "date": item.created_at.date() if item.created_at else None,
+        }
+
+    approved_by = None
     if item.approval_instance:
         from app.core.approval.models import ApprovalTask
-        tasks = (ApprovalTask.query
-                .filter_by(approval_instance_id=item.approval_instance.id,
-                          status="COMPLETED")
-                .order_by(ApprovalTask.level_number.asc()).all())
-        for t in tasks:
-            approver = db.session.get(User, t.completed_by) if t.completed_by else None
-            role_name = None
-            if approver and approver.roles:
-                role_name = approver.roles[0].name
-            approval_steps.append({
-                "level": t.level_number,
-                "name": approver.full_name if approver else "—",
-                "title": role_name or "",
-                "date": t.completed_at.date() if t.completed_at else None,
-            })
+        # The FINAL approval level that actually completed the memo --
+        # the highest-level COMPLETED task. (ApprovalTask has no `action`
+        # column; a COMPLETED task represents a passed approval level,
+        # since a rejection cancels the whole instance rather than
+        # completing a task.)
+        final_task = (ApprovalTask.query
+                     .filter_by(approval_instance_id=item.approval_instance.id,
+                               status="COMPLETED")
+                     .order_by(ApprovalTask.level_number.desc()).first())
+        if final_task and final_task.completed_by:
+            approver = db.session.get(User, final_task.completed_by)
+            if approver:
+                role_name = approver.roles[0].name if approver.roles else ""
+                approved_by = {
+                    "name": approver.full_name, "title": role_name,
+                    "date": (final_task.completed_at.date()
+                            if final_task.completed_at else None),
+                }
 
     latest_reg = None
     try:
@@ -735,7 +754,7 @@ def maintenanceorder_print_vam(oid):
 
     return render_template("transactions/maintenanceorder_print_vam.html",
                            item=item, company=company,
-                           approval_steps=approval_steps,
+                           endorsed_by=endorsed_by, approved_by=approved_by,
                            latest_reg=latest_reg,
                            generated_at=datetime.now())
 

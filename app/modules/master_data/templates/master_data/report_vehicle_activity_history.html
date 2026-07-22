@@ -61,7 +61,7 @@
         <td class="label">Engine No.</td><td>{{ s.vehicle.engine_number or '—' }}</td></tr>
     <tr><td class="label">Chassis No.</td><td>{{ s.vehicle.chassis_number or '—' }}</td>
         <td class="label">Acquisition Cost</td>
-        <td>{{ '%.2f'|format(s.vehicle.acquisition_cost) if s.vehicle.acquisition_cost else '—' }}</td></tr>
+        <td>{{ s.vehicle.acquisition_cost|peso if s.vehicle.acquisition_cost else '—' }}</td></tr>
     <tr><td class="label">Current Status</td><td colspan="3">{{ s.vehicle.status }}</td></tr>
   </table>
 

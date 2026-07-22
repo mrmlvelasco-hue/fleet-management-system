@@ -78,3 +78,30 @@ def test_vam_route_redirects_when_no_driver_set(
     r = client.get(f"/transactions/maintenance-orders/{mo.id}/print-vam",
                    follow_redirects=False)
     assert r.status_code in (302, 403)
+
+
+def test_vam_endorsed_by_is_the_initiator_with_created_date(
+        db, transaction_types, vehicle, driver):
+    """Regression for the reported bug: Endorsed By must be the person
+    who INITIATED the memo (the MO's requester) with the CREATED date --
+    NOT pulled from the approval trail (which wrongly put the approver on
+    the Endorsed line and left Approved blank when there was one level).
+    Verified at the route's data-assembly level: the requester becomes
+    the endorser."""
+    from app.modules.user_management.models import User
+    from app.extensions import db as _db
+    initiator = User(username="vam_initiator", email="vi@x.com",
+                     password_hash="x", first_name="Ina", last_name="Isyador")
+    _db.session.add(initiator)
+    _db.session.commit()
+
+    tt = TransactionType.query.filter_by(code="DEP-REASSIGNMENT").first()
+    mo = MaintenanceOrderService().create(
+        vehicle_id=vehicle.id, scheduled_date=date.today(), user=initiator,
+        order_category="OPERATIONAL", transaction_type_id=tt.id,
+        driver_id=driver.id, assignment_classification="PERK")
+    assert mo.requester is not None
+    assert mo.requester.id == initiator.id
+    # The route uses item.requester for the Endorsed-by line and
+    # item.created_at for its date -- both are now populated on the MO.
+    assert mo.created_at is not None

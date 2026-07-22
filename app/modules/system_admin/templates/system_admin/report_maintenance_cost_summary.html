@@ -63,7 +63,7 @@
         <td>{{ o.category or o.order_category }}</td>
         <td>{{ o.maintenance_type.name if o.maintenance_type else '—' }}</td>
         <td>{{ o.completed_date or '—' }}</td>
-        <td class="text-end">{{ '%.2f'|format(o.actual_cost or 0) }}</td>
+        <td class="text-end">{{ (o.actual_cost or 0)|peso(symbol=False) }}</td>
       </tr>
       {% else %}
       <tr><td colspan="7" class="text-center text-muted py-4">No completed orders match this filter.</td></tr>
@@ -72,7 +72,7 @@
     <tfoot>
       <tr class="fw-bold">
         <td colspan="6" class="text-end">TOTAL</td>
-        <td class="text-end">{{ '%.2f'|format(total) }}</td>
+        <td class="text-end">{{ total|peso(symbol=False) }}</td>
       </tr>
     </tfoot>
   </table>
@@ -103,9 +103,9 @@
         <td>{{ b.classification.replace('_', ' ').title() }}</td>
         <td>Y{{ b.current_year }}</td>
         <td class="small">{{ b.period_start }} – {{ b.period_end }}</td>
-        <td class="text-end">{{ '%.2f'|format(b.budget) }}</td>
-        <td class="text-end">{{ '%.2f'|format(b.spent) }}</td>
-        <td class="text-end">{{ '%.2f'|format(b.remaining) }}</td>
+        <td class="text-end">{{ b.budget|peso(symbol=False) }}</td>
+        <td class="text-end">{{ b.spent|peso(symbol=False) }}</td>
+        <td class="text-end">{{ b.remaining|peso(symbol=False) }}</td>
         <td>
           {% if b.over_budget %}
           <span class="badge text-bg-danger">Over Budget</span>

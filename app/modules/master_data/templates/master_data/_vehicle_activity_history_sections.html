@@ -19,7 +19,7 @@
       <td>{{ r.outlet }}</td>
       <td>{{ r.assigned_to or '—' }}</td>
       <td>{{ r.description }}</td>
-      <td>{{ '%.2f'|format(r.cost) if r.cost is not none else '—' }}</td>
+      <td>{{ r.cost|peso if r.cost is not none else '—' }}</td>
       <td>{{ r.odometer if r.odometer is not none else '—' }}</td>
     </tr>
     {% endfor %}
@@ -37,7 +37,7 @@
       <td class="label">Tire Replacements</td><td>{{ utilization.tire_replacements }}</td></tr>
   <tr><td class="label">Battery Replacements</td><td>{{ utilization.battery_replacements }}</td>
       <td class="label">Total Maintenance Cost</td>
-      <td>{{ '%.2f'|format(utilization.total_maintenance_cost) }}</td></tr>
+      <td>{{ utilization.total_maintenance_cost|peso }}</td></tr>
   <tr><td class="label">No. of Assigned Outlets</td><td>{{ utilization.assigned_outlets_count }}</td>
       <td class="label">Vehicle Age</td>
       <td>{{ utilization.vehicle_age_years ~ ' Years' if utilization.vehicle_age_years is not none else '—' }}</td></tr>

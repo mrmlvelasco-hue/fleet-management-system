@@ -124,27 +124,27 @@
     <tr>
       <td style="width:50%;">
         <strong>Endorsed by:</strong><br>
-        {% if approval_steps|length > 0 %}
-        {{ approval_steps[0].name }}<br>
-        <span class="role-label">{{ approval_steps[0].title }}</span>
+        {% if endorsed_by %}
+        {{ endorsed_by.name }}<br>
+        <span class="role-label">{{ endorsed_by.title }}</span>
         {% else %}<span class="text-muted">—</span>{% endif %}
       </td>
       <td style="width:50%;">
         Date<br>
-        {{ approval_steps[0].date if approval_steps|length > 0 else '—' }}
+        {{ endorsed_by.date if endorsed_by else '—' }}
       </td>
     </tr>
     <tr>
       <td>
         <strong>Approved by:</strong><br>
-        {% if approval_steps|length > 1 %}
-        {{ approval_steps[-1].name }}<br>
-        <span class="role-label">{{ approval_steps[-1].title }}</span>
+        {% if approved_by %}
+        {{ approved_by.name }}<br>
+        <span class="role-label">{{ approved_by.title }}</span>
         {% else %}<span class="text-muted">—</span>{% endif %}
       </td>
       <td>
         Date<br>
-        {{ approval_steps[-1].date if approval_steps|length > 1 else '—' }}
+        {{ approved_by.date if approved_by else '—' }}
       </td>
     </tr>
   </table>
