@@ -79,7 +79,27 @@ class MaintenanceInvoiceService(BaseTransactionService):
             requested_by=user.id if user else None)
         db.session.add(inv)
         db.session.commit()
+        # An invoice against a Maintenance Order is ENCODING of an actual
+        # expense already incurred, not a request for permission -- so
+        # unless an approval is deliberately configured for the INV
+        # document type, it should be RECORDED on entry rather than
+        # sitting at DRAFT waiting for a submit/approve step that the
+        # business never intended. (Leaving it at DRAFT made every
+        # encoded invoice look perpetually unfinished on the MO screen.)
+        if not self._invoice_approval_required():
+            inv.status = "RECORDED"
+            db.session.commit()
         return inv
+
+    def _invoice_approval_required(self) -> bool:
+        """True only when the INV document type is explicitly configured
+        to require approval. Defaults to False (encoding-only) if the
+        document type isn't configured at all, so a missing config never
+        silently strands invoices in DRAFT."""
+        from app.modules.document_config.models import DocumentType
+        dt = DocumentType.query.filter_by(
+            code=self.document_type_code).first()
+        return bool(dt and dt.requires_approval)
 
     def get_by_id(self, invoice_id):
         return db.session.get(MaintenanceInvoice, invoice_id)

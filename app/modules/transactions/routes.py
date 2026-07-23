@@ -825,6 +825,23 @@ def maintenanceorder_submit(oid):
     return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
 
 
+@bp.route("/maintenance-orders/<int:oid>/resubmit", methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_resubmit(oid):
+    """Resubmit a RETURNED order back into the approval flow. Without
+    this the lifecycle dead-ended: once an approver RETURNED an order,
+    the detail page only offered Cancel, so the requester could never
+    act on the feedback and send it back -- they had to abandon the
+    order and re-key a new one."""
+    try:
+        MaintenanceOrderService().resubmit(oid, user=current_user)
+        flash("Maintenance Order resubmitted for approval.", "success")
+    except Exception as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
 @bp.route("/maintenance-orders/<int:oid>/approve", methods=["POST"])
 @login_required
 @require_permission("maintenanceorder.view")

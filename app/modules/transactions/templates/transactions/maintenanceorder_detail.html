@@ -55,17 +55,41 @@
         <span class="badge text-bg-{{ 'success' if item.status=='COMPLETED' else 'primary' if item.status=='IN_PROGRESS' else 'danger' if item.status=='CANCELLED' else 'secondary' }}">{{ item.status }}</span></p>
 
       <div class="d-flex flex-wrap gap-2 mt-3">
-        {% if not item.approval_instance and current_user.has_permission('maintenanceorder.update') %}
+        {% if not item.approval_instance and item.status == 'DRAFT' and current_user.has_permission('maintenanceorder.update') %}
         <form method="post" action="{{ url_for('transactions.maintenanceorder_submit', oid=item.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-primary btn-sm">Submit</button>
         </form>
         {% endif %}
-        {% if item.status == 'DRAFT' and (not item.approval_instance or item.approval_instance.status == 'APPROVED') and current_user.has_permission('maintenanceorder.update') %}
+        {# A RETURNED order must be able to go BACK into the approval
+           flow after the requester addresses the feedback -- previously
+           only Cancel was offered, dead-ending the lifecycle. #}
+        {% if item.approval_instance and item.approval_instance.status == 'RETURNED'
+              and current_user.has_permission('maintenanceorder.update') %}
+        <form method="post" action="{{ url_for('transactions.maintenanceorder_resubmit', oid=item.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-primary btn-sm">Resubmit for Approval</button>
+        </form>
+        {% endif %}
+        {# Work may only START once the request is actually APPROVED.
+           The previous condition also allowed "no approval instance at
+           all", which let someone skip submission/approval entirely and
+           begin work straight from DRAFT. When a document type isn't
+           configured to require approval, the engine still creates an
+           instance and marks it APPROVED immediately, so this single
+           condition covers both setups correctly. #}
+        {% if item.status == 'DRAFT' and item.approval_instance
+              and item.approval_instance.status == 'APPROVED'
+              and current_user.has_permission('maintenanceorder.update') %}
         <form method="post" action="{{ url_for('transactions.maintenanceorder_start_work', oid=item.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-primary btn-sm">Start Work</button>
         </form>
+        {% elif item.status == 'DRAFT' and item.approval_instance
+                and item.approval_instance.status == 'PENDING' %}
+        <span class="text-muted small align-self-center">
+          <i class="bi bi-hourglass-split me-1"></i>Awaiting approval before work can start.
+        </span>
         {% endif %}
         {% if item.status not in ['COMPLETED', 'CANCELLED'] and item.requester and item.requester.id == current_user.id %}
         <form method="post" action="{{ url_for('transactions.maintenanceorder_cancel', oid=item.id) }}">
@@ -254,7 +278,7 @@
           <td><a href="{{ url_for('transactions.maintenanceinvoice_detail', iid=inv.id) }}">{{ inv.invoice_number }}</a></td>
           <td>{{ inv.vendor.name }}</td>
           <td>{{ inv.invoice_date }}</td>
-          <td><span class="badge text-bg-{{ 'success' if inv.status=='APPROVED' else 'danger' if inv.status=='CANCELLED' else 'warning' if inv.status=='DRAFT' else 'info' }}">{{ inv.status }}</span></td>
+          <td><span class="badge text-bg-{{ 'success' if inv.status in ['APPROVED', 'RECORDED'] else 'danger' if inv.status=='CANCELLED' else 'warning' if inv.status=='DRAFT' else 'info' }}">{{ inv.status }}</span></td>
           <td class="text-end">{{ "{:,.2f}".format(inv.total_invoice_amount) }}</td>
         </tr>
       {% endfor %}

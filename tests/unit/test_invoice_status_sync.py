@@ -44,11 +44,12 @@ def env(db):
 
 
 def test_submit_without_approval_configured_marks_invoice_approved(db, env):
-    """Reproduces the reported bug: when Invoice approval isn't
-    configured (requires_approval=False), the underlying ApprovalInstance
-    auto-approves itself immediately, but the invoice's OWN status field
-    was never being synced -- it stayed stuck at DRAFT forever, with no
-    way to reach a completed state without a separate manual action."""
+    """When Invoice approval isn't configured (requires_approval=False),
+    an invoice is pure ENCODING of an expense already incurred, so it is
+    RECORDED straight away on create rather than sitting at DRAFT
+    awaiting a submit/approve step the business never intended.
+    Submitting one anyway must still land on a completed state (APPROVED)
+    and sync the underlying ApprovalInstance."""
     branch, vehicle, vendor, order = env
     from app.modules.user_management.models import User
     from app.core.security.password import hash_password
@@ -61,7 +62,8 @@ def test_submit_without_approval_configured_marks_invoice_approved(db, env):
         maintenance_order_id=order.id, vendor_id=vendor.id,
         invoice_number="INV-STATUS-0001", invoice_date=date.today(),
         vat_type="NON_VAT", vat_percentage=0, user=requester)
-    assert inv.status == "DRAFT"
+    # Encoding-only: no approval configured -> recorded immediately.
+    assert inv.status == "RECORDED"
 
     MaintenanceInvoiceService().submit(inv.id, user=requester)
 
