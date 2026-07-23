@@ -189,20 +189,39 @@ class RegistrationDueCalculationService:
             "warning": None,
         }
 
-    def get_all_due_vehicles(self, as_of_date=None, statuses=None) -> list:
+    def get_all_due_vehicles(self, as_of_date=None, statuses=None,
+                             exclude_with_open_order=True) -> list:
         """Every active vehicle whose status is in `statuses` — defaults
         to (DUE_SOON, OVERDUE), preserving the exact prior behavior for
         the Dashboard widget and the auto-generation task. Pass e.g.
         statuses=("NO_RECORD",) for the "No Registration Record" filter,
-        or statuses=("OVERDUE",) for "Expired Registration"."""
+        or statuses=("OVERDUE",) for "Expired Registration".
+
+        By default a vehicle that already has an open (not COMPLETED /
+        CANCELLED) Vehicle Registration in flight is left out — the
+        renewal has already been raised, so listing it again as "due"
+        double-counts it and sends the person to raise a duplicate.
+        """
         from app.modules.master_data.vehicle.models import Vehicle
         statuses = statuses or ("DUE_SOON", "OVERDUE")
+
+        open_vehicle_ids = set()
+        if exclude_with_open_order:
+            from app.modules.transactions.vehicle_registration.models import (
+                VehicleRegistration)
+            open_vehicle_ids = {
+                r.vehicle_id for r in VehicleRegistration.query
+                .filter(VehicleRegistration.status.notin_(
+                    ["COMPLETED", "CANCELLED"])).all()}
+
         results = []
         # Same DISPOSED exclusion as Maintenance PMS — a disposed vehicle
         # has no LTO registration to renew.
         query = Vehicle.query.filter_by(is_active=True).filter(
             Vehicle.status != "DISPOSED")
         for vehicle in query.all():
+            if vehicle.id in open_vehicle_ids:
+                continue  # renewal already raised — not actionable again
             result = self.get_due_status(vehicle, as_of_date=as_of_date)
             if result["status"] in statuses:
                 results.append({"vehicle": vehicle, **result})

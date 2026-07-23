@@ -717,6 +717,56 @@ def report_vehicle_activity_history_export():
                               ".spreadsheetml.sheet")
 
 
+@bp.route("/vehicles/import/template")
+@login_required
+@require_permission("vehicle.create")
+def vehicle_import_template():
+    """Download the fill-in Excel template, pre-loaded with this
+    install's own valid Vehicle Type and Branch codes."""
+    from flask import send_file
+    from io import BytesIO
+    from app.modules.master_data.vehicle.import_service import build_template
+    data = build_template()
+    return send_file(
+        BytesIO(data), as_attachment=True,
+        download_name="Vehicle_Import_Template.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument"
+                 ".spreadsheetml.sheet")
+
+
+@bp.route("/vehicles/import", methods=["GET", "POST"])
+@login_required
+@require_permission("vehicle.create")
+def vehicle_import():
+    from app.modules.master_data.vehicle.import_service import import_vehicles
+    result = None
+    was_dry_run = True
+    if request.method == "POST":
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            flash("Please choose a filled-in template file to upload.",
+                  "warning")
+        else:
+            # Default to a preview: nothing is written unless the person
+            # explicitly ticks "import for real", so an accidental
+            # upload of the wrong file can't create hundreds of vehicles.
+            was_dry_run = request.form.get("commit") != "1"
+            try:
+                result = import_vehicles(upload.stream,
+                                         dry_run=was_dry_run)
+                if was_dry_run:
+                    flash(f"Preview only — nothing saved. "
+                         f"{result['created']} row(s) would import, "
+                         f"{result['skipped']} would be skipped.", "info")
+                else:
+                    flash(f"Import complete: {result['created']} vehicle(s) "
+                         f"created, {result['skipped']} skipped.", "success")
+            except Exception as exc:
+                flash(str(exc), "danger")
+    return render_template("master_data/vehicle_import.html",
+                           result=result, was_dry_run=was_dry_run)
+
+
 @bp.route("/vehicles/<int:vid>/print")
 @login_required
 @require_permission("vehicle.view")

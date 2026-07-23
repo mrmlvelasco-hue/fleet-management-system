@@ -591,8 +591,115 @@ def report_run_due():
     click.echo(f"Scheduled report run complete. Sent: {sent}, Failed: {failed}.")
 
 
+reset_cli = AppGroup("reset", help="Clear data for a clean test cycle.")
+
+
+# Ordered CHILD-FIRST so foreign keys never block a delete. Master data
+# (vehicles, drivers, vendors, branches), all System Administration
+# configuration, users/roles/permissions, and the PM catalogue are
+# deliberately NOT in this list — this wipes the transactional history
+# only, so a fresh round of testing starts from the same configured
+# system rather than a bare database.
+_TRANSACTION_TABLES_CHILD_FIRST = [
+    "maintenance_invoice_lines",
+    "maintenance_invoices",
+    "maintenance_checklist_items",
+    "purchase_request_lines",
+    "purchase_requests",
+    "registration_transaction_checklist_items",
+    "tire_transactions",
+    "battery_transactions",
+    "trip_tickets",
+    "authority_to_drives",
+    "vehicle_movements",
+    "vehicle_registrations",
+    "maintenance_orders",
+    # Approval + collaboration records belong to the transactions above.
+    "approval_tasks",
+    "approval_actions",
+    "approval_instances",
+    "document_comments",
+    "in_app_notifications",
+    "attachments",
+    "audit_logs",
+]
+
+
+def _reset_transactions() -> dict:
+    """Delete every transactional record, child tables first.
+
+    Vehicles keep their identity and master data but are detached from
+    the transactions being removed: pm_schedule_id / assigned_driver_id
+    are left alone (they're master-data assignments, not transactions),
+    while any pointer INTO a deleted transaction would otherwise fail a
+    foreign key. Counts are captured before deletion so the command can
+    report exactly what it removed.
+    """
+    from sqlalchemy import text
+    counts = {}
+    for table in _TRANSACTION_TABLES_CHILD_FIRST:
+        try:
+            counts[table] = db.session.execute(
+                text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0
+        except Exception:
+            counts[table] = 0  # table absent in this install
+
+    # Detach any master-data column that points INTO a transaction about
+    # to be deleted, or its foreign key will refuse the delete. Vehicles
+    # keep every other attribute; only the pointer is cleared.
+    from app.modules.master_data.vehicle.models import Vehicle
+    for column in ("current_atd_id", "current_trip_ticket_id"):
+        if hasattr(Vehicle, column):
+            Vehicle.query.filter(
+                getattr(Vehicle, column).isnot(None)).update(
+                {column: None})
+    db.session.commit()
+
+    deleted = {}
+    for table in _TRANSACTION_TABLES_CHILD_FIRST:
+        try:
+            db.session.execute(text(f"DELETE FROM {table}"))
+            deleted[table] = counts.get(table, 0)
+        except Exception as exc:
+            db.session.rollback()
+            raise RuntimeError(
+                f"Could not clear '{table}': {exc}. No further tables were "
+                f"touched; nothing has been partially deleted beyond this "
+                f"point.") from exc
+    db.session.commit()
+    return deleted
+
+
+@reset_cli.command("transactions")
+@click.option("--yes", is_flag=True,
+              help="Skip the confirmation prompt (for scripted use).")
+def reset_transactions(yes):
+    """Delete ALL transactions (orders, registrations, trips, approvals,
+    invoices, notifications, audit log) for a clean test cycle.
+
+    Master data (vehicles, drivers, vendors, branches), the PM catalogue,
+    users/roles, and all System Administration configuration are KEPT.
+    """
+    if not yes:
+        click.confirm(
+            "This permanently deletes ALL transaction records "
+            "(Maintenance Orders, Registrations, Trip Tickets, ATDs, "
+            "Purchase Requests, Invoices, approvals, comments, "
+            "notifications and the audit log).\n"
+            "Master data and configuration are kept.\nContinue?",
+            abort=True)
+    deleted = _reset_transactions()
+    total = sum(deleted.values())
+    for table, n in deleted.items():
+        if n:
+            click.echo(f"  {table}: {n} row(s) deleted")
+    click.echo(f"Done. {total} transaction row(s) deleted. "
+              f"Master data and configuration untouched.")
+
+
 def register_cli(app):
     app.cli.add_command(seed_cli)
+    app.cli.add_command(reset_cli)
     app.cli.add_command(pm_cli)
     app.cli.add_command(registration_cli)
     app.cli.add_command(report_cli)
