@@ -45,14 +45,25 @@ class DashboardService:
         return len(ApprovalTaskService().list_for_user(user))
 
     def registrations_expiring_count(self, user=None, days_ahead: int = 30) -> int:
-        from app.modules.transactions.vehicle_registration.service import (
-            VehicleRegistrationService)
-        expiring = VehicleRegistrationService().get_expiring_registrations(
-            days_ahead=days_ahead)
+        """Count of vehicles needing registration attention.
+
+        Deliberately uses the SAME RegistrationDueCalculationService that
+        builds the "Vehicles Due for Registration Renewal" list directly
+        below it on the dashboard. It previously called a separate
+        get_expiring_registrations(days_ahead=...) lookup, which only
+        looked FORWARD -- so an already-expired registration appeared in
+        the list but not in the count, and the card read 0 while the list
+        underneath it showed 1. One source means the two can no longer
+        disagree.
+        """
+        from app.modules.registration_config.service import (
+            RegistrationDueCalculationService)
+        due = RegistrationDueCalculationService().get_all_due_vehicles()
         if user is None:
-            return len(expiring)
+            return len(due)
         from app.modules.user_management.org_scope_service import (
             UserOrgScopeService)
         scope_svc = UserOrgScopeService()
-        return len([r for r in expiring
-                   if scope_svc.covers(user.id, branch_id=r["vehicle"].branch_id)])
+        return len([r for r in due
+                   if scope_svc.covers(user.id,
+                                      branch_id=r["vehicle"].branch_id)])

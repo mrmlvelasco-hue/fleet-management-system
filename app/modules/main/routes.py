@@ -101,6 +101,7 @@ def dashboard():
                 "document_type": t.document_type.name if t.document_type else "",
                 "plate_number": labels["plate_number"],
                 "type_label": labels["type_label"],
+                "activity": labels.get("activity"),
                 "requester": t.requester.full_name if t.requester else "Unknown",
                 "created_at": t.created_at,
                 "aging": _aging_label(t.created_at),

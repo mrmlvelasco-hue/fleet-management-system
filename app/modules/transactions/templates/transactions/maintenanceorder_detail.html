@@ -36,16 +36,75 @@
     <div class="card-body">
       <dl class="row mb-0">
         <dt class="col-sm-4">Vehicle</dt><dd class="col-sm-8">{{ item.vehicle.plate_number or item.vehicle.conduction_number }} — {{ item.vehicle.brand }} {{ item.vehicle.model }}</dd>
-        <dt class="col-sm-4">Maintenance Type</dt><dd class="col-sm-8">{{ item.maintenance_type.name }}</dd>
-        <dt class="col-sm-4">Category</dt><dd class="col-sm-8"><span class="badge text-bg-{{ 'info' if item.category in ['PM', 'PREVENTIVE'] else 'warning' }}">{{ item.category }}</span></dd>
+        {# Category previously rendered item.category -- the MAINTENANCE
+           type's PM/CORRECTIVE classification -- which is null on an
+           Operational order and so displayed a bare "None". The order's
+           own category is what actually identifies the request. #}
+        <dt class="col-sm-4">Category</dt>
+        <dd class="col-sm-8">
+          <span class="badge text-bg-{{ 'primary' if item.order_category == 'MAINTENANCE' else 'secondary' }}">
+            {{ (item.order_category or 'MAINTENANCE')|title }}</span>
+          {% if item.category %}
+          <span class="badge text-bg-{{ 'info' if item.category in ['PM', 'PREVENTIVE'] else 'warning' }}">{{ item.category }}</span>
+          {% endif %}
+        </dd>
+        {% if item.order_category == 'OPERATIONAL' %}
+        <dt class="col-sm-4">Transaction Type</dt>
+        <dd class="col-sm-8">{{ item.transaction_type.name if item.transaction_type else '—' }}</dd>
+        {% else %}
+        <dt class="col-sm-4">Maintenance Type</dt>
+        <dd class="col-sm-8">{{ item.maintenance_type.name if item.maintenance_type else '—' }}</dd>
+        {% endif %}
         <dt class="col-sm-4">Scheduled</dt><dd class="col-sm-8">{{ item.scheduled_date }}</dd>
         <dt class="col-sm-4">Completed</dt><dd class="col-sm-8">{{ item.completed_date or '—' }}</dd>
-        <dt class="col-sm-4">Odometer</dt><dd class="col-sm-8">{{ item.odometer_at_service or '—' }}</dd>
+        <dt class="col-sm-4">Odometer</dt><dd class="col-sm-8">{{ "{:,}".format(item.odometer_at_service) if item.odometer_at_service else '—' }}</dd>
         <dt class="col-sm-4">Mechanic</dt><dd class="col-sm-8">{{ item.assigned_mechanic or '—' }}</dd>
         <dt class="col-sm-4">Vendor</dt><dd class="col-sm-8">{{ item.vendor.name if item.vendor else '—' }}</dd>
-        <dt class="col-sm-4">Est. / Actual Cost</dt><dd class="col-sm-8">{{ item.estimated_cost or '—' }} / {{ item.actual_cost or '—' }}</dd>
+        <dt class="col-sm-4">Est. / Actual Cost</dt><dd class="col-sm-8">{{ item.estimated_cost|peso }} / {{ item.actual_cost|peso }}</dd>
         <dt class="col-sm-4">Description</dt><dd class="col-sm-8">{{ item.description or '—' }}</dd>
       </dl>
+
+      {# What is this request actually ASKING FOR? Without this an
+         approver sees an order number, a vehicle and a blank-ish detail
+         list, with no way to tell an assignment from a transfer from a
+         disposal -- the very thing they're being asked to approve. Each
+         operational type states its own change explicitly. #}
+      {% set _tt = item.transaction_type.code if item.transaction_type else '' %}
+      {% if item.driver_id or item.destination_branch_id or item.disposal_value or _tt %}
+      <div class="alert alert-light border mt-3 mb-0">
+        <div class="fw-semibold mb-2"><i class="bi bi-info-circle me-1"></i>Requested Activity</div>
+        <dl class="row mb-0 small">
+          {% if item.driver_id %}
+          <dt class="col-sm-5">Assign vehicle to</dt>
+          <dd class="col-sm-7">{{ item.driver.full_name if item.driver else '—' }}
+            {% if item.driver and item.driver.employee_number %}<span class="text-muted">({{ item.driver.employee_number }})</span>{% endif %}</dd>
+          <dt class="col-sm-5">Current assignee</dt>
+          <dd class="col-sm-7">{{ item.vehicle.assigned_driver.full_name if item.vehicle.assigned_driver else '— none —' }}</dd>
+          {% if item.assignment_classification %}
+          <dt class="col-sm-5">Classification</dt>
+          <dd class="col-sm-7">{{ item.assignment_classification|replace('_', ' ')|title }}</dd>
+          {% endif %}
+          {% endif %}
+          {% if item.destination_branch_id %}
+          <dt class="col-sm-5">Transfer from</dt>
+          <dd class="col-sm-7">{{ item.origin_branch.name if item.origin_branch else (item.vehicle.branch.name if item.vehicle.branch else '—') }}</dd>
+          <dt class="col-sm-5">Transfer to</dt>
+          <dd class="col-sm-7">{{ item.destination_branch.name if item.destination_branch else '—' }}</dd>
+          {% endif %}
+          {% if item.disposal_value or item.disposal_recipient %}
+          <dt class="col-sm-5">Disposal value</dt><dd class="col-sm-7">{{ item.disposal_value|peso }}</dd>
+          <dt class="col-sm-5">Recipient</dt><dd class="col-sm-7">{{ item.disposal_recipient or '—' }}</dd>
+          {% endif %}
+          {% if not item.driver_id and not item.destination_branch_id
+                and not item.disposal_value and _tt %}
+          <dt class="col-sm-5">Request</dt>
+          <dd class="col-sm-7">{{ item.transaction_type.name }}</dd>
+          {% endif %}
+          <dt class="col-sm-5">Reason / Remarks</dt>
+          <dd class="col-sm-7">{{ item.description or '— not stated —' }}</dd>
+        </dl>
+      </div>
+      {% endif %}
     </div></div>
   </div>
   <div class="col-md-6">
@@ -138,7 +197,7 @@
       <span>
         <i class="bi {{ 'bi-check-circle-fill text-success' if ci.is_done else 'bi-circle text-muted' }} me-2"
            data-checklist-icon></i>
-        <code class="me-2">{{ ci.activity_code }}</code>{{ ci.activity_description }}
+        <code class="me-2">{{ ci.activity_code }}</code>{{ ci.activity_description|pm_tokens(item.vehicle) }}
       </span>
       {% if item.status == 'IN_PROGRESS' and current_user.has_permission('maintenanceorder.update') %}
       <button type="button"
