@@ -228,3 +228,47 @@ class EmailOutbox(db.Model, BaseModel):
     attempts = db.Column(db.Integer, default=0, nullable=False)
     last_error = db.Column(db.Text, nullable=True)
     sent_at = db.Column(db.DateTime, nullable=True)
+
+
+class CustomReport(db.Model, BaseModel):
+    """A user-built report definition from the Report Builder.
+
+    Stores only the CHOICES a person made (which data source, which
+    column keys, which filters), never SQL. The query is rebuilt from
+    those keys by report_builder.run_report() every time it runs, and
+    every key is validated against the curated whitelist at run time --
+    so a saved definition can't outlive a column being removed, and a
+    row edited directly in the database still can't smuggle in SQL or
+    reach a table the builder doesn't expose.
+    """
+    __tablename__ = "custom_reports"
+
+    name = db.Column(db.String(150), nullable=False)
+    description = db.Column(db.String(500), nullable=True)
+    # Key into report_builder.DATA_SOURCES
+    data_source = db.Column(db.String(60), nullable=False)
+    # JSON: ["plate_number", "brand", ...]
+    fields_json = db.Column(db.Text, nullable=False, default="[]")
+    # JSON: [{"field": "...", "op": "eq", "value": "..."}, ...]
+    filters_json = db.Column(db.Text, nullable=True)
+    sort_key = db.Column(db.String(60), nullable=True)
+    sort_dir = db.Column(db.String(4), default="asc", nullable=False)
+    row_limit = db.Column(db.Integer, default=1000, nullable=False)
+    # Optional default recipients for on-demand "email me this" sends.
+    default_recipients = db.Column(db.Text, nullable=True)
+
+    @property
+    def fields(self) -> list:
+        import json
+        try:
+            return json.loads(self.fields_json or "[]")
+        except ValueError:
+            return []
+
+    @property
+    def filters(self) -> list:
+        import json
+        try:
+            return json.loads(self.filters_json or "[]")
+        except ValueError:
+            return []

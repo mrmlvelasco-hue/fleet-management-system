@@ -52,13 +52,17 @@ class EmailOutboxService:
             stats["attempted"] += 1
             row.attempts = (row.attempts or 0) + 1
             try:
-                # Re-render from live data at send time -- the underlying
-                # document may have moved on since queueing, and the
-                # existing impl already knows how to build the full
-                # templated body for each event type.
-                _send_notification_email_impl(
-                    row.to_user_id, row.event_code, row.reference_table,
-                    row.reference_id, row.comment_id)
+                if row.event_code == "CUSTOM_REPORT":
+                    self._send_custom_report(row)
+                else:
+                    # Re-render from live data at send time -- the
+                    # underlying document may have moved on since
+                    # queueing, and the existing impl already knows how
+                    # to build the full templated body for each event
+                    # type.
+                    _send_notification_email_impl(
+                        row.to_user_id, row.event_code, row.reference_table,
+                        row.reference_id, row.comment_id)
                 row.status = "SENT"
                 row.sent_at = datetime.now(timezone.utc)
                 row.last_error = None
@@ -82,6 +86,42 @@ class EmailOutboxService:
             db.session.commit()
 
         return stats
+
+    def _send_custom_report(self, row) -> None:
+        """Generate a saved custom report and email it as an Excel
+        attachment.
+
+        Regenerated HERE, at send time, rather than being stored on the
+        queue row: keeps potentially large spreadsheets out of the
+        database, and means a scheduled delivery carries current data
+        instead of a snapshot from when the schedule was created.
+
+        Runs with user=None so the report is generated with full data
+        access -- the permission check already happened when a person
+        with the right permission requested or scheduled the delivery,
+        and the drain itself runs unattended with no session.
+        """
+        from app.extensions import db as _db
+        from app.modules.system_admin.models import CustomReport
+        from app.modules.system_admin.services.custom_report_service import (
+            CustomReportService)
+        from app.modules.system_admin.services.email_config_service import (
+            EmailSenderService)
+
+        report = _db.session.get(CustomReport, row.reference_id)
+        if report is None:
+            raise ValueError(
+                f"Custom report {row.reference_id} no longer exists.")
+        filename, data = CustomReportService().to_excel(report, user=None)
+        EmailSenderService().send(
+            to_email=row.to_email,
+            subject=row.subject,
+            body_html=row.body_html or f"<p>{report.name}</p>",
+            attach_files=[{
+                "data": data, "filename": filename,
+                "mime_type": "application/vnd.openxmlformats-officedocument"
+                             ".spreadsheetml.sheet",
+            }])
 
     def summary(self) -> dict:
         """Counts per status, for the admin screen and for a quick

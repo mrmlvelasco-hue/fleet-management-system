@@ -33,6 +33,7 @@
         or current_user.has_permission('audittrail.view')
         or current_user.has_permission('dashboardconfig.view')
         or current_user.has_permission('backupconfig.view')
+        or current_user.has_permission('customreport.view')
         or current_user.has_permission('reportconfig.view') %}
   <div class="sidebar-group">
     <button class="btn sidebar-group-toggle w-100 d-flex justify-content-between align-items-center text-uppercase small sidebar-section"
@@ -263,6 +264,10 @@
         {% if current_user.has_permission('reportvehicleregister.view') %}
         <li><a href="{{ url_for('master_data.vehicle_register_report') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'master_data.vehicle_register_report' }}">
           <i class="fms-nav-link__icon bi bi-truck"></i><span class="sidebar-label">Vehicle Register Details</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('customreport.view') %}
+        <li><a href="{{ url_for('system_admin.customreport_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.customreport') }}">
+          <i class="fms-nav-link__icon bi bi-sliders"></i><span class="sidebar-label">Custom Reports</span></a></li>
         {% endif %}
         {% if current_user.has_permission('reportvehicleactivity.view') %}
         <li><a href="{{ url_for('master_data.report_vehicle_activity_history') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'master_data.report_vehicle_activity_history' }}">
