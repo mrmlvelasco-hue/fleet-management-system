@@ -67,6 +67,24 @@ for _code, _desc, _order in [
 ]:
     lookup_registry.register("FUEL_TYPE", _code, _desc, _order)
 
+# Assignment Classification for the Vehicle Assignment Memo. Inherited
+# from the legacy system, so the four values below seed the starting set
+# -- but they live in Lookup Maintenance from here on, so entitlement
+# categories can be renamed or extended when policy changes without
+# needing a code release.
+for _code, _desc, _order in [
+    ("PERK", "Perk (Officer, Director, GM, GSM, Senior Manager)", 1),
+    ("TOOL_OF_THE_TRADE",
+     "Tool of the Trade (SM, BDM, FMM, SOOM, KAM, TSM, ADM, BDO, TSO, "
+     "Channel Manager, Fleet Manager)", 2),
+    ("OPERATIONS_SERVICE_UNIT",
+     "Operations Service Unit (Pre-seller, Salesman, Marketing Services / "
+     "Postmix Technician, Department Service Unit)", 3),
+    ("EDS_UNIT",
+     "EDS Unit (EDS-SR, MR-EDS, TPD, Business Partner, Operator)", 4),
+]:
+    lookup_registry.register("ASSIGNMENT_CLASSIFICATION", _code, _desc, _order)
+
 for _code, _desc, _order in [
     ("SEDAN", "Sedan", 1), ("SUV", "SUV", 2), ("VAN", "Van", 3),
     ("PICKUP", "Pickup", 4), ("TRUCK", "Truck", 5), ("MOTORCYCLE", "Motorcycle", 6),

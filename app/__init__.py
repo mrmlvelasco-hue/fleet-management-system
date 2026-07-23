@@ -76,6 +76,15 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(registration_config_bp)
     app.register_blueprint(api_search_bp)
     app.register_blueprint(comments_bp)
+    from app.modules.api.routes import bp as api_v1_bp
+    app.register_blueprint(api_v1_bp)
+    # CSRF protects COOKIE-authenticated form posts: the browser attaches
+    # the session automatically, so a third-party page could otherwise
+    # trigger an authenticated request. The API authenticates from an
+    # explicit Authorization header that no cross-site page can cause a
+    # client to send, so CSRF adds nothing here and would simply block
+    # every non-browser client (GPS units, the mobile app).
+    csrf.exempt(api_v1_bp)
 
     from app.modules.system_admin.services.notification_engine import (
         register_notification_hooks)

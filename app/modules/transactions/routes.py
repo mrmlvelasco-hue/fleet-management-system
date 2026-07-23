@@ -601,6 +601,9 @@ def maintenanceorder_new():
     scope_templates = []
     due_scope_template_id = None
     pm_recommendation = None
+    from app.modules.system_admin.services.lookup_service import LookupService
+    assignment_classifications = LookupService().get_by_type_with_fallback(
+        "ASSIGNMENT_CLASSIFICATION")
     if prefill_vehicle:
         scope_templates = PMScopeTemplateService().list_applicable_for_vehicle(
             prefill_vehicle, maintenance_type_id=prefill["maintenance_type_id"])
@@ -648,6 +651,7 @@ def maintenanceorder_new():
                            prefill_vehicle=prefill_vehicle, prefill=prefill,
                            due_scope_template_id=due_scope_template_id,
                            pm_recommendation=pm_recommendation,
+                           assignment_classifications=assignment_classifications,
                            branches=Branch.query.filter_by(is_active=True)
                                    .order_by(Branch.name).all(),
                            title="New Maintenance Order")
