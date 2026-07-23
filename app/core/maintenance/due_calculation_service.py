@@ -248,9 +248,33 @@ class PMDueCalculationService:
         return {"schedule": schedule, "status": status,
                "next_due_km": next_due_km, "next_due_date": next_due_date}
 
-    def get_all_due_vehicles(self, as_of_date=None) -> list:
+    def get_all_due_vehicles(self, as_of_date=None,
+                             exclude_with_open_order=True) -> list:
         """Return due-status entries for every active vehicle/schedule
-        combination that is DUE_SOON or OVERDUE (GOOD entries omitted)."""
+        combination that is DUE_SOON or OVERDUE (GOOD entries omitted).
+
+        By default, a vehicle that ALREADY has an open (not COMPLETED /
+        CANCELLED) Maintenance Order for that maintenance type is left
+        out: the work is already raised, so listing it again as "due"
+        double-counts it, and -- since creating a second open PM order
+        for the same vehicle is refused -- the dashboard link would dead-
+        end on an error the person can do nothing about. Pass
+        exclude_with_open_order=False for a raw due calculation that
+        ignores whether the work has been raised yet.
+        """
+        from app.modules.transactions.maintenance_order.models import (
+            MaintenanceOrder)
+
+        open_pairs = set()
+        if exclude_with_open_order:
+            open_pairs = {
+                (o.vehicle_id, o.maintenance_type_id)
+                for o in MaintenanceOrder.query
+                .filter(MaintenanceOrder.status.notin_(
+                    ["COMPLETED", "CANCELLED"]))
+                .filter(MaintenanceOrder.maintenance_type_id.isnot(None))
+                .all()}
+
         results = []
         # DISPOSED vehicles are still real, non-deleted records
         # (is_active stays True — disposal is a business status, not a
@@ -264,6 +288,8 @@ class PMDueCalculationService:
                 if schedule.maintenance_type_id in seen_types:
                     continue
                 seen_types.add(schedule.maintenance_type_id)
+                if (vehicle.id, schedule.maintenance_type_id) in open_pairs:
+                    continue  # already raised — not actionable again
                 result = self.get_due_status(
                     vehicle, maintenance_type_id=schedule.maintenance_type_id,
                     as_of_date=as_of_date)

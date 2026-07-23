@@ -80,6 +80,27 @@ class MaintenanceOrderService(BaseTransactionService):
                assignment_classification=None):
         from app.modules.master_data.vehicle.models import Vehicle
         vehicle = db.session.get(Vehicle, vehicle_id)
+        # A vehicle must not have two PM orders open at once: if a PMS is
+        # already DRAFT / awaiting approval / IN_PROGRESS, a second one
+        # for the same maintenance type would double-book the workshop
+        # and double-count the service against the PM schedule. The
+        # auto-generation task already refused to create a duplicate for
+        # exactly this reason, but the MANUAL create path had no such
+        # guard, so the same vehicle could be queued twice by hand.
+        if order_category == "MAINTENANCE" and maintenance_type_id:
+            existing_open = (MaintenanceOrder.query
+                            .filter_by(vehicle_id=vehicle_id,
+                                      maintenance_type_id=maintenance_type_id)
+                            .filter(MaintenanceOrder.status.notin_(
+                                ["COMPLETED", "CANCELLED"]))
+                            .first())
+            if existing_open:
+                raise InvalidOrderStateError(
+                    f"This vehicle already has an open "
+                    f"{existing_open.maintenance_type.name if existing_open.maintenance_type else 'maintenance'} "
+                    f"order ({existing_open.document_number or 'draft'}, "
+                    f"status {existing_open.status}). Complete or cancel it "
+                    f"before creating another one.")
         # Snapshot the vehicle's CURRENT branch as the "From" for the
         # Asset Transfer Report -- must be captured now, at creation,
         # since completion will update Vehicle.branch_id to the
@@ -149,7 +170,37 @@ class MaintenanceOrderService(BaseTransactionService):
         return order
 
     def start_work(self, order_id: int):
+        """Move an approved order into IN_PROGRESS.
+
+        The approval gate is enforced HERE, not only in the template:
+        the detail page hides the Start Work button until the order is
+        approved, but a hidden button is not a control -- a direct POST
+        would otherwise let work begin on an unsubmitted or
+        still-pending order, skipping the approval step entirely.
+
+        Note that when a document type is configured as NOT requiring
+        approval, the Approval Engine still creates an instance and
+        marks it APPROVED immediately on submit, so this single check
+        works for both approval-required and no-approval setups. What it
+        correctly rejects is an order that was never submitted at all.
+        """
         order = db.session.get(MaintenanceOrder, order_id)
+        if order is None:
+            raise InvalidOrderStateError("Maintenance Order not found.")
+        if order.status != "DRAFT":
+            raise InvalidOrderStateError(
+                f"Work can only be started on a DRAFT order "
+                f"(this one is {order.status}).")
+        instance = order.approval_instance
+        if instance is None:
+            raise InvalidOrderStateError(
+                "This order has not been submitted yet. Submit it for "
+                "approval before starting work.")
+        if instance.status != "APPROVED":
+            raise InvalidOrderStateError(
+                f"This order is not approved yet (approval status: "
+                f"{instance.status}). Work can only start once it is "
+                f"approved.")
         order.status = "IN_PROGRESS"
         db.session.commit()
         return order

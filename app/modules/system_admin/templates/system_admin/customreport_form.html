@@ -1,0 +1,195 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ 'Edit' if item else 'New' }} Custom Report{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('system_admin.customreport_list') }}">Custom Reports</a></li>
+<li class="breadcrumb-item active">{{ item.name if item else 'New Report' }}</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">{{ 'Edit' if item else 'New' }} Custom Report</h1>
+
+<form method="post" id="builderForm">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="card mb-3"><div class="card-body row g-3">
+    <div class="col-md-5">
+      <label class="form-label">Report Name <span class="text-danger">*</span></label>
+      <input name="name" class="form-control" required value="{{ item.name if item else '' }}">
+    </div>
+    <div class="col-md-7">
+      <label class="form-label">Description</label>
+      <input name="description" class="form-control" value="{{ item.description if item else '' }}">
+    </div>
+    <div class="col-md-5">
+      <label class="form-label">Data Source <span class="text-danger">*</span></label>
+      <select name="data_source" id="dataSource" class="form-select" required>
+        <option value="">— Select —</option>
+        {% for key, src in sources.items() %}
+        <option value="{{ key }}" {{ 'selected' if item and item.data_source == key }}>{{ src.label }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text" id="sourceHint"></div>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Max Rows</label>
+      <input type="number" name="row_limit" class="form-control" min="1" max="5000"
+             value="{{ item.row_limit if item else 1000 }}">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Default Email Recipients</label>
+      <input name="default_recipients" class="form-control" placeholder="a@x.com, b@y.com"
+             value="{{ item.default_recipients if item else '' }}">
+      <div class="form-text">Used when emailing this report.</div>
+    </div>
+  </div></div>
+
+  <div class="card mb-3">
+    <div class="card-header">Columns <span class="text-muted small">— tick the fields to include</span></div>
+    <div class="card-body">
+      <div id="fieldChecks" class="row g-2"><div class="text-muted small">Select a data source first.</div></div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>Filters <span class="text-muted small">— optional</span></span>
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="addFilter">
+        <i class="bi bi-plus-lg me-1"></i>Add Filter</button>
+    </div>
+    <div class="card-body"><div id="filterRows"></div></div>
+  </div>
+
+  <div class="card mb-3"><div class="card-body row g-3 align-items-end">
+    <div class="col-md-4">
+      <label class="form-label">Sort By</label>
+      <select name="sort_key" id="sortKey" class="form-select"><option value="">— None —</option></select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Direction</label>
+      <select name="sort_dir" class="form-select">
+        <option value="asc" {{ 'selected' if item and item.sort_dir == 'asc' }}>Ascending</option>
+        <option value="desc" {{ 'selected' if item and item.sort_dir == 'desc' }}>Descending</option>
+      </select>
+    </div>
+    <div class="col-md-5 text-end">
+      <button type="button" class="btn btn-outline-primary" id="previewBtn">
+        <i class="bi bi-eye me-1"></i>Preview</button>
+      <button class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Report</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.customreport_list') }}">Cancel</a>
+    </div>
+  </div></div>
+
+  <div class="card d-none" id="previewCard">
+    <div class="card-header">Preview <span class="text-muted small" id="previewCount"></span></div>
+    <div class="card-body table-responsive"><div id="previewArea"></div></div>
+  </div>
+</form>
+
+{% block scripts %}
+<script>
+// Field/operator metadata for every source, so the column list, sort
+// list and filter rows can rebuild instantly when the source changes
+// without another round-trip.
+const SOURCES = {
+  {% for key, src in sources.items() %}
+  "{{ key }}": {
+    label: {{ src.label|tojson }},
+    description: {{ src.description|tojson }},
+    fields: [
+      {% for fkey, f in src.fields.items() %}
+      {key: {{ fkey|tojson }}, label: {{ f.label|tojson }}, kind: {{ f.kind|tojson }}}{{ "," if not loop.last }}
+      {% endfor %}
+    ]
+  }{{ "," if not loop.last }}
+  {% endfor %}
+};
+const OPERATORS = {
+  {% for op, label in operators.items() %}"{{ op }}": {{ label|tojson }}{{ "," if not loop.last }}{% endfor %}
+};
+const SAVED_FIELDS = {{ (item.fields if item else [])|tojson }};
+const SAVED_FILTERS = {{ (item.filters if item else [])|tojson }};
+const SAVED_SORT = {{ (item.sort_key if item and item.sort_key else "")|tojson }};
+
+function currentSource() { return SOURCES[document.getElementById("dataSource").value]; }
+
+function renderFields() {
+  const src = currentSource();
+  const box = document.getElementById("fieldChecks");
+  const sortSel = document.getElementById("sortKey");
+  if (!src) {
+    box.innerHTML = '<div class="text-muted small">Select a data source first.</div>';
+    sortSel.innerHTML = '<option value="">— None —</option>';
+    document.getElementById("sourceHint").textContent = "";
+    return;
+  }
+  document.getElementById("sourceHint").textContent = src.description || "";
+  box.innerHTML = src.fields.map(f => `
+    <div class="col-md-4 col-lg-3">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="fields" value="${f.key}"
+               id="fld_${f.key}" ${SAVED_FIELDS.includes(f.key) ? "checked" : ""}>
+        <label class="form-check-label" for="fld_${f.key}">${f.label}</label>
+      </div>
+    </div>`).join("");
+  sortSel.innerHTML = '<option value="">— None —</option>' + src.fields.map(f =>
+    `<option value="${f.key}" ${SAVED_SORT === f.key ? "selected" : ""}>${f.label}</option>`).join("");
+}
+
+function filterRowHtml(saved) {
+  const src = currentSource();
+  if (!src) return "";
+  const fieldOpts = '<option value="">— Field —</option>' + src.fields.map(f =>
+    `<option value="${f.key}" ${saved && saved.field === f.key ? "selected" : ""}>${f.label}</option>`).join("");
+  const opOpts = Object.entries(OPERATORS).map(([k, v]) =>
+    `<option value="${k}" ${saved && saved.op === k ? "selected" : ""}>${v}</option>`).join("");
+  const val = saved && saved.value != null ? String(saved.value).replace(/"/g, "&quot;") : "";
+  return `<div class="row g-2 mb-2 filter-row">
+    <div class="col-md-4"><select name="filter_field" class="form-select form-select-sm">${fieldOpts}</select></div>
+    <div class="col-md-3"><select name="filter_op" class="form-select form-select-sm">${opOpts}</select></div>
+    <div class="col-md-4"><input name="filter_value" class="form-control form-control-sm" placeholder="Value" value="${val}"></div>
+    <div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger w-100 removeFilter">&times;</button></div>
+  </div>`;
+}
+
+document.getElementById("addFilter").addEventListener("click", () => {
+  if (!currentSource()) { return; }
+  document.getElementById("filterRows").insertAdjacentHTML("beforeend", filterRowHtml(null));
+});
+document.getElementById("filterRows").addEventListener("click", e => {
+  if (e.target.classList.contains("removeFilter")) e.target.closest(".filter-row").remove();
+});
+document.getElementById("dataSource").addEventListener("change", () => {
+  renderFields();
+  // Filters reference fields of the old source, so they can't carry over.
+  document.getElementById("filterRows").innerHTML = "";
+});
+
+document.getElementById("previewBtn").addEventListener("click", () => {
+  const form = document.getElementById("builderForm");
+  const data = new FormData(form);
+  fetch("{{ url_for('system_admin.customreport_preview') }}", {
+    method: "POST", body: data, headers: {"X-CSRFToken": "{{ csrf_token() }}"}
+  }).then(r => r.json()).then(d => {
+    const card = document.getElementById("previewCard");
+    const area = document.getElementById("previewArea");
+    card.classList.remove("d-none");
+    if (!d.ok) {
+      document.getElementById("previewCount").textContent = "";
+      area.innerHTML = `<div class="alert alert-warning mb-0">${d.message}</div>`;
+      return;
+    }
+    document.getElementById("previewCount").textContent =
+      `— showing ${d.row_count} row(s), first 50 max`;
+    if (!d.rows.length) { area.innerHTML = '<p class="text-muted mb-0">No rows matched.</p>'; return; }
+    area.innerHTML = `<table class="table table-sm table-striped"><thead><tr>` +
+      d.columns.map(c => `<th>${c.label}</th>`).join("") + `</tr></thead><tbody>` +
+      d.rows.map(r => "<tr>" + r.map(v => `<td>${v}</td>`).join("") + "</tr>").join("") +
+      `</tbody></table>`;
+  });
+});
+
+renderFields();
+SAVED_FILTERS.forEach(f =>
+  document.getElementById("filterRows").insertAdjacentHTML("beforeend", filterRowHtml(f)));
+</script>
+{% endblock %}
+{% endblock %}

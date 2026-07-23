@@ -66,6 +66,8 @@ for _code, _desc in [
     ("reportregistrationexpiry.view", "View Registration Expiry report"),
     ("reportmaintenancecost.view", "View Maintenance Cost Summary report"),
     ("reportvehicleactivity.view", "View Vehicle Activity History report"),
+    ("customreport.view", "View and run custom reports"),
+    ("customreport.manage", "Create, edit and delete custom reports"),
 ]:
     _m, _a = _code.split(".")
     registry.register(_code, _m, _a, _desc)
@@ -927,3 +929,187 @@ def notification_mark_read(notif_id):
 def notification_mark_all_read():
     InAppNotificationService().mark_all_read(current_user)
     return jsonify(ok=True)
+
+
+# ── Custom Report Builder ───────────────────────────────────────────────────
+
+def _parse_filters(form):
+    """Filters arrive as parallel arrays (field/op/value) from the
+    repeating filter rows. Rows with no field chosen are ignored so an
+    empty spare row doesn't become a bogus condition."""
+    fields = form.getlist("filter_field")
+    ops = form.getlist("filter_op")
+    values = form.getlist("filter_value")
+    filters = []
+    for idx, field in enumerate(fields):
+        if not field:
+            continue
+        filters.append({
+            "field": field,
+            "op": ops[idx] if idx < len(ops) else "eq",
+            "value": values[idx] if idx < len(values) else "",
+        })
+    return filters
+
+
+@bp.route("/custom-reports")
+@login_required
+@require_permission("customreport.view")
+def customreport_list():
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService)
+    from app.core.reporting.report_builder import DATA_SOURCES
+    return render_template("system_admin/customreport_list.html",
+                           items=CustomReportService().list(),
+                           sources=DATA_SOURCES)
+
+
+@bp.route("/custom-reports/new", methods=["GET", "POST"])
+@bp.route("/custom-reports/<int:report_id>/edit", methods=["GET", "POST"])
+@login_required
+@require_permission("customreport.manage")
+def customreport_edit(report_id=None):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService)
+    from app.core.reporting.report_builder import (
+        DATA_SOURCES, OPERATORS, ReportBuilderError)
+    svc = CustomReportService()
+    item = svc.get_by_id(report_id) if report_id else None
+    if report_id and item is None:
+        flash("Report not found.", "warning")
+        return redirect(url_for("system_admin.customreport_list"))
+
+    if request.method == "POST":
+        f = request.form
+        try:
+            kwargs = dict(
+                name=f.get("name", ""), description=f.get("description"),
+                data_source=f.get("data_source", ""),
+                fields=f.getlist("fields"), filters=_parse_filters(f),
+                sort_key=f.get("sort_key"), sort_dir=f.get("sort_dir", "asc"),
+                row_limit=f.get("row_limit") or 1000,
+                default_recipients=f.get("default_recipients"),
+                user=current_user)
+            if item:
+                svc.update(item.id, **kwargs)
+                flash("Report updated.", "success")
+            else:
+                item = svc.create(**kwargs)
+                flash("Report created.", "success")
+            return redirect(url_for("system_admin.customreport_run",
+                                   report_id=item.id))
+        except ReportBuilderError as exc:
+            flash(str(exc), "danger")
+
+    return render_template("system_admin/customreport_form.html",
+                           item=item, sources=DATA_SOURCES,
+                           operators=OPERATORS)
+
+
+@bp.route("/custom-reports/preview", methods=["POST"])
+@login_required
+@require_permission("customreport.manage")
+def customreport_preview():
+    """Live preview while building -- runs the definition without saving
+    it, so someone can see whether their columns and filters give what
+    they expect before committing to a saved report."""
+    from app.core.reporting.report_builder import run_report, ReportBuilderError
+    f = request.form
+    try:
+        result = run_report(
+            f.get("data_source", ""), f.getlist("fields"),
+            filters=_parse_filters(f), sort_key=f.get("sort_key"),
+            sort_dir=f.get("sort_dir", "asc"),
+            limit=min(int(f.get("row_limit") or 50), 50),
+            user=current_user)
+    except ReportBuilderError as exc:
+        return jsonify({"ok": False, "message": str(exc)})
+    return jsonify({
+        "ok": True,
+        "columns": result["columns"],
+        "rows": [[("" if v is None else str(v)) for v in row]
+                for row in result["rows"]],
+        "row_count": result["row_count"],
+    })
+
+
+@bp.route("/custom-reports/<int:report_id>")
+@login_required
+@require_permission("customreport.view")
+def customreport_run(report_id):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService)
+    from app.core.reporting.report_builder import ReportBuilderError
+    svc = CustomReportService()
+    item = svc.get_by_id(report_id)
+    if item is None:
+        flash("Report not found.", "warning")
+        return redirect(url_for("system_admin.customreport_list"))
+    result, error = None, None
+    try:
+        result = svc.run(item, user=current_user)
+    except ReportBuilderError as exc:
+        error = str(exc)
+    return render_template("system_admin/customreport_run.html",
+                           item=item, result=result, error=error)
+
+
+@bp.route("/custom-reports/<int:report_id>/export.xlsx")
+@login_required
+@require_permission("customreport.view")
+def customreport_export(report_id):
+    from io import BytesIO
+    from flask import send_file
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService)
+    from app.core.reporting.report_builder import ReportBuilderError
+    svc = CustomReportService()
+    item = svc.get_by_id(report_id)
+    if item is None:
+        flash("Report not found.", "warning")
+        return redirect(url_for("system_admin.customreport_list"))
+    try:
+        filename, data = svc.to_excel(item, user=current_user)
+    except ReportBuilderError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("system_admin.customreport_run",
+                               report_id=report_id))
+    return send_file(BytesIO(data), as_attachment=True,
+                     download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument"
+                              ".spreadsheetml.sheet")
+
+
+@bp.route("/custom-reports/<int:report_id>/email", methods=["POST"])
+@login_required
+@require_permission("customreport.view")
+def customreport_email(report_id):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService)
+    from app.core.reporting.report_builder import ReportBuilderError
+    svc = CustomReportService()
+    item = svc.get_by_id(report_id)
+    if item is None:
+        flash("Report not found.", "warning")
+        return redirect(url_for("system_admin.customreport_list"))
+    try:
+        outcome = svc.email(item, recipients=request.form.get("recipients"),
+                           user=current_user)
+        flash(f"Queued for delivery to {outcome['queued']} recipient(s): "
+             f"{', '.join(outcome['recipients'])}. It will be sent by the "
+             f"next scheduled email run.", "success")
+    except ReportBuilderError as exc:
+        flash(str(exc), "danger")
+    return redirect(url_for("system_admin.customreport_run",
+                           report_id=report_id))
+
+
+@bp.route("/custom-reports/<int:report_id>/delete", methods=["POST"])
+@login_required
+@require_permission("customreport.manage")
+def customreport_delete(report_id):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService)
+    CustomReportService().deactivate(report_id)
+    flash("Report removed.", "success")
+    return redirect(url_for("system_admin.customreport_list"))

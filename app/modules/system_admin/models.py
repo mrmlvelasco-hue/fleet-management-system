@@ -189,3 +189,86 @@ class ScheduledReport(db.Model, BaseModel):
         if self.frequency == "MONTHLY":
             return base + timedelta(days=30)
         return base + timedelta(days=7)  # WEEKLY, default
+
+
+class EmailOutbox(db.Model, BaseModel):
+    """Outbound email queue.
+
+    Notification emails used to be sent SYNCHRONOUSLY inside the web
+    request -- one SMTP connection per recipient, over implicit SSL to a
+    remote host. With several recipients that pushed a simple "Submit"
+    to roughly a minute before the browser saw any confirmation, because
+    the request could not return until every message had been handed to
+    the mail server.
+
+    Writing a row here instead takes microseconds, so the UI responds
+    immediately; a scheduled drain (`flask email send-pending`, or the
+    Celery beat task) delivers them out-of-band and flips each row to
+    SENT. A row that fails records the error and its attempt count and is
+    retried on the next run, so a transient SMTP outage delays mail
+    rather than losing it -- which the old fire-and-forget path could do
+    silently.
+    """
+    __tablename__ = "email_outbox"
+
+    to_email = db.Column(db.String(255), nullable=False, index=True)
+    to_user_id = db.Column(db.Integer, db.ForeignKey("users.id"),
+                           nullable=True)
+    subject = db.Column(db.String(255), nullable=False)
+    body_html = db.Column(db.Text, nullable=True)
+    # Kept so the drain can re-render from live data if the body was not
+    # pre-rendered, and so the outbox screen can link back to the source.
+    event_code = db.Column(db.String(60), nullable=True, index=True)
+    reference_table = db.Column(db.String(100), nullable=True)
+    reference_id = db.Column(db.Integer, nullable=True)
+    comment_id = db.Column(db.Integer, nullable=True)
+    # PENDING | SENT | FAILED
+    status = db.Column(db.String(10), default="PENDING", nullable=False,
+                       index=True)
+    attempts = db.Column(db.Integer, default=0, nullable=False)
+    last_error = db.Column(db.Text, nullable=True)
+    sent_at = db.Column(db.DateTime, nullable=True)
+
+
+class CustomReport(db.Model, BaseModel):
+    """A user-built report definition from the Report Builder.
+
+    Stores only the CHOICES a person made (which data source, which
+    column keys, which filters), never SQL. The query is rebuilt from
+    those keys by report_builder.run_report() every time it runs, and
+    every key is validated against the curated whitelist at run time --
+    so a saved definition can't outlive a column being removed, and a
+    row edited directly in the database still can't smuggle in SQL or
+    reach a table the builder doesn't expose.
+    """
+    __tablename__ = "custom_reports"
+
+    name = db.Column(db.String(150), nullable=False)
+    description = db.Column(db.String(500), nullable=True)
+    # Key into report_builder.DATA_SOURCES
+    data_source = db.Column(db.String(60), nullable=False)
+    # JSON: ["plate_number", "brand", ...]
+    fields_json = db.Column(db.Text, nullable=False, default="[]")
+    # JSON: [{"field": "...", "op": "eq", "value": "..."}, ...]
+    filters_json = db.Column(db.Text, nullable=True)
+    sort_key = db.Column(db.String(60), nullable=True)
+    sort_dir = db.Column(db.String(4), default="asc", nullable=False)
+    row_limit = db.Column(db.Integer, default=1000, nullable=False)
+    # Optional default recipients for on-demand "email me this" sends.
+    default_recipients = db.Column(db.Text, nullable=True)
+
+    @property
+    def fields(self) -> list:
+        import json
+        try:
+            return json.loads(self.fields_json or "[]")
+        except ValueError:
+            return []
+
+    @property
+    def filters(self) -> list:
+        import json
+        try:
+            return json.loads(self.filters_json or "[]")
+        except ValueError:
+            return []

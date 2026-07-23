@@ -601,6 +601,9 @@ def maintenanceorder_new():
     scope_templates = []
     due_scope_template_id = None
     pm_recommendation = None
+    from app.modules.system_admin.services.lookup_service import LookupService
+    assignment_classifications = LookupService().get_by_type_with_fallback(
+        "ASSIGNMENT_CLASSIFICATION")
     if prefill_vehicle:
         scope_templates = PMScopeTemplateService().list_applicable_for_vehicle(
             prefill_vehicle, maintenance_type_id=prefill["maintenance_type_id"])
@@ -648,6 +651,7 @@ def maintenanceorder_new():
                            prefill_vehicle=prefill_vehicle, prefill=prefill,
                            due_scope_template_id=due_scope_template_id,
                            pm_recommendation=pm_recommendation,
+                           assignment_classifications=assignment_classifications,
                            branches=Branch.query.filter_by(is_active=True)
                                    .order_by(Branch.name).all(),
                            title="New Maintenance Order")
@@ -820,6 +824,23 @@ def maintenanceorder_submit(oid):
     try:
         MaintenanceOrderService().submit(oid, user=current_user)
         flash("Maintenance Order submitted.", "success")
+    except Exception as e:
+        _flash_engine_error(e)
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+@bp.route("/maintenance-orders/<int:oid>/resubmit", methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_resubmit(oid):
+    """Resubmit a RETURNED order back into the approval flow. Without
+    this the lifecycle dead-ended: once an approver RETURNED an order,
+    the detail page only offered Cancel, so the requester could never
+    act on the feedback and send it back -- they had to abandon the
+    order and re-key a new one."""
+    try:
+        MaintenanceOrderService().resubmit(oid, user=current_user)
+        flash("Maintenance Order resubmitted for approval.", "success")
     except Exception as e:
         _flash_engine_error(e)
     return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))

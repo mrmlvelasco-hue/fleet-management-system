@@ -134,6 +134,28 @@ def get_worklist_labels(reference_table: str, reference_id: int) -> dict:
                 if value:
                     result["type_label"] = str(value).replace("_", " ").title()
                     break
+
+        # A short statement of WHAT is being requested. The type label
+        # alone says "Assignment" but not assignment of what, to whom --
+        # so an approver still had to open every task to find out. Built
+        # generically from whichever of these fields the record actually
+        # has, so it works for any transaction module without
+        # special-casing.
+        parts = []
+        driver = getattr(record, "driver", None)
+        if driver is not None and getattr(driver, "full_name", None):
+            parts.append(f"to {driver.full_name}")
+        destination = getattr(record, "destination_branch", None)
+        if destination is not None and getattr(destination, "name", None):
+            parts.append(f"to {destination.name}")
+        recipient = getattr(record, "disposal_recipient", None)
+        if recipient:
+            parts.append(f"to {recipient}")
+        description = getattr(record, "description", None)
+        if description:
+            text = str(description).strip()
+            parts.append(text if len(text) <= 60 else text[:57] + "...")
+        result["activity"] = " — ".join(parts) if parts else None
     except Exception:
         pass
     return result

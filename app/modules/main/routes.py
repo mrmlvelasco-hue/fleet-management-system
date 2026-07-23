@@ -101,6 +101,7 @@ def dashboard():
                 "document_type": t.document_type.name if t.document_type else "",
                 "plate_number": labels["plate_number"],
                 "type_label": labels["type_label"],
+                "activity": labels.get("activity"),
                 "requester": t.requester.full_name if t.requester else "Unknown",
                 "created_at": t.created_at,
                 "aging": _aging_label(t.created_at),
@@ -146,6 +147,10 @@ def dashboard():
                 link_url = url_for("master_data.vehicle_detail", vid=vehicle.id)
             due_vehicles.append({
                 "vehicle": vehicle,
+                "maintenance_type": (d["schedule"].maintenance_type.name
+                                    if d.get("schedule")
+                                    and d["schedule"].maintenance_type
+                                    else "—"),
                 "status": d["status"],
                 "next_due_km": d["next_due_km"],
                 "next_due_date": d["next_due_date"],

@@ -65,12 +65,16 @@ def test_maintenance_order_list_does_not_n_plus_one(
         db, branch, vehicle_type):
     mt = MaintenanceTypeService().create(code="PMS-PERF", name="PMS",
                                          category="PREVENTIVE")
-    vehicle = VehicleService().create(
-        vehicle_type_id=vehicle_type.id, brand="Ford", model="Escape",
-        year=2020, branch_id=branch.id, conduction_number="PERF-MO-0")
+    # One order per DISTINCT vehicle: a vehicle may only have one open
+    # PM order for a given maintenance type at a time (guarded in
+    # MaintenanceOrderService.create), so the N+1 fixture builds five
+    # separate vehicles rather than five orders against one.
     for i in range(5):
+        veh = VehicleService().create(
+            vehicle_type_id=vehicle_type.id, brand="Ford", model="Escape",
+            year=2020, branch_id=branch.id, conduction_number=f"PERF-MO-{i}")
         MaintenanceOrderService().create(
-            vehicle_id=vehicle.id, maintenance_type_id=mt.id,
+            vehicle_id=veh.id, maintenance_type_id=mt.id,
             scheduled_date=date.today(), user=None)
 
     from app.extensions import db as _db

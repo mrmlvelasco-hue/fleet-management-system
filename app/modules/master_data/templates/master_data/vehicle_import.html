@@ -1,0 +1,82 @@
+{% extends "layout/base.html" %}
+{% block title %}Import Vehicles{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.vehicle_list') }}">Vehicles</a></li>
+<li class="breadcrumb-item active">Import from Excel</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Import Vehicles from Excel</h1>
+
+<div class="card mb-3"><div class="card-body">
+  <h6 class="mb-2">Step 1 — Download the template</h6>
+  <p class="text-muted small mb-2">
+    The template already contains this system's valid <strong>Vehicle Type</strong>
+    and <strong>Branch</strong> codes on its "Reference" sheet, so you can fill it
+    in without looking them up. It also has one example row — delete it before uploading.
+  </p>
+  <a class="btn btn-outline-primary btn-sm"
+     href="{{ url_for('master_data.vehicle_import_template') }}">
+    <i class="bi bi-file-earmark-excel me-1"></i>Download Vehicle Import Template
+  </a>
+</div></div>
+
+<div class="card mb-3"><div class="card-body">
+  <h6 class="mb-2">Step 2 — Upload the filled-in file</h6>
+  <form method="post" enctype="multipart/form-data" class="row g-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="col-md-8">
+      <label class="form-label">Filled-in template (.xlsx)</label>
+      <input type="file" name="file" accept=".xlsx" class="form-control" required>
+    </div>
+    <div class="col-12">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="commit" value="1" id="commitCheck">
+        <label class="form-check-label" for="commitCheck">
+          Import for real (leave unticked to preview without saving anything)
+        </label>
+      </div>
+    </div>
+    <div class="col-12">
+      <button class="btn btn-primary">Upload</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_list') }}">Cancel</a>
+    </div>
+  </form>
+</div></div>
+
+{% if result %}
+<div class="card">
+  <div class="card-header">
+    {{ 'Preview result (nothing was saved)' if was_dry_run else 'Import result' }}
+  </div>
+  <div class="card-body">
+    <div class="row text-center mb-3">
+      <div class="col"><div class="h4 mb-0">{{ result.total_rows }}</div><div class="small text-muted">Rows read</div></div>
+      <div class="col"><div class="h4 mb-0 text-success">{{ result.created }}</div><div class="small text-muted">{{ 'Would import' if was_dry_run else 'Imported' }}</div></div>
+      <div class="col"><div class="h4 mb-0 text-danger">{{ result.skipped }}</div><div class="small text-muted">Skipped</div></div>
+    </div>
+
+    {% if result.errors %}
+    <h6>Rows needing attention</h6>
+    <p class="text-muted small">
+      These rows were skipped — the rest still {{ 'would import' if was_dry_run else 'imported' }}.
+      Fix them in the spreadsheet and upload again.
+    </p>
+    <table class="table table-sm">
+      <thead><tr><th style="width:90px;">Excel row</th><th>Vehicle</th><th>Problem</th></tr></thead>
+      <tbody>
+        {% for e in result.errors %}
+        <tr>
+          <td>{{ e.row }}</td>
+          <td>{{ e.identifier }}</td>
+          <td>{{ e.problems | join('; ') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-success mb-0"><i class="bi bi-check-circle me-1"></i>No problems found.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

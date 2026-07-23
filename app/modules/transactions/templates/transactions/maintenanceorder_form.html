@@ -106,7 +106,6 @@
         Pre-fills a Maintenance Order's description when created against this
         schedule, with pm2-pm9 tokens resolved to the actual vehicle/driver/branch at that time.
       </p>
-      {% include "layout/_pm_parameter_legend.html" %}
     </div>
     <div class="mt-2" id="moScopeDetailsWrapper" style="display:none;">
       <button class="btn btn-sm btn-outline-secondary" type="button"
@@ -153,12 +152,15 @@
     <label class="form-label mt-2">Assignment Classification</label>
     <select name="assignment_classification" class="form-select">
       <option value="">— Select —</option>
-      <option value="PERK">Perk (Officer, Director, GM, GSM, Senior Manager)</option>
-      <option value="TOOL_OF_THE_TRADE">Tool of the Trade (SM, BDM, FMM, SOOM, KAM, TSM, ADM, BDO, TSO, Channel Manager, Fleet Manager)</option>
-      <option value="OPERATIONS_SERVICE_UNIT">Operations Service Unit (Pre-seller, Salesman, Marketing Services / Postmix Technician, Department Service Unit)</option>
-      <option value="EDS_UNIT">EDS Unit (EDS-SR, MR-EDS, TPD, Business Partner, Operator)</option>
+      {% for lk in assignment_classifications %}
+      <option value="{{ lk.code }}">{{ lk.description }}</option>
+      {% endfor %}
     </select>
-    <div class="form-text">Printed as the checked box on the Vehicle Assignment Memo.</div>
+    <div class="form-text">
+      Printed as the checked box on the Vehicle Assignment Memo.
+      Maintained under System Administration → Lookup Maintenance
+      (<code>ASSIGNMENT_CLASSIFICATION</code>).
+    </div>
   </div>
   <div class="col-md-6" id="moDestinationBranchFieldWrapper" style="display:none;">
     <label class="form-label">Destination Branch</label>
@@ -364,7 +366,8 @@
           }
           return;
         }
-        fetch("{{ url_for('api_search.get_pm_scope_template_details', template_id=0) }}".replace("0", templateId))
+        fetch("{{ url_for('api_search.get_pm_scope_template_details', template_id=0) }}".replace("0", templateId)
+              + "?vehicle_id=" + encodeURIComponent($("#moVehicleSelect").val() || ""))
           .then(function (r) { return r.json(); })
           .then(function (data) {
             if (!data.found) { $wrapper.hide(); $("#moWorkDescriptionPanel").hide(); return; }

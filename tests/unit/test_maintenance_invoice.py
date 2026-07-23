@@ -52,7 +52,7 @@ def test_create_invoice_header(db, env):
         vat_type="VAT_EXCLUSIVE", vat_percentage=12, user=None)
     assert inv.maintenance_order_id == order.id
     assert inv.vendor_id == vendor.id
-    assert inv.status == "DRAFT"
+    assert inv.status == "RECORDED"
     assert inv.document_number  # auto-numbered
 
 

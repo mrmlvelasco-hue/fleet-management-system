@@ -1,0 +1,53 @@
+{% extends "layout/base.html" %}
+{% block title %}Custom Reports{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Custom Reports</li>{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Custom Reports</h1>
+  {% if current_user.has_permission('customreport.manage') %}
+  <a class="btn btn-primary" href="{{ url_for('system_admin.customreport_edit') }}">
+    <i class="bi bi-plus-lg me-1"></i>New Report</a>
+  {% endif %}
+</div>
+
+<p class="text-muted">
+  Build your own reports by choosing a data source, the columns you want, and
+  optional filters. Reports can be viewed on screen, exported to Excel, or
+  emailed so another system can consume the file.
+</p>
+
+<div class="card"><div class="card-body">
+  <table class="table table-hover align-middle mb-0">
+    <thead><tr><th>Report</th><th>Data Source</th><th>Columns</th><th class="text-end">Actions</th></tr></thead>
+    <tbody>
+      {% for r in items %}
+      <tr>
+        <td>
+          <a href="{{ url_for('system_admin.customreport_run', report_id=r.id) }}">{{ r.name }}</a>
+          {% if r.description %}<div class="text-muted small">{{ r.description }}</div>{% endif %}
+        </td>
+        <td>{{ sources[r.data_source].label if r.data_source in sources else r.data_source }}</td>
+        <td>{{ r.fields|length }}</td>
+        <td class="text-end">
+          <a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('system_admin.customreport_run', report_id=r.id) }}">Run</a>
+          {% if current_user.has_permission('customreport.manage') %}
+          <a class="btn btn-sm btn-outline-primary"
+             href="{{ url_for('system_admin.customreport_edit', report_id=r.id) }}">Edit</a>
+          <form method="post" class="d-inline"
+                action="{{ url_for('system_admin.customreport_delete', report_id=r.id) }}"
+                data-confirm="Remove this report?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-center text-muted py-4">
+        No custom reports yet. Click <strong>New Report</strong> to build one.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endblock %}
