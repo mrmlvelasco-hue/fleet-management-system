@@ -146,6 +146,10 @@ def dashboard():
                 link_url = url_for("master_data.vehicle_detail", vid=vehicle.id)
             due_vehicles.append({
                 "vehicle": vehicle,
+                "maintenance_type": (d["schedule"].maintenance_type.name
+                                    if d.get("schedule")
+                                    and d["schedule"].maintenance_type
+                                    else "—"),
                 "status": d["status"],
                 "next_due_km": d["next_due_km"],
                 "next_due_date": d["next_due_date"],

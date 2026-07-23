@@ -68,15 +68,34 @@ class NotificationEngine:
         db.session.commit()
 
     def _queue_email(self, user: User, event_name: str, instance) -> None:
-        """Send the notification email -- via Celery if a worker/broker is
-        reachable, or synchronously in this request if not. See
-        tasks.dispatch_notification_email for why this can no longer
-        silently drop the email when Celery isn't running."""
-        from app.modules.system_admin.tasks import dispatch_notification_email
-        dispatch_notification_email(
-            user_id=user.id, event_code=event_name,
+        """Enqueue the notification email -- deliberately does NOT touch
+        SMTP here.
+
+        This used to call dispatch_notification_email() directly, which
+        opened an SMTP connection per recipient inside the web request.
+        With a remote mail server that made a plain "Submit" take about a
+        minute before the browser saw any confirmation, since the request
+        could not return until every message had been handed over.
+
+        Writing an EmailOutbox row is effectively instant, so the UI
+        responds straight away, and the scheduled drain
+        (`flask email send-pending`) delivers out-of-band. Delivery is
+        also now durable: a failed send is retried on the next run
+        instead of vanishing.
+        """
+        if not user or not user.email:
+            return
+        from app.modules.system_admin.models import EmailOutbox
+        subject = (f"[FMS] {event_name.replace('_', ' ').title()} - "
+                  f"{instance.document_type.code if instance.document_type else ''} "
+                  f"#{instance.reference_id}").strip()
+        db.session.add(EmailOutbox(
+            to_email=user.email, to_user_id=user.id, subject=subject[:255],
+            event_code=event_name,
             reference_table=instance.reference_table,
-            reference_id=instance.reference_id)
+            reference_id=instance.reference_id,
+            status="PENDING"))
+        db.session.commit()
 
 
 class InAppNotificationService:

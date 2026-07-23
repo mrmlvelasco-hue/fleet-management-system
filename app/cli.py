@@ -697,7 +697,47 @@ def reset_transactions(yes):
               f"Master data and configuration untouched.")
 
 
+email_cli = AppGroup("email", help="Outbound email queue operations.")
+
+
+@email_cli.command("send-pending")
+@click.option("--limit", default=50, show_default=True,
+              help="Maximum messages to attempt in this run.")
+def email_send_pending(limit):
+    """Deliver queued notification emails. Safe to run every minute from
+    cron / Windows Task Scheduler -- returns immediately when the queue
+    is empty."""
+    from app.modules.system_admin.services.email_outbox_service import (
+        EmailOutboxService)
+    stats = EmailOutboxService().send_pending(limit=limit)
+    if not stats["attempted"]:
+        click.echo("No pending emails.")
+        return
+    click.echo(f"Attempted {stats['attempted']}: "
+              f"{stats['sent']} sent, {stats['failed']} failed.")
+
+
+@email_cli.command("status")
+def email_status():
+    """Show how many emails are pending / sent / failed."""
+    from app.modules.system_admin.services.email_outbox_service import (
+        EmailOutboxService)
+    s = EmailOutboxService().summary()
+    click.echo(f"Pending: {s['pending']}  Sent: {s['sent']}  "
+              f"Failed: {s['failed']}")
+
+
+@email_cli.command("retry-failed")
+def email_retry_failed():
+    """Re-queue every FAILED email (e.g. after correcting SMTP settings)."""
+    from app.modules.system_admin.services.email_outbox_service import (
+        EmailOutboxService)
+    count = EmailOutboxService().retry_failed()
+    click.echo(f"Re-queued {count} failed email(s).")
+
+
 def register_cli(app):
+    app.cli.add_command(email_cli)
     app.cli.add_command(seed_cli)
     app.cli.add_command(reset_cli)
     app.cli.add_command(pm_cli)

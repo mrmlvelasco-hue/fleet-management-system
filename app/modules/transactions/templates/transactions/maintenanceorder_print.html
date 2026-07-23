@@ -83,13 +83,22 @@
         <td class="label">Vendor</td><td>{{ item.vendor.name if item.vendor else '—' }}</td></tr>
   </table>
 
-  {% set effective_description = item.description or (item.pm_schedule.work_description_template if item.pm_schedule else None) %}
-  {% if effective_description %}
-  <h6 class="section">Work Description</h6>
-  <div class="remarks-box">{{ effective_description|pm_tokens(item.vehicle) }}</div>
-  {% if 'pm' in effective_description and item.pm_schedule and item.pm_schedule.work_description_template %}
-  <div style="margin-top:4px;">{% include "layout/_pm_parameter_legend.html" %}</div>
+  {# The PM package's own Work Order template is shown as its OWN
+     section, directly after Vehicle Information, because it carries the
+     PM milestone kilometrage ("65,000 km servicing of ...") that
+     identifies which service this is. Previously it only appeared as a
+     fallback when the order had no description of its own, so as soon as
+     anyone typed a description the PM KM disappeared from the printout.
+     Tokens are resolved against this vehicle, so no separate pm2-pm9
+     legend is needed on the page. #}
+  {% if item.pm_schedule and item.pm_schedule.work_description_template %}
+  <h6 class="section">Work Order Template (PM)</h6>
+  <div class="remarks-box">{{ item.pm_schedule.work_description_template|pm_tokens(item.vehicle) }}</div>
   {% endif %}
+
+  {% if item.description %}
+  <h6 class="section">Work Description</h6>
+  <div class="remarks-box">{{ item.description|pm_tokens(item.vehicle) }}</div>
   {% endif %}
 
   {% if item.checklist_items %}

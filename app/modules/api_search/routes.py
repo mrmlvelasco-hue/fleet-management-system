@@ -238,7 +238,23 @@ def get_pm_scope_template_details(template_id):
     items = sorted(tmpl.items, key=lambda i: i.sort_order)
     work_description = None
     if tmpl.pm_schedule and tmpl.pm_schedule.work_description_template:
-        work_description = tmpl.pm_schedule.work_description_template
+        raw = tmpl.pm_schedule.work_description_template
+        # Resolve pm2-pm9 against the vehicle this template is being
+        # shown for, so the panel reads "65,000 km servicing of Mitsubishi
+        # Strada with Plate no. WIE231..." rather than the raw
+        # "pm2 pm3 with Plate no. pm4" placeholders. Showing the resolved
+        # text is what makes the separate token legend unnecessary.
+        vehicle_id = request.args.get("vehicle_id", type=int)
+        vehicle = None
+        if vehicle_id:
+            from app.extensions import db
+            from app.modules.master_data.vehicle.models import Vehicle
+            vehicle = db.session.get(Vehicle, vehicle_id)
+        if vehicle is not None:
+            from app.core.reporting.token_resolver import resolve_pm_tokens
+            work_description = resolve_pm_tokens(raw, vehicle=vehicle)
+        else:
+            work_description = raw
     return jsonify({
         "found": True,
         "name": tmpl.name,

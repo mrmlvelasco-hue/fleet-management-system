@@ -89,42 +89,32 @@ def test_mark_read(db, env):
     assert InAppNotification.query.get(notif.id).is_read is True
 
 
-def test_email_actually_sends_when_celery_broker_unreachable(db, env, monkeypatch):
-    """Regression test for the bug where BOTH/EMAIL notification rules
-    silently sent nothing: _queue_email only tried task.delay() and
-    swallowed the resulting exception with a bare warning log when Celery
-    couldn't reach its broker (the normal case with no separate `celery
-    worker` process running) -- the email was never actually sent. This
-    locks in the fix: dispatch_notification_email must fall back to
-    sending synchronously so the email goes out either way."""
+def test_email_is_queued_to_the_outbox_not_sent_inline(db, env, monkeypatch):
+    """Notification email must be QUEUED, never sent inside the web
+    request.
+
+    This replaces an earlier test that asserted the opposite (a
+    synchronous SMTP fallback). That behaviour was the cause of a real
+    complaint: a plain "Submit" took about a minute to come back, because
+    the request opened an SMTP connection per recipient before it could
+    return. Delivery now happens out-of-band via the EmailOutbox drain,
+    so dispatch must touch no SMTP at all -- and delivery becomes durable
+    (a failed send is retried) instead of fire-and-forget."""
     from unittest.mock import patch, MagicMock
+    from app.modules.system_admin.models import EmailOutbox
     submitter, _, _, instance = env
     db.session.add(NotificationRule(
         event_code="submitted", channel="BOTH",
         recipient_type="SUBMITTER"))
     db.session.commit()
 
-    from app.modules.system_admin.services.email_config_service import (
-        EmailConfigService)
-    EmailConfigService().update(
-        smtp_host="smtp.example.com", smtp_port=587, use_tls=True,
-        smtp_username="u", smtp_password="p", from_email="fms@example.com",
-        is_enabled=True)
-
-    # Simulate .delay() being unable to reach a broker at all -- exactly
-    # what happens with no Celery worker/Redis running.
-    from app.modules.system_admin import tasks as tasks_module
-    monkeypatch.setattr(
-        tasks_module.send_notification_email, "delay",
-        MagicMock(side_effect=ConnectionRefusedError("no broker")))
-
-    with patch("smtplib.SMTP") as mock_smtp:
-        srv = MagicMock()
-        mock_smtp.return_value.__enter__.return_value = srv
+    with patch("smtplib.SMTP") as mock_smtp, \
+            patch("smtplib.SMTP_SSL") as mock_smtp_ssl:
         NotificationEngine().dispatch("submitted", instance)
+        assert not mock_smtp.called, "dispatch must not open an SMTP connection"
+        assert not mock_smtp_ssl.called, "dispatch must not open an SMTP connection"
 
-    assert srv.send_message.called, (
-        "Email was never actually sent when the Celery broker was "
-        "unreachable -- the synchronous fallback did not run.")
-    sent_msg = srv.send_message.call_args[0][0]
-    assert sent_msg["To"] == submitter.email
+    queued = EmailOutbox.query.filter_by(to_email=submitter.email).all()
+    assert len(queued) == 1
+    assert queued[0].status == "PENDING"
+    assert queued[0].event_code == "submitted"

@@ -106,7 +106,6 @@
         Pre-fills a Maintenance Order's description when created against this
         schedule, with pm2-pm9 tokens resolved to the actual vehicle/driver/branch at that time.
       </p>
-      {% include "layout/_pm_parameter_legend.html" %}
     </div>
     <div class="mt-2" id="moScopeDetailsWrapper" style="display:none;">
       <button class="btn btn-sm btn-outline-secondary" type="button"
@@ -364,7 +363,8 @@
           }
           return;
         }
-        fetch("{{ url_for('api_search.get_pm_scope_template_details', template_id=0) }}".replace("0", templateId))
+        fetch("{{ url_for('api_search.get_pm_scope_template_details', template_id=0) }}".replace("0", templateId)
+              + "?vehicle_id=" + encodeURIComponent($("#moVehicleSelect").val() || ""))
           .then(function (r) { return r.json(); })
           .then(function (data) {
             if (!data.found) { $wrapper.hide(); $("#moWorkDescriptionPanel").hide(); return; }
