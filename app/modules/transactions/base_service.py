@@ -54,6 +54,26 @@ class BaseTransactionService:
         if user is not None and not self._visible_to(record, user):
             raise NotVisibleError(
                 "You do not have access to this record.")
+        # Make sure the record HAS its document number before the
+        # approval task takes its denormalised copy. Numbering normally
+        # happens at create time, but it's written defensively there
+        # (a numbering-scheme failure must not block creating the
+        # record), so a record can reach submit with no number -- and
+        # the approval task would then carry a null number for the rest
+        # of its life, showing as "(no number)" in every approver's
+        # worklist even after the document itself had one.
+        if not getattr(record, "document_number", None) \
+                and hasattr(record, "document_number"):
+            try:
+                from app.core.numbering.numbering_service import (
+                    AutoNumberingService)
+                record.document_number = AutoNumberingService().generate(
+                    self.document_type_code)
+                db.session.commit()
+            except Exception:
+                # Still must not block submission -- the worklist now
+                # resolves the live number as a fallback anyway.
+                db.session.rollback()
         instance = self.engine.submit(
             self.document_type_code, self.reference_table, record_id,
             amount=getattr(record, "amount", None), user=user,

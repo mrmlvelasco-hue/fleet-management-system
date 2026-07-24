@@ -92,12 +92,33 @@ def dashboard():
     for_my_action = []
     if "MY_ACTIONS" in visible_codes or not _widget_exists("MY_ACTIONS"):
         my_tasks = ApprovalTaskService().list_for_user(current_user)
-        from app.core.reference_resolver import get_worklist_labels
+        from app.core.reference_resolver import (get_worklist_labels,
+                                                 get_document_number)
         for_my_action = []
         for t in my_tasks:
             labels = get_worklist_labels(t.reference_table, t.reference_id)
+            # ApprovalTask.document_number is a DENORMALISED copy taken
+            # at submit time. If the source record had no number yet at
+            # that moment (auto-numbering can fail or be assigned later),
+            # the copy stays null forever even once the document does
+            # have a number -- which is exactly why a real MO showed as
+            # "(no number)" here while the Maintenance Orders list showed
+            # MO-2026-000020. Falling back to the LIVE record makes the
+            # display self-correcting for every task already in the
+            # queue, with no data migration needed.
+            document_number = t.document_number
+            if not document_number:
+                resolved = get_document_number(t.reference_table,
+                                              t.reference_id)
+                # get_document_number() returns a "<table> #<id>" style
+                # fallback when there genuinely is no number; that's
+                # noise on a dashboard, so keep the friendlier text.
+                document_number = (resolved
+                                  if resolved and not resolved.startswith(
+                                      t.reference_table)
+                                  else "(no number)")
             for_my_action.append({
-                "document_number": t.document_number or "(no number)",
+                "document_number": document_number,
                 "document_type": t.document_type.name if t.document_type else "",
                 "plate_number": labels["plate_number"],
                 "type_label": labels["type_label"],
