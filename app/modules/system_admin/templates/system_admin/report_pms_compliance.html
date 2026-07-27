@@ -43,11 +43,21 @@
     <div class="form-text small">This report only lists vehicles due or overdue — vehicles fully compliant (Good) aren't shown here by design.</div>
   </div>
   <div class="col-auto">
-    <button class="btn btn-sm btn-primary" type="submit">Filter</button>
+    <input type="hidden" name="generate" value="1">
+    <button class="btn btn-sm btn-primary" type="submit">
+      <i class="bi bi-play-fill me-1"></i>Generate Report</button>
     <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('system_admin.report_pms_compliance') }}">Clear</a>
   </div>
 </form>
 
+{% if rows is none %}
+<div class="alert alert-info">
+  <i class="bi bi-info-circle me-1"></i>
+  Choose your filters above and click <strong>Generate Report</strong>.
+  This report evaluates every active vehicle against its PM schedule, so
+  it is only run when you ask for it.
+</div>
+{% else %}
 <p class="text-muted small">Generated {{ generated_at.strftime('%B %d, %Y %I:%M %p') }} — {{ rows|length }} vehicle(s)</p>
 
 <div class="table-responsive">
@@ -81,5 +91,6 @@
     </tbody>
   </table>
 </div>
+{% endif %}
 <style>@media print { .no-print { display: none; } }</style>
 {% endblock %}

@@ -16,6 +16,7 @@ defaults, so they're tunable without code changes.
 from datetime import date
 
 from app.extensions import db
+from app.core.request_cache import request_cached
 from app.modules.maintenance_config.models import PMSchedule
 from app.modules.master_data.reference.models import MaintenanceType
 from app.modules.master_data.vehicle.models import Vehicle
@@ -31,6 +32,132 @@ _STATUS_RANK = {"GOOD": 0, "DUE_SOON": 1, "OVERDUE": 2}
 
 def _worse(a: str, b: str) -> str:
     return a if _STATUS_RANK[a] >= _STATUS_RANK[b] else b
+
+
+class _Prefetch:
+    """In-memory snapshot of everything the due calculation needs.
+
+    Built ONCE per bulk run (a handful of queries), then consulted
+    instead of hitting the database inside the per-vehicle loop. The
+    matching rules below are a faithful in-memory replay of the query
+    logic in the single-vehicle path -- deliberately duplicated rather
+    than abstracted, so the single-vehicle path stays byte-for-byte
+    unchanged and this optimisation cannot alter any business rule.
+    """
+
+    __slots__ = ("schedules_by_id", "active_schedules", "types_by_id",
+                 "type_ids_by_name", "last_service", "vehicles_by_id")
+
+    def __init__(self):
+        from app.modules.master_data.reference.models import MaintenanceType
+
+        # 1 query -- every active schedule, matched in memory below.
+        self.active_schedules = PMSchedule.query.filter_by(
+            is_active=True).all()
+        # Includes INACTIVE ones: a vehicle's directly-assigned schedule
+        # is looked up by id and then checked for is_active, so it has to
+        # be resolvable even when inactive to reproduce that check.
+        self.schedules_by_id = {s.id: s for s in PMSchedule.query.all()}
+
+        # 1 query -- powers the same-name MaintenanceType fallback.
+        types = MaintenanceType.query.all()
+        self.types_by_id = {t.id: t for t in types}
+        self.type_ids_by_name = {}
+        for t in types:
+            key = (t.name or "").strip().lower()
+            self.type_ids_by_name.setdefault(key, []).append(t.id)
+
+        # 1 query -- latest COMPLETED order per (vehicle, maintenance
+        # type). Ordered ascending so the last write per key wins, which
+        # reproduces "ORDER BY completed_date DESC LIMIT 1". Rows with no
+        # completed_date sort first and are therefore only used when no
+        # dated completion exists, matching MySQL's NULL ordering in the
+        # original query.
+        self.last_service = {}
+        rows = (MaintenanceOrder.query
+               .filter(MaintenanceOrder.status == "COMPLETED")
+               .order_by(MaintenanceOrder.completed_date.asc().nulls_first()
+                        if hasattr(MaintenanceOrder.completed_date.asc(),
+                                  "nulls_first")
+                        else MaintenanceOrder.completed_date.asc())
+               .all())
+        for o in rows:
+            if o.maintenance_type_id is None:
+                continue
+            self.last_service[(o.vehicle_id, o.maintenance_type_id)] = o
+
+        self.vehicles_by_id = {}
+
+    def applicable_schedules(self, vehicle, maintenance_type_id=None):
+        """In-memory equivalent of _applicable_schedules()."""
+        if vehicle.pm_schedule_id:
+            sched = self.schedules_by_id.get(vehicle.pm_schedule_id)
+            if sched and sched.is_active and (
+                    not maintenance_type_id or
+                    sched.maintenance_type_id == maintenance_type_id):
+                return [sched]
+
+        base = self.active_schedules
+        if maintenance_type_id:
+            base = [s for s in base
+                   if s.maintenance_type_id == maintenance_type_id]
+
+        brand_id = getattr(vehicle, "vehicle_brand_id", None)
+        model_id = getattr(vehicle, "vehicle_model_id", None)
+        if brand_id and model_id:
+            fk_matches = [s for s in base
+                         if s.vehicle_brand_id == brand_id
+                         and s.vehicle_model_id == model_id]
+            if fk_matches:
+                return fk_matches
+
+        make = (vehicle.brand or "").strip().lower()
+        model = (vehicle.model or "").strip().lower()
+        make_model = [s for s in base
+                     if s.vehicle_make and s.vehicle_model
+                     and s.vehicle_make.strip().lower() == make
+                     and s.vehicle_model.strip().lower() == model]
+        if make_model:
+            return make_model
+
+        type_matches = [s for s in base
+                       if s.vehicle_type_id == vehicle.vehicle_type_id
+                       and not s.vehicle_make and not s.vehicle_model]
+        if type_matches:
+            return type_matches
+
+        return [s for s in base
+               if s.vehicle_type_id is None
+               and not s.vehicle_make and not s.vehicle_model]
+
+    def last_service_for(self, vehicle, maintenance_type_id):
+        """In-memory equivalent of _last_service(), including the
+        same-name MaintenanceType fallback and both odometer
+        fallbacks."""
+        order = self.last_service.get((vehicle.id, maintenance_type_id))
+        if order is None:
+            target = self.types_by_id.get(maintenance_type_id)
+            if target is not None:
+                same_name = self.type_ids_by_name.get(
+                    (target.name or "").strip().lower(), [])
+                if len(same_name) > 1:
+                    candidates = [
+                        self.last_service.get((vehicle.id, tid))
+                        for tid in same_name]
+                    candidates = [c for c in candidates if c is not None]
+                    if candidates:
+                        order = max(
+                            candidates,
+                            key=lambda o: (o.completed_date is not None,
+                                          o.completed_date))
+        if order:
+            if order.odometer_at_service is not None:
+                return order.odometer_at_service, order.completed_date
+            return (vehicle.current_odometer or 0), order.completed_date
+        if (vehicle.last_pm_odometer is not None
+                or vehicle.last_pm_date is not None):
+            return vehicle.last_pm_odometer or 0, vehicle.last_pm_date
+        return 0, None
 
 
 class PMDueCalculationService:
@@ -174,18 +301,34 @@ class PMDueCalculationService:
         return 0, None
 
     def get_due_status(self, vehicle: Vehicle, maintenance_type_id=None,
-                       as_of_date=None) -> dict:
+                       as_of_date=None, _prefetch=None) -> dict:
         """Return {schedule, status, next_due_km, next_due_date} for the
-        first applicable schedule (or the specified maintenance_type_id)."""
+        first applicable schedule (or the specified maintenance_type_id).
+
+        `_prefetch` is an internal optimisation used by the bulk path
+        (get_all_due_vehicles): when supplied, reference data is read
+        from memory instead of the database, turning what was ~5 queries
+        PER VEHICLE into zero. Omitted everywhere else, so the
+        single-vehicle path behaves exactly as before.
+        """
         as_of_date = as_of_date or date.today()
-        schedules = self._applicable_schedules(vehicle, maintenance_type_id)
+        if _prefetch is not None:
+            schedules = _prefetch.applicable_schedules(vehicle,
+                                                       maintenance_type_id)
+        else:
+            schedules = self._applicable_schedules(vehicle,
+                                                   maintenance_type_id)
         if not schedules:
             return {"schedule": None, "status": "GOOD",
                    "next_due_km": None, "next_due_date": None}
 
         schedule = schedules[0]
-        last_km, last_date = self._last_service(vehicle.id,
-                                                schedule.maintenance_type_id)
+        if _prefetch is not None:
+            last_km, last_date = _prefetch.last_service_for(
+                vehicle, schedule.maintenance_type_id)
+        else:
+            last_km, last_date = self._last_service(
+                vehicle.id, schedule.maintenance_type_id)
 
         # An explicit notify_before_km/days on the schedule is a
         # deliberate admin choice and is used as-is, uncapped. But the
@@ -248,6 +391,7 @@ class PMDueCalculationService:
         return {"schedule": schedule, "status": status,
                "next_due_km": next_due_km, "next_due_date": next_due_date}
 
+    @request_cached("pm_all_due_vehicles")
     def get_all_due_vehicles(self, as_of_date=None,
                              exclude_with_open_order=True) -> list:
         """Return due-status entries for every active vehicle/schedule
@@ -264,6 +408,7 @@ class PMDueCalculationService:
         """
         from app.modules.transactions.maintenance_order.models import (
             MaintenanceOrder)
+        from sqlalchemy.orm import joinedload
 
         open_pairs = set()
         if exclude_with_open_order:
@@ -275,14 +420,26 @@ class PMDueCalculationService:
                 .filter(MaintenanceOrder.maintenance_type_id.isnot(None))
                 .all()}
 
+        # Build the in-memory snapshot ONCE (a handful of queries)
+        # instead of re-querying reference data for every vehicle. With
+        # ~5 queries per vehicle before, a 164-vehicle fleet issued
+        # roughly 800 round trips from this method alone; it is now a
+        # fixed cost regardless of fleet size.
+        prefetch = _Prefetch()
+
         results = []
         # DISPOSED vehicles are still real, non-deleted records
         # (is_active stays True — disposal is a business status, not a
         # soft-delete) but no longer need maintenance at all.
-        vehicles = Vehicle.query.filter_by(is_active=True).filter(
-            Vehicle.status != "DISPOSED").all()
+        # branch/vehicle_type are eager-loaded because the dashboard
+        # template renders them per row.
+        vehicles = (Vehicle.query
+                   .options(joinedload(Vehicle.branch),
+                           joinedload(Vehicle.vehicle_type))
+                   .filter_by(is_active=True)
+                   .filter(Vehicle.status != "DISPOSED").all())
         for vehicle in vehicles:
-            schedules = self._applicable_schedules(vehicle)
+            schedules = prefetch.applicable_schedules(vehicle)
             seen_types = set()
             for schedule in schedules:
                 if schedule.maintenance_type_id in seen_types:
@@ -292,7 +449,7 @@ class PMDueCalculationService:
                     continue  # already raised — not actionable again
                 result = self.get_due_status(
                     vehicle, maintenance_type_id=schedule.maintenance_type_id,
-                    as_of_date=as_of_date)
+                    as_of_date=as_of_date, _prefetch=prefetch)
                 if result["status"] != "GOOD":
                     results.append({**result, "vehicle": vehicle})
         return results

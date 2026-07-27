@@ -1,6 +1,7 @@
 """Registration Template service — mirrors PMScheduleService/
 PMDueCalculationService's shape for Vehicle Registration renewal."""
 from app.extensions import db
+from app.core.request_cache import request_cached
 from app.modules.registration_config.models import (
     RegistrationTemplate, RegistrationChecklistItem)
 from app.modules.system_admin.services.system_parameter_service import (
@@ -189,6 +190,7 @@ class RegistrationDueCalculationService:
             "warning": None,
         }
 
+    @request_cached("reg_all_due_vehicles")
     def get_all_due_vehicles(self, as_of_date=None, statuses=None,
                              exclude_with_open_order=True) -> list:
         """Every active vehicle whose status is in `statuses` — defaults

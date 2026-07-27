@@ -676,12 +676,30 @@ def report_pms_compliance():
     from app.modules.user_management.org_scope_service import (
         UserOrgScopeService)
     filters = _report_filters_from_request()
-    scope_svc = UserOrgScopeService()
-    rows = [r for r in PMDueCalculationService().get_all_due_vehicles()
-           if scope_svc.covers(current_user.id, branch_id=r["vehicle"].branch_id)
-           and _vehicle_matches_filters(r["vehicle"], filters)]
-    if filters["status"]:
-        rows = [r for r in rows if r["status"] == filters["status"]]
+    # Do NOT run the report just because someone clicked the sidebar
+    # link. This report evaluates the PM due status of EVERY active
+    # vehicle against every applicable schedule, so on a large fleet with
+    # a fully-imported PM catalogue it is one of the heaviest queries in
+    # the system -- and opening the page by accident, or navigating back
+    # to it, paid that cost every time for a result nobody asked for.
+    #
+    # The presence of `generate` marks a deliberate submission. Any
+    # filter being set also counts, so an existing bookmarked/filtered
+    # URL keeps working exactly as before rather than silently returning
+    # nothing.
+    has_filters = any(filters.get(k) for k in
+                     ("branch_id", "vehicle_type_id", "status"))
+    should_run = request.args.get("generate") == "1" or has_filters
+
+    rows = None
+    if should_run:
+        scope_svc = UserOrgScopeService()
+        rows = [r for r in PMDueCalculationService().get_all_due_vehicles()
+               if scope_svc.covers(current_user.id,
+                                  branch_id=r["vehicle"].branch_id)
+               and _vehicle_matches_filters(r["vehicle"], filters)]
+        if filters["status"]:
+            rows = [r for r in rows if r["status"] == filters["status"]]
     return render_template("system_admin/report_pms_compliance.html",
                            rows=rows, filters=filters,
                            branches=_branch_choices(),
