@@ -46,7 +46,9 @@ class _Prefetch:
     """
 
     __slots__ = ("schedules_by_id", "active_schedules", "types_by_id",
-                 "type_ids_by_name", "last_service", "vehicles_by_id")
+                 "type_ids_by_name", "last_service", "vehicles_by_id",
+                 "_by_fk", "_by_make_model", "_by_type_generic",
+                 "_global_generic", "_match_memo")
 
     def __init__(self):
         from app.modules.master_data.reference.models import MaintenanceType
@@ -101,8 +103,67 @@ class _Prefetch:
 
         self.vehicles_by_id = {}
 
+        # ------------------------------------------------------------------
+        # Pre-built match buckets.
+        #
+        # applicable_schedules() used to LINEAR-SCAN every active schedule
+        # for each vehicle -- and again for each (vehicle, maintenance
+        # type) pair, because get_due_status() calls it a second time.
+        # With 4,626 active schedules and 164 vehicles that is millions of
+        # comparisons, each doing .strip().lower() on two strings, which
+        # measured at ~9.2 SECONDS to return 3 rows.
+        #
+        # The matching rules only ever key off a handful of attributes, so
+        # every bucket can be built ONCE here (a single pass over the
+        # schedules) and looked up in constant time afterwards.
+        # ------------------------------------------------------------------
+        self._by_fk = {}
+        self._by_make_model = {}
+        self._by_type_generic = {}
+        self._global_generic = []
+        for s in self.active_schedules:
+            if s.vehicle_brand_id and s.vehicle_model_id:
+                self._by_fk.setdefault(
+                    (s.vehicle_brand_id, s.vehicle_model_id), []).append(s)
+            if s.vehicle_make and s.vehicle_model:
+                key = (s.vehicle_make.strip().lower(),
+                      s.vehicle_model.strip().lower())
+                self._by_make_model.setdefault(key, []).append(s)
+            elif not s.vehicle_make and not s.vehicle_model:
+                # Generic schedules: by vehicle type, or fully global.
+                if s.vehicle_type_id is not None:
+                    self._by_type_generic.setdefault(
+                        s.vehicle_type_id, []).append(s)
+                else:
+                    self._global_generic.append(s)
+
+        # applicable_schedules() is called twice for the same
+        # (vehicle, maintenance_type) pair on every pass -- once by the
+        # caller's loop and once inside get_due_status(). Memoise it.
+        self._match_memo = {}
+
     def applicable_schedules(self, vehicle, maintenance_type_id=None):
-        """In-memory equivalent of _applicable_schedules()."""
+        """In-memory equivalent of _applicable_schedules().
+
+        Resolution order is unchanged: an explicitly assigned schedule
+        wins; otherwise brand/model FK match, then make/model text match,
+        then a vehicle-type generic, then a fully global generic.
+
+        Filtering by maintenance_type is applied to the (small) matched
+        bucket rather than to all schedules up front. That is equivalent
+        -- intersecting by type and by match is commutative -- but avoids
+        walking thousands of rows to discard nearly all of them.
+        """
+        memo_key = (vehicle.id, maintenance_type_id)
+        cached = self._match_memo.get(memo_key)
+        if cached is not None:
+            return cached
+
+        result = self._resolve_schedules(vehicle, maintenance_type_id)
+        self._match_memo[memo_key] = result
+        return result
+
+    def _resolve_schedules(self, vehicle, maintenance_type_id=None):
         if vehicle.pm_schedule_id:
             sched = self.schedules_by_id.get(vehicle.pm_schedule_id)
             if sched and sched.is_active and (
@@ -110,38 +171,31 @@ class _Prefetch:
                     sched.maintenance_type_id == maintenance_type_id):
                 return [sched]
 
-        base = self.active_schedules
-        if maintenance_type_id:
-            base = [s for s in base
+        def _of_type(candidates):
+            if not maintenance_type_id:
+                return list(candidates)
+            return [s for s in candidates
                    if s.maintenance_type_id == maintenance_type_id]
 
         brand_id = getattr(vehicle, "vehicle_brand_id", None)
         model_id = getattr(vehicle, "vehicle_model_id", None)
         if brand_id and model_id:
-            fk_matches = [s for s in base
-                         if s.vehicle_brand_id == brand_id
-                         and s.vehicle_model_id == model_id]
+            fk_matches = _of_type(self._by_fk.get((brand_id, model_id), ()))
             if fk_matches:
                 return fk_matches
 
-        make = (vehicle.brand or "").strip().lower()
-        model = (vehicle.model or "").strip().lower()
-        make_model = [s for s in base
-                     if s.vehicle_make and s.vehicle_model
-                     and s.vehicle_make.strip().lower() == make
-                     and s.vehicle_model.strip().lower() == model]
+        key = ((vehicle.brand or "").strip().lower(),
+              (vehicle.model or "").strip().lower())
+        make_model = _of_type(self._by_make_model.get(key, ()))
         if make_model:
             return make_model
 
-        type_matches = [s for s in base
-                       if s.vehicle_type_id == vehicle.vehicle_type_id
-                       and not s.vehicle_make and not s.vehicle_model]
+        type_matches = _of_type(
+            self._by_type_generic.get(vehicle.vehicle_type_id, ()))
         if type_matches:
             return type_matches
 
-        return [s for s in base
-               if s.vehicle_type_id is None
-               and not s.vehicle_make and not s.vehicle_model]
+        return _of_type(self._global_generic)
 
     def last_service_for(self, vehicle, maintenance_type_id):
         """In-memory equivalent of _last_service(), including the
