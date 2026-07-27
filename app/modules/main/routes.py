@@ -4,7 +4,7 @@ inbox; the "Vehicles Due for Maintenance" widget surfaces PM due/overdue
 vehicles, also org-scope aware."""
 from datetime import datetime, timezone
 
-from flask import Blueprint, render_template, url_for
+from flask import Blueprint, jsonify, render_template, url_for
 from flask_login import login_required, current_user
 
 from app.core.approval.task_service import ApprovalTaskService
@@ -64,18 +64,29 @@ def dashboard():
     dash = DashboardService()
     visible_codes = _visible_widget_codes(current_user)
 
+    # The Maintenance and Registration figures each require a fleet-wide
+    # PM/registration evaluation. That work does not grow with the page
+    # -- it grows with the FLEET -- so computing it before the first byte
+    # is sent means the browser cannot paint ANYTHING until it finishes.
+    # That is why the measured LCP element was `span.sidebar-label`: even
+    # the sidebar text was waiting on a database calculation it has
+    # nothing to do with.
+    #
+    # Those two cards (and the two tables below) are therefore marked
+    # `deferred` and filled in by a follow-up request. The shell,
+    # navigation and the cheap COUNT(*) cards render immediately.
     all_cards = [
         {"code": "FLEET", "title": "Fleet", "icon": "bi-truck",
          "value": dash.fleet_count(user=current_user),
          "url": url_for("master_data.vehicle_list")},
         {"code": "MAINTENANCE", "title": "Maintenance", "icon": "bi-wrench",
-         "value": dash.maintenance_due_count(user=current_user),
+         "value": None, "deferred": True,
          "url": url_for("transactions.maintenanceorder_list")},
         {"code": "APPROVALS", "title": "Approvals", "icon": "bi-check2-square",
          "value": dash.approvals_pending_count(current_user),
          "url": "#for-my-action"},
         {"code": "REGISTRATIONS", "title": "Registrations", "icon": "bi-card-checklist",
-         "value": dash.registrations_expiring_count(user=current_user),
+         "value": None, "deferred": True,
          "url": url_for("transactions.vehicleregistration_list")},
         {"code": "TIRES", "title": "Tires", "icon": "bi-circle",
          "value": dash.tire_stock_count(user=current_user),
@@ -139,6 +150,24 @@ def dashboard():
             "url": url_for("master_data.vehicle_detail", vid=v.id),
         } for v in dash.recent_vehicles(user=current_user, limit=10)]
 
+    # Computed asynchronously -- see dashboard_widgets() below.
+    due_vehicles = None
+    due_registrations = None
+
+    return render_template("main/dashboard.html", cards=cards,
+                           for_my_action=for_my_action,
+                           recent_vehicles=recent_vehicles,
+                           due_vehicles=due_vehicles,
+                           due_registrations=due_registrations)
+
+
+def _compute_due_widgets(user):
+    """The two fleet-wide calculations, factored out of the page route.
+
+    Kept here rather than inlined in the endpoint so the page route and
+    the async endpoint can never drift apart in what they produce.
+    """
+    visible_codes = _visible_widget_codes(user)
     due_vehicles = []
     if ("DUE_MAINTENANCE" in visible_codes
             or (not _widget_exists("DUE_MAINTENANCE")
@@ -148,10 +177,10 @@ def dashboard():
         from app.modules.user_management.org_scope_service import (
             UserOrgScopeService)
         scope_svc = UserOrgScopeService()
-        can_create_mo = current_user.has_permission("maintenanceorder.create")
+        can_create_mo = user.has_permission("maintenanceorder.create")
         for d in PMDueCalculationService().get_all_due_vehicles():
             vehicle = d["vehicle"]
-            if not scope_svc.covers(current_user.id, branch_id=vehicle.branch_id):
+            if not scope_svc.covers(user.id, branch_id=vehicle.branch_id):
                 continue
             if can_create_mo:
                 # Link straight into a ready-to-submit Maintenance Order
@@ -187,10 +216,10 @@ def dashboard():
         from app.modules.user_management.org_scope_service import (
             UserOrgScopeService)
         scope_svc = UserOrgScopeService()
-        can_create_vr = current_user.has_permission("vehicleregistration.create")
+        can_create_vr = user.has_permission("vehicleregistration.create")
         for d in RegistrationDueCalculationService().get_all_due_vehicles():
             vehicle = d["vehicle"]
-            if not scope_svc.covers(current_user.id, branch_id=vehicle.branch_id):
+            if not scope_svc.covers(user.id, branch_id=vehicle.branch_id):
                 continue
             if can_create_vr:
                 # Same pre-fill pattern as Maintenance's due-vehicles link
@@ -208,8 +237,26 @@ def dashboard():
                 "url": link_url,
             })
 
-    return render_template("main/dashboard.html", cards=cards,
-                           for_my_action=for_my_action,
-                           recent_vehicles=recent_vehicles,
-                           due_vehicles=due_vehicles,
-                           due_registrations=due_registrations)
+    return due_vehicles, due_registrations
+
+
+@bp.route("/dashboard/widgets")
+@login_required
+def dashboard_widgets():
+    """Serves the parts of the dashboard whose cost scales with FLEET
+    SIZE, so the page itself never waits on them.
+
+    Returning rendered HTML rather than raw JSON keeps a single source of
+    truth for the markup -- the same partials the page would have used --
+    instead of duplicating the table layout in JavaScript.
+    """
+    dash = DashboardService()
+    due_vehicles, due_registrations = _compute_due_widgets(current_user)
+    return jsonify({
+        "maintenance_count": len(due_vehicles),
+        "registration_count": len(due_registrations),
+        "due_maintenance_html": render_template(
+            "main/_due_maintenance.html", due_vehicles=due_vehicles),
+        "due_registration_html": render_template(
+            "main/_due_registration.html", due_registrations=due_registrations),
+    })

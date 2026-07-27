@@ -1,0 +1,870 @@
+/* ============================================================
+   FMS Enterprise Theme v2.0
+   Author : ChatGPT
+   Purpose: Enterprise UI Enhancement Layer
+   ============================================================ */
+
+:root{
+
+    --sidebar-width:280px;
+
+    --radius-sm:8px;
+    --radius-md:12px;
+    --radius-lg:18px;
+
+    --shadow-xs:0 1px 3px rgba(0,0,0,.05);
+    --shadow-sm:0 3px 8px rgba(0,0,0,.08);
+    --shadow-md:0 8px 20px rgba(0,0,0,.10);
+    --shadow-lg:0 15px 40px rgba(0,0,0,.15);
+
+    --transition:.28s ease;
+
+    --sidebar-bg:#0F172A;
+    --sidebar-hover:#1E3A8A;
+    --sidebar-active:#2563EB;
+
+    --text-light:#F8FAFC;
+    --text-muted:#CBD5E1;
+
+}
+
+/* ============================================================
+   Sidebar
+   ============================================================ */
+
+.fms-sidebar{
+
+    width:var(--sidebar-width);
+
+    background:linear-gradient(
+        180deg,
+        #0F172A 0%,
+        #162447 100%
+    );
+
+    border-right:1px solid rgba(255,255,255,.05);
+
+    transition:all .3s ease;
+
+    box-shadow:var(--shadow-lg);
+
+}
+
+/* ============================================================
+   Brand
+   ============================================================ */
+
+.fms-sidebar__brand{
+
+    padding:22px;
+
+    display:flex;
+
+    align-items:center;
+
+    gap:16px;
+
+    border-bottom:1px solid rgba(255,255,255,.08);
+
+}
+
+.fms-sidebar__mark{
+
+    width:54px;
+
+    height:54px;
+
+    border-radius:16px;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    font-size:26px;
+
+    color:white;
+
+    background:linear-gradient(
+        135deg,
+        #2563EB,
+        #3B82F6
+    );
+
+    box-shadow:var(--shadow-md);
+
+}
+
+.fms-sidebar__wordmark{
+
+    display:flex;
+
+    flex-direction:column;
+
+    line-height:1.2;
+
+}
+
+.fms-sidebar__wordmark{
+
+    color:white;
+
+    font-size:18px;
+
+    font-weight:700;
+
+}
+
+.fms-sidebar__wordmark small{
+
+    color:var(--text-muted);
+
+    font-size:12px;
+
+    font-weight:500;
+
+}
+
+/* ============================================================
+   Search
+   ============================================================ */
+
+.sidebar-search{
+
+    padding:18px;
+
+}
+
+.sidebar-search .form-control{
+
+    border:none;
+
+    border-radius:12px;
+
+    background:rgba(255,255,255,.08);
+
+    color:white;
+
+}
+
+.sidebar-search .form-control::placeholder{
+
+    color:#CBD5E1;
+
+}
+
+.sidebar-search .input-group-text{
+
+    border:none;
+
+    background:rgba(255,255,255,.08);
+
+    color:white;
+
+}
+
+/* ============================================================
+   Navigation
+   ============================================================ */
+
+.fms-nav-link{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:14px;
+
+    padding:12px 18px;
+
+    margin:5px 12px;
+
+    border-radius:12px;
+
+    color:#CBD5E1;
+
+    transition:all .25s ease;
+
+    position:relative;
+
+}
+
+.fms-nav-link:hover{
+
+    background:rgba(255,255,255,.07);
+
+    color:white;
+
+    transform:translateX(4px);
+
+}
+
+.fms-nav-link.is-active{
+
+    background:linear-gradient(
+        90deg,
+        #2563EB,
+        #3B82F6
+    );
+
+    color:white;
+
+    box-shadow:0 10px 25px rgba(37,99,235,.35);
+
+}
+
+.fms-nav-link.is-active::before{
+
+    content:"";
+
+    position:absolute;
+
+    left:-12px;
+
+    top:8px;
+
+    bottom:8px;
+
+    width:4px;
+
+    border-radius:10px;
+
+    background:white;
+
+}
+
+/* ============================================================
+   Icons
+   ============================================================ */
+
+.fms-nav-link__icon{
+
+    font-size:18px;
+
+    width:24px;
+
+    text-align:center;
+
+}
+
+/* ============================================================
+   Section Headers
+   ============================================================ */
+
+.sidebar-section{
+
+    color:#94A3B8;
+
+    font-size:11px;
+
+    letter-spacing:1px;
+
+    font-weight:700;
+
+    margin-top:16px;
+
+    padding:12px 18px;
+
+}
+
+.sidebar-group-toggle{
+
+    border:none;
+
+    background:none;
+
+}
+
+.sidebar-group-toggle:hover{
+
+    color:white;
+
+}
+
+/* ============================================================
+   Chevron
+   ============================================================ */
+
+.sidebar-chevron{
+
+    transition:.3s;
+
+}
+
+.sidebar-group-toggle[aria-expanded="true"] .sidebar-chevron{
+
+    transform:rotate(180deg);
+
+}
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+
+.fms-sidebar-scroll{
+
+    scrollbar-width:thin;
+
+    scrollbar-color:#3B82F6 transparent;
+
+}
+
+.fms-sidebar-scroll::-webkit-scrollbar{
+
+    width:8px;
+
+}
+
+.fms-sidebar-scroll::-webkit-scrollbar-thumb{
+
+    background:#3B82F6;
+
+    border-radius:10px;
+
+}
+
+/* ============================================================
+   Cards
+   ============================================================ */
+
+.card{
+
+    border:none;
+
+    border-radius:16px;
+
+    box-shadow:var(--shadow-sm);
+
+    transition:all .25s ease;
+
+}
+
+.card:hover{
+
+    transform:translateY(-3px);
+
+    box-shadow:var(--shadow-md);
+
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+
+.btn{
+
+    border-radius:12px;
+
+    transition:.25s;
+
+    font-weight:600;
+
+}
+
+.btn-primary{
+
+    box-shadow:0 10px 25px rgba(37,99,235,.25);
+
+}
+
+.btn:hover{
+
+    transform:translateY(-2px);
+
+}
+
+/* ============================================================
+   Tables
+   ============================================================ */
+
+.table{
+
+    border-radius:14px;
+
+    overflow:hidden;
+
+}
+
+.table thead{
+
+    background:#F8FAFC;
+
+}
+
+.table tbody tr{
+
+    transition:.2s;
+
+}
+
+.table tbody tr:hover{
+
+    background:#EEF4FF;
+
+}
+
+/* ============================================================
+   Forms
+   ============================================================ */
+
+.form-control,
+.form-select{
+
+    border-radius:12px;
+
+    min-height:46px;
+
+}
+
+.form-control:focus,
+.form-select:focus{
+
+    box-shadow:0 0 0 .2rem rgba(37,99,235,.15);
+
+}
+
+/* ============================================================
+   Badges
+   ============================================================ */
+
+.badge{
+
+    border-radius:50rem;
+
+    font-weight:600;
+
+}
+
+/* ============================================================
+   Breadcrumb
+   ============================================================ */
+
+.breadcrumb{
+
+    padding:12px 0;
+
+}
+
+.breadcrumb-item + .breadcrumb-item::before{
+
+    content:"›";
+
+}
+
+/* ============================================================
+   Smooth Animation
+   ============================================================ */
+
+*{
+
+    transition:
+        background-color .25s,
+        color .25s,
+        border-color .25s,
+        box-shadow .25s;
+
+}
+
+/* ==========================================================
+   Enterprise KPI Cards
+   ========================================================== */
+
+.kpi-card{
+    position:relative;
+    overflow:hidden;
+    border:none;
+    border-radius:18px;
+    background:#fff;
+    padding:1.5rem;
+    box-shadow:0 10px 30px rgba(15,23,42,.08);
+    transition:all .25s ease;
+}
+
+.kpi-card:hover{
+    transform:translateY(-5px);
+    box-shadow:0 20px 40px rgba(15,23,42,.15);
+}
+
+.kpi-card::after{
+    content:"";
+    position:absolute;
+    right:-25px;
+    top:-25px;
+    width:90px;
+    height:90px;
+    border-radius:50%;
+    background:rgba(37,99,235,.08);
+}
+
+.kpi-title{
+    font-size:.82rem;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:#64748B;
+    margin-bottom:.35rem;
+}
+
+.kpi-value{
+    font-size:2rem;
+    font-weight:700;
+    color:#0F172A;
+    line-height:1;
+}
+
+.kpi-icon{
+    width:56px;
+    height:56px;
+    border-radius:16px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:1.6rem;
+    background:#EEF4FF;
+    color:#2563EB;
+}
+
+.badge-soft-success{
+    background:#DCFCE7;
+    color:#166534;
+}
+
+.badge-soft-danger{
+    background:#FEE2E2;
+    color:#991B1B;
+}
+
+.badge-soft-warning{
+    background:#FEF3C7;
+    color:#92400E;
+}
+
+.badge-soft-info{
+    background:#DBEAFE;
+    color:#1D4ED8;
+}
+
+.badge-soft-secondary{
+    background:#F1F5F9;
+    color:#475569;
+}
+
+.badge-soft-primary{
+    background:#E0E7FF;
+    color:#4338CA;
+}
+
+.badge{
+    padding:.45rem .75rem;
+    font-size:.75rem;
+    font-weight:600;
+}
+
+.badge-soft-success{
+    background:#DCFCE7;
+    color:#166534;
+}
+
+.badge-soft-danger{
+    background:#FEE2E2;
+    color:#991B1B;
+}
+
+.badge-soft-warning{
+    background:#FEF3C7;
+    color:#92400E;
+}
+
+.badge-soft-info{
+    background:#DBEAFE;
+    color:#1D4ED8;
+}
+
+.badge-soft-secondary{
+    background:#F1F5F9;
+    color:#475569;
+}
+
+.badge-soft-primary{
+    background:#E0E7FF;
+    color:#4338CA;
+}
+
+.badge{
+    padding:.45rem .75rem;
+    font-size:.75rem;
+    font-weight:600;
+}
+.table-responsive{
+    border-radius:16px;
+    overflow:hidden;
+}
+
+.table{
+    margin-bottom:0;
+}
+
+.table thead th{
+
+    background:#F8FAFC;
+
+    border-bottom:2px solid #E2E8F0;
+
+    color:#475569;
+
+    font-size:.82rem;
+
+    font-weight:700;
+
+    text-transform:uppercase;
+
+    letter-spacing:.04em;
+
+    position:sticky;
+
+    top:0;
+
+    z-index:2;
+}
+
+.table tbody td{
+
+    vertical-align:middle;
+
+    padding:14px;
+
+}
+
+.table tbody tr{
+
+    transition:.2s;
+
+}
+
+.table tbody tr:hover{
+
+    background:#F8FBFF;
+
+}.form-label{
+
+    font-size:.82rem;
+
+    font-weight:600;
+
+    color:#334155;
+
+    margin-bottom:.35rem;
+
+}
+
+.form-control,
+
+.form-select{
+
+    border:1px solid #CBD5E1;
+
+    padding:.75rem 1rem;
+
+}
+
+.form-control:hover,
+
+.form-select:hover{
+
+    border-color:#94A3B8;
+
+}
+
+.form-control:focus,
+
+.form-select:focus{
+
+    border-color:#2563EB;
+
+    box-shadow:0 0 0 .2rem rgba(37,99,235,.15);
+
+}
+.page-header{
+
+    margin-bottom:1.5rem;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:space-between;
+
+}
+
+.page-title{
+
+    font-size:1.8rem;
+
+    font-weight:700;
+
+    color:#0F172A;
+
+}
+
+.page-subtitle{
+
+    color:#64748B;
+
+    margin-top:.25rem;
+
+}
+.nav-tabs{
+
+    border:none;
+
+    gap:.5rem;
+
+}
+
+.nav-tabs .nav-link{
+
+    border:none;
+
+    border-radius:12px;
+
+    padding:.75rem 1.2rem;
+
+    color:#64748B;
+
+    transition:.25s;
+
+}
+
+.nav-tabs .nav-link:hover{
+
+    background:#F8FAFC;
+
+}
+
+.nav-tabs .nav-link.active{
+
+    background:#2563EB;
+
+    color:#fff;
+
+    box-shadow:0 10px 20px rgba(37,99,235,.25);
+
+}
+.modal-content{
+
+    border:none;
+
+    border-radius:20px;
+
+    overflow:hidden;
+
+    box-shadow:0 30px 60px rgba(15,23,42,.18);
+
+}
+
+.modal-header{
+
+    border-bottom:1px solid #E2E8F0;
+
+    padding:1rem 1.5rem;
+
+}
+
+.modal-footer{
+
+    border-top:1px solid #E2E8F0;
+
+}
+.dropdown-menu{
+
+    border:none;
+
+    border-radius:14px;
+
+    box-shadow:0 20px 45px rgba(15,23,42,.12);
+
+    padding:.5rem;
+
+}
+
+.dropdown-item{
+
+    border-radius:10px;
+
+    padding:.6rem .8rem;
+
+}
+
+.dropdown-item:hover{
+
+    background:#EEF4FF;
+
+}
+.loading-overlay{
+
+    position:fixed;
+
+    inset:0;
+
+    background:rgba(255,255,255,.85);
+
+    backdrop-filter:blur(3px);
+
+    z-index:9999;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+}
+.toast{
+
+    border:none;
+
+    border-radius:16px;
+
+    box-shadow:0 15px 35px rgba(15,23,42,.12);
+
+}
+
+.fab{
+
+    position:fixed;
+
+    right:30px;
+
+    bottom:30px;
+
+    width:60px;
+
+    height:60px;
+
+    border-radius:50%;
+
+    background:#2563EB;
+
+    color:#fff;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    box-shadow:0 20px 40px rgba(37,99,235,.35);
+
+    transition:.3s;
+
+    z-index:1030;
+
+}
+
+.fab:hover{
+
+    transform:translateY(-5px);
+
+    color:#fff;
+
+}

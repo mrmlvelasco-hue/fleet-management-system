@@ -1,0 +1,30 @@
+<div class="row g-3 mt-1">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <span class="fw-semibold">Vehicles Due for Maintenance</span>
+        <span class="badge text-bg-warning rounded-pill">{{ due_vehicles|length }}</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead><tr>
+            <th>Vehicle</th><th>Maintenance Type</th><th>Status</th><th>Next Due (KM)</th><th>Next Due (Date)</th>
+          </tr></thead>
+          <tbody>
+          {% for d in due_vehicles %}
+            <tr>
+              <td><a href="{{ d.url }}">{{ d.vehicle.plate_number or d.vehicle.conduction_number }} — {{ d.vehicle.brand }} {{ d.vehicle.model }}</a></td>
+              <td>{{ d.maintenance_type }}</td>
+              <td><span class="badge text-bg-{{ 'danger' if d.status=='OVERDUE' else 'warning' }}">{{ d.status }}</span></td>
+              <td>{{ d.next_due_km or '—' }}</td>
+              <td>{{ d.next_due_date or '—' }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="text-center text-muted py-4">No vehicles currently due for maintenance.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
