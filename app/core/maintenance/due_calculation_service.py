@@ -76,10 +76,23 @@ class _Prefetch:
         self.last_service = {}
         rows = (MaintenanceOrder.query
                .filter(MaintenanceOrder.status == "COMPLETED")
-               .order_by(MaintenanceOrder.completed_date.asc().nulls_first()
-                        if hasattr(MaintenanceOrder.completed_date.asc(),
-                                  "nulls_first")
-                        else MaintenanceOrder.completed_date.asc())
+               # Portable "NULLs first, then oldest to newest".
+               #
+               # NOT `.nulls_first()`: that emits the SQL keyword
+               # `NULLS FIRST`, which PostgreSQL and SQLite accept but
+               # MySQL rejects outright with error 1064. The previous
+               # `hasattr(..., "nulls_first")` guard was worthless -- it
+               # asks whether SQLAlchemy has the METHOD (always yes),
+               # not whether the DATABASE accepts the SQL it generates,
+               # so it passed silently and still broke MySQL.
+               #
+               # Nor can we rely on each dialect's default NULL ordering:
+               # MySQL and SQLite sort NULLs first on ASC, PostgreSQL
+               # sorts them last. `completed_date IS NULL DESC` states
+               # the intent explicitly and compiles to plain, portable
+               # SQL everywhere.
+               .order_by(MaintenanceOrder.completed_date.is_(None).desc(),
+                        MaintenanceOrder.completed_date.asc())
                .all())
         for o in rows:
             if o.maintenance_type_id is None:
