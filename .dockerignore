@@ -1,0 +1,15 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+instance/*.db
+tests
+docs
+*.md
+.env
+.env.*
+!.env.docker.example
+migrations/versions/__pycache__

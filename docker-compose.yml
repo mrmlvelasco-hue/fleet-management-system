@@ -1,0 +1,99 @@
+# ---------------------------------------------------------------------
+# FMS — Docker Compose stack
+#
+#   docker compose up -d --build      start everything
+#   docker compose logs -f web        watch the app
+#   docker compose down               stop (data is kept in volumes)
+#
+# Copy .env.docker.example to .env and set the passwords BEFORE the
+# first run -- MySQL only reads them when it initialises its data
+# directory, so changing them later has no effect without wiping the
+# volume.
+# ---------------------------------------------------------------------
+services:
+
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${DB_NAME:-fms}
+      MYSQL_USER: ${DB_USER:-fms_app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    # utf8mb4 explicitly, at BOTH server and connection level. Getting
+    # this wrong is what turned an em dash into "Γçö" in imported PM
+    # data -- and it can only be set cleanly at database creation, so it
+    # belongs here rather than in a later ALTER.
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # 128MB is MySQL's default and is small for this workload. Raise
+      # it via .env once you know how much RAM the host can spare.
+      - --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL:-512M}
+    volumes:
+      - fms_db_data:/var/lib/mysql
+    healthcheck:
+      # The app must not start migrating against a half-initialised
+      # database, so `web` waits on this rather than on the port alone.
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    # Not published to the host by default -- the database should only be
+    # reachable from inside the compose network. Uncomment to connect a
+    # GUI client from the host.
+    # ports:
+    #   - "3306:3306"
+
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+pymysql://${DB_USER:-fms_app}:${DB_PASSWORD}@db:3306/${DB_NAME:-fms}?charset=utf8mb4
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      FLASK_ENV: ${FLASK_ENV:-production}
+      DB_HOST: db
+      FMS_ADMIN_PASSWORD: ${FMS_ADMIN_PASSWORD:-}
+      SESSION_TIMEOUT_MINUTES: ${SESSION_TIMEOUT_MINUTES:-30}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+      MAIL_SERVER: ${MAIL_SERVER:-}
+      MAIL_PORT: ${MAIL_PORT:-465}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_SENDER: ${MAIL_SENDER:-}
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    volumes:
+      # Uploaded attachments must outlive the container.
+      - fms_uploads:/app/uploads
+
+  scheduler:
+    build: .
+    restart: unless-stopped
+    command: ["scheduler"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+pymysql://${DB_USER:-fms_app}:${DB_PASSWORD}@db:3306/${DB_NAME:-fms}?charset=utf8mb4
+      SECRET_KEY: ${SECRET_KEY}
+      FLASK_ENV: ${FLASK_ENV:-production}
+      DB_HOST: db
+      SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-60}
+      MAIL_SERVER: ${MAIL_SERVER:-}
+      MAIL_PORT: ${MAIL_PORT:-465}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_SENDER: ${MAIL_SENDER:-}
+    volumes:
+      - fms_uploads:/app/uploads
+
+volumes:
+  fms_db_data:
+  fms_uploads:
