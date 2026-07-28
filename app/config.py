@@ -75,6 +75,22 @@ class BaseConfig:
     CELERY_BROKER_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     CELERY_RESULT_BACKEND = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     WTF_CSRF_ENABLED = True
+    # Tie the CSRF token's lifetime to the SESSION rather than letting it
+    # run its own independent clock (Flask-WTF defaults to 1 hour).
+    #
+    # With two separate clocks the two can disagree: the notification
+    # poller keeps a session alive indefinitely while a page sits open,
+    # so after an hour that page's token could expire even though the
+    # person is still perfectly well logged in. They would then get a
+    # CSRF failure and be told their session had expired -- which would
+    # simply be untrue, and bouncing them to a login page they don't need
+    # is worse than the original error.
+    #
+    # With None the token stays valid exactly as long as the session it
+    # belongs to, so a CSRF failure means what the error message says it
+    # means. The token is still bound to the session and still verified;
+    # this changes WHEN it lapses, not WHETHER it is checked.
+    WTF_CSRF_TIME_LIMIT = None
     REMEMBER_COOKIE_HTTPONLY = True
     SESSION_COOKIE_HTTPONLY = True
 

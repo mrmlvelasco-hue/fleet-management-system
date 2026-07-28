@@ -7,6 +7,10 @@ from flask import Flask
 from flask_login import current_user
 
 from app.config import CONFIG_MAP
+from urllib.parse import urlparse
+
+from flask_wtf.csrf import CSRFError
+
 from app.extensions import db, migrate, login_manager, csrf
 from app.core.celery_app import init_celery
 
@@ -97,7 +101,8 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.cli import register_cli
     register_cli(app)
 
-    from flask import render_template, request, jsonify
+    from flask import (render_template, request, jsonify, redirect,
+                       url_for, flash)
     import uuid, logging
 
     def _wants_json() -> bool:
@@ -107,6 +112,50 @@ def create_app(config_name: str | None = None) -> Flask:
         request the person never sees."""
         return (request.headers.get("X-Requested-With") == "XMLHttpRequest"
                or request.accept_mimetypes.best == "application/json")
+
+    @app.errorhandler(CSRFError)
+    def csrf_expired(_e):
+        """A CSRF failure in this app almost always means the SESSION
+        expired, not an attack.
+
+        Sessions last 30 minutes. Someone who opens a Maintenance Order,
+        goes to a meeting, comes back and clicks Cancel gets a token that
+        no longer matches -- and Flask-WTF's default response is a bare
+        white "Bad Request / The CSRF tokens do not match" page with no
+        navigation and no explanation. That looks like the system is
+        broken, and it strands them with no way back.
+
+        The honest reading is "your session ended, sign in again", so
+        that is what we say. The page they were on is passed as `next`
+        so they land back where they were after logging in -- but only
+        for a GET-able path: the original POST (a cancel, an approve)
+        deliberately is NOT replayed, since re-firing a state-changing
+        action automatically after a re-login is exactly how someone
+        cancels an order they never meant to.
+        """
+        if _wants_json():
+            # Background requests get a machine-readable answer plus a
+            # redirect target, so the front-end can send the person to
+            # the login page rather than silently swallowing the error.
+            return jsonify(
+                error="Your session has expired. Please sign in again.",
+                error_type="SESSION_EXPIRED",
+                login_url=url_for("auth.login")), 401
+
+        flash("Your session expired, so that action was not completed. "
+              "Please sign in again.", "warning")
+        target = request.referrer
+        # Only offer to return somewhere on THIS site, and never to the
+        # login page itself (which would loop).
+        safe_next = None
+        if target:
+            parsed = urlparse(target)
+            if (not parsed.netloc
+                    or parsed.netloc == urlparse(request.host_url).netloc):
+                if not parsed.path.rstrip("/").endswith("/login"):
+                    safe_next = parsed.path
+        return redirect(url_for("auth.login", next=safe_next)
+                       if safe_next else url_for("auth.login"))
 
     @app.errorhandler(403)
     def forbidden(_e):

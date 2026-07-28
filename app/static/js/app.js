@@ -528,6 +528,25 @@ window.applyMoneyFormatting = function () {
            + "connection and try again. If this keeps happening, take a "
            + "screenshot of this message and send it to your administrator.";
       icon = "error";
+    } else if (statusCode === 401
+               || (payload && payload.error_type === "SESSION_EXPIRED")) {
+      // The session timed out while this page sat open. A popup saying
+      // "unauthorised" would be a dead end -- the person cannot fix it
+      // from here -- so acknowledge it and take them to the login page.
+      // The original action is deliberately NOT retried afterwards:
+      // silently re-firing something like a Cancel or Approve after a
+      // re-login is how an order gets cancelled that nobody meant to
+      // cancel.
+      Swal.fire({
+        title: "Session Expired",
+        text: (payload && payload.error)
+              || "Your session has expired. Please sign in again.",
+        icon: "warning",
+        confirmButtonText: "Sign in"
+      }).then(function () {
+        window.location.href = (payload && payload.login_url) || "/login";
+      });
+      return;
     } else if (statusCode === 403) {
       title = "Not Allowed";
       text = payload.error || "You don't have permission to do that.";
