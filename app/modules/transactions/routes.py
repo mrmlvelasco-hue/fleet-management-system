@@ -661,10 +661,100 @@ def maintenanceorder_new():
 @login_required
 @require_permission("maintenanceorder.view")
 def maintenanceorder_detail(oid):
-    item = MaintenanceOrderService().get_visible(oid, current_user)
+    svc = MaintenanceOrderService()
+    item = svc.get_visible(oid, current_user)
     if item is None:
         abort(403)
-    return render_template("transactions/maintenanceorder_detail.html", item=item)
+    return render_template("transactions/maintenanceorder_detail.html",
+                           item=item,
+                           editable_scope=svc.editable_scope(item))
+
+
+@bp.route("/maintenance-orders/<int:oid>/edit", methods=["GET", "POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_edit(oid):
+    """Edit an order that is still DRAFT (or RETURNED), or add remarks to
+    one already in progress.
+
+    Deliberately scoped by BOTH who is asking and what state the order is
+    in -- see MaintenanceOrderService.editable_scope() for why "DRAFT"
+    alone isn't a sufficient test.
+    """
+    from app.modules.master_data.reference.service import MaintenanceTypeService
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    from app.modules.system_admin.services.lookup_service import LookupService
+
+    svc = MaintenanceOrderService()
+    item = db.session.get(MaintenanceOrder, oid)
+    if item is None:
+        flash("Maintenance Order not found.", "warning")
+        return redirect(url_for("transactions.maintenanceorder_list"))
+
+    # The initiator is who this is for. Someone with broader rights (a
+    # fleet admin holding maintenanceorder.approve) can also correct an
+    # order, but an ordinary user must not be able to edit somebody
+    # else's request.
+    is_initiator = item.requested_by == current_user.id
+    if not is_initiator and not current_user.has_permission(
+            "maintenanceorder.approve"):
+        flash("You can only edit Maintenance Orders that you raised.",
+              "warning")
+        return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+    scope = svc.editable_scope(item)
+    if scope == "NONE":
+        if item.status == "DRAFT" and item.approval_instance is not None:
+            flash("This order is awaiting approval and cannot be edited. "
+                  "Ask the approver to return it if it needs changes.",
+                  "warning")
+        else:
+            flash(f"A {item.status} order can no longer be edited.", "warning")
+        return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+    if request.method == "POST":
+        f = request.form
+        try:
+            if scope == "REMARKS_ONLY":
+                svc.update(oid, user=current_user,
+                          description=f.get("description") or None)
+            else:
+                def _int(name):
+                    raw = f.get(name)
+                    return int(raw) if raw else None
+
+                svc.update(
+                    oid, user=current_user,
+                    description=f.get("description") or None,
+                    scheduled_date=parse_form_date(
+                        f.get("scheduled_date"), "Scheduled Date",
+                        required=True),
+                    odometer_at_service=_int("odometer_at_service"),
+                    estimated_cost=f.get("estimated_cost") or None,
+                    assigned_mechanic=f.get("assigned_mechanic") or None,
+                    vendor_id=_int("vendor_id"),
+                    maintenance_type_id=_int("maintenance_type_id"),
+                    transaction_type_id=_int("transaction_type_id"),
+                    scope_template_id=_int("scope_template_id"),
+                    driver_id=_int("driver_id"),
+                    destination_branch_id=_int("destination_branch_id"),
+                    assignment_classification=(
+                        f.get("assignment_classification") or None),
+                )
+            flash("Maintenance Order updated.", "success")
+            return redirect(url_for("transactions.maintenanceorder_detail",
+                                   oid=oid))
+        except Exception as exc:
+            _flash_engine_error(exc)
+
+    return render_template("transactions/maintenanceorder_edit.html",
+                           item=item, scope=scope,
+                           maintenance_types=MaintenanceTypeService().list(),
+                           transaction_types=TransactionTypeService().list(),
+                           assignment_classifications=LookupService()
+                           .get_by_type_with_fallback(
+                               "ASSIGNMENT_CLASSIFICATION"))
 
 
 @bp.route("/maintenance-orders/<int:oid>/print-disposal")

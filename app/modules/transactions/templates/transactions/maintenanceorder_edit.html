@@ -1,0 +1,113 @@
+{% extends "layout/base.html" %}
+{% block title %}Edit {{ item.document_number or 'Maintenance Order' }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.maintenanceorder_list') }}">Maintenance Orders</a></li>
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.maintenanceorder_detail', oid=item.id) }}">{{ item.document_number or item.id }}</a></li>
+<li class="breadcrumb-item active">Edit</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-1">Edit {{ item.document_number or 'Maintenance Order' }}</h1>
+<p class="text-muted">
+  {{ item.vehicle.plate_number or item.vehicle.conduction_number }} —
+  {{ item.vehicle.brand }} {{ item.vehicle.model }}
+</p>
+
+{% if scope == 'REMARKS_ONLY' %}
+<div class="alert alert-info">
+  <i class="bi bi-info-circle me-1"></i>
+  Work has already started on this order, so the approved details
+  (vehicle, type, scope and cost) are locked — changing them would mean
+  the work no longer matches what was approved. You can still update the
+  <strong>description / remarks</strong> as the job progresses.
+</div>
+{% elif item.approval_instance and item.approval_instance.status == 'RETURNED' %}
+<div class="alert alert-warning">
+  <i class="bi bi-arrow-counterclockwise me-1"></i>
+  This order was <strong>returned</strong> for correction. Make your
+  changes and resubmit it from the order page.
+</div>
+{% endif %}
+
+<form method="post" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  {% if scope == 'FULL' %}
+  <div class="col-md-4">
+    <label class="form-label">Scheduled Date <span class="text-danger">*</span></label>
+    <input type="date" name="scheduled_date" class="form-control" required
+           value="{{ item.scheduled_date }}">
+  </div>
+  <div class="col-md-4">
+    <label class="form-label">Odometer at Service</label>
+    <input type="number" name="odometer_at_service" class="form-control"
+           value="{{ item.odometer_at_service or '' }}">
+  </div>
+  <div class="col-md-4">
+    <label class="form-label">Estimated Cost</label>
+    <input type="text" inputmode="decimal" name="estimated_cost"
+           class="form-control js-money" placeholder="0.00"
+           value="{{ item.estimated_cost or '' }}">
+  </div>
+
+  {% if item.order_category == 'MAINTENANCE' %}
+  <div class="col-md-6">
+    <label class="form-label">Maintenance Type</label>
+    <select name="maintenance_type_id" class="form-select">
+      <option value="">— None —</option>
+      {% for mt in maintenance_types %}
+      <option value="{{ mt.id }}" {{ 'selected' if item.maintenance_type_id == mt.id }}>
+        {{ mt.code }} — {{ mt.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% else %}
+  <div class="col-md-6">
+    <label class="form-label">Transaction Type</label>
+    <select name="transaction_type_id" class="form-select">
+      <option value="">— None —</option>
+      {% for tt in transaction_types %}
+      <option value="{{ tt.id }}" {{ 'selected' if item.transaction_type_id == tt.id }}>
+        {{ tt.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if item.driver_id %}
+  <div class="col-md-6">
+    <label class="form-label">Assignment Classification</label>
+    <select name="assignment_classification" class="form-select">
+      <option value="">— Select —</option>
+      {% for lk in assignment_classifications %}
+      <option value="{{ lk.code }}" {{ 'selected' if item.assignment_classification == lk.code }}>
+        {{ lk.description }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  <div class="col-md-6">
+    <label class="form-label">Assigned Mechanic</label>
+    <input name="assigned_mechanic" class="form-control"
+           value="{{ item.assigned_mechanic or '' }}">
+  </div>
+  {% endif %}
+
+  <div class="col-12">
+    <label class="form-label">
+      Description / Remarks
+      {% if scope == 'REMARKS_ONLY' %}<span class="text-muted small">— the only editable field at this stage</span>{% endif %}
+    </label>
+    <textarea name="description" class="form-control" rows="4">{{ item.description or '' }}</textarea>
+    <div class="form-text">
+      Add any additional remarks about this work order. Every change is
+      recorded in the Audit Trail.
+    </div>
+  </div>
+
+  <div class="col-12">
+    <button class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Changes</button>
+    <a class="btn btn-outline-secondary"
+       href="{{ url_for('transactions.maintenanceorder_detail', oid=item.id) }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

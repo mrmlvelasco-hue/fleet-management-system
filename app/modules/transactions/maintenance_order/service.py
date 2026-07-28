@@ -169,6 +169,87 @@ class MaintenanceOrderService(BaseTransactionService):
         db.session.commit()
         return order
 
+    def editable_scope(self, order) -> str:
+        """How much of this order may be edited right now.
+
+        Returns "FULL", "REMARKS_ONLY", or "NONE".
+
+        "DRAFT" alone is not enough to decide: in this system an order
+        stays DRAFT while its approval is PENDING, so DRAFT covers three
+        genuinely different situations.
+
+          * DRAFT, never submitted        -> FULL. Nobody has seen it.
+          * DRAFT, approval RETURNED      -> FULL. Being able to correct
+            it is the entire point of a return.
+          * DRAFT, approval PENDING       -> NONE. An approver is looking
+            at it right now; silently changing the particulars underneath
+            them would mean they approve something other than what they
+            reviewed.
+          * IN_PROGRESS                   -> REMARKS_ONLY. The order is
+            approved and work has started, so the approved particulars
+            (vehicle, type, scope, cost) must not move -- but adding
+            notes about the work as it happens is exactly what was asked
+            for, and is safe.
+          * COMPLETED / CANCELLED         -> NONE. Closed records stay
+            as they were; they feed cost reports and the audit trail.
+        """
+        if order is None:
+            return "NONE"
+        if order.status == "IN_PROGRESS":
+            return "REMARKS_ONLY"
+        if order.status != "DRAFT":
+            return "NONE"
+        instance = order.approval_instance
+        if instance is None or instance.status == "RETURNED":
+            return "FULL"
+        return "NONE"
+
+    def update(self, order_id: int, *, user=None, **fields):
+        """Update an order within whatever scope its state allows.
+
+        Every change is captured by the existing audit listeners, so who
+        changed what is recorded without anything extra here.
+        """
+        order = db.session.get(MaintenanceOrder, order_id)
+        if order is None:
+            raise InvalidOrderStateError("Maintenance Order not found.")
+
+        scope = self.editable_scope(order)
+        if scope == "NONE":
+            instance = order.approval_instance
+            if order.status == "DRAFT" and instance is not None:
+                raise InvalidOrderStateError(
+                    "This order is awaiting approval and cannot be edited. "
+                    "Ask the approver to return it if it needs changes.")
+            raise InvalidOrderStateError(
+                f"A {order.status} order can no longer be edited.")
+
+        if scope == "REMARKS_ONLY":
+            allowed = {"description"}
+            rejected = sorted(k for k in fields
+                             if k not in allowed and fields[k] is not None)
+            if rejected:
+                raise InvalidOrderStateError(
+                    "Work has already started on this order, so only the "
+                    "description/remarks can be changed. Cannot change: "
+                    + ", ".join(rejected) + ".")
+            fields = {k: v for k, v in fields.items() if k in allowed}
+
+        editable = {
+            "description", "scheduled_date", "odometer_at_service",
+            "estimated_cost", "assigned_mechanic", "vendor_id",
+            "maintenance_type_id", "transaction_type_id",
+            "scope_template_id", "pm_schedule_id", "driver_id",
+            "destination_branch_id", "assignment_classification",
+            "disposal_value", "disposal_recipient",
+        }
+        for key, value in fields.items():
+            if key in editable:
+                setattr(order, key, value)
+        order.updated_by = user.id if user else None
+        db.session.commit()
+        return order
+
     def start_work(self, order_id: int):
         """Move an approved order into IN_PROGRESS.
 
