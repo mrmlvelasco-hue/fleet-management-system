@@ -736,7 +736,115 @@ def email_retry_failed():
     click.echo(f"Re-queued {count} failed email(s).")
 
 
+attachments_cli = AppGroup("attachments", help="Attachment storage diagnostics and recovery.")
+
+
+@attachments_cli.command("check")
+def attachments_check():
+    """Report how many attachments are database-backed vs disk-only vs
+    genuinely missing on THIS machine.
+
+    Run this before decommissioning any server or relying on a
+    database-only backup: a disk-only attachment survives a mysqldump
+    only by accident, and a missing one is already unrecoverable.
+    """
+    import os
+    from flask import current_app
+    from app.core.models.attachment import Attachment
+
+    total = Attachment.query.filter_by(is_active=True).count()
+    db_backed = Attachment.query.filter(
+        Attachment.is_active.is_(True),
+        Attachment.file_data.isnot(None)).count()
+
+    disk_only, missing = 0, []
+    for att in Attachment.query.filter(
+            Attachment.is_active.is_(True),
+            Attachment.file_data.is_(None)).all():
+        path = os.path.join(current_app.instance_path, "uploads",
+                            att.reference_table, att.filename)
+        if os.path.exists(path):
+            disk_only += 1
+        else:
+            missing.append(att)
+
+    click.echo(f"Total active attachments: {total}")
+    click.echo(f"  Database-backed (safe in any DB backup): {db_backed}")
+    click.echo(f"  Disk-only, file found on THIS machine:   {disk_only}")
+    click.echo(f"  Not found anywhere on this machine:      {len(missing)}")
+
+    if disk_only:
+        click.echo("\nRun 'flask attachments backfill-from-disk' now to pull "
+                  "the disk-only files into the database before this "
+                  "machine's disk is no longer available.")
+    if missing:
+        click.echo(f"\n{len(missing)} attachment(s) were not found on this "
+                  f"machine's disk either. If they were uploaded to a "
+                  f"DIFFERENT server, run this same check there instead --"
+                  f" the file may still exist on that machine:")
+        for att in missing[:20]:
+            click.echo(f"  id={att.id}  {att.reference_table}#{att.reference_id}"
+                      f"  {att.original_filename}")
+        if len(missing) > 20:
+            click.echo(f"  ... and {len(missing) - 20} more")
+
+
+@attachments_cli.command("backfill-from-disk")
+@click.option("--dry-run", is_flag=True,
+             help="Report what would be backfilled without writing anything.")
+def attachments_backfill_from_disk(dry_run):
+    """Copy the bytes of every disk-only attachment found on THIS
+    machine into its database row.
+
+    Safe to re-run: an attachment that already has file_data is skipped,
+    never re-read or overwritten. Run this on whichever server actually
+    holds the original uploads/ folder -- for anyone who uploaded photos
+    or documents before the database-storage migration existed, that is
+    the ONLY place those bytes still exist. Once this has been run (and
+    the resulting database backed up or migrated), that server's disk
+    copies are no longer load-bearing and a plain database backup is
+    sufficient for every attachment from then on.
+    """
+    import os
+    from flask import current_app
+    from app.core.models.attachment import Attachment
+
+    candidates = Attachment.query.filter(
+        Attachment.is_active.is_(True),
+        Attachment.file_data.is_(None)).all()
+
+    backfilled, still_missing = 0, 0
+    for att in candidates:
+        path = os.path.join(current_app.instance_path, "uploads",
+                            att.reference_table, att.filename)
+        if not os.path.exists(path):
+            still_missing += 1
+            continue
+        if dry_run:
+            click.echo(f"Would backfill id={att.id}  "
+                      f"{att.reference_table}#{att.reference_id}  "
+                      f"{att.original_filename}")
+            backfilled += 1
+            continue
+        with open(path, "rb") as f:
+            att.file_data = f.read()
+        backfilled += 1
+
+    if not dry_run and backfilled:
+        db.session.commit()
+
+    verb = "Would backfill" if dry_run else "Backfilled"
+    click.echo(f"{verb} {backfilled} attachment(s) from disk into the database.")
+    if still_missing:
+        click.echo(f"{still_missing} attachment(s) were not found on this "
+                  f"machine's disk -- check for them on a different server "
+                  f"with 'flask attachments check' before giving up on them.")
+    if dry_run and backfilled:
+        click.echo("\nRe-run WITHOUT --dry-run to actually write the data.")
+
+
 def register_cli(app):
+    app.cli.add_command(attachments_cli)
     app.cli.add_command(email_cli)
     app.cli.add_command(seed_cli)
     app.cli.add_command(reset_cli)

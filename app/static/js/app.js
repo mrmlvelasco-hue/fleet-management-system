@@ -22,19 +22,59 @@
     });
   }
 
-  // Sidebar collapse
+  // Sidebar collapse / mobile reveal.
+  //
+  // The CSS (theme.css) already had two rules for this -- `.fms-app.
+  // is-collapsed` narrows the sidebar to an icon rail on desktop, and
+  // `.fms-app.is-open .fms-sidebar` slides the sidebar on-screen on
+  // mobile (where it is off-canvas by default). Neither ever fired: the
+  // wrapper element was missing the `fms-app` class the rules are
+  // scoped to, and this toggle was setting a THIRD, unrelated class
+  // name (`sidebar-collapsed`) that no CSS rule reads at all. On a
+  // phone that left the hamburger button doing nothing -- the sidebar
+  // was permanently off-screen with no way to bring it back.
   const wrapper = document.getElementById("fms-wrapper");
-  if (wrapper && getCookie("fms-sidebar") === "collapsed") {
-    wrapper.classList.add("sidebar-collapsed");
+  const isMobile = () => window.matchMedia("(max-width: 860px)").matches;
+
+  if (wrapper && !isMobile() && getCookie("fms-sidebar") === "collapsed") {
+    wrapper.classList.add("is-collapsed");
   }
   const sbToggle = document.getElementById("sidebarToggle");
-  if (sbToggle) {
+  if (sbToggle && wrapper) {
     sbToggle.addEventListener("click", function () {
-      wrapper.classList.toggle("sidebar-collapsed");
-      setCookie("fms-sidebar",
-        wrapper.classList.contains("sidebar-collapsed") ? "collapsed" : "open");
+      if (isMobile()) {
+        // Mobile: reveal/hide the off-canvas sidebar. Not persisted --
+        // a phone should always start with it closed, not resume
+        // whatever state it was left in on a totally different device.
+        wrapper.classList.toggle("is-open");
+      } else {
+        // Desktop: collapse to an icon-only rail, persisted across
+        // visits like before.
+        wrapper.classList.toggle("is-collapsed");
+        setCookie("fms-sidebar",
+          wrapper.classList.contains("is-collapsed") ? "collapsed" : "open");
+      }
     });
   }
+  // Tapping the darkened backdrop, or any navigation link, closes the
+  // mobile sidebar -- otherwise it stays covering the content after the
+  // person has already chosen where they're going.
+  if (wrapper) {
+    document.addEventListener("click", function (e) {
+      if (!isMobile() || !wrapper.classList.contains("is-open")) return;
+      const insideSidebar = e.target.closest(".fms-sidebar");
+      const isToggleButton = e.target.closest("#sidebarToggle");
+      if (!insideSidebar || (insideSidebar && e.target.closest("a"))) {
+        if (!isToggleButton) wrapper.classList.remove("is-open");
+      }
+    });
+  }
+  // A resize from mobile to desktop (e.g. rotating a tablet, or a
+  // devtools resize) must not leave a stale is-open state active once
+  // the mobile-only CSS that gives it meaning no longer applies.
+  window.addEventListener("resize", function () {
+    if (wrapper && !isMobile()) wrapper.classList.remove("is-open");
+  });
 
   // Sidebar category groups: the server renders the group containing the
   // current page as expanded and the others collapsed by default: this

@@ -409,6 +409,17 @@ body.dark-mode .fms-sidebar { background: #0b131b; border-right-color: #1b2836; 
   .fms-sidebar { position: fixed; z-index: 60; width: var(--sidebar-w); transform: translateX(-100%); transition: transform .2s ease; box-shadow: var(--shadow-nav); }
   .fms-app.is-open .fms-sidebar { transform: translateX(0); }
   .fms-topbar__search { flex-basis: 160px; }
+  /* Darkened backdrop behind the open sidebar -- makes it visually
+     obvious the rest of the page is inactive, and gives a large,
+     easy-to-hit touch target for closing it again. */
+  #fms-wrapper::before {
+    content: ""; position: fixed; inset: 0; z-index: 55;
+    background: rgba(15, 23, 32, .45);
+    opacity: 0; pointer-events: none; transition: opacity .2s ease;
+  }
+  .fms-app.is-open::before {
+    opacity: 1; pointer-events: auto;
+  }
 }
 
 /* Accessibility: visible focus + reduced motion */
