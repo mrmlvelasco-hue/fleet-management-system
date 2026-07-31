@@ -1,12 +1,18 @@
 {# Reusable chart grid -- included by both the Dashboard's analytics row
    and the standalone Analytics page, so the two never drift apart in
    layout or behaviour. `compact` shrinks canvas height for the
-   dashboard's smaller cards; the full-size Analytics page omits it. #}
+   dashboard's smaller cards; the full-size Analytics page omits it.
+
+   Chart heights are set via CSS classes (fms-chart-box / -tall), not
+   inline pixel styles, specifically so the mobile media queries below
+   can shrink them further -- a 300px-tall donut with a bottom legend
+   is fine on a desktop card but wastes most of a phone screen's height
+   while still requiring the same amount of scrolling to get past it. #}
 <div class="row g-3" id="fmsChartsRow">
   <div class="col-lg-6">
     <div class="card h-100"><div class="card-body">
       <h6 class="card-title mb-3">Fleet by Status</h6>
-      <div style="position:relative; height:{{ '220px' if compact else '300px' }};">
+      <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
         <canvas id="chartFleetByStatus"></canvas>
       </div>
     </div></div>
@@ -14,7 +20,7 @@
   <div class="col-lg-6">
     <div class="card h-100"><div class="card-body">
       <h6 class="card-title mb-3">Fleet by Branch</h6>
-      <div style="position:relative; height:{{ '220px' if compact else '300px' }};">
+      <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
         <canvas id="chartFleetByBranch"></canvas>
       </div>
     </div></div>
@@ -22,7 +28,7 @@
   <div class="col-lg-6">
     <div class="card h-100"><div class="card-body">
       <h6 class="card-title mb-3">PM Compliance</h6>
-      <div style="position:relative; height:{{ '220px' if compact else '300px' }};">
+      <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
         <canvas id="chartPmCompliance"></canvas>
       </div>
     </div></div>
@@ -30,7 +36,7 @@
   <div class="col-lg-6">
     <div class="card h-100"><div class="card-body">
       <h6 class="card-title mb-3">Maintenance Orders by Type</h6>
-      <div style="position:relative; height:{{ '220px' if compact else '300px' }};">
+      <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
         <canvas id="chartMoByType"></canvas>
       </div>
     </div></div>
@@ -38,7 +44,7 @@
   <div class="col-12">
     <div class="card"><div class="card-body">
       <h6 class="card-title mb-3">Maintenance Cost Trend (last 6 months)</h6>
-      <div style="position:relative; height:{{ '260px' if compact else '340px' }};">
+      <div class="fms-chart-box fms-chart-box--tall {{ 'fms-chart-box--compact' if compact }}">
         <canvas id="chartCostTrend"></canvas>
       </div>
     </div></div>
@@ -49,6 +55,36 @@
   </div>
 </div>
 
+<style>
+  .fms-chart-box { position: relative; height: 300px; }
+  .fms-chart-box--tall { height: 340px; }
+  .fms-chart-box--compact { height: 220px; }
+  .fms-chart-box--compact.fms-chart-box--tall { height: 260px; }
+
+  /* Phones and small tablets -- matches the app's own mobile breakpoint
+     (theme.css, the sidebar/off-canvas rules) so charts, navigation and
+     everything else agree on what "mobile" means. A fixed 220-340px
+     chart made sense next to a full desktop card; on a 375px-wide phone
+     that height forces a lot of scrolling just to get past five charts
+     stacked full-width, so every box shrinks further here regardless of
+     whether the compact/tall variant was requested. */
+  @media (max-width: 860px) {
+    .fms-chart-box,
+    .fms-chart-box--compact { height: 200px; }
+    .fms-chart-box--tall,
+    .fms-chart-box--compact.fms-chart-box--tall { height: 230px; }
+  }
+  /* Small phones specifically -- legend text and axis labels need a
+     little more room relative to the chart itself here, handled by the
+     JS below reducing Chart.js's own font sizes at this width; the
+     canvas height stays the same as the 860px tier so that JS-side
+     shrink has where it needs. */
+  @media (max-width: 420px) {
+    .fms-chart-box,
+    .fms-chart-box--compact { height: 190px; }
+  }
+</style>
+
 <script>
 (function () {
   // Chart.js is registered globally by the vendored chart.umd.min.js.
@@ -56,13 +92,33 @@
   // COLORS) and sent with the data, rather than duplicated here, so
   // "OVERDUE" is the same red on every chart on every page without two
   // places to keep in sync.
+
+  // A CSS media query can shrink the CANVAS's box, but it can't shrink
+  // Chart.js's own legend/tick text -- that's a JS-level option, so it
+  // has to be read at chart-creation time. Matches the same breakpoints
+  // theme.css uses for the chart boxes themselves (860px "mobile",
+  // 420px "small phone"), so a chart's text and its box shrink in step
+  // rather than a large legend cramming into a box that just got
+  // smaller out from under it.
+  function isMobile() { return window.matchMedia("(max-width: 860px)").matches; }
+  function isSmallPhone() { return window.matchMedia("(max-width: 420px)").matches; }
+  function legendFontSize() { return isSmallPhone() ? 10 : (isMobile() ? 11 : 12); }
+  function legendBoxSize() { return isMobile() ? 10 : 12; }
+
   function donut(ctx, payload) {
     return new Chart(ctx, {
       type: "doughnut",
       data: { labels: payload.labels,
              datasets: [{ data: payload.data, backgroundColor: payload.colors }] },
-      options: { responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { position: "bottom" } } }
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        // A phone's narrow width leaves little room for a side legend
+        // even if one were used, so this stays bottom-anchored at every
+        // size -- only the text/box shrink, not the position.
+        plugins: { legend: { position: "bottom",
+                            labels: { boxWidth: legendBoxSize(),
+                                     font: { size: legendFontSize() } } } }
+      }
     });
   }
   function bar(ctx, payload, horizontal) {
@@ -70,10 +126,17 @@
       type: "bar",
       data: { labels: payload.labels,
              datasets: [{ data: payload.data, backgroundColor: payload.colors }] },
-      options: { responsive: true, maintainAspectRatio: false,
-                indexAxis: horizontal ? "y" : "x",
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true } } }
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        indexAxis: horizontal ? "y" : "x",
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { font: { size: legendFontSize() },
+                       maxRotation: isMobile() ? 45 : 0,
+                       autoSkip: true } },
+          y: { beginAtZero: true, ticks: { font: { size: legendFontSize() } } }
+        }
+      }
     });
   }
   function line(ctx, payload) {
@@ -83,10 +146,26 @@
              datasets: [{ label: "Actual Cost", data: payload.data,
                          borderColor: "#065A82", backgroundColor: "rgba(6,90,130,.12)",
                          fill: true, tension: 0.3 }] },
-      options: { responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true,
-                              ticks: { callback: v => "₱" + v.toLocaleString() } } } }
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { font: { size: legendFontSize() },
+                       maxRotation: isMobile() ? 60 : 0,
+                       // A tight phone screen can't fit 6 month labels
+                       // without overlap even rotated -- thin them out
+                       // rather than let them collide illegibly.
+                       autoSkip: true, maxTicksLimit: isSmallPhone() ? 4 : (isMobile() ? 6 : 12) } },
+          y: { beginAtZero: true,
+              ticks: { font: { size: legendFontSize() },
+                      // "₱150,000" at full precision doesn't fit a
+                      // phone's y-axis column -- abbreviate on mobile
+                      // only, where the space genuinely isn't there.
+                      callback: v => isMobile()
+                        ? "₱" + (v >= 1000 ? (v / 1000) + "k" : v)
+                        : "₱" + v.toLocaleString() } }
+        }
+      }
     });
   }
 
