@@ -240,6 +240,21 @@ def _compute_due_widgets(user):
     return due_vehicles, due_registrations
 
 
+@bp.route("/dashboard/charts")
+@login_required
+def dashboard_charts():
+    """Chart data for the dashboard's analytics row and the standalone
+    Analytics page -- ONE endpoint, so both places can never show
+    different numbers for the same chart.
+
+    Fetched asynchronously for the same reason the due-maintenance
+    widgets are: several of these run an aggregate query over the whole
+    fleet, and that cost must not sit in front of the page's first
+    paint."""
+    from app.core.dashboard_analytics_service import DashboardAnalyticsService
+    return jsonify(DashboardAnalyticsService().all_charts(user=current_user))
+
+
 @bp.route("/dashboard/widgets")
 @login_required
 def dashboard_widgets():

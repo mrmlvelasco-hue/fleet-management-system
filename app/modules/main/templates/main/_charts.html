@@ -1,0 +1,112 @@
+{# Reusable chart grid -- included by both the Dashboard's analytics row
+   and the standalone Analytics page, so the two never drift apart in
+   layout or behaviour. `compact` shrinks canvas height for the
+   dashboard's smaller cards; the full-size Analytics page omits it. #}
+<div class="row g-3" id="fmsChartsRow">
+  <div class="col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h6 class="card-title mb-3">Fleet by Status</h6>
+      <div style="position:relative; height:{{ '220px' if compact else '300px' }};">
+        <canvas id="chartFleetByStatus"></canvas>
+      </div>
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h6 class="card-title mb-3">Fleet by Branch</h6>
+      <div style="position:relative; height:{{ '220px' if compact else '300px' }};">
+        <canvas id="chartFleetByBranch"></canvas>
+      </div>
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h6 class="card-title mb-3">PM Compliance</h6>
+      <div style="position:relative; height:{{ '220px' if compact else '300px' }};">
+        <canvas id="chartPmCompliance"></canvas>
+      </div>
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h6 class="card-title mb-3">Maintenance Orders by Type</h6>
+      <div style="position:relative; height:{{ '220px' if compact else '300px' }};">
+        <canvas id="chartMoByType"></canvas>
+      </div>
+    </div></div>
+  </div>
+  <div class="col-12">
+    <div class="card"><div class="card-body">
+      <h6 class="card-title mb-3">Maintenance Cost Trend (last 6 months)</h6>
+      <div style="position:relative; height:{{ '260px' if compact else '340px' }};">
+        <canvas id="chartCostTrend"></canvas>
+      </div>
+    </div></div>
+  </div>
+  <div class="col-12 text-center text-muted small py-3" id="fmsChartsLoading">
+    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+    Loading charts...
+  </div>
+</div>
+
+<script>
+(function () {
+  // Chart.js is registered globally by the vendored chart.umd.min.js.
+  // Colour meanings are decided SERVER-SIDE (DashboardAnalyticsService.
+  // COLORS) and sent with the data, rather than duplicated here, so
+  // "OVERDUE" is the same red on every chart on every page without two
+  // places to keep in sync.
+  function donut(ctx, payload) {
+    return new Chart(ctx, {
+      type: "doughnut",
+      data: { labels: payload.labels,
+             datasets: [{ data: payload.data, backgroundColor: payload.colors }] },
+      options: { responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: "bottom" } } }
+    });
+  }
+  function bar(ctx, payload, horizontal) {
+    return new Chart(ctx, {
+      type: "bar",
+      data: { labels: payload.labels,
+             datasets: [{ data: payload.data, backgroundColor: payload.colors }] },
+      options: { responsive: true, maintainAspectRatio: false,
+                indexAxis: horizontal ? "y" : "x",
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } } }
+    });
+  }
+  function line(ctx, payload) {
+    return new Chart(ctx, {
+      type: "line",
+      data: { labels: payload.labels,
+             datasets: [{ label: "Actual Cost", data: payload.data,
+                         borderColor: "#065A82", backgroundColor: "rgba(6,90,130,.12)",
+                         fill: true, tension: 0.3 }] },
+      options: { responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true,
+                              ticks: { callback: v => "₱" + v.toLocaleString() } } } }
+    });
+  }
+
+  fetch("{{ url_for('main.dashboard_charts') }}")
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById("fmsChartsLoading").remove();
+      if (d.fleet_by_status.labels.length)
+        donut(document.getElementById("chartFleetByStatus"), d.fleet_by_status);
+      if (d.fleet_by_branch.labels.length)
+        bar(document.getElementById("chartFleetByBranch"), d.fleet_by_branch, true);
+      if (d.pm_compliance.labels.length)
+        donut(document.getElementById("chartPmCompliance"), d.pm_compliance);
+      if (d.mo_by_type.labels.length)
+        bar(document.getElementById("chartMoByType"), d.mo_by_type, false);
+      line(document.getElementById("chartCostTrend"), d.maintenance_cost_trend);
+    })
+    .catch(() => {
+      const el = document.getElementById("fmsChartsLoading");
+      if (el) el.textContent = "Could not load charts. Please refresh.";
+    });
+})();
+</script>

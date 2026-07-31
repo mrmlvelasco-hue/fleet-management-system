@@ -1,0 +1,11 @@
+{% extends "layout/base.html" %}
+{% block title %}Analytics{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Analytics</li>{% endblock %}
+{% block content %}
+<h1 class="h3 mb-1">Analytics</h1>
+<p class="text-muted mb-4">
+  Fleet composition, PM compliance, and maintenance cost trends. The same
+  data shown compact on the Dashboard, at full size here.
+</p>
+{% include "main/_charts.html" %}
+{% endblock %}

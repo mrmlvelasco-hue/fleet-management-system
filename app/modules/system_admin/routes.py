@@ -68,6 +68,7 @@ for _code, _desc in [
     ("reportvehicleactivity.view", "View Vehicle Activity History report"),
     ("customreport.view", "View and run custom reports"),
     ("customreport.manage", "Create, edit and delete custom reports"),
+    ("analytics.view", "View the Analytics page (fleet, PM and cost charts)"),
 ]:
     _m, _a = _code.split(".")
     registry.register(_code, _m, _a, _desc)
@@ -968,6 +969,17 @@ def _parse_filters(form):
             "value": values[idx] if idx < len(values) else "",
         })
     return filters
+
+
+@bp.route("/analytics")
+@login_required
+@require_permission("analytics.view")
+def analytics():
+    """Standalone, full-size version of the same charts row shown
+    compact on the Dashboard -- both render the identical
+    main/_charts.html partial against the identical /dashboard/charts
+    endpoint, so the two can never disagree on a number."""
+    return render_template("system_admin/analytics.html")
 
 
 @bp.route("/custom-reports")
