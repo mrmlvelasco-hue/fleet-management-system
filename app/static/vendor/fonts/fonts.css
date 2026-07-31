@@ -1,0 +1,64 @@
+/* ---------------------------------------------------------------------
+   Self-hosted Inter + Space Grotesk, replacing fonts.googleapis.com.
+
+   Latin subset only (English/Filipino text) at exactly the weights the
+   app uses -- 400/500/600/700 for Inter (body text), 500/600/700 for
+   Space Grotesk (headings) -- kept deliberately narrow rather than
+   vendoring every language subset Google serves by default, which
+   would multiply this file's size for characters the UI never shows.
+   woff2 only: every browser this app supports (Chrome, Edge, Firefox,
+   Safari from the last several years) has supported woff2 since long
+   before this project started; a woff fallback would only add dead
+   weight.
+   --------------------------------------------------------------------- */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('inter/inter-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url('inter/inter-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('inter/inter-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('inter/inter-700.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url('space-grotesk/space-grotesk-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url('space-grotesk/space-grotesk-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('space-grotesk/space-grotesk-700.woff2') format('woff2');
+}

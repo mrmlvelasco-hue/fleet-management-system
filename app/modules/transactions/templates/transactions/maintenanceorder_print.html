@@ -179,7 +179,7 @@
     </div>
   </div>
 </body>
-<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="{{ url_for("static", filename="vendor/qrcode-generator/qrcode.min.js") }}"></script>
 <script>
   var qr = qrcode(0, 'M');
   qr.addData(window.location.origin + "{{ url_for('transactions.maintenanceorder_detail', oid=item.id) }}");

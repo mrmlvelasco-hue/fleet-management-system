@@ -5,19 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}FMS{% endblock %} · Fleet Management System</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <!-- All third-party CSS/JS below is served from our own static
+       vendor/ folder, not an external CDN. The system is used from
+       office networks whose proxy performs SSL inspection with a
+       certificate the browser doesn't trust for THIRD-PARTY domains
+       (jsdelivr, datatables.net, code.jquery.com) -- every such CSS/JS
+       request failed outright with ERR_CERT_AUTHORITY_INVALID, silently
+       breaking DataTables search, Select2, SweetAlert2 and Bootstrap
+       itself with no visible error to the person using the app, only in
+       the browser console. Self-hosting removes the dependency on
+       reaching any of those external hosts at all -- it now works
+       identically on an open connection, a restrictive corporate
+       network, or fully offline on a LAN with no internet access. -->
+  <link href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='vendor/bootstrap-icons/font/bootstrap-icons.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='vendor/datatables/css/dataTables.bootstrap5.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='vendor/select2/css/select2.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='vendor/fonts/fonts.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/theme-enterprise.css') }}" rel="stylesheet">
 </head>
 <body>
 {% if current_user.is_authenticated %}
+
 <div class="d-flex fms-app" id="fms-wrapper">
   {% include "layout/sidebar.html" %}
   <div class="flex-grow-1 d-flex flex-column min-vh-100">
@@ -44,12 +55,12 @@
   {% block auth_content %}{% endblock %}
 </main>
 {% endif %}
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/jquery/jquery-3.7.1.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/datatables/js/jquery.dataTables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/datatables/js/dataTables.bootstrap5.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/select2/js/select2.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/sweetalert2/sweetalert2.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
