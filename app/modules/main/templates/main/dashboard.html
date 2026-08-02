@@ -94,29 +94,64 @@
         <span class="badge text-bg-danger rounded-pill">{{ for_my_action|length }}</span>
         {% endif %}
       </div>
-      <div class="ent-panel__body p-0">
-        {% if for_my_action %}
-        <div class="list-group list-group-flush">
-          {% for item in for_my_action %}
-          <a href="{{ item.url }}" class="list-group-item list-group-item-action">
-            <div class="d-flex justify-content-between align-items-start gap-2">
-              <div class="min-w-0">
-                <span class="fw-semibold">{{ item.document_number }}</span>
-                <span class="text-muted">· {{ item.document_type }}</span>
-                {% if item.plate_number %}
-                <span class="badge text-bg-light border">{{ item.plate_number }}</span>
-                {% endif %}
-                {% if item.type_label %}<span class="text-muted">({{ item.type_label }})</span>{% endif %}
-                {% if item.activity %}<div class="small text-muted">{{ item.activity }}</div>{% endif %}
-                <div class="small text-muted">{{ item.level_label }}</div>
-              </div>
-              <span class="small text-muted text-nowrap">By {{ item.requester }}</span>
-            </div>
+      <div class="ent-panel__body">
+        {# Tiles first: one per module with a count and a View button, so
+           an approver sees "18 Purchase Requests" and goes there rather
+           than scrolling individual rows on a dashboard. #}
+        <div class="ent-tiles mb-3">
+          {% for tile in action_tiles %}
+          <a class="ent-tile" href="{{ tile.url }}">
+            {% if tile.count %}<span class="ent-tile__badge">{{ tile.count }}</span>{% endif %}
+            <span class="ent-tile__icon"><i class="bi {{ tile.icon }}"></i></span>
+            <span class="ent-tile__label">{{ tile.label }}</span>
+            <span class="ent-tile__view">View</span>
           </a>
           {% endfor %}
+
+          {# Due overviews. Counts arrive with the async widgets, so these
+             two show a spinner until then rather than briefly displaying
+             a wrong number. #}
+          <a class="ent-tile" href="{{ url_for('system_admin.report_pms_compliance', generate=1) }}">
+            <span class="ent-tile__badge" data-tile="MAINTENANCE">
+              <span class="spinner-border spinner-border-sm" role="status"></span></span>
+            <span class="ent-tile__icon"><i class="bi bi-tools"></i></span>
+            <span class="ent-tile__label">Due for Maintenance</span>
+            <span class="ent-tile__view">View</span>
+          </a>
+          <a class="ent-tile" href="{{ url_for('system_admin.report_registration_expiry') }}">
+            <span class="ent-tile__badge" data-tile="REGISTRATIONS">
+              <span class="spinner-border spinner-border-sm" role="status"></span></span>
+            <span class="ent-tile__icon"><i class="bi bi-calendar-check"></i></span>
+            <span class="ent-tile__label">Registration Renewals</span>
+            <span class="ent-tile__view">View</span>
+          </a>
+        </div>
+
+        {% if for_my_action %}
+        <div class="ent-worklist" id="for-my-action-list">
+          <div class="ent-worklist__head">Awaiting your approval</div>
+          <div class="list-group list-group-flush">
+            {% for item in for_my_action %}
+            <a href="{{ item.url }}" class="list-group-item list-group-item-action px-0">
+              <div class="d-flex justify-content-between align-items-start gap-2">
+                <div class="min-w-0">
+                  <span class="fw-semibold">{{ item.document_number }}</span>
+                  <span class="text-muted">· {{ item.document_type }}</span>
+                  {% if item.plate_number %}
+                  <span class="badge text-bg-light border">{{ item.plate_number }}</span>
+                  {% endif %}
+                  {% if item.type_label %}<span class="text-muted">({{ item.type_label }})</span>{% endif %}
+                  {% if item.activity %}<div class="small text-muted">{{ item.activity }}</div>{% endif %}
+                  <div class="small text-muted">{{ item.level_label }}</div>
+                </div>
+                <span class="small text-muted text-nowrap">By {{ item.requester }}</span>
+              </div>
+            </a>
+            {% endfor %}
+          </div>
         </div>
         {% else %}
-        <p class="text-muted text-center py-4 mb-0">Nothing is waiting for your action.</p>
+        <p class="text-muted text-center py-3 mb-0">Nothing is waiting for your approval.</p>
         {% endif %}
       </div>
     </div>
@@ -209,6 +244,14 @@
       if (mt) { mt.textContent = data.maintenance_count; }
       var rg = document.querySelector('[data-kpi="REGISTRATIONS"]');
       if (rg) { rg.textContent = data.registration_count; }
+
+      // The two due tiles read from the SAME payload as the KPI cards
+      // above, so a tile can never show a different number than the card
+      // for the same thing.
+      var mt2 = document.querySelector('[data-tile="MAINTENANCE"]');
+      if (mt2) { mt2.textContent = data.maintenance_count; }
+      var rg2 = document.querySelector('[data-tile="REGISTRATIONS"]');
+      if (rg2) { rg2.textContent = data.registration_count; }
 
       var m = document.getElementById("dueMaintenanceWidget");
       if (m) { m.outerHTML = data.due_maintenance_html || ""; }

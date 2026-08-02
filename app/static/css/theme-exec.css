@@ -250,3 +250,23 @@
   .ent-flow__arrow { display: none; }
   .ent-flow__step { flex: 0 0 30%; }
 }
+
+/* ── Action tile: View affordance + worklist section ───────────────────── */
+.ent-tile__view {
+  display: block; margin-top: .55rem; padding-top: .45rem;
+  border-top: 1px solid var(--ent-slate-100);
+  font-size: .72rem; font-weight: 700; color: var(--ent-blue);
+  letter-spacing: .02em;
+}
+.ent-tile:hover .ent-tile__view { text-decoration: underline; }
+/* The spinner sits inside the badge until the async count lands, so the
+   badge must not collapse to nothing in the meantime. */
+.ent-tile__badge .spinner-border { width: .7rem; height: .7rem; border-width: .13em; }
+
+.ent-worklist__head {
+  font-size: .74rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--ent-slate-400);
+  padding-bottom: .4rem; border-bottom: 1px solid var(--ent-slate-100);
+  margin-bottom: .25rem;
+}
+.ent-worklist .list-group-item { border-color: var(--ent-slate-100); }

@@ -139,6 +139,7 @@ def dashboard():
                 "aging": _aging_label(t.created_at),
                 "level_number": t.level_number,
                 "url": resolve_task_url(t),
+                "reference_table": t.reference_table,
             })
 
     # "Vehicle List" panel (VEHICLE_LIST widget) — the compact recent-fleet
@@ -149,6 +150,47 @@ def dashboard():
             "vehicle": v,
             "url": url_for("master_data.vehicle_detail", vid=v.id),
         } for v in dash.recent_vehicles(user=current_user, limit=10)]
+
+    # ── "For My Action" tiles ────────────────────────────────────────
+    # The mockup shows this as one tile per module with a count badge and
+    # a View button, rather than a flat list of individual documents --
+    # an approver wants to see "18 Purchase Requests" and go there, not
+    # scroll 18 rows on a dashboard.
+    #
+    # Built by grouping the SAME worklist the list below uses, so the
+    # tile counts can never disagree with what the person actually finds
+    # when they click through.
+    _TILE_META = {
+        "maintenance_orders": ("Maintenance Orders", "bi-wrench-adjustable",
+                              "transactions.maintenanceorder_list"),
+        "purchase_requests": ("Purchase Requests", "bi-cart",
+                             "transactions.purchaserequest_list"),
+        "authority_to_drive": ("ATD Requests", "bi-person-badge",
+                              "transactions.atd_list"),
+        "vehicle_movements": ("Vehicle Movements", "bi-arrow-left-right",
+                             "transactions.vehiclemovement_list"),
+        "vehicle_registrations": ("Registration Renewals", "bi-card-checklist",
+                                 "transactions.vehicleregistration_list"),
+        "trip_tickets": ("Trip Tickets", "bi-ticket-detailed",
+                        "transactions.tripticket_list"),
+    }
+    _counts = {}
+    for item in for_my_action:
+        _counts[item["reference_table"]] = _counts.get(
+            item["reference_table"], 0) + 1
+
+    action_tiles = []
+    for table, count in sorted(_counts.items(), key=lambda kv: -kv[1]):
+        label, icon, endpoint = _TILE_META.get(
+            table, (table.replace("_", " ").title(), "bi-inbox", None))
+        try:
+            url = url_for(endpoint) if endpoint else "#for-my-action-list"
+        except Exception:
+            # An unmapped or renamed module must not 500 the whole
+            # dashboard -- fall back to the detailed list below.
+            url = "#for-my-action-list"
+        action_tiles.append({"label": label, "icon": icon,
+                            "count": count, "url": url})
 
     # Computed asynchronously -- see dashboard_widgets() below.
     due_vehicles = None
@@ -161,6 +203,7 @@ def dashboard():
     _analytics = DashboardAnalyticsService()
     return render_template("main/dashboard.html", cards=cards,
                            for_my_action=for_my_action,
+                           action_tiles=action_tiles,
                            recent_vehicles=recent_vehicles,
                            due_vehicles=due_vehicles,
                            due_registrations=due_registrations,
