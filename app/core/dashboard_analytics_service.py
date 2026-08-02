@@ -219,3 +219,64 @@ class DashboardAnalyticsService:
             "pm_compliance": self.pm_compliance(user=user),
             "mo_by_type": self.maintenance_orders_by_type(user=user),
         }
+
+    @request_cached("chart_approval_workflow")
+    def approval_workflow_counts(self, user=None) -> dict:
+        """Live counts for the Approval Workflow timeline.
+
+        Real counts from ApprovalInstance / MaintenanceOrder status, not
+        illustrative numbers -- this sits on an executive dashboard where
+        a wrong figure would be read as fact.
+        """
+        from app.core.approval.models import ApprovalInstance
+        from app.modules.transactions.maintenance_order.models import (
+            MaintenanceOrder)
+
+        def _count(model, **filters):
+            return db.session.query(func.count(model.id)).filter_by(
+                **filters).scalar() or 0
+
+        return {
+            "draft": _count(MaintenanceOrder, status="DRAFT"),
+            "submitted": _count(ApprovalInstance, status="PENDING"),
+            "for_approval": _count(ApprovalInstance, status="PENDING"),
+            "approved": _count(ApprovalInstance, status="APPROVED"),
+            "completed": _count(MaintenanceOrder, status="COMPLETED"),
+        }
+
+    @request_cached("kpi_trends")
+    def kpi_trends(self, user=None) -> dict:
+        """Month-over-month change for the KPI cards.
+
+        Computed from each model's created_at against the same day last
+        month. Where a meaningful comparison cannot be made (no history
+        yet, or a prior count of zero, which would make any percentage
+        meaningless) the key is simply ABSENT and the card renders
+        without a trend row -- deliberately, rather than showing a
+        placeholder or a fabricated figure that a client would read as
+        real.
+        """
+        from datetime import date, timedelta
+        from app.modules.master_data.vehicle.models import Vehicle
+        from app.modules.transactions.maintenance_order.models import (
+            MaintenanceOrder)
+
+        cutoff = date.today() - timedelta(days=30)
+        trends = {}
+
+        def _trend(key, model, **filters):
+            q = db.session.query(func.count(model.id))
+            if filters:
+                q = q.filter_by(**filters)
+            now = q.scalar() or 0
+            before = (q.filter(model.created_at < cutoff).scalar() or 0)
+            if before == 0:
+                return                      # no baseline -> no honest percentage
+            change = (now - before) / before * 100
+            trends[key] = {"pct": round(abs(change), 1),
+                          "dir": "up" if change > 0 else
+                                 ("down" if change < 0 else "flat")}
+
+        _trend("FLEET", Vehicle, is_active=True)
+        _trend("MAINTENANCE", MaintenanceOrder)
+        return trends

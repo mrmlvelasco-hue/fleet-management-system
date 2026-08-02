@@ -1,0 +1,252 @@
+/* ==========================================================================
+   FMS — Enterprise Dashboard theme layer
+   Loaded AFTER theme.css, so it overrides rather than replaces it.
+
+   Matches the client-approved mockup: royal-blue enterprise palette,
+   glassmorphism panels, hero banner, KPI cards with trend indicators,
+   a connected approval-workflow timeline and a module ribbon.
+
+   Deliberately scoped to `.fms-exec` (set on the dashboard's wrapper)
+   wherever it changes shared components, so restyling the executive
+   dashboard cannot alter the look of the ~60 other screens in the app
+   that were not part of this redesign.
+   ========================================================================== */
+
+:root {
+  --ent-blue:        #2563EB;   /* royal blue — primary accent            */
+  --ent-blue-600:    #1D4ED8;
+  --ent-blue-700:    #1E40AF;
+  --ent-blue-100:    #DBEAFE;
+  --ent-blue-50:     #EFF6FF;
+  --ent-navy:        #0F172A;   /* dark navy — sidebar / headings          */
+  --ent-navy-800:    #1E293B;
+  --ent-cyan:        #22D3EE;   /* cyan highlight                          */
+  --ent-slate-500:   #64748B;
+  --ent-slate-400:   #94A3B8;
+  --ent-slate-200:   #E2E8F0;
+  --ent-slate-100:   #F1F5F9;
+  --ent-surface:     #F8FAFC;
+  --ent-green:       #16A34A;
+  --ent-amber:       #F59E0B;
+  --ent-red:         #DC2626;
+  --ent-shadow-sm:   0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
+  --ent-shadow-md:   0 4px 12px rgba(15,23,42,.08);
+  --ent-shadow-lg:   0 12px 32px rgba(15,23,42,.10);
+}
+
+/* ── Page canvas ───────────────────────────────────────────────────────── */
+.fms-exec { background: var(--ent-surface); margin: -1.5rem -1.5rem 0; padding: 1.25rem 1.5rem 2rem; }
+
+/* ── Hero banner ───────────────────────────────────────────────────────── */
+.ent-hero {
+  position: relative;
+  border-radius: 14px;
+  padding: 1.6rem 1.9rem;
+  margin-bottom: 1.15rem;
+  overflow: hidden;
+  background:
+    linear-gradient(115deg, #FFFFFF 0%, #FFFFFF 46%, #EAF1FE 62%, #D3E2FD 100%);
+  box-shadow: var(--ent-shadow-sm);
+  border: 1px solid var(--ent-slate-200);
+}
+/* Angled royal-blue facets on the right, as in the mockup. Pure CSS so
+   there is no image to ship, scale or go stale. */
+.ent-hero::before,
+.ent-hero::after {
+  content: ""; position: absolute; top: -30%; height: 180%; pointer-events: none;
+}
+.ent-hero::before {
+  right: 14%; width: 46%;
+  background: linear-gradient(160deg, var(--ent-blue) 0%, var(--ent-blue-700) 100%);
+  transform: skewX(-18deg); opacity: .93;
+}
+.ent-hero::after {
+  right: 4%; width: 26%;
+  background: linear-gradient(160deg, var(--ent-cyan) 0%, var(--ent-blue) 100%);
+  transform: skewX(-18deg); opacity: .35;
+}
+.ent-hero__inner { position: relative; z-index: 2; max-width: 62%; }
+.ent-hero__title {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: clamp(1.35rem, 2.4vw, 2.1rem);
+  font-weight: 700; letter-spacing: -.01em; line-height: 1.12;
+  color: var(--ent-navy); margin: 0 0 .35rem;
+}
+.ent-hero__tagline { color: var(--ent-blue-600); font-weight: 500; font-size: .98rem; margin: 0; }
+.ent-hero__actions { position: relative; z-index: 3; }
+
+/* ── KPI cards ─────────────────────────────────────────────────────────── */
+.ent-kpi-grid {
+  display: grid; gap: .85rem; margin-bottom: 1.15rem;
+  grid-template-columns: repeat(auto-fit, minmax(186px, 1fr));
+}
+.ent-kpi {
+  display: block; background: #fff; border: 1px solid var(--ent-slate-200);
+  border-radius: 12px; padding: .95rem 1rem .85rem;
+  box-shadow: var(--ent-shadow-sm); text-decoration: none;
+  transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+}
+.ent-kpi:hover {
+  box-shadow: var(--ent-shadow-md); transform: translateY(-2px);
+  border-color: #C7D9F7;
+}
+.ent-kpi__head { display: flex; align-items: flex-start; gap: .7rem; }
+.ent-kpi__icon {
+  flex: 0 0 auto; width: 42px; height: 42px; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.15rem; background: var(--ent-blue-50); color: var(--ent-blue);
+}
+/* Per-card icon tints, so six cards read as distinct at a glance rather
+   than a wall of identical blue. */
+.ent-kpi--amber  .ent-kpi__icon { background: #FEF3C7; color: #B45309; }
+.ent-kpi--violet .ent-kpi__icon { background: #EDE9FE; color: #6D28D9; }
+.ent-kpi--teal   .ent-kpi__icon { background: #CCFBF1; color: #0F766E; }
+.ent-kpi--sky    .ent-kpi__icon { background: #E0F2FE; color: #0369A1; }
+.ent-kpi--rose   .ent-kpi__icon { background: #FEE2E2; color: #B91C1C; }
+.ent-kpi__meta { min-width: 0; }
+.ent-kpi__label {
+  font-size: .76rem; font-weight: 600; color: var(--ent-slate-500);
+  letter-spacing: .01em; line-height: 1.25; margin-bottom: .1rem;
+}
+.ent-kpi__value {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 1.72rem; font-weight: 700; color: var(--ent-navy); line-height: 1.05;
+}
+.ent-kpi__foot {
+  display: flex; align-items: center; gap: .4rem;
+  margin-top: .6rem; padding-top: .55rem; border-top: 1px solid var(--ent-slate-100);
+  font-size: .72rem; color: var(--ent-slate-400);
+}
+.ent-trend { font-weight: 700; display: inline-flex; align-items: center; gap: .15rem; }
+.ent-trend--up   { color: var(--ent-green); }
+.ent-trend--down { color: var(--ent-red); }
+.ent-trend--flat { color: var(--ent-slate-400); }
+.ent-kpi__spark { margin-left: auto; flex: 0 0 auto; }
+
+/* ── Panels ────────────────────────────────────────────────────────────── */
+.ent-panel {
+  background: #fff; border: 1px solid var(--ent-slate-200); border-radius: 12px;
+  box-shadow: var(--ent-shadow-sm); height: 100%;
+  display: flex; flex-direction: column;
+}
+.ent-panel__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .85rem 1.1rem; border-bottom: 1px solid var(--ent-slate-100);
+}
+.ent-panel__title { font-weight: 700; color: var(--ent-navy); font-size: .98rem; margin: 0; }
+.ent-panel__body { padding: 1rem 1.1rem; flex: 1 1 auto; }
+.ent-panel__foot {
+  padding: .6rem 1.1rem; border-top: 1px solid var(--ent-slate-100);
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: .78rem; color: var(--ent-slate-400);
+}
+.ent-panel__foot a { color: var(--ent-blue); font-weight: 600; text-decoration: none; }
+.ent-panel__foot a:hover { text-decoration: underline; }
+
+/* ── Approval workflow timeline ────────────────────────────────────────── */
+.ent-flow { display: flex; align-items: flex-start; justify-content: space-between; gap: .2rem; }
+.ent-flow__step { flex: 1 1 0; text-align: center; min-width: 0; }
+.ent-flow__dot {
+  width: 46px; height: 46px; border-radius: 50%; margin: 0 auto .5rem;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.05rem; color: #fff; box-shadow: var(--ent-shadow-sm);
+}
+.ent-flow__dot--draft     { background: #CBD5E1; color: var(--ent-navy); }
+.ent-flow__dot--submitted { background: var(--ent-blue); }
+.ent-flow__dot--review    { background: var(--ent-amber); }
+.ent-flow__dot--approved  { background: var(--ent-green); }
+.ent-flow__dot--done      { background: var(--ent-blue-700); }
+.ent-flow__label {
+  font-size: .74rem; font-weight: 600; color: var(--ent-slate-500);
+  line-height: 1.2; margin-bottom: .15rem;
+}
+.ent-flow__count {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-weight: 700; font-size: 1.05rem; color: var(--ent-navy);
+}
+.ent-flow__arrow {
+  flex: 0 0 auto; align-self: flex-start; margin-top: 14px;
+  color: var(--ent-slate-400); font-size: 1rem;
+}
+
+/* ── Worklist / action tiles ───────────────────────────────────────────── */
+.ent-tiles { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+.ent-tile {
+  position: relative; background: #fff; border: 1px solid var(--ent-slate-200);
+  border-radius: 11px; padding: .9rem .75rem .75rem; text-align: center;
+  text-decoration: none; display: block;
+  transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+}
+.ent-tile:hover { box-shadow: var(--ent-shadow-md); transform: translateY(-2px); border-color: #C7D9F7; }
+.ent-tile__icon {
+  width: 40px; height: 40px; border-radius: 10px; margin: 0 auto .55rem;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ent-blue-50); color: var(--ent-blue); font-size: 1.1rem;
+}
+.ent-tile__label { font-size: .78rem; font-weight: 600; color: var(--ent-navy); line-height: 1.25; }
+.ent-tile__badge {
+  position: absolute; top: -8px; right: -6px; min-width: 26px; height: 26px;
+  border-radius: 13px; background: var(--ent-red); color: #fff;
+  font-size: .74rem; font-weight: 700; display: flex; align-items: center;
+  justify-content: center; padding: 0 .4rem; border: 2px solid #fff;
+  box-shadow: var(--ent-shadow-sm);
+}
+
+/* ── Security & compliance cards ───────────────────────────────────────── */
+.ent-gov { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.ent-gov__card {
+  border: 1px solid var(--ent-slate-200); border-radius: 11px;
+  padding: .8rem .85rem; background: #fff; text-decoration: none; display: block;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+.ent-gov__card:hover { border-color: #C7D9F7; box-shadow: var(--ent-shadow-sm); }
+.ent-gov__icon {
+  width: 34px; height: 34px; border-radius: 9px; margin-bottom: .5rem;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ent-blue-50); color: var(--ent-blue); font-size: .95rem;
+}
+.ent-gov__title { font-size: .82rem; font-weight: 700; color: var(--ent-navy); line-height: 1.2; }
+.ent-gov__desc  { font-size: .71rem; color: var(--ent-slate-400); line-height: 1.3; margin-top: .15rem; }
+
+/* ── Bottom module ribbon ──────────────────────────────────────────────── */
+.ent-ribbon {
+  display: grid; gap: .6rem; margin-top: 1.1rem;
+  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+}
+.ent-ribbon__item {
+  display: flex; align-items: center; gap: .55rem;
+  background: #fff; border: 1px solid var(--ent-slate-200); border-radius: 10px;
+  padding: .7rem .75rem; text-decoration: none;
+  transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+}
+.ent-ribbon__item:hover { box-shadow: var(--ent-shadow-md); transform: translateY(-2px); border-color: #C7D9F7; }
+.ent-ribbon__icon {
+  flex: 0 0 auto; width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ent-blue-50); color: var(--ent-blue); font-size: .95rem;
+}
+.ent-ribbon__label { font-size: .74rem; font-weight: 600; color: var(--ent-navy); line-height: 1.2; }
+
+/* ── Sidebar: royal-blue active state to match the mockup ──────────────── */
+.fms-sidebar .fms-nav-link.is-active {
+  background: var(--ent-blue); color: #fff;
+  box-shadow: 0 6px 16px rgba(37,99,235,.32);
+}
+.fms-sidebar .fms-nav-link.is-active .fms-nav-link__icon { color: #fff; }
+
+/* ── Mobile ────────────────────────────────────────────────────────────── */
+@media (max-width: 860px) {
+  .fms-exec { margin: -1rem -1rem 0; padding: 1rem 1rem 1.5rem; }
+  /* The angled facets crowd the title on a phone; the gradient alone
+     still reads as the same brand treatment. */
+  .ent-hero::before, .ent-hero::after { display: none; }
+  .ent-hero { padding: 1.15rem 1.2rem; }
+  .ent-hero__inner { max-width: 100%; }
+  .ent-kpi-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .ent-kpi__value { font-size: 1.45rem; }
+  /* The workflow reads left-to-right on a desktop; stacked, the arrows
+     would point the wrong way, so they are hidden and the steps wrap. */
+  .ent-flow { flex-wrap: wrap; gap: .75rem; }
+  .ent-flow__arrow { display: none; }
+  .ent-flow__step { flex: 0 0 30%; }
+}

@@ -2,101 +2,151 @@
 {% block title %}Dashboard{% endblock %}
 {% block breadcrumbs %}<li class="breadcrumb-item active">Dashboard</li>{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">Dashboard</h1>
-  {% if current_user.has_permission('dashboardconfig.view') %}
-  <a href="{{ url_for('system_admin.dashboard_config') }}" class="btn btn-sm btn-outline-secondary">
-    <i class="bi bi-sliders me-1"></i>Customize</a>
-  {% endif %}
-</div>
-<div class="fms-kpi">
-  {% for card in cards %}
-  <a href="{{ card.url }}" class="text-decoration-none">
-    <div class="fms-kpi-card h-100">
-      <div class="fms-kpi-card__top">
-        <span class="fms-kpi-card__icon"><i class="bi {{ card.icon }}"></i></span>
-      </div>
-      <div class="fms-kpi-card__value" {% if card.deferred %}data-kpi="{{ card.code }}"{% endif %}>
-        {%- if card.deferred -%}
-        <span class="spinner-border spinner-border-sm text-muted" role="status"></span>
-        {%- else -%}{{ card.value }}{%- endif -%}
-      </div>
-      <div class="fms-kpi-card__label">{{ card.title }}</div>
+<div class="fms-exec">
+
+{# ── Hero ──────────────────────────────────────────────────────────── #}
+<div class="ent-hero">
+  <div class="d-flex justify-content-between align-items-start gap-3">
+    <div class="ent-hero__inner">
+      <h1 class="ent-hero__title">ENTERPRISE FLEET MANAGEMENT SYSTEM</h1>
+      <p class="ent-hero__tagline">One Platform. Complete Fleet Lifecycle Management.</p>
     </div>
+    {% if current_user.has_permission('dashboardconfig.view') %}
+    <div class="ent-hero__actions">
+      <a href="{{ url_for('system_admin.dashboard_config') }}"
+         class="btn btn-sm btn-outline-secondary bg-white">
+        <i class="bi bi-sliders me-1"></i>Customize</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── KPI cards ─────────────────────────────────────────────────────── #}
+<div class="ent-kpi-grid">
+  {% for card in cards %}
+  {% set tint = {'MAINTENANCE':' ent-kpi--amber','APPROVALS':' ent-kpi--violet',
+                 'REGISTRATIONS':' ent-kpi--teal','TIRES':' ent-kpi--sky',
+                 'BATTERIES':' ent-kpi--rose'}.get(card.code, '') %}
+  <a href="{{ card.url }}" class="ent-kpi{{ tint }}">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi {{ card.icon }}"></i></span>
+      <div class="ent-kpi__meta">
+        <div class="ent-kpi__label">{{ card.title }}</div>
+        <div class="ent-kpi__value" {% if card.deferred %}data-kpi="{{ card.code }}"{% endif %}>
+          {%- if card.deferred -%}
+          <span class="spinner-border spinner-border-sm text-muted" role="status"></span>
+          {%- else -%}{{ card.value }}{%- endif -%}
+        </div>
+      </div>
+    </div>
+    {# Trend is rendered ONLY when a real month-over-month figure exists.
+       No baseline means no row -- an executive dashboard must not show a
+       placeholder that reads as a real business number. #}
+    {% set t = kpi_trends.get(card.code) if kpi_trends else None %}
+    {% if t %}
+    <div class="ent-kpi__foot">
+      <span class="ent-trend ent-trend--{{ t.dir }}">
+        <i class="bi bi-arrow-{{ 'up' if t.dir == 'up' else ('down' if t.dir == 'down' else 'right') }}"></i>{{ t.pct }}%
+      </span>
+      <span>vs last month</span>
+    </div>
+    {% endif %}
   </a>
   {% endfor %}
 </div>
 
-<div class="row g-3 mt-1">
-  {% if for_my_action is defined and for_my_action %}
-  <div class="col-12 col-xl-8">
-    <div class="card" id="for-my-action">
-      <div class="card-header d-flex align-items-center gap-2">
-        <span class="fw-semibold">For My Action</span>
-        <span class="badge text-bg-danger rounded-pill">{{ for_my_action|length }}</span>
+{# ── Approval workflow ─────────────────────────────────────────────── #}
+<div class="row g-3 mb-3">
+  <div class="col-12">
+    <div class="ent-panel">
+      <div class="ent-panel__head">
+        <h2 class="ent-panel__title">Approval Workflow</h2>
       </div>
-      <div class="list-group list-group-flush">
-        {% if for_my_action %}
-          {% for item in for_my_action %}
-          {% if item.url %}
-          <a href="{{ item.url }}" class="list-group-item list-group-item-action">
-          {% else %}
-          <div class="list-group-item">
-          {% endif %}
-            <div class="d-flex justify-content-between">
-              <div>
-                <span class="fw-semibold">{{ item.document_number }}</span>
-                <span class="text-muted"> : {{ item.document_type }}</span>
-                {% if item.plate_number %}
-                <span class="badge text-bg-light border text-dark ms-1">{{ item.plate_number }}</span>
-                {% endif %}
-                {% if item.type_label %}
-                <span class="text-muted small">({{ item.type_label }})</span>
-                {% endif %}
-                {% if item.activity %}
-                <div class="text-muted small">{{ item.activity }}</div>
-                {% endif %}
-              </div>
-              <span class="text-muted small">By {{ item.requester }}</span>
-            </div>
-            <div class="small text-muted">
-              Level {{ item.level_number }} — {{ item.aging }}
-            </div>
-          {% if item.url %}</a>{% else %}</div>{% endif %}
+      <div class="ent-panel__body">
+        <div class="ent-flow">
+          {% set steps = [
+            ('Draft', workflow.draft, 'draft', 'bi-file-earmark'),
+            ('Submitted', workflow.submitted, 'submitted', 'bi-send'),
+            ('For Approval', workflow.for_approval, 'review', 'bi-person-check'),
+            ('Approved', workflow.approved, 'approved', 'bi-check-lg'),
+            ('Completed', workflow.completed, 'done', 'bi-flag-fill')] %}
+          {% for label, count, tone, icon in steps %}
+          <div class="ent-flow__step">
+            <div class="ent-flow__dot ent-flow__dot--{{ tone }}"><i class="bi {{ icon }}"></i></div>
+            <div class="ent-flow__label">{{ label }}</div>
+            <div class="ent-flow__count">{{ count }}</div>
+          </div>
+          {% if not loop.last %}<div class="ent-flow__arrow"><i class="bi bi-arrow-right"></i></div>{% endif %}
           {% endfor %}
-        {% else %}
-        <div class="list-group-item text-muted text-center py-4">
-          Nothing waiting for your action right now.
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── For My Action + Security ──────────────────────────────────────── #}
+<div class="row g-3 mb-3">
+  <div class="col-12 col-xl-7">
+    <div class="ent-panel" id="for-my-action">
+      <div class="ent-panel__head">
+        <h2 class="ent-panel__title">For My Action</h2>
+        {% if for_my_action %}
+        <span class="badge text-bg-danger rounded-pill">{{ for_my_action|length }}</span>
+        {% endif %}
+      </div>
+      <div class="ent-panel__body p-0">
+        {% if for_my_action %}
+        <div class="list-group list-group-flush">
+          {% for item in for_my_action %}
+          <a href="{{ item.url }}" class="list-group-item list-group-item-action">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div class="min-w-0">
+                <span class="fw-semibold">{{ item.document_number }}</span>
+                <span class="text-muted">· {{ item.document_type }}</span>
+                {% if item.plate_number %}
+                <span class="badge text-bg-light border">{{ item.plate_number }}</span>
+                {% endif %}
+                {% if item.type_label %}<span class="text-muted">({{ item.type_label }})</span>{% endif %}
+                {% if item.activity %}<div class="small text-muted">{{ item.activity }}</div>{% endif %}
+                <div class="small text-muted">{{ item.level_label }}</div>
+              </div>
+              <span class="small text-muted text-nowrap">By {{ item.requester }}</span>
+            </div>
+          </a>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">Nothing is waiting for your action.</p>
         {% endif %}
       </div>
     </div>
   </div>
-  {% endif %}
 
-  {% if recent_vehicles is defined and recent_vehicles %}
-  <div class="col-12 col-xl-4">
-    <div class="card" id="vehicle-list">
-      <div class="card-header d-flex align-items-center justify-content-between">
-        <div class="d-flex align-items-center gap-2">
-          <span class="fw-semibold">Vehicle List</span>
-          <span class="badge text-bg-secondary rounded-pill">{{ recent_vehicles|length }}</span>
-        </div>
-        <a href="{{ url_for('master_data.vehicle_list') }}" class="small text-decoration-none">View all</a>
+  <div class="col-12 col-xl-5">
+    <div class="ent-panel">
+      <div class="ent-panel__head">
+        <h2 class="ent-panel__title">Security and Compliance</h2>
       </div>
-      <div class="list-group list-group-flush">
-        {% for row in recent_vehicles %}
-        <a href="{{ row.url }}" class="list-group-item list-group-item-action">
-          <div class="d-flex justify-content-between">
-            <span class="fw-semibold">{{ row.vehicle.plate_number or row.vehicle.conduction_number or '—' }}</span>
-            <span class="text-muted small">{{ row.vehicle.brand }} {{ row.vehicle.model }}</span>
-          </div>
-        </a>
-        {% endfor %}
+      <div class="ent-panel__body">
+        <div class="ent-gov">
+          {% set gov = [
+            ('RBAC', 'Role-based access control', 'bi-shield-lock', 'role.view', 'user_management.roles_list'),
+            ('Audit Trail', 'System activity logging', 'bi-journal-text', 'audittrail.view', 'system_admin.audit_trail'),
+            ('Approval Matrix', 'Multi-level approval config', 'bi-diagram-3', 'approvalmatrix.view', 'approval_config.matrix_list'),
+            ('Organizational Scope', 'Branch & department access', 'bi-building', 'user.view', 'user_management.users_list')] %}
+          {% for title, desc, icon, perm, endpoint in gov %}
+          {% if current_user.has_permission(perm) %}
+          <a class="ent-gov__card" href="{{ url_for(endpoint) }}">
+            <div class="ent-gov__icon"><i class="bi {{ icon }}"></i></div>
+            <div class="ent-gov__title">{{ title }}</div>
+            <div class="ent-gov__desc">{{ desc }}</div>
+          </a>
+          {% endif %}
+          {% endfor %}
+        </div>
       </div>
     </div>
   </div>
-  {% endif %}
 </div>
 
 <div class="card mb-3" id="dueMaintenanceWidget">
@@ -115,6 +165,31 @@
 
 <h5 class="mt-4 mb-3">Analytics</h5>
 {% with compact=true %}{% include "main/_charts.html" %}{% endwith %}
+
+{# ── Module ribbon ─────────────────────────────────────────────────── #}
+{% set ribbon = [
+  ('Vehicle Registration', 'bi-card-checklist', 'vehicleregistration.view', 'transactions.vehicleregistration_list'),
+  ('Preventive Maintenance', 'bi-wrench-adjustable', 'maintenanceorder.view', 'transactions.maintenanceorder_list'),
+  ('Corrective Maintenance', 'bi-tools', 'maintenanceorder.view', 'transactions.maintenanceorder_list'),
+  ('Maintenance Orders', 'bi-clipboard-check', 'maintenanceorder.view', 'transactions.maintenanceorder_list'),
+  ('Purchase Requests', 'bi-cart', 'purchaserequest.view', 'transactions.purchaserequest_list'),
+  ('Vehicle Movement', 'bi-arrow-left-right', 'vehiclemovement.view', 'transactions.vehiclemovement_list'),
+  ('Authority To Drive', 'bi-person-badge', 'atd.view', 'transactions.atd_list'),
+  ('Trip Tickets', 'bi-ticket-detailed', 'tripticket.view', 'transactions.tripticket_list'),
+  ('Tire Management', 'bi-circle', 'tiretxn.view', 'transactions.tiretxn_list'),
+  ('Battery Management', 'bi-battery-half', 'batterytxn.view', 'transactions.batterytxn_list')] %}
+<div class="ent-ribbon">
+  {% for label, icon, perm, endpoint in ribbon %}
+  {% if current_user.has_permission(perm) %}
+  <a class="ent-ribbon__item" href="{{ url_for(endpoint) }}">
+    <span class="ent-ribbon__icon"><i class="bi {{ icon }}"></i></span>
+    <span class="ent-ribbon__label">{{ label }}</span>
+  </a>
+  {% endif %}
+  {% endfor %}
+</div>
+
+</div>{# /.fms-exec #}
 {% endblock %}
 
 {% block scripts %}

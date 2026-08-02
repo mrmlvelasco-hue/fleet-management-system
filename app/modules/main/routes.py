@@ -154,11 +154,19 @@ def dashboard():
     due_vehicles = None
     due_registrations = None
 
+    # Workflow counts and KPI trends are cheap aggregate COUNT(*) queries,
+    # so unlike the fleet-wide due calculations they can stay inline
+    # without delaying first paint.
+    from app.core.dashboard_analytics_service import DashboardAnalyticsService
+    _analytics = DashboardAnalyticsService()
     return render_template("main/dashboard.html", cards=cards,
                            for_my_action=for_my_action,
                            recent_vehicles=recent_vehicles,
                            due_vehicles=due_vehicles,
-                           due_registrations=due_registrations)
+                           due_registrations=due_registrations,
+                           workflow=_analytics.approval_workflow_counts(
+                               user=current_user),
+                           kpi_trends=_analytics.kpi_trends(user=current_user))
 
 
 def _compute_due_widgets(user):
