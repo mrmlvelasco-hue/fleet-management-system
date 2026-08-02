@@ -882,3 +882,6 @@ def register_cli(app):
     app.cli.add_command(pm_cli)
     app.cli.add_command(registration_cli)
     app.cli.add_command(report_cli)
+    from app.modules.master_data.vehicle.backfill_cli import (
+        register_vehicle_backfill_cli)
+    register_vehicle_backfill_cli(app)

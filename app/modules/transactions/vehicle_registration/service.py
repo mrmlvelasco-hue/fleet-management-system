@@ -88,9 +88,30 @@ class VehicleRegistrationService(BaseTransactionService):
                     "registration; a second NEW registration is not allowed.")
         elif registration_type == "RENEWAL":
             if not existing:
-                raise NoExistingRegistrationError(
-                    "A RENEWAL requires an existing prior registration "
-                    "for this vehicle.")
+                # A vehicle MIGRATED into the system has real registration
+                # history -- it just isn't a VehicleRegistration row here,
+                # because the import captures it as
+                # Vehicle.last_known_registration_expiry. Blocking the
+                # renewal in that case forces someone to invent a fake NEW
+                # registration purely to satisfy this check, which then
+                # corrupts the vehicle's history and its renewal dates.
+                #
+                # The migrated expiry IS the prior registration for this
+                # purpose, so it's accepted as evidence. A vehicle with
+                # neither a registration row nor a migrated expiry has
+                # genuinely never been registered, and is still correctly
+                # rejected.
+                from app.modules.master_data.vehicle.models import Vehicle
+                vehicle = db.session.get(Vehicle, vehicle_id)
+                migrated_expiry = getattr(
+                    vehicle, "last_known_registration_expiry", None)
+                if migrated_expiry is None:
+                    raise NoExistingRegistrationError(
+                        "A RENEWAL requires an existing prior registration "
+                        "for this vehicle. If this vehicle was migrated "
+                        "into the system, set its Last Known Registration "
+                        "Expiry on the vehicle record first, or raise this "
+                        "as a NEW registration instead.")
 
         validity_years = validity_years or DEFAULT_VALIDITY_YEARS.get(
             registration_type, 1)

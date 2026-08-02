@@ -3,6 +3,8 @@ including matrix resolution used by the runtime Approval Engine."""
 from datetime import date
 from decimal import Decimal
 
+from flask import current_app
+
 from app.extensions import db
 from app.modules.approval_config.models import ApprovalLevel
 from app.modules.approval_config.repository import (
@@ -145,6 +147,12 @@ class ApprovalMatrixService:
         """Return the ApprovalMatrix matching amount and date, else raise."""
         on_date = on_date or date.today()
         amount = Decimal(str(amount)) if amount is not None else None
+        # Routing failures are otherwise invisible: the matrix looks
+        # correctly configured in the UI, and the old error didn't say what
+        # was actually being matched against.
+        current_app.logger.info(
+            "ApprovalMatrix.resolve: document_type_id=%s amount=%s on_date=%s",
+            document_type_id, amount, on_date)
         for m in self.repo.list_for_document_type(document_type_id):
             if m.effective_from and on_date < m.effective_from:
                 continue
@@ -158,6 +166,19 @@ class ApprovalMatrixService:
                 continue
             if m.max_amount is not None and amount > m.max_amount:
                 continue
+            current_app.logger.info(
+                "ApprovalMatrix.resolve: matched matrix id=%s range=[%s..%s]",
+                m.id, m.min_amount, m.max_amount)
             return m
+        current_app.logger.warning(
+            "ApprovalMatrix.resolve: NO MATCH document_type_id=%s amount=%s "
+            "on_date=%s", document_type_id, amount, on_date)
+        # Actionable message -- the old one named neither the amount nor the
+        # date, so diagnosing a routing failure meant reading source.
+        amount_text = ("no amount was supplied" if amount is None
+                      else f"amount {amount:,}")
         raise NoMatrixError(
-            "No approval matrix matches this document type, amount and date.")
+            f"No approval matrix is configured for this document type with "
+            f"{amount_text} effective {on_date}. Check System Administration "
+            f"-> Approval Matrix: an active range must cover this amount, or "
+            f"add a range with no minimum/maximum to catch everything.")

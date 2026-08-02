@@ -82,8 +82,8 @@
   <div class="col-md-3"><label class="form-label">Transmission</label>
     <select name="transmission" class="form-select">
       <option value="">— Not specified —</option>
-      {% for t in ['MANUAL', 'AUTOMATIC', 'CVT'] %}
-      <option value="{{ t }}" {{ 'selected' if item and item.transmission==t }}>{{ t|title }}</option>
+      {% for lt in transmissions %}
+      <option value="{{ lt.code }}" {{ 'selected' if item and item.transmission==lt.code }}>{{ lt.description }}</option>
       {% endfor %}
     </select></div>
   <div class="col-md-3"><label class="form-label">Current Engine Hours</label>

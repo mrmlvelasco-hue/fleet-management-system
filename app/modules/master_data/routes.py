@@ -67,6 +67,17 @@ for _code, _desc, _order in [
 ]:
     lookup_registry.register("FUEL_TYPE", _code, _desc, _order)
 
+# Transmission -- was a hardcoded ['MANUAL','AUTOMATIC','CVT'] list inline
+# in vehicle_form.html rather than a real Lookup, which is exactly why the
+# importer's raw Excel text ("Manual") had nothing canonical to resolve
+# against. Registered like FUEL_TYPE so both behave identically and the
+# options stay extensible without a code change.
+for _code, _desc, _order in [
+    ("MANUAL", "Manual", 1), ("AUTOMATIC", "Automatic", 2),
+    ("CVT", "CVT", 3),
+]:
+    lookup_registry.register("TRANSMISSION", _code, _desc, _order)
+
 # Assignment Classification for the Vehicle Assignment Memo. Inherited
 # from the legacy system, so the four values below seed the starting set
 # -- but they live in Lookup Maintenance from here on, so entitlement
@@ -927,6 +938,7 @@ def vehicle_clone(vid):
         vtypes=VehicleTypeService().list(), vehicle_types=VehicleTypeService().list(),
         departments=DepartmentService().list(), bus=BusinessUnitService().list(),
         fuel_types=LookupService().get_by_type("FUEL_TYPE"),
+        transmissions=LookupService().get_by_type_with_fallback("TRANSMISSION"),
         vehicle_body_types=LookupService().get_by_type_with_fallback("VEHICLE_BODY_TYPE"),
         component_groups=LookupService().get_by_type_with_fallback("COMPONENT_GROUP"),
         pm_schedules=PMScheduleService().list(),
@@ -946,6 +958,7 @@ def vehicle_new():
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
+    transmissions = LookupService().get_by_type_with_fallback("TRANSMISSION")
     vehicle_body_types = LookupService().get_by_type_with_fallback("VEHICLE_BODY_TYPE")
     component_groups = LookupService().get_by_type_with_fallback("COMPONENT_GROUP")
     pm_schedules = []
@@ -971,7 +984,7 @@ def vehicle_new():
     return render_template("master_data/vehicle_form.html",
                            item=item, vtypes=vtypes, vehicle_types=vtypes,
                            departments=departments,
-                           bus=bus, fuel_types=fuel_types,
+                           bus=bus, fuel_types=fuel_types, transmissions=transmissions,
                            vehicle_body_types=vehicle_body_types,
                            component_groups=component_groups,
                            pm_schedules=pm_schedules,
@@ -999,6 +1012,7 @@ def vehicle_edit(vid):
     departments = DepartmentService().list()
     bus = BusinessUnitService().list()
     fuel_types = LookupService().get_by_type("FUEL_TYPE")
+    transmissions = LookupService().get_by_type_with_fallback("TRANSMISSION")
     vehicle_body_types = LookupService().get_by_type_with_fallback("VEHICLE_BODY_TYPE")
     component_groups = LookupService().get_by_type_with_fallback("COMPONENT_GROUP")
     pm_schedules = PMScheduleService().list_applicable_for_criteria(
@@ -1032,7 +1046,7 @@ def vehicle_edit(vid):
     return render_template("master_data/vehicle_form.html",
                            item=item, vtypes=vtypes, vehicle_types=vtypes,
                            departments=departments,
-                           bus=bus, fuel_types=fuel_types,
+                           bus=bus, fuel_types=fuel_types, transmissions=transmissions,
                            vehicle_body_types=vehicle_body_types,
                            component_groups=component_groups,
                            pm_schedules=pm_schedules,

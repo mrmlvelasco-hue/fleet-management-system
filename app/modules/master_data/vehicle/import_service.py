@@ -25,6 +25,9 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 
 from app.extensions import db
+from app.modules.master_data.vehicle.import_coercion import (
+    clean as _clean_val, strip_placeholder, coerce_date, coerce_int,
+    coerce_decimal, resolve_lookup, CoercionError)
 
 # (column header, required?, human-readable note for the reference sheet)
 TEMPLATE_COLUMNS = [
@@ -47,6 +50,28 @@ TEMPLATE_COLUMNS = [
     ("far_number", False, "Fixed Asset Register no."),
     ("cr_number", False, "Certificate of Registration no."),
     ("status", False, "ACTIVE (default), IN_REPAIR, INACTIVE"),
+    # ── v48: fields already on the Vehicle model, now wired into import ──
+    ("engine_type", False, "e.g. 2NZ-FE, 4D56"),
+    ("vehicle_body_type", False, "Lookup VEHICLE_BODY_TYPE. e.g. SEDAN, PICKUP"),
+    ("displacement", False, "Engine displacement, e.g. 1500"),
+    ("component_group", False, "Lookup COMPONENT_GROUP. PM package grouping."),
+    ("last_pm_odometer", False, "Odometer at last PM performed (legacy baseline)."),
+    ("last_pm_date", False, "YYYY-MM-DD. Date of last PM performed."),
+    ("mv_file_number", False, "LTO MV File Number."),
+    ("lto_office", False, "LTO district office."),
+    ("last_known_registration_expiry", False, "YYYY-MM-DD. Last known LTO registration expiry."),
+    ("supplier", False, "Vendor Master name. Leave BLANK, not N/A."),
+    ("leasing_company", False, "Vendor Master name. Leave BLANK, not N/A."),
+    ("delivery_date", False, "YYYY-MM-DD."),
+    ("start_date", False, "YYYY-MM-DD. Lease/contract start."),
+    ("end_date", False, "YYYY-MM-DD. Lease/contract end."),
+    ("top_up_amount", False, "Numbers only. BLANK if none, not 0."),
+    ("assured_value_current_year", False, "Numbers only. Current-year assured value."),
+    ("insurance_reference_number", False, "Current insurance reference no."),
+    ("comprehensive_policy_number", False, "Current comprehensive policy no."),
+    ("comprehensive_insurance_provider", False, "Vendor Master (insurer)."),
+    ("ctpl_policy_number", False, "Current CTPL policy no."),
+    ("ctpl_insurance_provider", False, "Vendor Master (insurer)."),
 ]
 
 REQUIRED_COLUMNS = [c for c, required, _ in TEMPLATE_COLUMNS if required]
@@ -110,10 +135,8 @@ def build_template() -> bytes:
 
 
 def _clean(value):
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
+    # Delegates to the shared helper so template-build and import agree.
+    return _clean_val(value)
 
 
 def import_vehicles(file_stream, dry_run: bool = True) -> dict:
@@ -203,6 +226,73 @@ def import_vehicles(file_stream, dry_run: bool = True) -> dict:
         if plate and Vehicle.query.filter_by(plate_number=plate).first():
             errors.append(f"plate_number '{plate}' already exists")
 
+        # Build the full optional field set BEFORE the dry-run gate, so the
+        # preview shows exactly what a real import would save. (Pre-v48 this
+        # ran only in the real branch, so fuel_type/transmission/dates looked
+        # blank in the preview even though they persist fine on commit.)
+        optional = {}
+
+        # Plain free-text columns: kept as-is.
+        for col in ("variant", "color", "engine_number", "chassis_number",
+                    "status", "engine_type",
+                    "vehicle_body_type", "displacement", "component_group",
+                    "lto_office", "insurance_reference_number",
+                    "comprehensive_policy_number",
+                    "comprehensive_insurance_provider",
+                    "ctpl_policy_number", "ctpl_insurance_provider",
+                    "mv_file_number"):
+            value = get(col)
+            if value:
+                optional[col] = value
+
+        # fuel_type / transmission: normalize to the canonical Lookup code
+        # (case-insensitive) so the edit form's <select> shows them as
+        # selected and reports/filters match. Passthrough if lookup missing.
+        _fuel = resolve_lookup(get("fuel_type"), "FUEL_TYPE")
+        if _fuel:
+            optional["fuel_type"] = _fuel
+        _trans = resolve_lookup(get("transmission"), "TRANSMISSION")
+        if _trans:
+            optional["transmission"] = _trans
+
+        # Identifier / vendor columns: strip known placeholders (N/A, 0000000,
+        # No CR ...) to NULL so the Data Quality Scorecard sees them as missing
+        # rather than complete.
+        for col in ("far_number", "cr_number", "supplier", "leasing_company"):
+            value = strip_placeholder(get(col))
+            if value:
+                optional[col] = value
+
+        # Typed columns: coerce_* RAISE on unparseable input, so bad data
+        # becomes a reported row error instead of a silent NULL.
+        try:
+            for col in ("current_odometer", "last_pm_odometer"):
+                v = coerce_int(get(col), col)
+                if v is not None:
+                    optional[col] = v
+            # acquisition_cost stays STRICT: a real cost of 1 must survive,
+            # and _validate_business_rules requires cost > 0.
+            v = coerce_decimal(get("acquisition_cost"), "acquisition_cost")
+            if v is not None:
+                optional["acquisition_cost"] = v
+            # These two must strip N/A-style placeholders -- the template's
+            # own note says "BLANK if none, not 0". Grouped with
+            # acquisition_cost's strict path they made an "N/A" fail the
+            # whole row. Found by running the importer end-to-end with the
+            # template's own N/A example, not by reading the diff.
+            for col in ("top_up_amount", "assured_value_current_year"):
+                v = coerce_decimal(get(col), col, strip_ph=True)
+                if v is not None:
+                    optional[col] = v
+            for col in ("acquisition_date", "delivery_date", "start_date",
+                        "end_date", "last_pm_date",
+                        "last_known_registration_expiry"):
+                v = coerce_date(get(col), col)
+                if v is not None:
+                    optional[col] = v
+        except CoercionError as exc:
+            errors.append(str(exc))
+
         if errors:
             stats["skipped"] += 1
             stats["errors"].append({"row": row_number,
@@ -213,39 +303,6 @@ def import_vehicles(file_stream, dry_run: bool = True) -> dict:
         if dry_run:
             stats["created"] += 1
             continue
-
-        optional = {}
-        for col, caster in (("variant", str), ("color", str),
-                           ("engine_number", str), ("chassis_number", str),
-                           ("fuel_type", str), ("transmission", str),
-                           ("far_number", str), ("cr_number", str),
-                           ("status", str)):
-            value = get(col)
-            if value:
-                optional[col] = caster(value)
-        for col in ("current_odometer",):
-            value = get(col)
-            if value:
-                try:
-                    optional[col] = int(float(str(value).replace(",", "")))
-                except (TypeError, ValueError):
-                    pass
-        for col in ("acquisition_cost",):
-            value = get(col)
-            if value:
-                try:
-                    optional[col] = float(str(value).replace(",", ""))
-                except (TypeError, ValueError):
-                    pass
-        acq = get("acquisition_date")
-        if acq:
-            from datetime import datetime as _dt
-            for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"):
-                try:
-                    optional["acquisition_date"] = _dt.strptime(acq, fmt).date()
-                    break
-                except ValueError:
-                    continue
 
         try:
             svc.create(vehicle_type_id=vtypes[vt_code],

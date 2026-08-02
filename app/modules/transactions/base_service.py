@@ -48,6 +48,34 @@ class BaseTransactionService:
                 continue
         return None
 
+    # Field names each module uses for the value the Approval Matrix is
+    # banded on. Checked in order, first non-None wins.
+    #
+    # This exists because the previous code was a bare
+    # getattr(record, "amount", None) -- and MaintenanceOrder has NO
+    # `amount` column at all (it has estimated_cost / actual_cost). Only
+    # PurchaseRequest actually defines `amount`. So every MO resolved
+    # its matrix with amount=None, which in ApprovalMatrixService.resolve
+    # matches ONLY a matrix whose min_amount AND max_amount are both
+    # NULL. A correctly configured matrix with real bands (0-49,000 and
+    # 50,000-20,000,000) therefore matched nothing and raised
+    # NoMatrixError -- the configuration was never the problem.
+    APPROVAL_AMOUNT_FIELDS = ("amount", "estimated_cost", "actual_cost",
+                              "total_amount")
+
+    def _approval_amount(self, record):
+        """The monetary value this record's approval routing is based on.
+
+        Falls back through the known field names rather than assuming
+        one, so a module that names its money column differently routes
+        correctly instead of silently resolving with None.
+        """
+        for field in self.APPROVAL_AMOUNT_FIELDS:
+            value = getattr(record, field, None)
+            if value is not None:
+                return value
+        return None
+
     def submit(self, record_id: int, user):
         """Submit a DRAFT record through the Approval Engine."""
         record = db.session.get(self.model, record_id)
@@ -76,7 +104,7 @@ class BaseTransactionService:
                 db.session.rollback()
         instance = self.engine.submit(
             self.document_type_code, self.reference_table, record_id,
-            amount=getattr(record, "amount", None), user=user,
+            amount=self._approval_amount(record), user=user,
             branch_id=self._infer_branch_id(record),
             document_number=getattr(record, "document_number", None))
         record.approval_instance_id = instance.id
