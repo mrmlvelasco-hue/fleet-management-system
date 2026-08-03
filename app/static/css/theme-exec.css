@@ -393,3 +393,36 @@
 .ent-kpi__spark { color: var(--ent-blue); opacity: .75; overflow: visible; }
 .ent-trend--up ~ .ent-kpi__spark { color: var(--ent-green); }
 .ent-trend--down ~ .ent-kpi__spark { color: var(--ent-red); }
+
+/* ── Hero artwork ──────────────────────────────────────────────────────── */
+/* The image carries its own blue geometry, so the CSS facets that stood in
+   for it are switched off here to avoid two competing treatments. */
+.ent-hero:has(.ent-hero__art)::before,
+.ent-hero:has(.ent-hero__art)::after { display: none; }
+
+.ent-hero__art {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 62%; z-index: 1; pointer-events: none;
+  display: block; overflow: hidden;
+}
+.ent-hero__art img {
+  width: 100%; height: 100%; object-fit: cover; object-position: right center;
+  display: block;
+}
+/* Feather the left edge into the card so the photo doesn't end on a hard
+   vertical seam next to the heading. */
+.ent-hero__art::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, #FFFFFF 0%, rgba(255,255,255,.85) 14%,
+                              rgba(255,255,255,0) 42%);
+}
+.ent-hero { background: #FFFFFF; }
+
+@media (max-width: 1200px) { .ent-hero__art { width: 48%; } }
+@media (max-width: 860px) {
+  /* On a phone the artwork would crowd the title, and the heading is the
+     point of the banner -- so it becomes a faint backdrop instead. */
+  .ent-hero__art { width: 100%; opacity: .16; }
+  .ent-hero__art::after { display: none; }
+  .ent-hero__inner { max-width: 100%; }
+}

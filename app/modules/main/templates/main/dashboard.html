@@ -5,6 +5,15 @@
 <div class="fms-exec fms-exec--banner">
 {# ── Hero ──────────────────────────────────────────────────────────── #}
 <div class="ent-hero">
+  {# Fleet photography, right-aligned, as in the approved mockup.
+     <picture> so browsers take the 40KB WebP and older ones fall back to
+     the PNG -- the original was 2.1MB, which is not something to load on
+     every dashboard view. Decorative, so alt is empty: a screen reader
+     should read the heading, not describe stock photography. #}
+  <picture class="ent-hero__art">
+    <source srcset="{{ url_for('static', filename='img/fleet-hero.webp') }}" type="image/webp">
+    <img src="{{ url_for('static', filename='img/fleet-hero.png') }}" alt="" aria-hidden="true">
+  </picture>
   <div class="d-flex justify-content-between align-items-start gap-3">
     <div class="ent-hero__inner">
       <h1 class="ent-hero__title">ENTERPRISE FLEET MANAGEMENT SYSTEM</h1>
@@ -54,6 +63,13 @@
         <i class="bi bi-arrow-{{ 'up' if t.dir == 'up' else ('down' if t.dir == 'down' else 'right') }}"></i>{{ t.pct }}%
       </span>
       <span>vs last month</span>
+      {% elif t.delta is defined %}
+      {# No baseline a month ago, so a percentage would be undefined --
+         the absolute change is the honest equivalent. #}
+      <span class="ent-trend ent-trend--{{ t.dir }}">
+        <i class="bi bi-arrow-up"></i>{{ "{:,}".format(t.delta) }}
+      </span>
+      <span>this month</span>
       {% endif %}
       {# Sparkline drawn from the SAME series the percentage derives
          from, so the line and the number cannot tell different stories.

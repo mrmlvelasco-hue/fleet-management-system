@@ -347,3 +347,24 @@ def test_year_scope_is_configurable(db, fleet):
     # parameter change.
     assert sum(DashboardAnalyticsService()
               .maintenance_orders_by_type()["data"]) == 2
+
+
+def test_trend_uses_absolute_change_when_there_is_no_baseline(db, fleet):
+    """A freshly migrated fleet was all imported on one day, so a month
+    ago the count was zero and a PERCENTAGE is undefined -- 0 to 156 is
+    not "+100%". The absolute change is real and measurable, so that is
+    reported instead of leaving the card bare or inventing a figure."""
+    trends = DashboardAnalyticsService().kpi_trends()
+    fleet_trend = trends.get("FLEET")
+    assert fleet_trend is not None
+    assert "pct" not in fleet_trend      # no baseline -> no percentage
+    assert fleet_trend["delta"] > 0
+    assert fleet_trend["dir"] == "up"
+
+
+def test_sparkline_is_omitted_when_there_is_nothing_to_draw(db):
+    """An empty system has no history; a flat invented line would imply
+    a stability that has not been measured."""
+    trends = DashboardAnalyticsService().kpi_trends()
+    for entry in trends.values():
+        assert entry.get("spark") is None or len(set(entry["spark"])) > 1

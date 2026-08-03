@@ -314,12 +314,23 @@ class DashboardAnalyticsService:
                 q = q.filter_by(**filters)
             now = q.scalar() or 0
             before = (q.filter(model.created_at < cutoff).scalar() or 0)
-            if before == 0:
-                return                      # no baseline -> no honest percentage
-            change = (now - before) / before * 100
-            trends[key] = {"pct": round(abs(change), 1),
-                          "dir": "up" if change > 0 else
-                                 ("down" if change < 0 else "flat")}
+            delta = now - before
+            if before > 0:
+                change = delta / before * 100
+                trends[key] = {
+                    "pct": round(abs(change), 1),
+                    "dir": "up" if change > 0 else
+                           ("down" if change < 0 else "flat")}
+            elif delta > 0:
+                # No baseline: a month ago there were none of these, so a
+                # percentage is undefined -- 0 to 156 is not "+100%", and
+                # printing one would be inventing a statistic. This is
+                # the normal state right after a migration, when the
+                # whole fleet was imported on a single day.
+                #
+                # The ABSOLUTE change is real and measurable, so show
+                # that instead of leaving the tile bare.
+                trends[key] = {"delta": delta, "dir": "up"}
 
         def _spark(key, model, **filters):
             """A 6-point monthly series of the running total, for the
