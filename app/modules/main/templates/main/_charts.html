@@ -105,7 +105,7 @@
   function legendFontSize() { return isSmallPhone() ? 10 : (isMobile() ? 11 : 12); }
   function legendBoxSize() { return isMobile() ? 10 : 12; }
 
-  function donut(ctx, payload) {
+  function donut(ctx, payload, hideLegend) {
     return new Chart(ctx, {
       type: "doughnut",
       data: { labels: payload.labels,
@@ -115,7 +115,8 @@
         // A phone's narrow width leaves little room for a side legend
         // even if one were used, so this stays bottom-anchored at every
         // size -- only the text/box shrink, not the position.
-        plugins: { legend: { position: "bottom",
+        cutout: "62%",
+        plugins: { legend: { display: !hideLegend, position: "bottom",
                             labels: { boxWidth: legendBoxSize(),
                                      font: { size: legendFontSize() } } } }
       }
@@ -182,6 +183,27 @@
       if (d.mo_by_type.labels.length)
         bar(document.getElementById("chartMoByType"), d.mo_by_type, false);
       line(document.getElementById("chartCostTrend"), d.maintenance_cost_trend);
+
+      // Registration Status donut -- only present on the Dashboard, so
+      // guarded rather than assumed. Its built-in legend is suppressed
+      // in favour of the richer count + percentage list beside it.
+      var regCanvas = document.getElementById("chartRegistrationStatus");
+      if (regCanvas && d.registration_status) {
+        var r = d.registration_status;
+        donut(regCanvas, r, true);
+        var totalEl = document.getElementById("regTotal");
+        if (totalEl) { totalEl.textContent = r.total.toLocaleString(); }
+        var legend = document.getElementById("regLegend");
+        if (legend) {
+          legend.innerHTML = r.labels.map(function (label, i) {
+            return '<li class="ent-legend__item">' +
+              '<span class="ent-legend__dot" style="background:' + r.colors[i] + '"></span>' +
+              '<span class="ent-legend__label">' + label + '</span>' +
+              '<span class="ent-legend__value">' + r.data[i].toLocaleString() +
+              ' <span class="ent-legend__pct">(' + r.pct[i] + '%)</span></span></li>';
+          }).join("");
+        }
+      }
     })
     .catch(() => {
       const el = document.getElementById("fmsChartsLoading");

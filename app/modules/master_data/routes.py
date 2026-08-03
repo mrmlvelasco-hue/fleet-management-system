@@ -1120,6 +1120,16 @@ def _vehicle_fields(include_conduction=True):
         last_pm_date=parse_form_date(f.get("last_pm_date"), "Last PM Service Date")
                     if f.get("last_pm_date") else None,
         assigned_driver_id=int(f["assigned_driver_id"]) if f.get("assigned_driver_id") else None,
+        # The form has always POSTed `status`, but this function never
+        # read it -- so selecting INACTIVE (or IN_REPAIR / DISPOSED) and
+        # saving appeared to work and silently changed nothing, because
+        # the key simply never reached VehicleService.update().
+        #
+        # Guarded against an empty/absent value rather than defaulting:
+        # writing status="" would be worse than dropping it, and a form
+        # that doesn't render the field at all (a future partial edit
+        # screen) must not blank a vehicle's status as a side effect.
+        **({"status": f["status"]} if f.get("status") else {}),
         notes=f.get("notes", ""),
         # ── Vehicle Master enhancement ──
         far_number=f.get("far_number") or None,

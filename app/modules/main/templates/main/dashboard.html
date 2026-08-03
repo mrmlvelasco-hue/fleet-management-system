@@ -191,10 +191,54 @@
   </div>
 </div>
 
-<div class="card mb-3" id="dueRegistrationWidget">
-  <div class="card-body text-center text-muted py-4" id="dueRegistrationLoading">
-    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-    Loading vehicles due for registration renewal...
+{# Registration health as a compact donut instead of an unbounded table.
+   After a migration ~100 vehicles can be overdue at once, and that table
+   pushed everything below it off the screen. The shape belongs here; the
+   per-vehicle detail belongs on the report, one click away. #}
+<div class="row g-3 mb-3">
+  <div class="col-12 col-xl-6">
+    <div class="ent-panel">
+      <div class="ent-panel__head">
+        <h2 class="ent-panel__title">Vehicle Registration Status</h2>
+      </div>
+      <div class="ent-panel__body">
+        <div class="ent-donut-row">
+          <div class="ent-donut-wrap">
+            <canvas id="chartRegistrationStatus"></canvas>
+            <div class="ent-donut-center">
+              <div class="ent-donut-total" id="regTotal">&mdash;</div>
+              <div class="ent-donut-caption">Total</div>
+            </div>
+          </div>
+          <ul class="ent-legend" id="regLegend">
+            <li class="text-muted small">Loading&hellip;</li>
+          </ul>
+        </div>
+      </div>
+      <div class="ent-panel__foot">
+        <span>Registration health across the fleet</span>
+        <a href="{{ url_for('system_admin.report_registration_expiry') }}">View details &rarr;</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="ent-panel">
+      <div class="ent-panel__head">
+        <h2 class="ent-panel__title">Vehicles Due for Registration Renewal</h2>
+        <span class="badge text-bg-warning rounded-pill" data-tile="REGISTRATIONS">&mdash;</span>
+      </div>
+      <div class="ent-panel__body p-0" id="dueRegistrationWidget">
+        <div class="text-center text-muted py-4" id="dueRegistrationLoading">
+          <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+          Loading&hellip;
+        </div>
+      </div>
+      <div class="ent-panel__foot">
+        <span>Soonest expiry first</span>
+        <a href="{{ url_for('system_admin.report_registration_expiry') }}">View all &rarr;</a>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -255,8 +299,13 @@
 
       var m = document.getElementById("dueMaintenanceWidget");
       if (m) { m.outerHTML = data.due_maintenance_html || ""; }
+      // innerHTML, not outerHTML: this element is now the panel BODY,
+      // so replacing the element itself would tear out the panel's
+      // header and footer with it.
       var g = document.getElementById("dueRegistrationWidget");
-      if (g) { g.outerHTML = data.due_registration_html || ""; }
+      if (g) { g.innerHTML = data.due_registration_html || ""; }
+      document.querySelectorAll('[data-tile="REGISTRATIONS"]').forEach(
+        function (b) { b.textContent = data.registration_count; });
     })
     .catch(function () {
       // A failure here must not leave spinners turning forever -- show

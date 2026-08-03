@@ -270,3 +270,43 @@
   margin-bottom: .25rem;
 }
 .ent-worklist .list-group-item { border-color: var(--ent-slate-100); }
+
+/* ── Registration Status donut + legend ────────────────────────────────── */
+.ent-donut-row { display: flex; align-items: center; gap: 1.25rem; }
+.ent-donut-wrap { position: relative; flex: 0 0 178px; height: 178px; }
+.ent-donut-center {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; pointer-events: none;
+}
+.ent-donut-total {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 1.55rem; font-weight: 700; color: var(--ent-navy); line-height: 1;
+}
+.ent-donut-caption { font-size: .72rem; color: var(--ent-slate-400); margin-top: .1rem; }
+
+.ent-legend { list-style: none; margin: 0; padding: 0; flex: 1 1 auto; min-width: 0; }
+.ent-legend__item {
+  display: flex; align-items: center; gap: .55rem;
+  padding: .55rem 0; border-bottom: 1px solid var(--ent-slate-100);
+}
+.ent-legend__item:last-child { border-bottom: 0; }
+.ent-legend__dot { flex: 0 0 auto; width: 11px; height: 11px; border-radius: 50%; }
+.ent-legend__label { font-size: .86rem; color: var(--ent-navy); font-weight: 500; }
+.ent-legend__value {
+  margin-left: auto; font-weight: 700; color: var(--ent-navy); font-size: .9rem;
+  white-space: nowrap;
+}
+.ent-legend__pct { font-weight: 500; color: var(--ent-slate-400); font-size: .78rem; }
+
+/* The due list is now bounded: after a migration it can hold ~100 rows,
+   and an unbounded table pushed the rest of the dashboard off-screen.
+   Scrolls in place; the full list lives on the report. */
+#dueRegistrationWidget { max-height: 260px; overflow-y: auto; }
+#dueRegistrationWidget .table { margin-bottom: 0; }
+#dueRegistrationWidget thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+
+@media (max-width: 860px) {
+  .ent-donut-row { flex-direction: column; gap: .75rem; }
+  .ent-donut-wrap { flex: 0 0 150px; height: 150px; width: 150px; }
+  .ent-legend { width: 100%; }
+}

@@ -218,6 +218,7 @@ class DashboardAnalyticsService:
             "maintenance_cost_trend": self.maintenance_cost_trend(user=user),
             "pm_compliance": self.pm_compliance(user=user),
             "mo_by_type": self.maintenance_orders_by_type(user=user),
+            "registration_status": self.registration_status(user=user),
         }
 
     @request_cached("chart_approval_workflow")
@@ -280,3 +281,50 @@ class DashboardAnalyticsService:
         _trend("FLEET", Vehicle, is_active=True)
         _trend("MAINTENANCE", MaintenanceOrder)
         return trends
+
+    @request_cached("chart_registration_status")
+    def registration_status(self, user=None) -> dict:
+        """Registration health of the whole fleet, as the mockup's
+        'Vehicle Registration Status' donut: Active / Expiring Soon /
+        For Renewal, with counts and percentages.
+
+        Replaces an unbounded table on the dashboard. With ~100 vehicles
+        overdue after a migration, that table pushed everything below it
+        off the screen; a fleet manager needs the SHAPE here and the
+        detail on the report.
+
+        Uses the SAME RegistrationDueCalculationService the due list and
+        the Registrations KPI already use, so this panel cannot disagree
+        with either.
+        """
+        from app.modules.registration_config.service import (
+            RegistrationDueCalculationService)
+        from app.modules.master_data.vehicle.models import Vehicle
+
+        due = RegistrationDueCalculationService().get_all_due_vehicles(
+            exclude_with_open_order=False)
+        overdue = sum(1 for d in due if d["status"] == "OVERDUE")
+        soon = sum(1 for d in due if d["status"] == "DUE_SOON")
+        flagged = {d["vehicle"].id for d in due}
+
+        q = db.session.query(func.count(Vehicle.id)).filter(
+            Vehicle.is_active.is_(True), Vehicle.status != "DISPOSED")
+        branch_ids = self._visible_branch_ids(user)
+        if branch_ids is not None:
+            q = q.filter(Vehicle.branch_id.in_(branch_ids))
+        total = q.scalar() or 0
+        active = max(0, total - len(flagged))
+
+        rows = [("Active", active, COLORS["ACTIVE"]),
+               ("Expiring Soon", soon, COLORS["DUE"]),
+               ("For Renewal", overdue, COLORS["OVERDUE"])]
+        return {
+            "labels": [r[0] for r in rows],
+            "data": [r[1] for r in rows],
+            "colors": [r[2] for r in rows],
+            "total": total,
+            # Percentages computed server-side so the donut, the legend
+            # and any export all quote the same rounded figure.
+            "pct": [round(r[1] / total * 100, 1) if total else 0.0
+                   for r in rows],
+        }

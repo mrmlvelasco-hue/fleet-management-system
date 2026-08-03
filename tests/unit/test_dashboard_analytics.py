@@ -138,7 +138,7 @@ def test_all_charts_returns_every_dataset(db, fleet):
     result = DashboardAnalyticsService().all_charts()
     assert set(result.keys()) == {
         "fleet_by_status", "fleet_by_branch", "maintenance_cost_trend",
-        "pm_compliance", "mo_by_type"}
+        "pm_compliance", "mo_by_type", "registration_status"}
     for chart in result.values():
         assert "labels" in chart and "data" in chart
 
@@ -188,3 +188,26 @@ def test_analytics_page_requires_its_own_permission(app, db, fleet):
                follow_redirects=True)
     r = client.get("/admin/analytics")
     assert r.status_code == 403
+
+
+def test_registration_status_splits_the_fleet(db, fleet):
+    """The dashboard donut: every non-disposed vehicle lands in exactly
+    one of Active / Expiring Soon / For Renewal, and the three must sum
+    to the fleet total -- a donut whose slices don't add up to its own
+    centre number is worse than no donut."""
+    result = DashboardAnalyticsService().registration_status()
+    assert result["labels"] == ["Active", "Expiring Soon", "For Renewal"]
+    assert sum(result["data"]) == result["total"]
+
+
+def test_registration_status_percentages_are_consistent(db, fleet):
+    result = DashboardAnalyticsService().registration_status()
+    if result["total"]:
+        assert round(sum(result["pct"])) == 100
+
+
+def test_registration_status_handles_an_empty_fleet(db):
+    """No vehicles must not divide by zero."""
+    result = DashboardAnalyticsService().registration_status()
+    assert result["total"] == 0
+    assert result["pct"] == [0.0, 0.0, 0.0]
