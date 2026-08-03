@@ -348,3 +348,48 @@
   .ent-tiles { grid-template-columns: 1fr 1fr; }
   .ent-ribbon { grid-template-columns: 1fr 1fr; }
 }
+
+/* ── Enterprise data grid (dashboard panels) ───────────────────────────── */
+.ent-grid { font-size: .85rem; table-layout: fixed; width: 100%; }
+.ent-grid thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--ent-slate-100); color: var(--ent-slate-500);
+  font-size: .68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; white-space: nowrap;
+  padding: .55rem .9rem; border-bottom: 1px solid var(--ent-slate-200);
+}
+.ent-grid tbody td {
+  padding: .6rem .9rem; vertical-align: middle;
+  border-bottom: 1px solid var(--ent-slate-100);
+  /* table-layout:fixed + this is what removes the horizontal scrollbar:
+     a long brand/model wraps within its column instead of widening the
+     table past its container. */
+  overflow-wrap: anywhere;
+}
+.ent-grid tbody tr:last-child td { border-bottom: 0; }
+.ent-grid tbody tr:hover { background: var(--ent-blue-50); }
+.ent-grid__link { color: var(--ent-blue); font-weight: 600; text-decoration: none; }
+.ent-grid__link:hover { text-decoration: underline; }
+.ent-grid__sub { display: block; color: var(--ent-slate-400); font-size: .75rem; }
+.ent-grid th:nth-child(2), .ent-grid td:nth-child(2) { width: 108px; }
+.ent-grid th:nth-child(3), .ent-grid td:nth-child(3) { width: 116px; }
+
+.ent-badge {
+  display: inline-block; padding: .2rem .5rem; border-radius: 20px;
+  font-size: .68rem; font-weight: 700; letter-spacing: .02em;
+  white-space: nowrap;
+}
+.ent-badge--danger  { background: #FEE2E2; color: #B91C1C; }
+.ent-badge--warning { background: #FEF3C7; color: #B45309; }
+.ent-badge--success { background: #DCFCE7; color: #15803D; }
+
+/* Vertical scrolling only -- never horizontal. */
+#dueRegistrationWidget, #dueMaintenanceWidget {
+  max-height: 268px; overflow-y: auto; overflow-x: hidden;
+}
+
+/* Sparkline inherits the trend colour (green up / red down), falling
+   back to the accent blue when a card has a series but no percentage. */
+.ent-kpi__spark { color: var(--ent-blue); opacity: .75; overflow: visible; }
+.ent-trend--up ~ .ent-kpi__spark { color: var(--ent-green); }
+.ent-trend--down ~ .ent-kpi__spark { color: var(--ent-red); }

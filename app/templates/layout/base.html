@@ -35,6 +35,10 @@
   <div class="flex-grow-1 d-flex flex-column min-vh-100">
     {% include "layout/topnav.html" %}
     <main class="container-fluid p-4 flex-grow-1">
+      {# Pages may place a full-width banner ABOVE the breadcrumb. The
+         dashboard's hero uses this so it sits directly under the top
+         bar, as the client asked, rather than below the crumb trail. #}
+      {% block page_banner %}{% endblock %}
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Home</a></li>

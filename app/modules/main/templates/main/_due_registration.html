@@ -1,28 +1,42 @@
-<div class="row g-3 mt-1">
-  <div class="col-12">
-    <div class="card">
-      <div class="card-header d-flex align-items-center gap-2">
-        <span class="fw-semibold">Vehicles Due for Registration Renewal</span>
-        <span class="badge text-bg-warning rounded-pill">{{ due_registrations|length }}</span>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-sm mb-0">
-          <thead><tr>
-            <th>Vehicle</th><th>Status</th><th>Expiry Date</th>
-          </tr></thead>
-          <tbody>
-          {% for d in due_registrations %}
-            <tr>
-              <td><a href="{{ d.url }}">{{ d.vehicle.plate_number or d.vehicle.conduction_number }} — {{ d.vehicle.brand }} {{ d.vehicle.model }}</a></td>
-              <td><span class="badge text-bg-{{ 'danger' if d.status=='OVERDUE' else 'warning' }}">{{ d.status }}</span></td>
-              <td>{{ d.next_due_date or '—' }}</td>
-            </tr>
-          {% else %}
-            <tr><td colspan="3" class="text-center text-muted py-4">No vehicles currently due for registration renewal.</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</div>
+{# Table ONLY -- no card, no header, no title.
+
+   This is injected into a panel that already provides its own header
+   (title + count badge) and footer. Previously this partial carried a
+   full card of its own, so the dashboard rendered the title twice
+   inside nested cards, with the inner one also introducing a horizontal
+   scrollbar via .table-responsive.
+
+   The panel owns the chrome; this owns the rows. #}
+<table class="table ent-grid mb-0">
+  <thead>
+    <tr>
+      <th scope="col">Vehicle</th>
+      <th scope="col">Status</th>
+      <th scope="col" class="text-end">Expiry Date</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for d in due_registrations %}
+    <tr>
+      <td>
+        <a href="{{ d.url }}" class="ent-grid__link">
+          {{ d.vehicle.plate_number or d.vehicle.conduction_number }}
+        </a>
+        <span class="ent-grid__sub">{{ d.vehicle.brand }} {{ d.vehicle.model }}</span>
+      </td>
+      <td>
+        <span class="ent-badge ent-badge--{{ 'danger' if d.status == 'OVERDUE' else 'warning' }}">
+          {{ 'Overdue' if d.status == 'OVERDUE' else 'Due Soon' }}
+        </span>
+      </td>
+      <td class="text-end text-nowrap">{{ d.next_due_date or '—' }}</td>
+    </tr>
+  {% else %}
+    <tr>
+      <td colspan="3" class="text-center text-muted py-4">
+        No vehicles currently due for registration renewal.
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>

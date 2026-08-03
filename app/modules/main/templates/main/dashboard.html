@@ -1,9 +1,8 @@
 {% extends "layout/base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block breadcrumbs %}<li class="breadcrumb-item active">Dashboard</li>{% endblock %}
-{% block content %}
-<div class="fms-exec">
-
+{% block page_banner %}
+<div class="fms-exec fms-exec--banner">
 {# ── Hero ──────────────────────────────────────────────────────────── #}
 <div class="ent-hero">
   <div class="d-flex justify-content-between align-items-start gap-3">
@@ -20,6 +19,11 @@
     {% endif %}
   </div>
 </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="fms-exec">
 
 {# ── KPI cards ─────────────────────────────────────────────────────── #}
 <div class="ent-kpi-grid">
@@ -45,10 +49,28 @@
     {% set t = kpi_trends.get(card.code) if kpi_trends else None %}
     {% if t %}
     <div class="ent-kpi__foot">
+      {% if t.pct is defined %}
       <span class="ent-trend ent-trend--{{ t.dir }}">
         <i class="bi bi-arrow-{{ 'up' if t.dir == 'up' else ('down' if t.dir == 'down' else 'right') }}"></i>{{ t.pct }}%
       </span>
       <span>vs last month</span>
+      {% endif %}
+      {# Sparkline drawn from the SAME series the percentage derives
+         from, so the line and the number cannot tell different stories.
+         Rendered as an inline SVG polyline rather than a sixth Chart.js
+         instance: six points in a 60x20 box doesn't justify a full chart
+         object per card, and this keeps the KPI row free of chart
+         initialisation on first paint. #}
+      {% if t.spark %}
+      {% set lo = t.spark|min %}{% set hi = t.spark|max %}
+      {% set span = (hi - lo) if (hi - lo) > 0 else 1 %}
+      <svg class="ent-kpi__spark" width="62" height="20" viewBox="0 0 62 20"
+           preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <polyline fill="none" stroke="currentColor" stroke-width="1.6"
+                  stroke-linecap="round" stroke-linejoin="round"
+                  points="{% for v in t.spark %}{{ loop.index0 * (60 / (t.spark|length - 1)) }},{{ 18 - ((v - lo) / span * 16) }} {% endfor %}"/>
+      </svg>
+      {% endif %}
     </div>
     {% endif %}
   </a>

@@ -321,8 +321,30 @@ class DashboardAnalyticsService:
                           "dir": "up" if change > 0 else
                                  ("down" if change < 0 else "flat")}
 
+        def _spark(key, model, **filters):
+            """A 6-point monthly series of the running total, for the
+            card's sparkline. Real cumulative counts from created_at --
+            the same source as the percentage above it, so the line and
+            the number can never tell different stories.
+
+            Omitted entirely (like the trend) when there is no history
+            to draw: a flat line invented from a single data point would
+            imply stability that hasn't been measured."""
+            series, base = [], db.session.query(func.count(model.id))
+            if filters:
+                base = base.filter_by(**filters)
+            for months_ago in range(5, -1, -1):
+                edge = date.today() - timedelta(days=30 * months_ago)
+                series.append(base.filter(model.created_at < edge).scalar() or 0)
+            series[-1] = base.scalar() or 0   # today, not 'before today'
+            if len(set(series)) <= 1:
+                return                        # nothing to show
+            trends.setdefault(key, {})["spark"] = series
+
         _trend("FLEET", Vehicle, is_active=True)
         _trend("MAINTENANCE", MaintenanceOrder)
+        _spark("FLEET", Vehicle, is_active=True)
+        _spark("MAINTENANCE", MaintenanceOrder)
         return trends
 
     @request_cached("chart_registration_status")
