@@ -556,10 +556,50 @@ def maintenanceorder_list():
     return render_template("transactions/maintenanceorder_list.html", items=items)
 
 
+
+# Numeric form fields, mapped to the label the person actually sees, so a
+# coercion failure can name the field instead of surfacing Python's own
+# "invalid literal for int()" text.
+_NUMERIC_FIELD_LABELS = {
+    "odometer_at_service": "Odometer at Service",
+    "estimated_cost": "Estimated Cost",
+    "actual_cost": "Actual Cost",
+    "disposal_value": "Disposal Value",
+    "current_odometer": "Current Odometer",
+    "year": "Year",
+}
+
+
+def _friendly_number_error(exc, form):
+    """Turn a raw int()/Decimal() failure into a message naming the field.
+
+    Finds the offending value inside the exception text and matches it
+    back to whichever numeric field holds it -- the exception itself
+    carries the value but not the field name.
+    """
+    text = str(exc)
+    for name, label in _NUMERIC_FIELD_LABELS.items():
+        value = (form.get(name) or "").strip()
+        if value and value in text:
+            whole = name.endswith(("odometer", "odometer_at_service", "year"))
+            return (f"{label}: '{value}' is not a valid "
+                   f"{'whole number' if whole else 'number'}."
+                   + (" Enter a whole number without decimals."
+                      if whole else ""))
+    return ("One of the numeric fields contains a value that isn't a "
+           "number. Please check the odometer, cost and year fields.")
+
+
 @bp.route("/maintenance-orders/new", methods=["GET", "POST"])
 @login_required
 @require_permission("maintenanceorder.create")
 def maintenanceorder_new():
+    # Holds what the person typed when validation fails, so the form can
+    # be re-rendered with their input intact. Previously a single bad
+    # field cleared the whole form and they had to retype everything --
+    # which is what made the category/transaction-type mismatch so
+    # painful to correct.
+    submitted = None
     from app.modules.master_data.reference.service import MaintenanceTypeService
     from app.modules.master_data.vehicle.service import VehicleService
     from app.modules.maintenance_config.service import (
@@ -641,10 +681,22 @@ def maintenanceorder_new():
                 user=current_user)
             flash("Maintenance Order created.", "success")
             return redirect(url_for("transactions.maintenanceorder_list"))
-        except (DateFormatError, RequiredFieldError, InvalidOrderCategoryError) as e:
+        except (DateFormatError, RequiredFieldError,
+                InvalidOrderCategoryError) as e:
             flash(str(e), "danger")
+            submitted = f
+        except ValueError as e:
+            # A raw "invalid literal for int() with base 10: '15.4'"
+            # tells the person nothing about WHICH field to fix. Map it
+            # back to a named field wherever we can.
+            flash(_friendly_number_error(e, f), "danger")
+            submitted = f
+        except Exception as e:
+            _flash_engine_error(e)
+            submitted = f
     from app.modules.master_data.org.models import Branch
     return render_template("transactions/maintenanceorder_form.html",
+                           submitted=submitted,
                            maintenance_types=maintenance_types,
                            transaction_types_by_group=transaction_types_by_group,
                            scope_templates=scope_templates,

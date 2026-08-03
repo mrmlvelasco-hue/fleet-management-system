@@ -5,6 +5,12 @@
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
 {% block content %}
+{# `submitted` holds what the person typed when validation failed, so a
+   single bad field no longer clears the whole form. Order matters:
+   what they typed wins over the prefill, which wins over blank. #}
+{% macro keep(field, fallback='') -%}
+{{ submitted.get(field) if submitted and submitted.get(field) else fallback }}
+{%- endmacro %}
 <h1 class="h3 mb-4">{{ title }}</h1>
 
 <div class="card mb-3" id="moVehicleInfoPanel" style="{{ 'display:none;' if not prefill_vehicle }}">
@@ -129,14 +135,16 @@
     </select></div>
   <div class="col-md-4"><label class="form-label">Scheduled Date</label>
     <input type="date" name="scheduled_date" class="form-control" required
-           value="{{ prefill.scheduled_date or '' }}"></div>
+           value="{{ keep('scheduled_date', prefill.scheduled_date or '') }}"></div>
   <div class="col-md-4"><label class="form-label">Odometer at Service</label>
     <input type="number" name="odometer_at_service" class="form-control"
-           value="{{ prefill.odometer_at_service or '' }}"></div>
+           value="{{ keep('odometer_at_service', prefill.odometer_at_service or '') }}"></div>
   <div class="col-md-4"><label class="form-label">Estimated Cost</label>
-    <input type="text" inputmode="decimal" name="estimated_cost" class="form-control js-money" placeholder="0.00"></div>
+    <input type="text" inputmode="decimal" name="estimated_cost" class="form-control js-money" placeholder="0.00"
+           value="{{ keep('estimated_cost') }}"></div>
   <div class="col-md-6"><label class="form-label">Assigned Mechanic</label>
-    <input type="text" name="assigned_mechanic" class="form-control"></div>
+    <input type="text" name="assigned_mechanic" class="form-control"
+           value="{{ keep('assigned_mechanic') }}"></div>
   <div class="col-md-6" id="moDriverFieldWrapper" style="display:none;">
     <label class="form-label">Driver / Assignee</label>
     <select name="driver_id" id="moDriverSelect" class="form-select">
@@ -191,7 +199,7 @@
     </div>
   </div>
   <div class="col-12"><label class="form-label">Description</label>
-    <textarea name="description" class="form-control" rows="2"></textarea></div>
+    <textarea name="description" class="form-control" rows="2">{{ keep('description') }}</textarea></div>
   <div class="col-12">
     <button class="btn btn-primary" type="submit">Save as Draft</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('transactions.maintenanceorder_list') }}">Cancel</a>

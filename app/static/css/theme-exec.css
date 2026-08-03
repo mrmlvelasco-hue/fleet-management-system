@@ -400,21 +400,32 @@
 .ent-hero:has(.ent-hero__art)::before,
 .ent-hero:has(.ent-hero__art)::after { display: none; }
 
+/* The banner is very wide and short (roughly 12:1) while the artwork is
+   2:1, so `cover` scaled the image to the box WIDTH and cropped most of
+   its height -- which is what cut the trucks in half. `contain` scales
+   to the box HEIGHT instead, so the whole vehicle is always visible at
+   every screen size; the box is simply as wide as it needs to be.
+
+   A min-height gives the artwork enough vertical room to read at a
+   useful size, and grows with the heading if it wraps on a narrow
+   window. */
+.ent-hero { min-height: 132px; display: flex; align-items: center; }
 .ent-hero__art {
   position: absolute; top: 0; right: 0; bottom: 0;
-  width: 62%; z-index: 1; pointer-events: none;
+  width: 58%; z-index: 1; pointer-events: none;
   display: block; overflow: hidden;
 }
 .ent-hero__art img {
-  width: 100%; height: 100%; object-fit: cover; object-position: right center;
+  width: 100%; height: 100%;
+  object-fit: contain; object-position: right bottom;
   display: block;
 }
 /* Feather the left edge into the card so the photo doesn't end on a hard
    vertical seam next to the heading. */
 .ent-hero__art::after {
   content: ""; position: absolute; inset: 0;
-  background: linear-gradient(90deg, #FFFFFF 0%, rgba(255,255,255,.85) 14%,
-                              rgba(255,255,255,0) 42%);
+  background: linear-gradient(90deg, #FFFFFF 0%, rgba(255,255,255,.9) 10%,
+                              rgba(255,255,255,0) 30%);
 }
 .ent-hero { background: #FFFFFF; }
 

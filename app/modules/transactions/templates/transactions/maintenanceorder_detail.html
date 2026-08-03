@@ -114,11 +114,28 @@
         <span class="badge text-bg-{{ 'success' if item.status=='COMPLETED' else 'primary' if item.status=='IN_PROGRESS' else 'danger' if item.status=='CANCELLED' else 'secondary' }}">{{ item.status }}</span></p>
 
       <div class="d-flex flex-wrap gap-2 mt-3">
-        {% if editable_scope != 'NONE' and (item.requested_by == current_user.id
-              or current_user.has_permission('maintenanceorder.approve')) %}
+        {% set is_mine = item.requested_by == current_user.id
+                         or current_user.has_permission('maintenanceorder.approve') %}
+        {% if editable_scope != 'NONE' and is_mine %}
         <a class="btn btn-outline-primary btn-sm"
            href="{{ url_for('transactions.maintenanceorder_edit', oid=item.id) }}">
           <i class="bi bi-pencil me-1"></i>{{ 'Edit' if editable_scope == 'FULL' else 'Add Remarks' }}</a>
+        {% elif is_mine and editable_scope == 'NONE' %}
+        {# Previously the button simply disappeared, which reads as a bug
+           -- the initiator can see their own DRAFT order but has no way
+           to tell why they can't change it. Say so, and say what to do
+           about it. #}
+        <span class="text-muted small d-inline-flex align-items-center gap-1">
+          <i class="bi bi-lock"></i>
+          {%- if item.status == 'DRAFT' and item.approval_instance %}
+          Locked while awaiting approval — ask the approver to
+          <strong>Return</strong> it if this needs changing.
+          {%- elif item.status in ('COMPLETED', 'CANCELLED') %}
+          A {{ item.status|lower }} order can no longer be edited.
+          {%- else %}
+          This order can’t be edited in its current state.
+          {%- endif %}
+        </span>
         {% endif %}
         {% if not item.approval_instance and item.status == 'DRAFT' and current_user.has_permission('maintenanceorder.update') %}
         <form method="post" action="{{ url_for('transactions.maintenanceorder_submit', oid=item.id) }}">
