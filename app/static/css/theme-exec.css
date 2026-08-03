@@ -310,3 +310,41 @@
   .ent-donut-wrap { flex: 0 0 150px; height: 150px; width: 150px; }
   .ent-legend { width: 100%; }
 }
+
+/* ── Mobile: stop the top bar forcing a horizontal scroll ──────────────── */
+/*
+   The user-name label in the top-bar dropdown is white-space:nowrap and
+   cannot shrink, so on a narrow phone it set a ~398px floor on the whole
+   page. Anything narrower (iPhone 12/13/14 Pro are 390pt) got a
+   horizontal scrollbar -- and mobile Safari responds to overflow by
+   WIDENING its layout viewport to fit, which is why the KPI cards and
+   workflow steps appeared cut off at the right edge rather than simply
+   scrolling. The dashboard grids were never the problem.
+
+   Hiding the name below 576px is the right trade: the avatar still
+   identifies the signed-in user, and the full name is one tap away in
+   the dropdown itself.
+*/
+@media (max-width: 576px) {
+  .fms-topbar .dropdown .text-body { display: none !important; }
+  .fms-topbar__spacer { display: none !important; }
+}
+/* Belt and braces: no descendant may widen the page. Without this a
+   single future long unbroken string (a plate number, a document
+   reference) reintroduces exactly this bug on the narrowest phones. */
+@media (max-width: 860px) {
+  html, body { max-width: 100%; overflow-x: hidden; }
+  .fms-exec { max-width: 100%; }
+  .ent-kpi__value, .ent-kpi__label,
+  .ent-tile__label, .ent-ribbon__label { overflow-wrap: anywhere; }
+}
+/* One column on the narrowest phones: two 150px cards plus gap and page
+   padding does not fit 320-360px without squeezing the value text. */
+@media (max-width: 400px) {
+  .ent-kpi-grid { grid-template-columns: 1fr 1fr; gap: .6rem; }
+  .ent-kpi { padding: .8rem .75rem .7rem; }
+  .ent-kpi__icon { width: 36px; height: 36px; font-size: 1rem; }
+  .ent-kpi__value { font-size: 1.3rem; }
+  .ent-tiles { grid-template-columns: 1fr 1fr; }
+  .ent-ribbon { grid-template-columns: 1fr 1fr; }
+}

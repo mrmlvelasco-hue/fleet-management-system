@@ -50,9 +50,21 @@
     {% if item.approval_instance.status == 'PENDING' %}
       {% if is_eligible_approver(item.approval_instance) %}
       <div class="d-flex flex-wrap gap-2">
-        <form method="post" action="{{ approve_url }}">
+        {# The last approver should know their click COMPLETES the
+           document rather than passing it to someone else -- the point
+           at which it becomes actionable and stops being reversible by
+           simply asking the next person to return it.
+
+           is_final_level comes from ApprovalInstance, the same value
+           ApprovalEngine.approve() uses to decide whether to finalise,
+           so the label can never promise something the engine won't do. #}
+        {% set is_final = item.approval_instance.is_final_level %}
+        <form method="post" action="{{ approve_url }}"
+              {% if is_final %}data-confirm="This is the FINAL approval. Approving now will complete {{ item.document_number or 'this document' }} and release it for work. Continue?"{% endif %}>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-success btn-sm"><i class="bi bi-check-lg me-1"></i>Approve</button>
+          <button class="btn btn-success btn-sm">
+            <i class="bi bi-{{ 'check2-all' if is_final else 'check-lg' }} me-1"></i>
+            {{ 'Final Approve' if is_final else 'Approve' }}</button>
         </form>
         <form method="post" action="{{ reject_url }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

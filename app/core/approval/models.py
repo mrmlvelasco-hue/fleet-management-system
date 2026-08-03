@@ -35,6 +35,32 @@ class ApprovalInstance(db.Model, BaseModel):
                               order_by="ApprovalAction.id")
 
 
+    @property
+    def is_final_level(self) -> bool:
+        """True when the level currently awaiting action is the LAST one
+        on this instance's approval path -- i.e. approving now completes
+        the document rather than passing it onward.
+
+        Surfaced on the model rather than recomputed in each template so
+        the label an approver sees and the decision
+        ApprovalEngine.approve() actually makes come from one place. If
+        they ever disagreed, the button would promise something the
+        engine doesn't do.
+
+        Defensive: an instance with no path, or a path with no levels,
+        reports False. A missing configuration must not make the button
+        claim finality it can't deliver.
+        """
+        path = self.approval_path
+        if path is None or not path.levels:
+            return False
+        try:
+            return self.current_level >= max(
+                lvl.level_number for lvl in path.levels)
+        except (TypeError, ValueError):
+            return False
+
+
 class ApprovalAction(db.Model, BaseModel):
     __tablename__ = "approval_actions"
     instance_id = db.Column(db.Integer, db.ForeignKey("approval_instances.id"),
