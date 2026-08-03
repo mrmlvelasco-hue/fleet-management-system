@@ -35,7 +35,12 @@
   </div>
   <div class="col-lg-6">
     <div class="card h-100"><div class="card-body">
-      <h6 class="card-title mb-3">Maintenance Orders by Type</h6>
+      <h6 class="card-title mb-3">
+        Maintenance Orders by Type
+        {# Scope stated on the chart itself: a count that silently covers
+           only part of the history is misleading without it. #}
+        <span class="text-muted small fw-normal" id="moTypeScope"></span>
+      </h6>
       <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
         <canvas id="chartMoByType"></canvas>
       </div>
@@ -182,6 +187,13 @@
         donut(document.getElementById("chartPmCompliance"), d.pm_compliance);
       if (d.mo_by_type.labels.length)
         bar(document.getElementById("chartMoByType"), d.mo_by_type, false);
+      var moScope = document.getElementById("moTypeScope");
+      if (moScope && d.mo_by_type) {
+        var yrs = d.mo_by_type.years;
+        moScope.textContent = yrs === 0 ? "\u2014 all years"
+          : (yrs === 1 ? "\u2014 " + new Date().getFullYear()
+                       : "\u2014 last " + yrs + " years");
+      }
       line(document.getElementById("chartCostTrend"), d.maintenance_cost_trend);
 
       // Registration Status donut -- only present on the Dashboard, so

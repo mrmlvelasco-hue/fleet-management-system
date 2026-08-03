@@ -183,32 +183,75 @@ class DashboardAnalyticsService:
 
     @request_cached("chart_mo_by_type")
     def maintenance_orders_by_type(self, user=None) -> dict:
+        """Orders split by maintenance discipline, per the client's
+        reporting specification.
+
+        Classification comes from TransactionType.maintenance_class --
+        DATA, not a hardcoded CASE. The requirement arrived as a 40-code
+        SQL CASE, but 25 of those codes are just "every OPERATIONAL
+        type", which order_category already answers, and putting the
+        rest in a query would mean a newly added transaction type
+        silently falls into Unclassified until someone edits SQL. As a
+        column it is visible and editable in MO Transaction Types.
+
+        Scope is limited by the DASHBOARD_MO_CHART_YEARS system
+        parameter (default 1 = current year only), so this chart doesn't
+        get slower and less meaningful every year the system runs. Set
+        it to 0 for the whole history.
+
+        CANCELLED orders are excluded -- they represent work that never
+        happened and would overstate every bucket.
+        """
         from app.modules.transactions.maintenance_order.models import (
-            MaintenanceOrder)
-        from app.modules.master_data.reference.models import MaintenanceType
+            MaintenanceOrder, TransactionType)
+        from app.modules.system_admin.services.system_parameter_service import (
+            SystemParameterService)
+
+        label_of = {"PREVENTIVE": "Preventive Maintenance",
+                   "CORRECTIVE": "Corrective Maintenance",
+                   "PREDICTIVE": "Predictive Maintenance",
+                   "OPERATIONAL": "Operational"}
 
         bucket = case(
-            (MaintenanceOrder.order_category == "OPERATIONAL", "Operational"),
-            (MaintenanceType.category == "PREVENTIVE", "Preventive Maintenance"),
-            (MaintenanceType.category == "CORRECTIVE", "Corrective Maintenance"),
-            (MaintenanceType.category == "PREDICTIVE", "Predictive Maintenance"),
-            else_="Other")
+            # An OPERATIONAL order is operational regardless of anything
+            # else -- this single test replaces 25 hardcoded codes.
+            (MaintenanceOrder.order_category == "OPERATIONAL", "OPERATIONAL"),
+            (TransactionType.maintenance_class.isnot(None),
+             TransactionType.maintenance_class),
+            # No transaction type recorded (the older PM orders, which
+            # predate transaction types) is preventive by definition.
+            (MaintenanceOrder.transaction_type_id.is_(None), "PREVENTIVE"),
+            else_="UNCLASSIFIED")
 
         q = (db.session.query(bucket, func.count(MaintenanceOrder.id))
-            .outerjoin(MaintenanceType,
-                      MaintenanceType.id == MaintenanceOrder.maintenance_type_id)
+            .outerjoin(TransactionType,
+                      TransactionType.id == MaintenanceOrder.transaction_type_id)
+            .filter(MaintenanceOrder.status != "CANCELLED")
             .group_by(bucket))
+
+        years = SystemParameterService().get("DASHBOARD_MO_CHART_YEARS", 1)
+        try:
+            years = int(years)
+        except (TypeError, ValueError):
+            years = 1
+        if years > 0:
+            first_year = date.today().year - (years - 1)
+            q = q.filter(
+                extract("year", MaintenanceOrder.scheduled_date) >= first_year)
+
         branch_ids = self._visible_branch_ids(user)
         if branch_ids is not None:
             from app.modules.master_data.vehicle.models import Vehicle
             q = (q.join(Vehicle, Vehicle.id == MaintenanceOrder.vehicle_id)
                 .filter(Vehicle.branch_id.in_(branch_ids)))
+
         rows = [r for r in q.all() if r[1] > 0]
         rows.sort(key=lambda r: r[1], reverse=True)
         return {
-            "labels": [r[0] for r in rows],
+            "labels": [label_of.get(r[0], "Unclassified") for r in rows],
             "data": [r[1] for r in rows],
             "colors": [COLORS["PALETTE"][i % 8] for i in range(len(rows))],
+            "years": years,
         }
 
     def all_charts(self, user=None) -> dict:

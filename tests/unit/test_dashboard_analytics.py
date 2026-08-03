@@ -112,20 +112,33 @@ def test_pm_compliance_matches_the_due_calculation_service(db, fleet):
 
 def test_mo_by_type_separates_preventive_corrective_and_operational(
         db, fleet):
-    vt, branch_a, branch_b, v1, v2, v3 = fleet
-    pm_type = MaintenanceTypeService().create(code="PMS-AN3", name="PMS",
-                                              category="PREVENTIVE")
-    cm_type = MaintenanceTypeService().create(code="CM-AN3", name="Repair",
-                                              category="CORRECTIVE")
-    tt = TransactionType.query.filter_by(code="DEP-ASSIGNMENT").first()
+    """Superseded by the maintenance_class tests below, but kept: it
+    pins that the three headline buckets stay distinct.
 
-    svc = MaintenanceOrderService()
-    svc.create(vehicle_id=v1.id, maintenance_type_id=pm_type.id,
-              scheduled_date=date.today(), user=None)
-    svc.create(vehicle_id=v1.id, maintenance_type_id=cm_type.id,
-              scheduled_date=date.today(), user=None)
-    svc.create(vehicle_id=v1.id, scheduled_date=date.today(), user=None,
-              order_category="OPERATIONAL", transaction_type_id=tt.id)
+    Classification now comes from TransactionType.maintenance_class
+    rather than MaintenanceType.category, so this builds its orders the
+    same way the application does.
+    """
+    from app.cli import _seed_transaction_types, _seed_maintenance_classes
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder, TransactionType)
+    vt, branch_a, branch_b, v1, v2, v3 = fleet
+    _seed_transaction_types()
+    db.session.commit()
+    _seed_maintenance_classes()
+    db.session.commit()
+
+    def add(code, category):
+        tt = TransactionType.query.filter_by(code=code).first()
+        db.session.add(MaintenanceOrder(
+            vehicle_id=v1.id, order_category=category,
+            transaction_type_id=tt.id, scheduled_date=date.today(),
+            status="DRAFT"))
+
+    add("MAINT-SERVICING", "MAINTENANCE")
+    add("MAINT-REPAIR", "MAINTENANCE")
+    add("DEP-ASSIGNMENT", "OPERATIONAL")
+    db.session.commit()
 
     result = DashboardAnalyticsService().maintenance_orders_by_type()
     counts = dict(zip(result["labels"], result["data"]))
@@ -211,3 +224,126 @@ def test_registration_status_handles_an_empty_fleet(db):
     result = DashboardAnalyticsService().registration_status()
     assert result["total"] == 0
     assert result["pct"] == [0.0, 0.0, 0.0]
+
+
+# ── MO by Type: classification, year scope, cancellations ───────────────────
+
+def _mo(db, vehicle, code, category, status="DRAFT", year=None):
+    from datetime import date
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder, TransactionType)
+    tt = (TransactionType.query.filter_by(code=code).first()
+         if code else None)
+    when = date(year, 6, 1) if year else date.today()
+    mo = MaintenanceOrder(
+        vehicle_id=vehicle.id, order_category=category,
+        transaction_type_id=tt.id if tt else None,
+        scheduled_date=when, status=status)
+    db.session.add(mo)
+    db.session.commit()
+    return mo
+
+
+def test_transaction_types_carry_a_maintenance_class(db, fleet):
+    """The classification is DATA on the transaction type, not a CASE in
+    a query -- so a newly added type can be classified in the UI instead
+    of falling into Unclassified until someone edits SQL."""
+    from app.cli import _seed_transaction_types, _seed_maintenance_classes
+    from app.modules.transactions.maintenance_order.models import TransactionType
+    _seed_transaction_types()
+    db.session.commit()
+    _seed_maintenance_classes()
+    db.session.commit()
+
+    def klass(code):
+        return TransactionType.query.filter_by(code=code).first().maintenance_class
+
+    assert klass("MAINT-INSPECTION") == "PREDICTIVE"
+    assert klass("MAINT-SERVICING") == "PREVENTIVE"
+    assert klass("MAINT-REPAIR") == "CORRECTIVE"
+    # OPERATIONAL types have no maintenance class -- order_category
+    # already classifies them, and duplicating it would be a second
+    # source of truth.
+    assert klass("DEP-ASSIGNMENT") is None
+
+
+def test_seeding_never_overwrites_an_admin_reclassification(db, fleet):
+    """Once someone changes a classification in the UI, a later
+    `flask seed all` must not silently revert it."""
+    from app.cli import _seed_transaction_types, _seed_maintenance_classes
+    from app.modules.transactions.maintenance_order.models import TransactionType
+    _seed_transaction_types()
+    db.session.commit()
+    _seed_maintenance_classes()
+    db.session.commit()
+
+    tt = TransactionType.query.filter_by(code="MAINT-WASHING").first()
+    tt.maintenance_class = "CORRECTIVE"      # admin decision
+    db.session.commit()
+
+    _seed_maintenance_classes()
+    db.session.commit()
+    db.session.expire_all()
+    assert TransactionType.query.filter_by(
+        code="MAINT-WASHING").first().maintenance_class == "CORRECTIVE"
+
+
+def test_mo_by_type_classifies_every_bucket(db, fleet):
+    from app.cli import _seed_transaction_types, _seed_maintenance_classes
+    vt, branch_a, branch_b, v1, v2, v3 = fleet
+    _seed_transaction_types()
+    db.session.commit()
+    _seed_maintenance_classes()
+    db.session.commit()
+
+    _mo(db, v1, "MAINT-SERVICING", "MAINTENANCE")
+    _mo(db, v1, "MAINT-REPAIR", "MAINTENANCE")
+    _mo(db, v1, "MAINT-INSPECTION", "MAINTENANCE")
+    _mo(db, v1, "DEP-ASSIGNMENT", "OPERATIONAL")
+
+    counts = dict(zip(*(lambda r: (r["labels"], r["data"]))(
+        DashboardAnalyticsService().maintenance_orders_by_type())))
+    assert counts.get("Preventive Maintenance") == 1
+    assert counts.get("Corrective Maintenance") == 1
+    assert counts.get("Predictive Maintenance") == 1
+    assert counts.get("Operational") == 1
+    # The reported defect: nothing should land in a catch-all bucket.
+    assert "Unclassified" not in counts
+
+
+def test_order_with_no_transaction_type_counts_as_preventive(db, fleet):
+    """Older PM orders predate transaction types; they are preventive by
+    definition rather than unclassified."""
+    vt, branch_a, branch_b, v1, v2, v3 = fleet
+    _mo(db, v1, None, "MAINTENANCE")
+    counts = dict(zip(*(lambda r: (r["labels"], r["data"]))(
+        DashboardAnalyticsService().maintenance_orders_by_type())))
+    assert counts.get("Preventive Maintenance") == 1
+
+
+def test_cancelled_orders_are_excluded(db, fleet):
+    """Cancelled work never happened and would overstate every bucket."""
+    vt, branch_a, branch_b, v1, v2, v3 = fleet
+    _mo(db, v1, None, "MAINTENANCE", status="CANCELLED")
+    result = DashboardAnalyticsService().maintenance_orders_by_type()
+    assert sum(result["data"]) == 0
+
+
+def test_year_scope_is_configurable(db, fleet):
+    from datetime import date
+    from app.modules.system_admin.models import SystemParameter
+    vt, branch_a, branch_b, v1, v2, v3 = fleet
+    _mo(db, v1, None, "MAINTENANCE")                          # this year
+    _mo(db, v1, None, "MAINTENANCE", year=date.today().year - 1)
+
+    svc = DashboardAnalyticsService()
+    assert sum(svc.maintenance_orders_by_type()["data"]) == 1  # default: 1 year
+
+    db.session.add(SystemParameter(
+        code="DASHBOARD_MO_CHART_YEARS", value="2", data_type="INTEGER",
+        group_name="DASHBOARD", description="test"))
+    db.session.commit()
+    # A fresh service instance: the per-request memo must not mask the
+    # parameter change.
+    assert sum(DashboardAnalyticsService()
+              .maintenance_orders_by_type()["data"]) == 2

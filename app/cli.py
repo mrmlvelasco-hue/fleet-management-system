@@ -43,6 +43,7 @@ def seed_all(admin_password):
     _seed_atr_numbering()
     _migrate_report_permissions_from_data_permissions()
     _migrate_vehicle_activity_report_permission()
+    _seed_maintenance_classes()
     _migrate_analytics_permission()
     db.session.commit()
     click.echo("Default system parameters, dashboard widgets, lookups, "
@@ -196,6 +197,12 @@ def _seed_system_parameters() -> None:
     from app.modules.system_admin.models import SystemParameter
     defaults = [
         # (code, value, data_type, group, description)
+
+        # ── Dashboard analytics ───────────────────────────────────────
+        ("DASHBOARD_MO_CHART_YEARS", "1", "INTEGER", "DASHBOARD",
+         "How many years of Maintenance Orders the dashboard's "
+         "'Orders by Type' chart covers. 1 = current year only. Raise to "
+         "include prior years; 0 = no year limit (slowest, whole history)."),
 
         # ── Security / session (FMS) ──────────────────────────────────
         ("SESSION_TIMEOUT_MINUTES", "30", "INTEGER", "SECURITY",
@@ -506,6 +513,53 @@ def _seed_lookups() -> None:
     import app.modules.master_data.routes  # noqa: F401 (triggers registration)
     from app.modules.system_admin.services.lookup_service import sync_lookups
     sync_lookups()
+
+
+# Maintenance discipline per MAINTENANCE-category transaction type, from
+# the client's reporting specification. Seeded as DATA (see
+# TransactionType.maintenance_class) so it stays editable in MO
+# Transaction Types maintenance rather than living in a query.
+#
+# OPERATIONAL types are deliberately absent: their classification is
+# already order_category, so repeating all 25 codes here would be a
+# second source of truth for something the model already knows.
+MAINTENANCE_CLASS_BY_CODE = {
+    "MAINT-INSPECTION": "PREDICTIVE",
+
+    "MAINT-SERVICING": "PREVENTIVE",
+    "MAINT-EMISSION": "PREVENTIVE",
+    "MAINT-WASHING": "PREVENTIVE",
+    "MAINT-ADJUSTMENT": "PREVENTIVE",
+
+    "MAINT-REPAIR": "CORRECTIVE",
+    "MAINT-TROUBLESHOOT": "CORRECTIVE",
+    "MAINT-TOWING": "CORRECTIVE",
+    "MAINT-OVERHAUL": "CORRECTIVE",
+    "MAINT-REPL-UNIT": "CORRECTIVE",
+    "MAINT-REPAINT": "CORRECTIVE",
+    "MAINT-REHAB": "CORRECTIVE",
+    "MAINT-REWIND": "CORRECTIVE",
+    "MAINT-FABRICATION": "CORRECTIVE",
+    "MAINT-INSTALLATION": "CORRECTIVE",
+    "MAINT-UPGRADE": "CORRECTIVE",
+    "MAINT-ACCIDENT-MINOR": "CORRECTIVE",
+    "MAINT-ACCIDENT-MAJOR": "CORRECTIVE",
+}
+
+
+def _seed_maintenance_classes() -> None:
+    """Apply MAINTENANCE_CLASS_BY_CODE to existing transaction types.
+
+    Only fills a NULL -- never overwrites. Once an administrator has
+    reclassified a type in the UI, a later `flask seed all` must not
+    silently revert their decision back to the shipped default.
+    """
+    from app.modules.transactions.maintenance_order.models import (
+        TransactionType)
+    for code, klass in MAINTENANCE_CLASS_BY_CODE.items():
+        tt = TransactionType.query.filter_by(code=code).first()
+        if tt is not None and tt.maintenance_class is None:
+            tt.maintenance_class = klass
 
 
 def _seed_transaction_types() -> None:

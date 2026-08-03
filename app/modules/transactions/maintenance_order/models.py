@@ -22,6 +22,22 @@ class TransactionType(db.Model, BaseModel):
     order_category = db.Column(db.String(15), nullable=False)
     # DEPLOYMENT | ADMINISTRATIVE | DISPOSAL | ACCESSORIES | MAINTENANCE
     group = db.Column(db.String(20), nullable=True)
+    # PREVENTIVE | CORRECTIVE | PREDICTIVE — the maintenance discipline a
+    # MAINTENANCE-category transaction represents, used by the dashboard's
+    # "Maintenance Orders by Type" analytics.
+    #
+    # Held as DATA on the transaction type rather than as a hardcoded
+    # CASE in the query. The reporting requirement arrived as a 40-code
+    # SQL CASE, but 25 of those codes are simply "every OPERATIONAL type"
+    # -- already answered by order_category -- and encoding the rest in a
+    # query means adding a new maintenance type later silently lands in
+    # "Unclassified" until someone edits SQL. As a column it is visible
+    # and editable in MO Transaction Types maintenance, consistent with
+    # this system's rule that business classification is configuration,
+    # not code.
+    #
+    # NULL is meaningful: an OPERATIONAL type has no maintenance class.
+    maintenance_class = db.Column(db.String(20), nullable=True)
     sort_order = db.Column(db.Integer, default=0, nullable=False)
 
 
