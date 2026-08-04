@@ -1,6 +1,3 @@
-import sys
-sys.path.insert(0, "/home/claude/fms/scripts")
-
 import openpyxl
 import os
 

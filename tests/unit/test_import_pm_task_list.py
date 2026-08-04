@@ -5,9 +5,6 @@ own code is its real interval; NOT periodicity-inferred, since that
 approach was tried first and found to be wrong for this file's actual
 data -- see the module docstring in import_pm_task_list.py).
 """
-import sys
-sys.path.insert(0, "/home/claude/fms/scripts")
-
 from vems_frequency_reference import (
     resolve_frequency, to_interval_km, to_interval_days, to_interval_hours)
 from import_pm_task_list import import_pm_task_list, _split_scope_into_items
