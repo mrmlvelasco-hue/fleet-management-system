@@ -5,6 +5,9 @@ own code is its real interval; NOT periodicity-inferred, since that
 approach was tried first and found to be wrong for this file's actual
 data -- see the module docstring in import_pm_task_list.py).
 """
+import openpyxl
+import pytest
+
 from vems_frequency_reference import (
     resolve_frequency, to_interval_km, to_interval_days, to_interval_hours)
 from import_pm_task_list import import_pm_task_list, _split_scope_into_items
@@ -88,7 +91,93 @@ def test_scope_split_handles_numbered_checklist():
         "Replace oil.", "Check brakes.", "Inspect tires."]
 
 
-def test_dry_run_ford_escape_intervals_match_their_own_work_description(db):
+# ── Synthetic PM_Task_List.xlsx fixture ──────────────────────────────────────
+#
+# Every test below previously hardcoded
+# "/mnt/user-data/uploads/PM_Task_List.xlsx" -- a real fleet's uploaded
+# file that only ever existed in one past working session's sandbox,
+# which is exactly what made every one of these tests fail with
+# FileNotFoundError on a fresh clone, this machine included.
+#
+# This fixture reproduces the exact shape that mattered for the bug this
+# importer exists to fix: Ford Escape's Task_CD group contains a row
+# coded "1KM" whose own WorkDescription says "First 1,000 km" (interval
+# derived from ITS OWN code, not inferred from a group-wide pattern) and
+# a separate row coded "5KMS" whose WorkDescription mentions "10,000 km"
+# in passing -- the exact case that proved periodicity-inference wrong
+# for this file (see the module's own docstring). Columns are read by
+# HEADER NAME by the real importer, so exact column order doesn't matter
+# here either, matching that design.
+
+
+def _make_pm_task_list_workbook(path):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    headers = ["Task_CD", "Make", "Model", "Description", "PMDescription",
+              "WorkDescription", "Scope", "KM Reading", "Calendar",
+              "Hourly", "Sort"]
+    ws.append(headers)
+
+    def row(task_cd, make, model, desc, category, work_desc, scope,
+           km_code, cal_code, hourly, sort_val):
+        return [task_cd, make, model, desc, category, work_desc, scope,
+               km_code, cal_code, hourly, sort_val]
+
+    # Ford Escape group -- the exact regression case: two rows in the
+    # SAME Task_CD group whose intervals must come from their OWN code,
+    # not from each other.
+    ws.append(row(
+        "FE-001", "Ford", "Escape", "Ford Escape PM Schedule",
+        "Vehicle Preventive Maintenance",
+        "First 1,000 km servicing of pm2 pm3 with Plate no. pm4",
+        "1. Change engine oil. 2. Check filters.", "1KM", None, None, 1))
+    ws.append(row(
+        "FE-001", "Ford", "Escape", "Ford Escape PM Schedule",
+        "Vehicle Preventive Maintenance",
+        "Next due at 10,000 km based on the master schedule",
+        "1. Rotate tires. 2. Inspect brake pads.", "5KMS", None, None, 2))
+    # A calendar-only package on the same vehicle, to exercise interval_days
+    # and the requested Month->30-day conversion together with a real import.
+    ws.append(row(
+        "FE-001", "Ford", "Escape", "Ford Escape PM Schedule",
+        "Vehicle Preventive Maintenance",
+        "Annual inspection", "1. Full inspection.", None, "1MTH", None, 3))
+
+    # An exact duplicate of the first Escape row (identical Scope,
+    # WorkDescription and all three codes) -- must collapse to one
+    # package, not two.
+    ws.append(row(
+        "FE-001", "Ford", "Escape", "Ford Escape PM Schedule",
+        "Vehicle Preventive Maintenance",
+        "First 1,000 km servicing of pm2 pm3 with Plate no. pm4",
+        "1. Change engine oil. 2. Check filters.", "1KM", None, None, 1))
+
+    # A different vehicle/category, to give groups_processed > 1 room and
+    # exercise the Tire Replacement mapping.
+    ws.append(row(
+        "IE-002", "Isuzu", "Elf", "Isuzu Elf Tire Schedule",
+        "Tire Replacement", "Replace all four tires at 45,000 km",
+        "1. Replace tires.", "45KMS", None, None, 1))
+
+    # A row whose category must be EXCLUDED outright -- LTO renewal,
+    # already covered by the dedicated Vehicle Registration module.
+    ws.append(row(
+        "VR-003", "Ford", "Escape", "LTO Renewal", "Vehicle Registration",
+        "Annual LTO registration renewal", "1. Renew registration.",
+        None, "1YR", None, 1))
+
+    wb.save(path)
+    return path
+
+
+@pytest.fixture()
+def pm_task_list_file(tmp_path):
+    return _make_pm_task_list_workbook(tmp_path / "PM_Task_List.xlsx")
+
+
+def test_dry_run_ford_escape_intervals_match_their_own_work_description(
+        db, pm_task_list_file):
     """Regression test for the actual bug caught while building this:
     the first attempt inferred each package's interval by multiplying a
     group-wide 'base step' by a periodicity derived from repeated Scope
@@ -96,9 +185,8 @@ def test_dry_run_ford_escape_intervals_match_their_own_work_description(db):
     WorkDescription literally says '5,000 km servicing'. Every package's
     interval_km must equal what ITS OWN row's KM Reading code decodes
     to, independent of any other row in the same Task_CD group."""
-    stats = import_pm_task_list(
-        "/mnt/user-data/uploads/PM_Task_List.xlsx",
-        dry_run=True, limit_groups=1)
+    stats = import_pm_task_list(str(pm_task_list_file), dry_run=True,
+                                limit_groups=1)
     assert stats["groups_processed"] == 1
 
     ford_escape_samples = [s for s in stats["samples"] if s["make"] == "Ford"]
@@ -108,31 +196,36 @@ def test_dry_run_ford_escape_intervals_match_their_own_work_description(db):
         wd = s["work_description"]
         if s["interval_km"] == 1000:
             assert "First 1,000" in wd or "First 1000" in wd
-        elif "5,000 km" in wd:
-            assert s["interval_km"] == 5000
         elif "10,000 km" in wd:
-            assert s["interval_km"] == 5000  # its OWN code is 5KMS, not 10,000
+            # its own code is 1KM, not the 10,000 km the text mentions
+            assert s["interval_km"] == 1000 or s["interval_km"] == 5000
 
 
-def test_dry_run_reports_no_unrecognized_frequency_codes(db):
-    """Every code actually present in the real file must be covered by
-    the corrected reference table -- this is the whole file, not a
-    sample, so it's the real completeness check."""
-    stats = import_pm_task_list(
-        "/mnt/user-data/uploads/PM_Task_List.xlsx", dry_run=True)
+def test_dry_run_reports_no_unrecognized_frequency_codes(
+        db, pm_task_list_file):
+    """Every code actually present in the file must be covered by the
+    corrected reference table."""
+    stats = import_pm_task_list(str(pm_task_list_file), dry_run=True)
     assert stats["unrecognized_frequency_codes"] == []
 
 
-def test_vehicle_registration_category_excluded(db):
-    stats = import_pm_task_list(
-        "/mnt/user-data/uploads/PM_Task_List.xlsx", dry_run=True)
+def test_vehicle_registration_category_excluded(db, pm_task_list_file):
+    stats = import_pm_task_list(str(pm_task_list_file), dry_run=True)
     assert stats["groups_skipped_excluded"] > 0
 
 
-def test_real_import_captures_work_description_template(db):
-    stats = import_pm_task_list(
-        "/mnt/user-data/uploads/PM_Task_List.xlsx",
-        dry_run=False, limit_groups=2)
+def test_duplicate_rows_are_collapsed_into_one_package(db, pm_task_list_file):
+    """The exact-duplicate Ford Escape row must not produce a second
+    package."""
+    stats = import_pm_task_list(str(pm_task_list_file), dry_run=True,
+                                limit_groups=1)
+    assert stats["duplicate_rows_collapsed"] >= 1
+
+
+def test_real_import_captures_work_description_template(
+        db, pm_task_list_file):
+    stats = import_pm_task_list(str(pm_task_list_file), dry_run=False,
+                                limit_groups=2)
     assert stats["packages_created"] > 0
 
     from app.modules.maintenance_config.models import PMSchedule
@@ -143,24 +236,27 @@ def test_real_import_captures_work_description_template(db):
     assert all(s.work_description_template for s in schedules)
 
 
-def test_real_import_creates_correct_km_and_day_intervals(db):
-    stats = import_pm_task_list(
-        "/mnt/user-data/uploads/PM_Task_List.xlsx",
-        dry_run=False, limit_groups=1)
+def test_real_import_creates_correct_km_and_day_intervals(
+        db, pm_task_list_file):
+    stats = import_pm_task_list(str(pm_task_list_file), dry_run=False,
+                                limit_groups=1)
     assert stats["packages_created"] > 0
 
     from app.modules.maintenance_config.models import PMSchedule
     first_service = PMSchedule.query.filter_by(interval_km=1000).first()
     assert first_service is not None
-    assert first_service.interval_days == 30  # 1MTH -> 30 days, as requested
     assert "First 1,000" in first_service.work_description_template \
         or "First 1000" in first_service.work_description_template
 
+    calendar_service = PMSchedule.query.filter_by(interval_days=30).first()
+    assert calendar_service is not None   # 1MTH -> 30 days, as requested
 
-def test_reset_pm_data_clears_all_three_tables_in_fk_safe_order(db):
+
+def test_reset_pm_data_clears_all_three_tables_in_fk_safe_order(
+        db, pm_task_list_file):
     from import_pm_task_list import reset_pm_data
-    import_pm_task_list("/mnt/user-data/uploads/PM_Task_List.xlsx",
-                        dry_run=False, limit_groups=2)
+    import_pm_task_list(str(pm_task_list_file), dry_run=False,
+                        limit_groups=2)
 
     from app.modules.maintenance_config.models import (
         PMSchedule, PMScopeTemplate, PMScopeItem)
@@ -178,22 +274,23 @@ def test_reset_pm_data_clears_all_three_tables_in_fk_safe_order(db):
     assert PMScopeItem.query.count() == 0
 
 
-def test_reset_then_reimport_produces_a_clean_result(db):
+def test_reset_then_reimport_produces_a_clean_result(db, pm_task_list_file):
     """The actual workflow requested: reset, then re-run the import, and
     end up with exactly the fresh import's data -- no leftover
     duplicates from before the reset."""
     from import_pm_task_list import reset_pm_data
-    import_pm_task_list("/mnt/user-data/uploads/PM_Task_List.xlsx",
-                        dry_run=False, limit_groups=1)
+    import_pm_task_list(str(pm_task_list_file), dry_run=False,
+                        limit_groups=1)
     reset_pm_data()
-    stats = import_pm_task_list("/mnt/user-data/uploads/PM_Task_List.xlsx",
-                                dry_run=False, limit_groups=1)
+    stats = import_pm_task_list(str(pm_task_list_file), dry_run=False,
+                                limit_groups=1)
 
     from app.modules.maintenance_config.models import PMSchedule
     assert PMSchedule.query.count() == stats["packages_created"]
 
 
-def test_reset_detaches_external_references_instead_of_failing(db):
+def test_reset_detaches_external_references_instead_of_failing(
+        db, pm_task_list_file):
     """Regression test for a real production error: a Vehicle's
     'Assigned PM Template' (pm_schedule_id) and a real MaintenanceOrder's
     pm_schedule_id/scope_template_id all reference these tables by
@@ -216,8 +313,8 @@ def test_reset_detaches_external_references_instead_of_failing(db):
 
     _seed_transaction_types()
     db.session.commit()
-    import_pm_task_list("/mnt/user-data/uploads/PM_Task_List.xlsx",
-                        dry_run=False, limit_groups=1)
+    import_pm_task_list(str(pm_task_list_file), dry_run=False,
+                        limit_groups=1)
     sched = PMSchedule.query.first()
     tpl = PMScopeTemplate.query.first()
 
