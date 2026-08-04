@@ -333,8 +333,12 @@
    single future long unbroken string (a plate number, a document
    reference) reintroduces exactly this bug on the narrowest phones. */
 @media (max-width: 860px) {
-  html, body { max-width: 100%; overflow-x: hidden; }
-  .fms-exec { max-width: 100%; }
+  /* Page-level overflow guard REMOVED at the client's request. With it,
+     the page was pinned to the viewport and tables scrolled individually;
+     without it the page keeps its natural width and mobile Safari zooms
+     out to fit, which is the behaviour they preferred -- see the whole
+     screen, pinch to read. Kept as one removable block so it can be put
+     back in one edit if that preference changes. */
   .ent-kpi__value, .ent-kpi__label,
   .ent-tile__label, .ent-ribbon__label { overflow-wrap: anywhere; }
 }
@@ -445,66 +449,10 @@
   .ent-hero__inner { max-width: 100%; }
 }
 
-/* ── Data tables on mobile ─────────────────────────────────────────────── */
-/* DataTables' scrollX wrapper must be allowed to scroll sideways even
-   though the PAGE is not -- the page guard exists to stop the layout
-   breaking, not to trap table columns out of reach. */
-@media (max-width: 860px) {
-  .dataTables_wrapper .dataTables_scrollBody,
-  .dataTables_wrapper .dataTables_scrollHead { overflow-x: auto !important; }
-  .dataTables_wrapper .dataTables_scrollBody { -webkit-overflow-scrolling: touch; }
-  /* The wrapper and its ancestors have to be pinned to the viewport
-     width, or the scroll CONTAINER itself grows to fit the table and
-     there is nothing left to scroll -- the overflow just moves up the
-     tree and gets clipped by the page guard instead. This is the part
-     that makes scrollX actually work rather than merely exist. */
-  .dataTables_wrapper { max-width: 100%; overflow: hidden; }
-  .dataTables_wrapper .dataTables_scrollBody,
-  .dataTables_wrapper .dataTables_scrollHead,
-  .dataTables_wrapper .dataTables_scroll { max-width: 100% !important; width: 100% !important; }
-  /* THE root cause of every mobile width problem in this app.
-     The main content column is a flex item, and a flex item defaults to
-     min-width:auto -- it refuses to shrink below its own content. So a
-     wide table pushed that column to 907px inside a 390px viewport, and
-     everything inside inherited the inflated width: the DataTables
-     scroll container ended up as wide as its own content, leaving
-     nothing to scroll, and the page guard simply clipped the overflow.
-     Every ancestor in the chain needs min-width:0 to let the shrink
-     propagate down to the scroller. */
-  .fms-app > .flex-grow-1,
-  main.container-fluid,
-  .card, .card-body, .ent-panel,
-  .dataTables_wrapper, .dt-row, .dt-row > [class^="col-"] { min-width: 0; max-width: 100%; }
-  /* Without a floor, DataTables squeezes every column into the phone's
-     width -- nine columns in 390px is ~43px each, which is unreadable
-     and makes the scroller pointless because there is nothing to scroll
-     to. A minimum keeps columns legible and lets the scroller do its
-     job. */
-  .dataTables_wrapper .dataTables_scrollBody > table,
-  .dataTables_wrapper .dataTables_scrollHead table { min-width: 760px; }
-  /* A visible scrollbar, so it's discoverable that there is more to the
-     right -- an invisible one on touch reads as "the data is missing". */
-  .dataTables_scrollBody::-webkit-scrollbar { height: 8px; }
-  .dataTables_scrollBody::-webkit-scrollbar-thumb {
-    background: var(--ent-slate-400); border-radius: 4px;
-  }
-  .dataTables_scrollBody::-webkit-scrollbar-track { background: var(--ent-slate-100); }
-
-  /* Page-header action buttons wrapped and clipped on a phone. */
-  .d-flex.gap-2 .btn, .page-actions .btn { white-space: nowrap; }
-
-  /* The notifications dropdown ran off the right edge. Anchor it to the
-     viewport instead of the bell, so it can never overflow. */
-  .fms-topbar .dropdown-menu-end,
-  .fms-topbar .dropdown-menu {
-    position: fixed !important;
-    left: .5rem !important; right: .5rem !important;
-    width: auto !important; max-width: none !important;
-    transform: none !important;
-    top: 58px !important;
-    max-height: 70vh; overflow-y: auto;
-  }
-}
+/* Data-table mobile scroll containers REMOVED alongside the overflow
+   guard: with the page free to be wider than the viewport, a table
+   scrolls with the page as it did originally, and a second scroller
+   inside a zoomed-out page is more confusing than helpful. */
 
 /* Hero on a phone: the title wrapped to four lines and the Customize
    button crowded it. Stack them and let the heading own the width. */

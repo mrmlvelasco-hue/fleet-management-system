@@ -111,21 +111,7 @@
   // Auto-init DataTables and Select2 when jQuery is present
   if (window.jQuery) {
     jQuery(function ($) {
-      // scrollX gives each table its OWN horizontal scroller instead of
-      // relying on the page to scroll sideways. That matters on mobile:
-      // the page-level overflow guard (theme-exec.css) deliberately
-      // clips sideways page scroll to stop the layout breaking, which
-      // previously left wide tables with columns that could not be
-      // reached at all -- visible but unscrollable.
-      //
-      // autoWidth off because with scrollX DataTables otherwise measures
-      // column widths before the container has settled and the header
-      // drifts out of line with the body.
-      $("table.fms-datatable").DataTable({
-        pageLength: 25,
-        scrollX: true,
-        autoWidth: false
-      });
+      $("table.fms-datatable").DataTable({ pageLength: 25 });
       $("select.fms-select2").select2({ width: "100%", theme: "default" });
     });
   }

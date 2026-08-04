@@ -1803,3 +1803,188 @@ def maintenanceinvoice_reopen(iid):
     MaintenanceInvoiceService().reopen(iid, user=current_user)
     flash("Invoice reopened for editing.", "info")
     return redirect(url_for("transactions.maintenanceinvoice_detail", iid=iid))
+
+
+# ── Fuel Management ─────────────────────────────────────────────────────────
+
+@bp.route("/fuel")
+@login_required
+@require_permission("fuel.view")
+def fuel_list():
+    from app.modules.transactions.fuel.models import FuelTransaction
+    from app.modules.transactions.fuel.analytics import (
+        FuelAnalyticsService, FuelAnomalyCodes)
+    view = request.args.get("view", "all")
+    query = FuelTransaction.query
+    if view == "flagged":
+        # The exception queue -- where the money actually gets recovered.
+        query = query.filter(db.or_(
+            FuelTransaction.anomaly_flags.isnot(None),
+            FuelTransaction.odometer_status.in_(("SUSPECT", "MISSING"))))
+    rows = query.order_by(FuelTransaction.transaction_date.desc()).limit(500).all()
+    return render_template("transactions/fuel_list.html", rows=rows,
+                           view=view,
+                           summary=FuelAnalyticsService().summary(),
+                           labels=FuelAnomalyCodes.LABELS)
+
+
+@bp.route("/fuel/analytics")
+@login_required
+@require_permission("fuel.view")
+def fuel_analytics():
+    from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+    svc = FuelAnalyticsService()
+    return render_template("transactions/fuel_analytics.html",
+                           summary=svc.summary(),
+                           by_vehicle=svc.by_vehicle())
+
+
+@bp.route("/fuel/new", methods=["GET", "POST"])
+@login_required
+@require_permission("fuel.create")
+def fuel_new():
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.transactions.fuel.models import FuelCard, FuelTransaction
+    from app.modules.transactions.fuel.odometer_validation import (
+        OdometerValidationService)
+    from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+
+    submitted = None
+    if request.method == "POST":
+        f = request.form
+        try:
+            from app.modules.transactions.fuel.import_export import (
+                _to_decimal, _to_int, _to_datetime)
+            txn = FuelTransaction(
+                vehicle_id=int(f["vehicle_id"]),
+                fuel_card_id=int(f["fuel_card_id"]) if f.get("fuel_card_id") else None,
+                transaction_date=_to_datetime(f.get("transaction_date")),
+                station=f.get("station") or None,
+                fuel_type=(f.get("fuel_type") or "").upper() or None,
+                litres=_to_decimal(f.get("litres")),
+                price_per_litre=_to_decimal(f.get("price_per_litre")),
+                total_amount=_to_decimal(f.get("total_amount")),
+                odometer_reported=_to_int(f.get("odometer_reported")),
+                reference_number=f.get("reference_number") or None,
+                remarks=f.get("remarks") or None, source="MANUAL")
+            db.session.add(txn)
+            db.session.flush()
+            OdometerValidationService().validate(txn)
+            FuelAnalyticsService().detect_anomalies(txn)
+            if txn.odometer_status in ("SUSPECT", "MISSING"):
+                flash(f"Fuel transaction saved. {txn.odometer_note}",
+                      "warning")
+            else:
+                flash("Fuel transaction saved.", "success")
+            return redirect(url_for("transactions.fuel_list"))
+        except Exception as exc:
+            db.session.rollback()
+            flash(f"Could not save: {exc}", "danger")
+            submitted = f
+
+    return render_template("transactions/fuel_form.html",
+                           submitted=submitted,
+                           vehicles=VehicleService().list(),
+                           cards=FuelCard.query.filter_by(is_active=True).all())
+
+
+@bp.route("/fuel/<int:tid>/accept-odometer", methods=["POST"])
+@login_required
+@require_permission("fuel.update")
+def fuel_accept_odometer(tid):
+    """A person confirms a flagged reading was genuinely correct."""
+    from app.modules.transactions.fuel.models import FuelTransaction
+    from app.modules.transactions.fuel.odometer_validation import (
+        OdometerValidationService)
+    txn = db.session.get(FuelTransaction, tid)
+    if txn is None:
+        flash("Transaction not found.", "warning")
+        return redirect(url_for("transactions.fuel_list"))
+    OdometerValidationService().accept_reported(txn)
+    flash("Reading confirmed. Consumption for this vehicle has been "
+          "recalculated.", "success")
+    return redirect(request.referrer or url_for("transactions.fuel_list"))
+
+
+@bp.route("/fuel/<int:tid>/correct-odometer", methods=["POST"])
+@login_required
+@require_permission("fuel.update")
+def fuel_correct_odometer(tid):
+    """Enter the true reading. The reported value is never overwritten,
+    so the original statement can still be reconciled."""
+    from app.modules.transactions.fuel.models import FuelTransaction
+    from app.modules.transactions.fuel.odometer_validation import (
+        OdometerValidationService)
+    txn = db.session.get(FuelTransaction, tid)
+    if txn is None:
+        flash("Transaction not found.", "warning")
+        return redirect(url_for("transactions.fuel_list"))
+    try:
+        corrected = int(request.form["odometer"])
+    except (KeyError, ValueError):
+        flash("Enter the corrected odometer as a whole number.", "danger")
+        return redirect(request.referrer or url_for("transactions.fuel_list"))
+    txn.odometer_used = corrected
+    txn.odometer_status = "CORRECTED"
+    txn.odometer_confirmed = True
+    txn.odometer_note = (f"Corrected by a user from "
+                        f"{txn.odometer_reported:,} to {corrected:,}."
+                        if txn.odometer_reported else
+                        f"Set by a user to {corrected:,}.")
+    db.session.commit()
+    OdometerValidationService().revalidate_vehicle(txn.vehicle_id)
+    flash("Odometer corrected and consumption recalculated.", "success")
+    return redirect(request.referrer or url_for("transactions.fuel_list"))
+
+
+@bp.route("/fuel/template")
+@login_required
+@require_permission("fuel.create")
+def fuel_template():
+    from io import BytesIO
+    from flask import send_file
+    from app.modules.transactions.fuel.import_export import build_template
+    return send_file(BytesIO(build_template()), as_attachment=True,
+                     download_name="Fuel_Import_Template.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument"
+                              ".spreadsheetml.sheet")
+
+
+@bp.route("/fuel/export.xlsx")
+@login_required
+@require_permission("fuel.view")
+def fuel_export():
+    from io import BytesIO
+    from flask import send_file
+    from app.modules.transactions.fuel.models import FuelTransaction
+    from app.modules.transactions.fuel.import_export import export_fuel
+    rows = (FuelTransaction.query
+           .order_by(FuelTransaction.transaction_date.desc()).all())
+    return send_file(BytesIO(export_fuel(rows)), as_attachment=True,
+                     download_name="Fuel_Transactions.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument"
+                              ".spreadsheetml.sheet")
+
+
+@bp.route("/fuel/import", methods=["GET", "POST"])
+@login_required
+@require_permission("fuel.create")
+def fuel_import():
+    from app.modules.transactions.fuel.import_export import import_fuel
+    stats = None
+    if request.method == "POST":
+        uploaded = request.files.get("file")
+        if not uploaded or not uploaded.filename:
+            flash("Choose a file to upload.", "warning")
+        else:
+            commit = request.form.get("commit") == "1"
+            try:
+                stats = import_fuel(uploaded.stream, dry_run=not commit)
+                if commit:
+                    flash(f"Imported {stats['created']} transaction(s).",
+                          "success")
+            except ValueError as exc:
+                flash(str(exc), "danger")
+            except Exception as exc:
+                flash(f"Could not read the file: {exc}", "danger")
+    return render_template("transactions/fuel_import.html", stats=stats)
