@@ -1,0 +1,100 @@
+{% extends "layout/base.html" %}
+{% block title %}Data Quality Settings{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('system_admin.data_quality') }}">Fleet Data Quality</a></li>
+<li class="breadcrumb-item active">Settings</li>
+{% endblock %}
+{% block content %}
+<div class="fms-exec">
+
+<h1 class="h3 mb-1">Data Quality Settings</h1>
+<p class="text-muted">
+  Decide which vehicle fields count towards the Data Quality score, which
+  are mandatory, and how much each is worth. Every field on the Vehicle
+  record is listed — switch off whatever doesn't apply to your fleet.
+</p>
+
+<div class="alert alert-info">
+  <strong>Included in Score</strong> means the field affects the percentage.
+  <strong>Required</strong> means the business treats it as mandatory, and a
+  vehicle missing it is flagged. They're separate decisions — a field can be
+  worth tracking without being mandatory.
+  <br>
+  <span class="text-muted small">
+    Weights are relative, not out of 100. A field with weight 10 counts twice
+    as much as one with weight 5. Current total across included fields:
+    <strong>{{ total_weight }}</strong>.
+  </span>
+</div>
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="d-flex justify-content-end gap-2 mb-3">
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="dqSelectAll">Include all</button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="dqSelectNone">Include none</button>
+    <button class="btn btn-primary btn-sm"><i class="bi bi-save me-1"></i>Save Settings</button>
+  </div>
+
+  {% for group, fields in grouped %}
+  <div class="ent-panel mb-3">
+    <div class="ent-panel__head">
+      <h2 class="ent-panel__title">{{ group|title }}</h2>
+      <span class="text-muted small">{{ fields|length }} field(s)</span>
+    </div>
+    <div class="ent-panel__body p-0">
+      <table class="table ent-grid mb-0">
+        <thead><tr>
+          <th>Field</th>
+          <th style="width:130px;" class="text-center">Included in Score</th>
+          <th style="width:110px;" class="text-center">Required</th>
+          <th style="width:110px;">Weight</th>
+        </tr></thead>
+        <tbody>
+        {% for f in fields %}
+          <tr>
+            <td>{{ f.label }}<span class="ent-grid__sub">{{ f.field_name }}</span></td>
+            <td class="text-center">
+              <input class="form-check-input dq-include" type="checkbox"
+                     name="include_in_score" value="{{ f.id }}"
+                     {{ 'checked' if f.include_in_score }}>
+            </td>
+            <td class="text-center">
+              <input class="form-check-input" type="checkbox"
+                     name="is_required" value="{{ f.id }}"
+                     {{ 'checked' if f.is_required }}>
+            </td>
+            <td>
+              <input type="number" class="form-control form-control-sm"
+                     name="weight_{{ f.id }}" value="{{ f.weight }}"
+                     min="1" max="100">
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="d-flex justify-content-end gap-2 mb-4">
+    <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.data_quality') }}">Cancel</a>
+    <button class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Settings</button>
+  </div>
+</form>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Bulk toggles -- with 65 fields, setting them one at a time to reach a
+  // sensible starting point would be tedious.
+  document.getElementById("dqSelectAll").addEventListener("click", function () {
+    document.querySelectorAll(".dq-include").forEach(function (c) { c.checked = true; });
+  });
+  document.getElementById("dqSelectNone").addEventListener("click", function () {
+    document.querySelectorAll(".dq-include").forEach(function (c) { c.checked = false; });
+  });
+</script>
+{% endblock %}

@@ -69,6 +69,8 @@ for _code, _desc in [
     ("customreport.view", "View and run custom reports"),
     ("customreport.manage", "Create, edit and delete custom reports"),
     ("analytics.view", "View the Analytics page (fleet, PM and cost charts)"),
+    ("dataquality.view", "View the Fleet Data Quality Scorecard"),
+    ("dataquality.manage", "Configure Data Quality fields, weights and thresholds"),
 ]:
     _m, _a = _code.split(".")
     registry.register(_code, _m, _a, _desc)
@@ -980,6 +982,78 @@ def analytics():
     main/_charts.html partial against the identical /dashboard/charts
     endpoint, so the two can never disagree on a number."""
     return render_template("system_admin/analytics.html")
+
+
+# ── Fleet Data Quality Scorecard ────────────────────────────────────────────
+
+@bp.route("/data-quality")
+@login_required
+@require_permission("dataquality.view")
+def data_quality():
+    """Branch scorecard, field completion analytics and the drill-down."""
+    from app.core.data_quality_service import DataQualityService
+    svc = DataQualityService()
+    branch_id = request.args.get("branch_id", type=int)
+    return render_template(
+        "system_admin/data_quality.html",
+        summary=svc.summary(user=current_user),
+        branches=svc.branch_scorecard(user=current_user),
+        fields=svc.field_completion(user=current_user),
+        gaps=(svc.vehicles_with_gaps(branch_id=branch_id, user=current_user)
+             if branch_id else None),
+        selected_branch_id=branch_id)
+
+
+@bp.route("/data-quality/settings", methods=["GET", "POST"])
+@login_required
+@require_permission("dataquality.manage")
+def data_quality_settings():
+    """Which fields count, whether each is mandatory, and what it's worth.
+
+    Every Vehicle field is listed -- the administrator switches off what
+    doesn't apply rather than hunting for what to switch on.
+    """
+    from app.core.data_quality_service import (
+        DataQualityField, DataQualityService, FIELD_GROUPS)
+
+    if request.method == "POST":
+        included = set(request.form.getlist("include_in_score"))
+        required = set(request.form.getlist("is_required"))
+        changed = 0
+        for field in DataQualityField.query.all():
+            key = str(field.id)
+            new_included = key in included
+            new_required = key in required
+            raw_weight = request.form.get(f"weight_{field.id}")
+            try:
+                # Clamped rather than rejected: a weight outside 1-100 is
+                # a slip, and failing the whole save over one field would
+                # lose every other edit on a 65-row form.
+                new_weight = max(1, min(100, int(raw_weight)))
+            except (TypeError, ValueError):
+                new_weight = field.weight
+            if (new_included != field.include_in_score
+                    or new_required != field.is_required
+                    or new_weight != field.weight):
+                field.include_in_score = new_included
+                field.is_required = new_required
+                field.weight = new_weight
+                changed += 1
+        db.session.commit()
+        flash(f"Data Quality settings saved ({changed} field(s) changed).",
+              "success")
+        return redirect(url_for("system_admin.data_quality_settings"))
+
+    fields = (DataQualityField.query.filter_by(is_active=True)
+             .order_by(DataQualityField.sort_order).all())
+    grouped = {}
+    for field in fields:
+        grouped.setdefault(field.field_group, []).append(field)
+    ordered = [(g, grouped[g]) for g in FIELD_GROUPS if g in grouped]
+    return render_template("system_admin/data_quality_settings.html",
+                           grouped=ordered,
+                           total_weight=sum(f.weight for f in fields
+                                           if f.include_in_score))
 
 
 @bp.route("/custom-reports")

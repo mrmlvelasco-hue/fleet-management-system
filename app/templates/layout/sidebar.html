@@ -252,6 +252,7 @@
         or current_user.has_permission('reportmaintenancecost.view')
         or current_user.has_permission('reportvehicleactivity.view')
         or current_user.has_permission('customreport.view')
+        or current_user.has_permission('dataquality.view')
         or current_user.has_permission('analytics.view')
         or current_user.has_permission('reportconfig.view') %}
   <div class="sidebar-group">
@@ -270,6 +271,10 @@
         {% if current_user.has_permission('customreport.view') %}
         <li><a href="{{ url_for('system_admin.customreport_list') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.customreport') }}">
           <i class="fms-nav-link__icon bi bi-sliders"></i><span class="sidebar-label">Custom Reports</span></a></li>
+        {% endif %}
+        {% if current_user.has_permission('dataquality.view') %}
+        <li><a href="{{ url_for('system_admin.data_quality') }}" class="fms-nav-link {{ 'is-active' if request.endpoint and request.endpoint.startswith('system_admin.data_quality') }}">
+          <i class="fms-nav-link__icon bi bi-clipboard-data"></i><span class="sidebar-label">Fleet Data Quality</span></a></li>
         {% endif %}
         {% if current_user.has_permission('analytics.view') %}
         <li><a href="{{ url_for('system_admin.analytics') }}" class="fms-nav-link {{ 'is-active' if request.endpoint == 'system_admin.analytics' }}">

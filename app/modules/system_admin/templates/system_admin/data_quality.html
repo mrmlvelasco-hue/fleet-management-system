@@ -1,0 +1,222 @@
+{% extends "layout/base.html" %}
+{% block title %}Fleet Data Quality{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Fleet Data Quality</li>{% endblock %}
+{% block content %}
+<div class="fms-exec">
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="h3 mb-1">Fleet Data Quality Scorecard</h1>
+    <p class="text-muted mb-0">How completely the Vehicle Master is filled in, by branch and by field.</p>
+  </div>
+  {% if current_user.has_permission('dataquality.manage') %}
+  <a class="btn btn-outline-primary btn-sm"
+     href="{{ url_for('system_admin.data_quality_settings') }}">
+    <i class="bi bi-sliders me-1"></i>Configure Fields</a>
+  {% endif %}
+</div>
+
+{# Headline figures #}
+<div class="ent-kpi-grid mb-3">
+  <div class="ent-kpi">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-clipboard-data"></i></span>
+      <div class="ent-kpi__meta">
+        <div class="ent-kpi__label">Overall Data Quality</div>
+        <div class="ent-kpi__value dq-{{ summary.rating|lower }}">{{ summary.score }}%</div>
+      </div>
+    </div>
+  </div>
+  <div class="ent-kpi">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-truck"></i></span>
+      <div class="ent-kpi__meta">
+        <div class="ent-kpi__label">Vehicles Assessed</div>
+        <div class="ent-kpi__value">{{ "{:,}".format(summary.vehicles) }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="ent-kpi ent-kpi--amber">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-exclamation-triangle"></i></span>
+      <div class="ent-kpi__meta">
+        <div class="ent-kpi__label">Incomplete Vehicles</div>
+        <div class="ent-kpi__value">{{ "{:,}".format(summary.incomplete) }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="ent-kpi ent-kpi--rose">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-dash-circle"></i></span>
+      <div class="ent-kpi__meta">
+        <div class="ent-kpi__label">Missing Data Points</div>
+        <div class="ent-kpi__value">{{ "{:,}".format(summary.missing_points) }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  {# Branch ranking — worst first, because that's where attention is needed #}
+  <div class="col-12 col-xl-7">
+    <div class="ent-panel">
+      <div class="ent-panel__head">
+        <h2 class="ent-panel__title">Branch Scorecard</h2>
+        <span class="text-muted small">Lowest first</span>
+      </div>
+      <div class="ent-panel__body p-0">
+        <table class="table ent-grid mb-0">
+          <thead><tr>
+            <th>#</th><th>Branch</th><th class="text-end">Vehicles</th>
+            <th class="text-end">Complete</th><th style="width:190px;">Data Quality</th>
+          </tr></thead>
+          <tbody>
+          {% for b in branches %}
+            <tr>
+              <td class="text-muted">{{ b.rank }}</td>
+              <td>
+                <a class="ent-grid__link"
+                   href="{{ url_for('system_admin.data_quality', branch_id=b.branch.id) if b.branch else '#' }}">
+                  {{ b.branch_name }}</a>
+              </td>
+              <td class="text-end">{{ b.vehicles }}</td>
+              <td class="text-end">{{ b.complete }}<span class="text-muted">/{{ b.vehicles }}</span></td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="dq-bar flex-grow-1">
+                    <div class="dq-bar__fill dq-fill-{{ b.rating|lower }}" style="width: {{ b.score }}%;"></div>
+                  </div>
+                  <span class="dq-pct dq-{{ b.rating|lower }}">{{ b.score }}%</span>
+                </div>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="text-center text-muted py-4">
+              No vehicles to assess yet.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="ent-panel__foot">
+        <span>
+          <span class="dq-key dq-fill-excellent"></span>90–100% Excellent
+          <span class="dq-key dq-fill-warning ms-2"></span>70–89% Needs Improvement
+          <span class="dq-key dq-fill-critical ms-2"></span>Below 70% Critical
+        </span>
+      </div>
+    </div>
+  </div>
+
+  {# Most common gaps #}
+  <div class="col-12 col-xl-5">
+    <div class="ent-panel">
+      <div class="ent-panel__head">
+        <h2 class="ent-panel__title">Most Common Missing Fields</h2>
+      </div>
+      <div class="ent-panel__body">
+        {% if summary.common_missing %}
+        <ul class="ent-legend">
+          {% for m in summary.common_missing %}
+          <li class="ent-legend__item">
+            <span class="ent-legend__label">{{ m.label }}</span>
+            <span class="ent-legend__value">{{ m.count }}
+              <span class="ent-legend__pct">vehicle(s)</span></span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted mb-0">Nothing missing — every scored field is populated.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Per-field completion #}
+<div class="ent-panel mb-3">
+  <div class="ent-panel__head">
+    <h2 class="ent-panel__title">Field Completion Rates</h2>
+    <span class="text-muted small">Lowest first</span>
+  </div>
+  <div class="ent-panel__body p-0" style="max-height: 460px; overflow-y: auto;">
+    <table class="table ent-grid mb-0">
+      <thead><tr>
+        <th>Field</th><th>Group</th><th class="text-end">Missing</th>
+        <th style="width:200px;">Completion</th>
+      </tr></thead>
+      <tbody>
+      {% for f in fields %}
+        <tr>
+          <td>
+            {{ f.label }}
+            {% if f.is_required %}<span class="ent-badge ent-badge--danger ms-1">Required</span>{% endif %}
+          </td>
+          <td class="text-muted small">{{ f.group|title }}</td>
+          <td class="text-end">{{ f.missing }}</td>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <div class="dq-bar flex-grow-1">
+                <div class="dq-bar__fill dq-fill-{{ f.rating|lower }}" style="width: {{ f.rate }}%;"></div>
+              </div>
+              <span class="dq-pct dq-{{ f.rating|lower }}">{{ f.rate }}%</span>
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="text-center text-muted py-4">
+          No fields are currently included in the score.
+          {% if current_user.has_permission('dataquality.manage') %}
+          <a href="{{ url_for('system_admin.data_quality_settings') }}">Configure fields</a>.
+          {% endif %}
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# Drill-down #}
+{% if gaps is not none %}
+<div class="ent-panel">
+  <div class="ent-panel__head">
+    <h2 class="ent-panel__title">Vehicles with Missing Information</h2>
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('system_admin.data_quality') }}">Clear filter</a>
+  </div>
+  <div class="ent-panel__body p-0" style="max-height: 520px; overflow-y: auto;">
+    <table class="table ent-grid mb-0">
+      <thead><tr><th>Vehicle</th><th style="width:110px;">Score</th><th>Missing Fields</th></tr></thead>
+      <tbody>
+      {% for g in gaps %}
+        <tr>
+          <td>
+            <a class="ent-grid__link"
+               href="{{ url_for('master_data.vehicle_detail', vid=g.vehicle.id) }}">
+              {{ g.vehicle.plate_number or g.vehicle.conduction_number }}</a>
+            <span class="ent-grid__sub">{{ g.vehicle.brand }} {{ g.vehicle.model }}</span>
+          </td>
+          <td><span class="dq-pct dq-{{ g.rating|lower }}">{{ g.score }}%</span></td>
+          <td>
+            {% for f in g.missing[:10] %}
+            <span class="ent-badge {{ 'ent-badge--danger' if f.is_required else 'ent-badge--warning' }} me-1 mb-1 d-inline-block">
+              {{ f.label }}</span>
+            {% endfor %}
+            {% if g.missing|length > 10 %}
+            <span class="text-muted small">+{{ g.missing|length - 10 }} more</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3" class="text-center text-muted py-4">
+          Every vehicle in this branch is complete.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<p class="text-muted small">Select a branch above to see which vehicles are missing what.</p>
+{% endif %}
+
+</div>
+{% endblock %}

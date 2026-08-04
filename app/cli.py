@@ -44,6 +44,7 @@ def seed_all(admin_password):
     _migrate_report_permissions_from_data_permissions()
     _migrate_vehicle_activity_report_permission()
     _seed_maintenance_classes()
+    _seed_data_quality_fields()
     _migrate_analytics_permission()
     db.session.commit()
     click.echo("Default system parameters, dashboard widgets, lookups, "
@@ -186,6 +187,16 @@ def _seed_admin(admin_password: str) -> None:
     else:
         click.echo("Admin user already exists; skipped.")
     db.session.commit()
+
+
+def _seed_data_quality_fields() -> None:
+    """Create a Data Quality settings row for every eligible Vehicle
+    field. Inserts only -- an administrator's configuration is never
+    overwritten by a later seed."""
+    from app.core.data_quality_service import DataQualityService
+    created = DataQualityService().sync_fields()
+    if created:
+        click.echo(f"Data Quality: registered {created} new field(s).")
 
 
 def _seed_system_parameters() -> None:

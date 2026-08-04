@@ -536,3 +536,21 @@
   h1.h3 { font-size: 1.2rem; }
   .btn-sm, .btn { font-size: .82rem; }
 }
+
+/* ── Data Quality Scorecard ────────────────────────────────────────────── */
+.dq-bar {
+  height: 8px; border-radius: 5px; background: var(--ent-slate-100);
+  overflow: hidden; min-width: 60px;
+}
+.dq-bar__fill { height: 100%; border-radius: 5px; transition: width .3s ease; }
+.dq-fill-excellent { background: var(--ent-green); }
+.dq-fill-warning   { background: var(--ent-amber); }
+.dq-fill-critical  { background: var(--ent-red); }
+.dq-pct { font-weight: 700; font-size: .8rem; min-width: 48px; text-align: right; }
+.dq-excellent { color: var(--ent-green); }
+.dq-warning   { color: var(--ent-amber); }
+.dq-critical  { color: var(--ent-red); }
+.dq-key {
+  display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+  margin-right: .25rem; vertical-align: middle;
+}
