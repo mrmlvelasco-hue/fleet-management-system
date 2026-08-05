@@ -1814,18 +1814,36 @@ def fuel_list():
     from app.modules.transactions.fuel.models import FuelTransaction
     from app.modules.transactions.fuel.analytics import (
         FuelAnalyticsService, FuelAnomalyCodes)
+    from app.modules.master_data.org.service import BranchService
+
     view = request.args.get("view", "all")
+    branch_id = request.args.get("branch_id", type=int)
+    vehicle_status = request.args.get("vehicle_status", "")
+
     query = FuelTransaction.query
     if view == "flagged":
         # The exception queue -- where the money actually gets recovered.
         query = query.filter(db.or_(
             FuelTransaction.anomaly_flags.isnot(None),
             FuelTransaction.odometer_status.in_(("SUSPECT", "MISSING"))))
+    if branch_id or vehicle_status:
+        from app.modules.master_data.vehicle.models import Vehicle
+        query = query.join(Vehicle, Vehicle.id == FuelTransaction.vehicle_id)
+        if branch_id:
+            query = query.filter(Vehicle.branch_id == branch_id)
+        if vehicle_status:
+            query = query.filter(Vehicle.status == vehicle_status)
+
     rows = query.order_by(FuelTransaction.transaction_date.desc()).limit(500).all()
+    svc = FuelAnalyticsService()
     return render_template("transactions/fuel_list.html", rows=rows,
                            view=view,
-                           summary=FuelAnalyticsService().summary(),
-                           labels=FuelAnomalyCodes.LABELS)
+                           summary=svc.summary(),
+                           exceptions=svc.exceptions_count(),
+                           labels=FuelAnomalyCodes.LABELS,
+                           branches=BranchService().list(),
+                           selected_branch_id=branch_id,
+                           selected_vehicle_status=vehicle_status)
 
 
 @bp.route("/fuel/analytics")
@@ -1970,7 +1988,8 @@ def fuel_export():
 @login_required
 @require_permission("fuel.create")
 def fuel_import():
-    from app.modules.transactions.fuel.import_export import import_fuel
+    from app.modules.transactions.fuel.import_export import (
+        import_fuel, list_import_batches)
     stats = None
     if request.method == "POST":
         uploaded = request.files.get("file")
@@ -1979,12 +1998,40 @@ def fuel_import():
         else:
             commit = request.form.get("commit") == "1"
             try:
-                stats = import_fuel(uploaded.stream, dry_run=not commit)
+                stats = import_fuel(uploaded.stream, dry_run=not commit,
+                                   filename=uploaded.filename,
+                                   user_id=current_user.id)
                 if commit:
-                    flash(f"Imported {stats['created']} transaction(s).",
-                          "success")
+                    flash(f"Imported {stats['created']} transaction(s) from "
+                         f"'{uploaded.filename}'.", "success")
             except ValueError as exc:
                 flash(str(exc), "danger")
             except Exception as exc:
                 flash(f"Could not read the file: {exc}", "danger")
-    return render_template("transactions/fuel_import.html", stats=stats)
+    return render_template("transactions/fuel_import.html", stats=stats,
+                           batches=list_import_batches())
+
+
+@bp.route("/fuel/import-batches/<batch_id>/delete", methods=["POST"])
+@login_required
+@require_permission("fuel.delete")
+def fuel_delete_batch(batch_id):
+    """Undo one wrong upload -- removes exactly the rows that one file
+    added, and recomputes consumption for any vehicle that had a later
+    fill measuring from a reading this batch is removing.
+
+    Gated on fuel.delete specifically, separate from fuel.create --
+    the person who imports statements (a fleet analyst, an initiator)
+    does not automatically need the ability to bulk-delete transaction
+    history; that is a distinct, more consequential action a fleet
+    admin grants deliberately.
+    """
+    from app.modules.transactions.fuel.import_export import (
+        delete_import_batch)
+    count = delete_import_batch(batch_id)
+    if count:
+        flash(f"Removed {count} transaction(s) from that upload.", "success")
+    else:
+        flash("That batch was not found -- it may already have been "
+             "removed.", "warning")
+    return redirect(url_for("transactions.fuel_import"))

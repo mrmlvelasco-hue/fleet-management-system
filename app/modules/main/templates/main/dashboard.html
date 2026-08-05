@@ -280,6 +280,40 @@
   </div>
 </div>
 
+{% if fuel_summary and current_user.has_permission('fuel.view') %}
+<div class="ent-panel mb-3">
+  <div class="ent-panel__head">
+    <h2 class="ent-panel__title">Fuel Management</h2>
+    <span class="text-muted small">Last 30 days</span>
+  </div>
+  <div class="ent-panel__body">
+    <div class="row g-3 text-center">
+      <div class="col-6 col-md-3">
+        <div class="text-muted small">Fills</div>
+        <div class="h4 mb-0">{{ fuel_summary.fills }}</div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="text-muted small">Spend</div>
+        <div class="h4 mb-0">₱{{ "{:,.0f}".format(fuel_summary.spend) }}</div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="text-muted small">Avg. km/L</div>
+        <div class="h4 mb-0">{{ fuel_summary.avg_kmpl if fuel_summary.avg_kmpl is not none else '—' }}</div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="text-muted small">Needs Review</div>
+        <div class="h4 mb-0 {{ 'text-danger' if fuel_summary.needs_review }}">
+          {{ fuel_summary.needs_review }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="ent-panel__foot">
+    <span>Consumption, cost and odometer confidence</span>
+    <a href="{{ url_for('transactions.fuel_list', view='flagged') }}">View exceptions &rarr;</a>
+  </div>
+</div>
+{% endif %}
+
 <h5 class="mt-4 mb-3">Analytics</h5>
 {% with compact=true %}{% include "main/_charts.html" %}{% endwith %}
 

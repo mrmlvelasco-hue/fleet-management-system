@@ -129,6 +129,25 @@ class FuelAnalyticsService:
             return prices[middle]
         return (prices[middle - 1] + prices[middle]) / 2
 
+    def exceptions_count(self, user=None) -> dict:
+        """How many transactions the Exceptions view will actually show.
+
+        Deliberately ALL TIME, not scoped to the 30-day summary() window:
+        an unresolved SUSPECT reading from two months ago is still a real
+        open problem (arguably a more urgent one, since it's been sitting
+        longer), and the count driving a badge must match what clicking
+        through actually reveals. Using summary()'s 30-day figure here
+        previously meant an older flagged transaction could show "0" on
+        the badge while the Exceptions tab still listed it -- confirmed
+        directly: a flagged row from 60 days back showed 0+0 on the badge
+        while the list itself returned 1.
+        """
+        from app.modules.transactions.fuel.models import FuelTransaction
+        query = FuelTransaction.query.filter(db.or_(
+            FuelTransaction.anomaly_flags.isnot(None),
+            FuelTransaction.odometer_status.in_(("SUSPECT", "MISSING"))))
+        return {"count": query.count()}
+
     @request_cached("fuel_summary")
     def summary(self, user=None, days=30) -> dict:
         from app.modules.transactions.fuel.models import FuelTransaction
@@ -139,7 +158,8 @@ class FuelAnalyticsService:
                .filter(FuelTransaction.transaction_date >= start).all())
         if not rows:
             return {"fills": 0, "litres": 0, "spend": 0, "avg_price": 0,
-                   "avg_kmpl": None, "flagged": 0, "untrusted_odometer": 0}
+                   "avg_kmpl": None, "flagged": 0, "untrusted_odometer": 0,
+                   "needs_review": 0}
 
         litres = sum(Decimal(str(r.litres or 0)) for r in rows)
         spend = sum(Decimal(str(r.total_amount or 0)) for r in rows)
@@ -158,6 +178,13 @@ class FuelAnalyticsService:
             "untrusted_odometer": sum(
                 1 for r in rows
                 if r.odometer_status in ("SUSPECT", "MISSING")),
+            # A row can carry BOTH an anomaly flag and a suspect odometer
+            # at once, so flagged + untrusted_odometer would double-count
+            # it. This is the genuine "needs a person to look at it"
+            # total, used by the dashboard tile.
+            "needs_review": sum(
+                1 for r in rows
+                if r.anomaly_flags or r.odometer_status in ("SUSPECT", "MISSING")),
         }
 
     @request_cached("fuel_by_vehicle")

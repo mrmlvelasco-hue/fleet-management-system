@@ -201,6 +201,16 @@ def dashboard():
     # without delaying first paint.
     from app.core.dashboard_analytics_service import DashboardAnalyticsService
     _analytics = DashboardAnalyticsService()
+
+    # Cheap bounded aggregate (30-day window, simple SUM/COUNT) -- unlike
+    # the PM/registration due calculations this doesn't need to be
+    # deferred to the async widgets endpoint. Gated so the query doesn't
+    # run at all for a user without fuel.view.
+    fuel_summary = None
+    if current_user.has_permission("fuel.view"):
+        from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+        fuel_summary = FuelAnalyticsService().summary(user=current_user)
+
     return render_template("main/dashboard.html", cards=cards,
                            for_my_action=for_my_action,
                            action_tiles=action_tiles,
@@ -209,7 +219,8 @@ def dashboard():
                            due_registrations=due_registrations,
                            workflow=_analytics.approval_workflow_counts(
                                user=current_user),
-                           kpi_trends=_analytics.kpi_trends(user=current_user))
+                           kpi_trends=_analytics.kpi_trends(user=current_user),
+                           fuel_summary=fuel_summary)
 
 
 def _compute_due_widgets(user):

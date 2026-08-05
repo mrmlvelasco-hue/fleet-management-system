@@ -64,6 +64,61 @@
       </tbody>
     </table>
     {% endif %}
+    {% if stats.import_batch_id %}
+    <div class="alert alert-success mt-3 mb-0 d-flex justify-content-between align-items-center">
+      <span>This upload is recorded as a batch, so it can be undone as a
+        whole if it turns out to be the wrong file.</span>
+      <form method="post" action="{{ url_for('transactions.fuel_delete_batch', batch_id=stats.import_batch_id) }}"
+            data-confirm="Remove all {{ stats.created }} transaction(s) from this upload? This cannot be undone.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-danger">
+          <i class="bi bi-trash me-1"></i>Undo this upload</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# Recent uploads -- lets a wrong file uploaded last week, not just the
+   one just submitted, be found and removed. Delete is gated on
+   fuel.delete specifically: the person who imports statements (a fleet
+   analyst, an initiator) does not automatically get to bulk-remove
+   transaction history -- that is a separate, more consequential
+   permission a fleet admin grants deliberately. #}
+{% if batches %}
+<div class="ent-panel mt-3">
+  <div class="ent-panel__head">
+    <h2 class="ent-panel__title">Recent Uploads</h2>
+  </div>
+  <div class="ent-panel__body p-0">
+    <table class="table ent-grid mb-0">
+      <thead><tr>
+        <th>File</th><th>Uploaded</th><th>By</th>
+        <th class="text-end">Rows</th><th class="text-end">Total Spend</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for b in batches %}
+        <tr>
+          <td><i class="bi bi-file-earmark-spreadsheet me-1"></i>{{ b.filename or '—' }}</td>
+          <td class="text-nowrap">{{ b.imported_at.strftime('%Y-%m-%d %H:%M') if b.imported_at else '—' }}</td>
+          <td>{{ b.imported_by.first_name ~ ' ' ~ b.imported_by.last_name if b.imported_by else '—' }}</td>
+          <td class="text-end">{{ b.row_count }}</td>
+          <td class="text-end">₱{{ "{:,.2f}".format(b.total_spend) }}</td>
+          <td class="text-end">
+            {% if current_user.has_permission('fuel.delete') %}
+            <form method="post" action="{{ url_for('transactions.fuel_delete_batch', batch_id=b.batch_id) }}"
+                  data-confirm="Remove all {{ b.row_count }} transaction(s) from '{{ b.filename }}'? This cannot be undone.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger" title="Delete this upload">
+                <i class="bi bi-trash"></i></button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 {% endif %}

@@ -102,6 +102,18 @@ class FuelTransaction(db.Model, BaseModel):
     source = db.Column(db.String(20), default="MANUAL", nullable=False)
     remarks = db.Column(db.String(255), nullable=True)
 
+    # Traceability for imported rows. A wrong file uploaded by mistake
+    # is a real risk with a manual fleet-card import -- without knowing
+    # WHICH file a row came from, undoing a bad upload means manually
+    # picking through rows by eye. import_batch_id ties every row from
+    # one upload together (even if the same filename is uploaded twice),
+    # so a bad batch can be found and removed as a whole.
+    import_filename = db.Column(db.String(255), nullable=True)
+    import_batch_id = db.Column(db.String(40), nullable=True, index=True)
+    imported_by = db.Column(db.Integer, db.ForeignKey("users.id"),
+                           nullable=True)
+    imported_at = db.Column(db.DateTime, nullable=True)
+
     vehicle = db.relationship("Vehicle", lazy="joined")
     fuel_card = db.relationship("FuelCard", lazy="joined")
 

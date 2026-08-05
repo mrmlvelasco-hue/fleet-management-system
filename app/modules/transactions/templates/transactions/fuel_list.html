@@ -72,15 +72,48 @@
   </div>
 </div>
 
+<div class="ent-panel mb-3">
+  <div class="ent-panel__body py-2">
+    <form class="row g-2 align-items-center" method="get">
+      {% if view == 'flagged' %}<input type="hidden" name="view" value="flagged">{% endif %}
+      <div class="col-md-3">
+        <select class="form-select form-select-sm" name="branch_id" onchange="this.form.submit()">
+          <option value="">Filter by Branch</option>
+          {% for b in branches %}
+          <option value="{{ b.id }}" {{ 'selected' if selected_branch_id == b.id }}>{{ b.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <select class="form-select form-select-sm" name="vehicle_status" onchange="this.form.submit()">
+          <option value="">Filter by Vehicle Status</option>
+          {% for s in ('ACTIVE', 'INACTIVE', 'IN_REPAIR', 'DISPOSED') %}
+          <option value="{{ s }}" {{ 'selected' if selected_vehicle_status == s }}>{{ s|title|replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if selected_branch_id or selected_vehicle_status %}
+      <div class="col-auto">
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('transactions.fuel_list', view=view if view=='flagged' else None) }}">Clear filters</a>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
 <div class="ent-panel">
   <div class="ent-panel__head">
     <div class="btn-group btn-group-sm" role="group">
       <a class="btn {{ 'btn-primary' if view == 'all' else 'btn-outline-secondary' }}"
-         href="{{ url_for('transactions.fuel_list') }}">All</a>
+         href="{{ url_for('transactions.fuel_list', branch_id=selected_branch_id, vehicle_status=selected_vehicle_status) }}">All</a>
       <a class="btn {{ 'btn-primary' if view == 'flagged' else 'btn-outline-secondary' }}"
-         href="{{ url_for('transactions.fuel_list', view='flagged') }}">
-        Exceptions{% if summary.flagged or summary.untrusted_odometer %}
-        <span class="badge text-bg-danger ms-1">{{ summary.flagged }}</span>{% endif %}</a>
+         href="{{ url_for('transactions.fuel_list', view='flagged', branch_id=selected_branch_id, vehicle_status=selected_vehicle_status) }}">
+        {# All-time count, matching what this tab actually shows -- the
+           30-day summary figure used here previously could read "0"
+           while an older unresolved flag still appeared on click. #}
+        Exceptions{% if exceptions.count %}
+        <span class="badge text-bg-danger ms-1">{{ exceptions.count }}</span>{% endif %}</a>
     </div>
     <span class="text-muted small">{{ rows|length }} shown</span>
   </div>
@@ -89,7 +122,7 @@
       <thead><tr>
         <th>Date</th><th>Vehicle</th><th>Station</th>
         <th class="text-end">Litres</th><th class="text-end">Total</th>
-        <th>Odometer</th><th>km/L</th><th>Flags</th><th></th>
+        <th>Odometer</th><th>km/L</th><th>Flags</th><th>Source</th><th></th>
       </tr></thead>
       <tbody>
       {% for t in rows %}
@@ -121,6 +154,14 @@
             <span class="ent-badge ent-badge--warning d-inline-block mb-1">{{ labels.get(code, code) }}</span>
             {% endfor %}
             {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td>
+            {% if t.source == 'IMPORT' %}
+            <span class="small" title="{{ t.import_filename }} — {{ t.imported_at.strftime('%Y-%m-%d %H:%M') if t.imported_at else '' }}">
+              <i class="bi bi-file-earmark-spreadsheet me-1"></i>{{ t.import_filename or 'Import' }}</span>
+            {% else %}
+            <span class="text-muted small">Manual entry</span>
+            {% endif %}
           </td>
           <td class="text-nowrap">
             {% if current_user.has_permission('fuel.update') and t.odometer_status in ('SUSPECT', 'MISSING') %}
@@ -155,7 +196,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="9" class="text-center text-muted py-4">
+        <tr><td colspan="10" class="text-center text-muted py-4">
           No fuel transactions {{ 'need review' if view == 'flagged' else 'recorded yet' }}.</td></tr>
       {% endfor %}
       </tbody>

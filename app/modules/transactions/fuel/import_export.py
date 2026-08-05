@@ -14,6 +14,8 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
+from sqlalchemy import func
+
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 
@@ -28,21 +30,22 @@ COLUMN_ALIASES = {
                         "transaction date", "posting date", "trans date",
                         "datetime", "date/time"),
     "card_number": ("card_number", "card no", "card no.", "card number",
-                   "fleet card", "cardno"),
+                   "fleet card", "cardno", "card"),
     "plate_number": ("plate_number", "plate", "plate no", "plate no.",
                     "vehicle", "vehicle no", "conduction", "unit"),
     "station": ("station", "site", "site name", "station name",
                "merchant", "location", "branch"),
     "litres": ("litres", "liters", "volume", "qty", "quantity",
-              "liters sold", "volume (l)"),
-    "price_per_litre": ("price_per_litre", "unit price", "price/l",
+              "liters sold", "volume l"),
+    "price_per_litre": ("price_per_litre", "unit price", "price l",
                        "price per liter", "price", "unit cost"),
     "total_amount": ("total_amount", "amount", "total", "gross amount",
                     "net amount", "total cost"),
     "odometer_reported": ("odometer_reported", "odometer", "odo",
-                         "mileage", "km reading", "odometer reading"),
+                         "mileage", "km reading", "odometer reading",
+                         "odometer reported"),
     "fuel_type": ("fuel_type", "product", "fuel", "product name",
-                 "description"),
+                 "description", "fuel type"),
     "reference_number": ("reference_number", "reference", "ref no",
                         "ref no.", "receipt", "receipt no", "invoice no",
                         "transaction no", "or no"),
@@ -59,7 +62,11 @@ TEMPLATE_COLUMNS = [
     ("price_per_litre", False, "Numbers only, e.g. 62.15"),
     ("total_amount", True, "Numbers only, e.g. 2827.83"),
     ("odometer_reported", False,
-     "Odometer at the pump. Leave BLANK if not captured — do not guess."),
+     "Odometer at the pump. Leave BLANK if not captured — do not guess. "
+     "A reading implying more than ~3,000 km since this vehicle's last "
+     "fill will be flagged for review rather than accepted automatically "
+     "— check the date and the reading are both correct for large gaps "
+     "between fills."),
     ("reference_number", False,
      "Receipt / OR number. Used to avoid double-counting a re-imported "
      "statement."),
@@ -67,8 +74,27 @@ TEMPLATE_COLUMNS = [
 ]
 
 
+import re as _re
+
+
 def _norm(value):
-    return str(value).strip().lower() if value is not None else ""
+    """Lowercase, strip, and collapse punctuation to spaces.
+
+    The exact-match approach this replaces failed on real, ordinary
+    headers -- including this app's OWN export column names, like
+    "Odometer (reported)" and "Price/L" -- because neither the
+    parentheses nor the slash were stripped before comparing against a
+    plain-text alias. A natural round-trip (export a file, edit it,
+    re-import it) or a real supplier statement with slightly different
+    punctuation would otherwise silently map nothing and every reading
+    would come in as MISSING, which is exactly what happened importing
+    a real sample file before this fix.
+    """
+    if value is None:
+        return ""
+    text = str(value).strip().lower()
+    text = _re.sub(r"[^a-z0-9]+", " ", text)
+    return _re.sub(r"\s+", " ", text).strip()
 
 
 def map_headers(header_row):
@@ -78,13 +104,21 @@ def map_headers(header_row):
     ignored rather than failing the import — a provider statement
     carries plenty of columns we have no use for, and refusing the file
     over them would be obstructive.
+
+    Both the header text and the alias list are run through the same
+    _norm(), so punctuation on either side (a header's parentheses, an
+    alias's own period or slash) can't cause a false mismatch.
     """
+    normalized_aliases = {
+        field: {_norm(a) for a in aliases}
+        for field, aliases in COLUMN_ALIASES.items()
+    }
     mapping = {}
     for index, raw in enumerate(header_row):
         text = _norm(raw)
         if not text:
             continue
-        for field, aliases in COLUMN_ALIASES.items():
+        for field, aliases in normalized_aliases.items():
             if field in mapping:
                 continue
             if text in aliases:
@@ -160,19 +194,29 @@ def _to_datetime(value):
     raise ValueError(f"'{text}' is not a recognisable date")
 
 
-def import_fuel(file_stream, dry_run: bool = True) -> dict:
+def import_fuel(file_stream, dry_run: bool = True, filename: str = None,
+                user_id: int = None) -> dict:
     """Load a fuel statement. Per-row errors, partial import.
 
     A row that fails is SKIPPED and reported; the rest still import. On a
     200-row monthly statement, an all-or-nothing failure over one bad
     cell would be far worse than a partial load with a list to fix.
+
+    Every row created is stamped with the same import_batch_id, the
+    original filename, who imported it, and when -- so a wrong upload
+    can be found and undone as a whole rather than row by row.
     """
+    import uuid
+    from datetime import datetime as _dt
     from app.modules.master_data.vehicle.models import Vehicle
     from app.modules.transactions.fuel.models import (
         FuelCard, FuelTransaction)
     from app.modules.transactions.fuel.odometer_validation import (
         OdometerValidationService)
     from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+
+    batch_id = uuid.uuid4().hex[:12]
+    imported_at = _dt.now()
 
     wb = load_workbook(file_stream, data_only=True)
     ws = wb["Fuel"] if "Fuel" in wb.sheetnames else wb[wb.sheetnames[0]]
@@ -305,7 +349,9 @@ def import_fuel(file_stream, dry_run: bool = True) -> dict:
                       if get("fuel_type") else None),
             litres=litres, price_per_litre=price, total_amount=amount,
             odometer_reported=odometer, reference_number=reference,
-            source="IMPORT")
+            source="IMPORT", import_filename=filename,
+            import_batch_id=batch_id, imported_by=user_id,
+            imported_at=imported_at)
         db.session.add(txn)
         db.session.flush()
         created_rows.append(txn)
@@ -325,7 +371,64 @@ def import_fuel(file_stream, dry_run: bool = True) -> dict:
     stats["untrusted_odometer"] = sum(
         1 for t in created_rows
         if t.odometer_status in ("SUSPECT", "MISSING"))
+    stats["import_batch_id"] = batch_id if not dry_run and created_rows else None
+    stats["filename"] = filename
     return stats
+
+
+def list_import_batches(limit=30):
+    """Recent import batches, most recent first, for the batch filter
+    dropdown and the "undo a bad upload" screen."""
+    from app.modules.transactions.fuel.models import FuelTransaction
+    from app.modules.user_management.models import User
+
+    rows = (db.session.query(
+               FuelTransaction.import_batch_id,
+               FuelTransaction.import_filename,
+               FuelTransaction.imported_by,
+               FuelTransaction.imported_at,
+               func.count(FuelTransaction.id).label("row_count"),
+               func.sum(FuelTransaction.total_amount).label("total_spend"))
+           .filter(FuelTransaction.import_batch_id.isnot(None))
+           .group_by(FuelTransaction.import_batch_id,
+                    FuelTransaction.import_filename,
+                    FuelTransaction.imported_by,
+                    FuelTransaction.imported_at)
+           .order_by(FuelTransaction.imported_at.desc())
+           .limit(limit).all())
+
+    users = {u.id: u for u in User.query.all()}
+    return [{
+        "batch_id": r.import_batch_id, "filename": r.import_filename,
+        "imported_by": users.get(r.imported_by),
+        "imported_at": r.imported_at, "row_count": r.row_count,
+        "total_spend": r.total_spend or 0,
+    } for r in rows]
+
+
+def delete_import_batch(batch_id):
+    """Remove every transaction from one upload -- the undo for a wrong
+    file. Deliberately keyed on the batch, not a date range or a vehicle
+    list, so it removes exactly and only what one upload added, nothing
+    from before it and nothing added since by a different upload."""
+    from app.modules.transactions.fuel.models import FuelTransaction
+    rows = FuelTransaction.query.filter_by(import_batch_id=batch_id).all()
+    count = len(rows)
+    affected_vehicles = {r.vehicle_id for r in rows}
+    for row in rows:
+        db.session.delete(row)
+    db.session.commit()
+
+    # Deleting a batch can remove the reading a later, still-present fill
+    # was measuring FROM -- that later fill's distance/km-L would then be
+    # silently wrong until recomputed against whatever baseline remains.
+    from app.modules.transactions.fuel.odometer_validation import (
+        OdometerValidationService)
+    validator = OdometerValidationService()
+    for vehicle_id in affected_vehicles:
+        validator.revalidate_vehicle(vehicle_id)
+
+    return count
 
 
 def export_fuel(rows) -> bytes:
