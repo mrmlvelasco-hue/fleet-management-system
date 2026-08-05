@@ -1,86 +1,159 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ 'Edit' if item else 'New' }} Custom Report{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('system_admin.customreport_list') }}">Custom Reports</a></li>
 <li class="breadcrumb-item active">{{ item.name if item else 'New Report' }}</li>
 {% endblock %}
-{% block content %}
-<h1 class="h3 mb-4">{{ 'Edit' if item else 'New' }} Custom Report</h1>
 
+{% block content %}
 <form method="post" id="builderForm">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-  <div class="card mb-3"><div class="card-body row g-3">
-    <div class="col-md-5">
-      <label class="form-label">Report Name <span class="text-danger">*</span></label>
-      <input name="name" class="form-control" required value="{{ item.name if item else '' }}">
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ 'Edit' if item else 'New' }} Custom Report</h1>
+      <p class="text-muted small mb-0">Build ad-hoc reports, choose display columns, apply query filters, and schedule export targets.</p>
     </div>
-    <div class="col-md-7">
-      <label class="form-label">Description</label>
-      <input name="description" class="form-control" value="{{ item.description if item else '' }}">
-    </div>
-    <div class="col-md-5">
-      <label class="form-label">Data Source <span class="text-danger">*</span></label>
-      <select name="data_source" id="dataSource" class="form-select" required>
-        <option value="">— Select —</option>
-        {% for key, src in sources.items() %}
-        <option value="{{ key }}" {{ 'selected' if item and item.data_source == key }}>{{ src.label }}</option>
-        {% endfor %}
-      </select>
-      <div class="form-text" id="sourceHint"></div>
-    </div>
-    <div class="col-md-3">
-      <label class="form-label">Max Rows</label>
-      <input type="number" name="row_limit" class="form-control" min="1" max="5000"
-             value="{{ item.row_limit if item else 1000 }}">
-    </div>
-    <div class="col-md-4">
-      <label class="form-label">Default Email Recipients</label>
-      <input name="default_recipients" class="form-control" placeholder="a@x.com, b@y.com"
-             value="{{ item.default_recipients if item else '' }}">
-      <div class="form-text">Used when emailing this report.</div>
-    </div>
-  </div></div>
-
-  <div class="card mb-3">
-    <div class="card-header">Columns <span class="text-muted small">— tick the fields to include</span></div>
-    <div class="card-body">
-      <div id="fieldChecks" class="row g-2"><div class="text-muted small">Select a data source first.</div></div>
-    </div>
-  </div>
-
-  <div class="card mb-3">
-    <div class="card-header d-flex justify-content-between align-items-center">
-      <span>Filters <span class="text-muted small">— optional</span></span>
-      <button type="button" class="btn btn-sm btn-outline-secondary" id="addFilter">
-        <i class="bi bi-plus-lg me-1"></i>Add Filter</button>
-    </div>
-    <div class="card-body"><div id="filterRows"></div></div>
-  </div>
-
-  <div class="card mb-3"><div class="card-body row g-3 align-items-end">
-    <div class="col-md-4">
-      <label class="form-label">Sort By</label>
-      <select name="sort_key" id="sortKey" class="form-select"><option value="">— None —</option></select>
-    </div>
-    <div class="col-md-3">
-      <label class="form-label">Direction</label>
-      <select name="sort_dir" class="form-select">
-        <option value="asc" {{ 'selected' if item and item.sort_dir == 'asc' }}>Ascending</option>
-        <option value="desc" {{ 'selected' if item and item.sort_dir == 'desc' }}>Descending</option>
-      </select>
-    </div>
-    <div class="col-md-5 text-end">
-      <button type="button" class="btn btn-outline-primary" id="previewBtn">
-        <i class="bi bi-eye me-1"></i>Preview</button>
-      <button class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Report</button>
+    <div class="d-flex gap-2">
       <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.customreport_list') }}">Cancel</a>
+      <button type="button" class="btn btn-outline-primary" id="previewBtn">
+        <i class="bi bi-eye me-1"></i>Preview Data
+      </button>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save Report
+      </button>
     </div>
-  </div></div>
+  </div>
 
-  <div class="card d-none" id="previewCard">
-    <div class="card-header">Preview <span class="text-muted small" id="previewCount"></span></div>
-    <div class="card-body table-responsive"><div id="previewArea"></div></div>
+  <div class="row g-4">
+    <!-- Main Report Configuration Area -->
+    <div class="col-lg-8">
+
+      <!-- Report Metadata & Source Selection Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">1. Report Definition & Data Source</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Report Name <span class="text-danger">*</span></label>
+              <input name="name" class="form-control" required value="{{ item.name if item else '' }}" placeholder="e.g. Monthly Fuel Usage Summary">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Data Source <span class="text-danger">*</span></label>
+              <select name="data_source" id="dataSource" class="form-select" required>
+                <option value="">— Select —</option>
+                {% for key, src in sources.items() %}
+                <option value="{{ key }}" {{ 'selected' if item and item.data_source == key }}>{{ src.label }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text text-muted" id="sourceHint"></div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Description</label>
+              <input name="description" class="form-control" value="{{ item.description if item else '' }}" placeholder="Brief explanation of the purpose or target audience for this report...">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Max Rows Limit</label>
+              <input type="number" name="row_limit" class="form-control" min="1" max="5000"
+                     value="{{ item.row_limit if item else 1000 }}">
+            </div>
+
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Default Email Recipients</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-envelope"></i></span>
+                <input name="default_recipients" class="form-control" placeholder="a@x.com, b@y.com"
+                       value="{{ item.default_recipients if item else '' }}">
+              </div>
+              <div class="form-text text-muted">Comma-separated email addresses for automated or quick dispatching.</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Columns Selector Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span>2. Output Columns</span>
+          <span class="text-muted small fw-normal">Select fields to include in the output dataset</span>
+        </div>
+        <div class="card-body">
+          <div id="fieldChecks" class="row g-2">
+            <div class="text-muted small">Select a data source first.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dynamic Filters Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span>3. Data Filters <span class="text-muted small fw-normal">— optional</span></span>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="addFilter">
+            <i class="bi bi-plus-lg me-1"></i>Add Filter Condition
+          </button>
+        </div>
+        <div class="card-body">
+          <div id="filterRows"></div>
+        </div>
+      </div>
+
+      <!-- Sort Rules Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">4. Sorting Rules</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Sort By Field</label>
+              <select name="sort_key" id="sortKey" class="form-select">
+                <option value="">— None —</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Direction</label>
+              <select name="sort_dir" class="form-select">
+                <option value="asc" {{ 'selected' if item and item.sort_dir == 'asc' }}>Ascending (A-Z, 0-9)</option>
+                <option value="desc" {{ 'selected' if item and item.sort_dir == 'desc' }}>Descending (Z-A, 9-0)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dynamic Preview Card -->
+      <div class="card border-0 shadow-sm mb-4 d-none" id="previewCard">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-table me-2 text-primary"></i> Data Preview</span>
+          <span class="badge bg-light text-dark border" id="previewCount"></span>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive" id="previewArea"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance & Help Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-file-earmark-bar-graph me-1"></i> Report Builder Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Data Source:</strong> Dictates available fields, dynamic filters, and dataset schema context.</li>
+            <li><strong>Field Selection:</strong> Re-ordering fields modifies tabular output sequence.</li>
+            <li><strong>Filter Matching:</strong> Multiple filter conditions are combined logically (`AND` operation).</li>
+            <li><strong>Max Rows Limit:</strong> Restricts query dataset capped at a maximum of 5,000 records for server execution performance.</li>
+            <li><strong>Email Recipients:</strong> Automatically populates target distribution lists when dispatching exported CSV/XLS files.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
 
@@ -116,18 +189,18 @@ function renderFields() {
   const box = document.getElementById("fieldChecks");
   const sortSel = document.getElementById("sortKey");
   if (!src) {
-    box.innerHTML = '<div class="text-muted small">Select a data source first.</div>';
+    box.innerHTML = '<div class="text-muted small p-2">Select a data source first.</div>';
     sortSel.innerHTML = '<option value="">— None —</option>';
     document.getElementById("sourceHint").textContent = "";
     return;
   }
   document.getElementById("sourceHint").textContent = src.description || "";
   box.innerHTML = src.fields.map(f => `
-    <div class="col-md-4 col-lg-3">
-      <div class="form-check">
-        <input class="form-check-input" type="checkbox" name="fields" value="${f.key}"
+    <div class="col-md-6 col-lg-4">
+      <div class="form-check p-2 border rounded bg-light-subtle">
+        <input class="form-check-input ms-0 me-2" type="checkbox" name="fields" value="${f.key}"
                id="fld_${f.key}" ${SAVED_FIELDS.includes(f.key) ? "checked" : ""}>
-        <label class="form-check-label" for="fld_${f.key}">${f.label}</label>
+        <label class="form-check-label small fw-semibold" for="fld_${f.key}">${f.label}</label>
       </div>
     </div>`).join("");
   sortSel.innerHTML = '<option value="">— None —</option>' + src.fields.map(f =>
@@ -137,16 +210,16 @@ function renderFields() {
 function filterRowHtml(saved) {
   const src = currentSource();
   if (!src) return "";
-  const fieldOpts = '<option value="">— Field —</option>' + src.fields.map(f =>
+  const fieldOpts = '<option value="">— Select Field —</option>' + src.fields.map(f =>
     `<option value="${f.key}" ${saved && saved.field === f.key ? "selected" : ""}>${f.label}</option>`).join("");
   const opOpts = Object.entries(OPERATORS).map(([k, v]) =>
     `<option value="${k}" ${saved && saved.op === k ? "selected" : ""}>${v}</option>`).join("");
   const val = saved && saved.value != null ? String(saved.value).replace(/"/g, "&quot;") : "";
-  return `<div class="row g-2 mb-2 filter-row">
+  return `<div class="row g-2 mb-2 align-items-center filter-row p-2 border rounded bg-light-subtle">
     <div class="col-md-4"><select name="filter_field" class="form-select form-select-sm">${fieldOpts}</select></div>
     <div class="col-md-3"><select name="filter_op" class="form-select form-select-sm">${opOpts}</select></div>
-    <div class="col-md-4"><input name="filter_value" class="form-control form-control-sm" placeholder="Value" value="${val}"></div>
-    <div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger w-100 removeFilter">&times;</button></div>
+    <div class="col-md-4"><input name="filter_value" class="form-control form-control-sm" placeholder="Value..." value="${val}"></div>
+    <div class="col-md-1 text-end"><button type="button" class="btn btn-sm btn-outline-danger w-100 removeFilter" title="Remove Filter">&times;</button></div>
   </div>`;
 }
 
@@ -174,15 +247,15 @@ document.getElementById("previewBtn").addEventListener("click", () => {
     card.classList.remove("d-none");
     if (!d.ok) {
       document.getElementById("previewCount").textContent = "";
-      area.innerHTML = `<div class="alert alert-warning mb-0">${d.message}</div>`;
+      area.innerHTML = `<div class="alert alert-warning m-3">${d.message}</div>`;
       return;
     }
     document.getElementById("previewCount").textContent =
-      `— showing ${d.row_count} row(s), first 50 max`;
-    if (!d.rows.length) { area.innerHTML = '<p class="text-muted mb-0">No rows matched.</p>'; return; }
-    area.innerHTML = `<table class="table table-sm table-striped"><thead><tr>` +
-      d.columns.map(c => `<th>${c.label}</th>`).join("") + `</tr></thead><tbody>` +
-      d.rows.map(r => "<tr>" + r.map(v => `<td>${v}</td>`).join("") + "</tr>").join("") +
+      `Showing ${d.row_count} row(s) (50 max preview limit)`;
+    if (!d.rows.length) { area.innerHTML = '<p class="text-muted p-4 mb-0 text-center">No rows matched the selected criteria.</p>'; return; }
+    area.innerHTML = `<table class="table table-sm table-hover align-middle mb-0"><thead class="table-light"><tr>` +
+      d.columns.map(c => `<th class="px-3 py-2">${c.label}</th>`).join("") + `</tr></thead><tbody>` +
+      d.rows.map(r => "<tr>" + r.map(v => `<td class="px-3 py-2">${v}</td>`).join("") + "</tr>").join("") +
       `</tbody></table>`;
   });
 });

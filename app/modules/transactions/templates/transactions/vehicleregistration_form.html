@@ -1,63 +1,145 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('transactions.vehicleregistration_list') }}">Vehicle Registrations</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-6"><label class="form-label">Vehicle</label>
-    <div class="input-group">
-      <select name="vehicle_id" id="vrVehicleSelect" class="form-select" required>
-        {% if prefill_vehicle %}
-        <option value="{{ prefill_vehicle.id }}" selected>
-          {{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number }} — {{ prefill_vehicle.brand }} {{ prefill_vehicle.model }}
-        </option>
-        {% else %}
-        <option value="">— Type plate number, make, or model —</option>
-        {% endif %}
-      </select>
-      <button type="button" class="btn btn-outline-secondary" id="vrVehicleModalBtn" title="Advanced search">
-        <i class="bi bi-search"></i></button>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Record new or renewal vehicle registration details, costs, and compliance checklists.</p>
     </div>
-    <div class="mt-2" id="vrChecklistWrapper" style="display:none;">
-      <button class="btn btn-sm btn-outline-secondary" type="button"
-              data-bs-toggle="collapse" data-bs-target="#vrChecklistCollapse">
-        <i class="bi bi-list-check me-1"></i>View Checklist Details
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('transactions.vehicleregistration_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save as Draft
       </button>
-      <div class="collapse mt-2" id="vrChecklistCollapse">
-        <div class="card card-body p-2">
-          <table class="table table-sm mb-0" id="vrChecklistTable">
-            <thead><tr><th>#</th><th>Code</th><th>Description</th></tr></thead>
-            <tbody></tbody>
-          </table>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Vehicle Selection & Scope Preview Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Vehicle Identification &amp; Checklist</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Target Vehicle <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <select name="vehicle_id" id="vrVehicleSelect" class="form-select" required>
+                  {% if prefill_vehicle %}
+                  <option value="{{ prefill_vehicle.id }}" selected>
+                    {{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number }} — {{ prefill_vehicle.brand }} {{ prefill_vehicle.model }}
+                  </option>
+                  {% else %}
+                  <option value="">— Type plate number, make, or model —</option>
+                  {% endif %}
+                </select>
+                <button type="button" class="btn btn-outline-secondary" id="vrVehicleModalBtn" title="Advanced search">
+                  <i class="bi bi-search"></i>
+                </button>
+              </div>
+
+              <!-- Collapsible Checklist Preview Container -->
+              <div class="mt-3" id="vrChecklistWrapper" style="display:none;">
+                <button class="btn btn-sm btn-outline-secondary" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#vrChecklistCollapse">
+                  <i class="bi bi-list-check me-1"></i>View Registration Checklist Details
+                </button>
+                <div class="collapse mt-2" id="vrChecklistCollapse">
+                  <div class="card card-body p-2 border bg-light-subtle">
+                    <div class="table-responsive">
+                      <table class="table table-sm align-middle mb-0" id="vrChecklistTable">
+                        <thead class="table-light small text-uppercase text-muted">
+                          <tr>
+                            <th style="width: 40px;">#</th>
+                            <th style="width: 100px;">Code</th>
+                            <th>Checklist Task Description</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Registration Schedule & Financials Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Registration Parameters &amp; Costs</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Registration Type <span class="text-danger">*</span></label>
+              <select name="registration_type" class="form-select" required>
+                <option value="NEW" {{ 'selected' if prefill.registration_type=='NEW' }}>New (3-year validity)</option>
+                <option value="RENEWAL" {{ 'selected' if prefill.registration_type=='RENEWAL' }}>Renewal (1-year validity)</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Registration Date <span class="text-danger">*</span></label>
+              <input type="date" name="registration_date" class="form-control" required
+                     value="{{ prefill.registration_date or '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Current Odometer <span class="text-muted small fw-normal">(Optional)</span></label>
+              <div class="input-group">
+                <input type="number" name="odometer_at_registration" class="form-control"
+                       placeholder="e.g. 15000">
+                <span class="input-group-text bg-light">KM</span>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">OR/CR Total Cost <span class="text-muted small fw-normal">(Optional)</span></label>
+              <div class="input-group">
+                <span class="input-group-text bg-light">₱</span>
+                <input type="text" inputmode="decimal" name="or_cr_cost" class="form-control js-money" placeholder="0.00">
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-file-earmark-text me-1"></i> Registration Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Validity Policy:</strong> <em>New</em> vehicle registrations apply a 3-year validity window, whereas <em>Renewals</em> recur on a 1-year cycle.</li>
+            <li><strong>Auto-Checklist Matching:</strong> Selecting a vehicle automatically fetches and attaches the matching template checklist for compliance tracking.</li>
+            <li><strong>Official Receipt (OR/CR):</strong> Capturing exact registration fees and odometer readings keeps financial and fleet records aligned.</li>
+          </ul>
         </div>
       </div>
     </div>
   </div>
-  <div class="col-md-6"><label class="form-label">Registration Type</label>
-    <select name="registration_type" class="form-select" required>
-      <option value="NEW" {{ 'selected' if prefill.registration_type=='NEW' }}>New (3-year validity)</option>
-      <option value="RENEWAL" {{ 'selected' if prefill.registration_type=='RENEWAL' }}>Renewal (1-year validity)</option>
-    </select></div>
-  <div class="col-md-6"><label class="form-label">Registration Date</label>
-    <input type="date" name="registration_date" class="form-control" required
-           value="{{ prefill.registration_date or '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Current Odometer (optional)</label>
-    <input type="number" name="odometer_at_registration" class="form-control"
-           placeholder="e.g. 15000"></div>
-  <div class="col-md-6"><label class="form-label">OR/CR Cost (optional)</label>
-    <input type="text" inputmode="decimal" name="or_cr_cost" class="form-control js-money" placeholder="0.00"></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save as Draft</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.vehicleregistration_list') }}">Cancel</a>
-  </div>
 </form>
-</div></div>
 {% endblock %}
+
 {% block scripts %}
 <script>
   if (window.jQuery) {
@@ -89,7 +171,7 @@
             if (!data.found) { $wrapper.hide(); return; }
             var rows = data.items.map(function (i) {
               return "<tr><td>" + i.sort_order + "</td>"
-                + '<td><span class="badge text-bg-secondary">' + i.activity_code + "</span></td>"
+                + '<td><span class="badge text-bg-secondary font-monospace">' + i.activity_code + "</span></td>"
                 + "<td>" + i.activity_description + "</td></tr>";
             }).join("");
             jQuery("#vrChecklistTable tbody").html(rows);

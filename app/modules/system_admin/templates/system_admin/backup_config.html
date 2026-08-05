@@ -1,81 +1,154 @@
 {% extends "layout/base.html" %}
 {% block title %}Backup Config{% endblock %}
-{% block breadcrumbs %}<li class="breadcrumb-item active">Backup Config</li>{% endblock %}
-{% block content %}
-<h1 class="h3 mb-4">Backup &amp; Restore Configuration</h1>
 
-<div class="card mb-4"><div class="card-body">
-<form method="post" class="row g-3">
+{% block breadcrumbs %}
+<li class="breadcrumb-item active">Backup Config</li>
+{% endblock %}
+
+{% block content %}
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-4"><label class="form-label">Schedule</label>
-    <select name="schedule" class="form-select">
-      <option value="DAILY" {{ 'selected' if cfg and cfg.schedule=='DAILY' }}>Daily</option>
-      <option value="WEEKLY" {{ 'selected' if cfg and cfg.schedule=='WEEKLY' }}>Weekly</option>
-      <option value="MANUAL" {{ 'selected' if not cfg or cfg.schedule=='MANUAL' }}>Manual</option>
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Retention (days)</label>
-    <input type="number" name="retention_days" class="form-control" value="{{ cfg.retention_days if cfg else 30 }}"></div>
-  <div class="col-md-8"><label class="form-label">Destination Path</label>
-    <input type="text" name="destination_path" id="destination_path" class="form-control"
-           placeholder="e.g. D:\fms\backups (blank = instance/backups)"
-           value="{{ cfg.destination_path if cfg else '' }}"></div>
-  <div class="col-md-8">
-    <label class="form-label">MySQL Tools Path (mysqldump)</label>
-    <input type="text" name="mysqldump_path" class="form-control"
-           placeholder="e.g. C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe"
-           value="{{ mysqldump_path }}">
-    <div class="form-text">
-      Leave blank to auto-detect from PATH or common install locations.
-      Set this if <strong>Test Configuration</strong> reports mysqldump not found —
-      typical on Windows where the MySQL installer doesn't add its bin
-      folder to PATH. Find yours with: <code>where mysqldump</code> in
-      Command Prompt, or look under
-      <code>C:\Program Files\MySQL\MySQL Server X.X\bin\</code>.
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">Backup &amp; Restore Configuration</h1>
+      <p class="text-muted small mb-0">Manage automated database dump schedules, retention limits, export destinations, and execution logs.</p>
+    </div>
+    {% if current_user.has_permission('backupconfig.update') %}
+    <div class="d-flex gap-2">
+      <button class="btn btn-outline-secondary" type="submit"
+              formaction="{{ url_for('system_admin.backup_config_test') }}">
+        <i class="bi bi-clipboard-check me-1"></i>Test Configuration
+      </button>
+      <button class="btn btn-outline-success" type="submit"
+              formaction="{{ url_for('system_admin.backup_config_run') }}"
+              onclick="return confirm('Run a backup now?');">
+        <i class="bi bi-download me-1"></i>Run Backup Now
+      </button>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save Config
+      </button>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form & History Area -->
+    <div class="col-lg-8">
+
+      <!-- Backup Parameters Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Backup Settings</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Backup Schedule <span class="text-danger">*</span></label>
+              <select name="schedule" class="form-select">
+                <option value="DAILY" {{ 'selected' if cfg and cfg.schedule=='DAILY' }}>Daily</option>
+                <option value="WEEKLY" {{ 'selected' if cfg and cfg.schedule=='WEEKLY' }}>Weekly</option>
+                <option value="MANUAL" {{ 'selected' if not cfg or cfg.schedule=='MANUAL' }}>Manual</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Retention Period (Days)</label>
+              <div class="input-group">
+                <input type="number" name="retention_days" class="form-control" value="{{ cfg.retention_days if cfg else 30 }}">
+                <span class="input-group-text bg-light">Days</span>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Destination Storage Path</label>
+              <input type="text" name="destination_path" id="destination_path" class="form-control font-monospace"
+                     placeholder="e.g. D:\fms\backups (blank = instance/backups)"
+                     value="{{ cfg.destination_path if cfg else '' }}">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">MySQL Tools Path (mysqldump)</label>
+              <input type="text" name="mysqldump_path" class="form-control font-monospace"
+                     placeholder="e.g. C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe"
+                     value="{{ mysqldump_path }}">
+              <div class="form-text text-muted mt-2">
+                Leave blank to auto-detect from system PATH or standard installation paths.
+                Set this explicitly if <strong>Test Configuration</strong> reports mysqldump not found —
+                typical on Windows where the MySQL installer does not add its bin directory to PATH.
+                Find yours with <code>where mysqldump</code> in Command Prompt, or search under
+                <code>C:\Program Files\MySQL\MySQL Server X.X\bin\</code>.
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Backup History Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span>Backup History</span>
+          <span class="badge bg-light text-dark border">{{ backups|length if backups else 0 }} Files</span>
+        </div>
+        <div class="card-body p-0">
+          {% if backups %}
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light small text-uppercase text-muted">
+                <tr>
+                  <th class="ps-3">Backup File</th>
+                  <th>File Size</th>
+                  <th class="pe-3">Created (UTC)</th>
+                </tr>
+              </thead>
+              <tbody>
+              {% for b in backups %}
+                <tr>
+                  <td class="ps-3">
+                    <i class="bi bi-file-earmark-zip text-primary me-2"></i>
+                    <code class="font-monospace text-dark">{{ b.name }}</code>
+                  </td>
+                  <td><span class="badge bg-light text-dark border font-monospace">{{ '%.1f'|format(b.size_bytes / 1024) }} KB</span></td>
+                  <td class="pe-3 text-muted small"><i class="bi bi-clock me-1"></i>{{ b.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="p-4 text-center text-muted">
+            <i class="bi bi-archive fs-3 d-block mb-2 text-secondary"></i>
+            <p class="mb-0">No backups generated yet. Configure a destination path and click <strong>Run Backup Now</strong>, or configure a Daily/Weekly schedule.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-shield-check me-1"></i> Backup &amp; Restore Guide</h6>
+
+          <div class="alert alert-info border-info-subtle bg-info-subtle p-2.5 mb-3 rounded small">
+            <i class="bi bi-info-circle me-1"></i>
+            <strong>Restore Notice:</strong> Restoration is strictly executed directly on the database host to protect production systems from accidental overwrites.
+          </div>
+
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Automated Purging:</strong> Backups older than the configured <em>Retention Period</em> are automatically purged during scheduled runs.</li>
+            <li><strong>Execution Test:</strong> Click <em>Test Configuration</em> to verify read/write path permissions and executable availability before scheduling.</li>
+            <li>
+              <strong>Restore Procedure:</strong> Decompress and pipe dump files via MySQL CLI:<br>
+              <code class="d-block mt-1 p-2 bg-white rounded border font-monospace text-dark">gunzip &lt; backup.sql.gz | mysql -u USER -p DATABASE</code>
+            </li>
+          </ul>
+        </div>
+      </div>
     </div>
   </div>
-  {% if current_user.has_permission('backupconfig.update') %}
-  <div class="col-12 d-flex gap-2">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <button class="btn btn-outline-secondary" type="submit"
-            formaction="{{ url_for('system_admin.backup_config_test') }}">
-      <i class="bi bi-clipboard-check me-1"></i>Test Configuration</button>
-    <button class="btn btn-outline-success" type="submit"
-            formaction="{{ url_for('system_admin.backup_config_run') }}"
-            onclick="return confirm('Run a backup now?');">
-      <i class="bi bi-download me-1"></i>Run Backup Now</button>
-  </div>
-  {% endif %}
 </form>
-</div></div>
-
-<div class="card mb-4"><div class="card-body">
-  <h2 class="h6 text-uppercase text-muted fw-bold mb-3">Backup History</h2>
-  {% if backups %}
-  <div class="table-responsive">
-    <table class="table table-sm mb-0">
-      <thead><tr><th>File</th><th>Size</th><th>Created (UTC)</th></tr></thead>
-      <tbody>
-      {% for b in backups %}
-        <tr>
-          <td><code>{{ b.name }}</code></td>
-          <td>{{ '%.1f'|format(b.size_bytes / 1024) }} KB</td>
-          <td>{{ b.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="text-muted mb-0">No backups yet. Configure a destination and click
-    <strong>Run Backup Now</strong>, or set a Daily/Weekly schedule.</p>
-  {% endif %}
-</div></div>
-
-<div class="alert alert-info small mb-0">
-  <i class="bi bi-info-circle me-1"></i>
-  <strong>Restore</strong> is performed on the server, not from the app, to
-  prevent accidental production overwrites. For MySQL:
-  <code>gunzip &lt; backup.sql.gz | mysql -u USER -p DATABASE</code>. See the
-  README for the full procedure.
-</div>
 {% endblock %}

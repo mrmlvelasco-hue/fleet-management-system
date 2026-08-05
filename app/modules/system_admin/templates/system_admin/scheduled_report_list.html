@@ -1,110 +1,185 @@
 {% extends "layout/base.html" %}
 {% block title %}Scheduled Reports{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('system_admin.report_config_list') }}">Report Config</a></li>
 <li class="breadcrumb-item active">Scheduled Reports</li>
 {% endblock %}
-{% block content %}
-<h1 class="h3 mb-4">Scheduled Reports</h1>
 
-<div class="alert alert-info small">
-  <i class="bi bi-info-circle me-1"></i>
-  Scheduled reports are delivered by the <code>flask report run-due</code>
-  command — run it periodically (hourly is typical) via cron / Windows
-  Task Scheduler. It's safe to run as often as you like: a schedule only
-  actually sends once its due time has passed.
+{% block content %}
+<!-- Header & Page Summary -->
+<div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+  <div>
+    <h1 class="h3 mb-1 fw-bold text-dark">Scheduled Reports</h1>
+    <p class="text-muted small mb-0">Automate recurring report generation, manage recipient distribution lists, and trigger immediate dispatches.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.report_config_list') }}">
+    <i class="bi bi-arrow-left me-1"></i>Back to Report Config
+  </a>
 </div>
 
-<div class="card mb-4"><div class="card-body">
-  <h2 class="h6 text-uppercase text-muted fw-bold mb-3">New Schedule</h2>
-  <form method="post" action="{{ url_for('system_admin.scheduled_report_new') }}" class="row g-3">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="col-md-4">
-      <label class="form-label">Name</label>
-      <input type="text" name="name" class="form-control" required
-             placeholder="e.g. Weekly Maintenance Cost Summary">
-    </div>
-    <div class="col-md-4">
-      <label class="form-label">Report</label>
-      <select name="report_code" class="form-select" required>
-        {% for code in report_choices %}
-        <option value="{{ code }}">{{ code }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-md-4">
-      <label class="form-label">Frequency</label>
-      <select name="frequency" class="form-select">
-        <option value="DAILY">Daily</option>
-        <option value="WEEKLY" selected>Weekly</option>
-        <option value="MONTHLY">Monthly</option>
-      </select>
-    </div>
-    <div class="col-md-8">
-      <label class="form-label">Recipients (comma-separated emails)</label>
-      <input type="text" name="recipients" class="form-control" required
-             placeholder="manager@example.com, branch.head@example.com">
-    </div>
-    <div class="col-md-4">
-      <label class="form-label">Status filter <span class="text-muted small">(optional)</span></label>
-      <select name="status" class="form-select">
-        <option value="">All</option>
-        <option value="OVERDUE">Overdue</option>
-        <option value="DUE_SOON">Due Soon</option>
-        <option value="OK">OK</option>
-      </select>
-    </div>
-    <div class="col-12">
-      <button class="btn btn-primary" type="submit">Create Schedule</button>
-    </div>
-  </form>
-</div></div>
+<div class="row g-4">
+  <!-- Main Configuration & List Area -->
+  <div class="col-lg-8">
 
-<div class="card"><div class="card-body">
-  <h2 class="h6 text-uppercase text-muted fw-bold mb-3">Active Schedules</h2>
-  {% if items %}
-  <div class="table-responsive">
-    <table class="table table-sm">
-      <thead>
-        <tr><th>Name</th><th>Report</th><th>Frequency</th><th>Recipients</th>
-            <th>Last Run</th><th>Next Run</th><th>Status</th><th></th></tr>
-      </thead>
-      <tbody>
-      {% for s in items %}
-        <tr>
-          <td>{{ s.name }}</td>
-          <td><code>{{ s.report_code }}</code></td>
-          <td>{{ s.frequency }}</td>
-          <td class="small">{{ s.recipients }}</td>
-          <td class="small">{{ s.last_run_at.strftime('%Y-%m-%d %H:%M') if s.last_run_at else '—' }}</td>
-          <td class="small">{{ s.next_run_at.strftime('%Y-%m-%d %H:%M') if s.next_run_at else '—' }}</td>
-          <td>
-            {% if s.last_run_status == 'SUCCESS' %}
-              <span class="badge text-bg-success">SUCCESS</span>
-            {% elif s.last_run_status == 'FAILED' %}
-              <span class="badge text-bg-danger">FAILED</span>
-            {% else %}
-              <span class="badge text-bg-secondary">Not run yet</span>
-            {% endif %}
-          </td>
-          <td class="text-end">
-            <form method="post" action="{{ url_for('system_admin.scheduled_report_run_now', sched_id=s.id) }}" class="d-inline">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-outline-secondary" type="submit">Run Now</button>
-            </form>
-            <form method="post" action="{{ url_for('system_admin.scheduled_report_delete', sched_id=s.id) }}" class="d-inline"
-                  onsubmit="return confirm('Remove this schedule?');">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-outline-danger" type="submit">Remove</button>
-            </form>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+    <!-- New Schedule Form Card -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+        <span>Create New Schedule</span>
+        <span class="badge bg-light text-dark border">Automated Dispatch</span>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('system_admin.scheduled_report_new') }}" class="row g-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Schedule Name <span class="text-danger">*</span></label>
+            <input type="text" name="name" class="form-control" required
+                   placeholder="e.g. Weekly Maintenance Cost Summary">
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Target Report <span class="text-danger">*</span></label>
+            <select name="report_code" class="form-select font-monospace" required>
+              {% for code in report_choices %}
+              <option value="{{ code }}">{{ code }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Frequency <span class="text-danger">*</span></label>
+            <select name="frequency" class="form-select">
+              <option value="DAILY">Daily</option>
+              <option value="WEEKLY" selected>Weekly</option>
+              <option value="MONTHLY">Monthly</option>
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Status Filter <span class="text-muted small fw-normal">(Optional)</span></label>
+            <select name="status" class="form-select">
+              <option value="">All</option>
+              <option value="OVERDUE">Overdue</option>
+              <option value="DUE_SOON">Due Soon</option>
+              <option value="OK">OK</option>
+            </select>
+          </div>
+
+          <div class="col-12">
+            <label class="form-label fw-semibold">Recipients <span class="text-danger">*</span> <span class="text-muted small fw-normal">(Comma-separated emails)</span></label>
+            <div class="input-group">
+              <span class="input-group-text bg-light"><i class="bi bi-envelope"></i></span>
+              <input type="text" name="recipients" class="form-control" required
+                     placeholder="manager@example.com, branch.head@example.com">
+            </div>
+          </div>
+
+          <div class="col-12 pt-2">
+            <button class="btn btn-primary px-4 fw-semibold" type="submit">
+              <i class="bi bi-plus-lg me-1"></i>Create Schedule
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Active Schedules Card -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+        <span>Active Schedules</span>
+        <span class="badge bg-light text-dark border">{{ items|length if items else 0 }} Configured</span>
+      </div>
+      <div class="card-body p-0">
+        {% if items %}
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light small text-uppercase text-muted">
+              <tr>
+                <th class="ps-3">Name</th>
+                <th>Report</th>
+                <th>Frequency</th>
+                <th>Recipients</th>
+                <th>Last Run</th>
+                <th>Next Run</th>
+                <th>Status</th>
+                <th class="pe-3 text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for s in items %}
+              <tr>
+                <td class="ps-3 fw-semibold text-dark">{{ s.name }}</td>
+                <td><code class="font-monospace text-primary">{{ s.report_code }}</code></td>
+                <td><span class="badge bg-light text-dark border font-monospace">{{ s.frequency }}</span></td>
+                <td class="small text-muted" style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ s.recipients }}">
+                  {{ s.recipients }}
+                </td>
+                <td class="small text-muted"><i class="bi bi-clock-history me-1"></i>{{ s.last_run_at.strftime('%Y-%m-%d %H:%M') if s.last_run_at else '—' }}</td>
+                <td class="small text-muted"><i class="bi bi-calendar-event me-1"></i>{{ s.next_run_at.strftime('%Y-%m-%d %H:%M') if s.next_run_at else '—' }}</td>
+                <td>
+                  {% if s.last_run_status == 'SUCCESS' %}
+                    <span class="badge text-bg-success"><i class="bi bi-check-circle me-1"></i>SUCCESS</span>
+                  {% elif s.last_run_status == 'FAILED' %}
+                    <span class="badge text-bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>FAILED</span>
+                  {% else %}
+                    <span class="badge text-bg-secondary">Not run yet</span>
+                  {% endif %}
+                </td>
+                <td class="pe-3 text-end">
+                  <div class="d-inline-flex gap-1">
+                    <form method="post" action="{{ url_for('system_admin.scheduled_report_run_now', sched_id=s.id) }}" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button class="btn btn-sm btn-outline-secondary" type="submit" title="Run Schedule Immediately">
+                        <i class="bi bi-play-fill me-1"></i>Run Now
+                      </button>
+                    </form>
+                    <form method="post" action="{{ url_for('system_admin.scheduled_report_delete', sched_id=s.id) }}" class="d-inline"
+                          onsubmit="return confirm('Remove this schedule?');">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button class="btn btn-sm btn-outline-danger" type="submit" title="Remove Schedule">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-muted">
+          <i class="bi bi-calendar-x fs-3 d-block mb-2 text-secondary"></i>
+          <p class="mb-0">No scheduled reports configured yet. Use the form above to set up automated dispatches.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
   </div>
-  {% else %}
-  <p class="text-muted mb-0">No scheduled reports yet.</p>
-  {% endif %}
-</div></div>
+
+  <!-- Right Guidance Panel -->
+  <div class="col-lg-4">
+    <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+      <div class="card-body p-3">
+        <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-clock me-1"></i> Automation &amp; CLI Execution Guide</h6>
+
+        <div class="alert alert-info border-info-subtle bg-info-subtle p-2.5 mb-3 rounded small">
+          <i class="bi bi-info-circle me-1"></i>
+          Scheduled reports are delivered via the background CLI runner command.
+        </div>
+
+        <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+          <li>
+            <strong>Cron Setup:</strong> Execute the CLI runner command periodically (e.g., hourly) via system scheduler:<br>
+            <code class="d-block mt-1 p-2 bg-white rounded border font-monospace text-dark">flask report run-due</code>
+          </li>
+          <li><strong>Idempotent Execution:</strong> Running the command frequently is safe; reports are dispatched only when their due time has elapsed.</li>
+          <li><strong>Immediate Dispatch:</strong> Click <em>Run Now</em> on any active schedule to force an instant test email delivery.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

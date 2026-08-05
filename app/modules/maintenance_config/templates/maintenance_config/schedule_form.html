@@ -1,169 +1,328 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.pmschedule_list') }}">PM Templates</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card mb-3"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-  <div class="col-12"><h6 class="text-muted text-uppercase small">Match Criteria</h6></div>
-  <div class="col-md-4"><label class="form-label">Brand</label>
-    <select name="vehicle_brand_id" id="pmBrandSelect" class="form-select">
-      <option value="">— Select a Brand —</option>
-      {% for b in vehicle_brands %}
-      <option value="{{ b.id }}" {{ 'selected' if item and item.vehicle_brand_id==b.id }}>{{ b.name }}</option>
-      {% endfor %}
-    </select>
-    <div class="form-text">Leave Brand/Model blank to match by Vehicle Type or all vehicles instead.</div>
-    {% if not vehicle_brands %}
-    <div class="alert alert-warning py-2 px-3 mt-1 mb-0 small">
-      No Vehicle Brands yet — <a href="{{ url_for('master_data.vehiclebrand_new') }}">create one first</a>,
-      or use the legacy free-text Make/Model fields below.
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Configure preventive maintenance criteria, trigger intervals, auto-generation policies, and notification thresholds.</p>
     </div>
-    {% endif %}</div>
-  <div class="col-md-4"><label class="form-label">Model</label>
-    <select name="vehicle_model_id" id="pmModelSelect" class="form-select">
-      {% if item and item.vehicle_model_ref %}
-      <option value="{{ item.vehicle_model_ref.id }}" selected>{{ item.vehicle_model_ref.name }}</option>
-      {% else %}
-      <option value="">— Select a Brand first —</option>
-      {% endif %}
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Vehicle Type (fallback match)</label>
-    <select name="vehicle_type_id" class="form-select fms-select2">
-      <option value="">— All vehicle types —</option>
-      {% for vt in vehicle_types %}
-      <option value="{{ vt.id }}" {{ 'selected' if item and item.vehicle_type_id==vt.id }}>{{ vt.code }} — {{ vt.name }}</option>
-      {% endfor %}
-    </select></div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('maintenance_config.pmschedule_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save PM Template
+      </button>
+    </div>
+  </div>
 
-  <div class="col-12">
-    <a class="small" data-bs-toggle="collapse" href="#legacyMakeModel" role="button">
-      Or use legacy free-text Make/Model instead ▾</a>
-    <div class="collapse {{ 'show' if item and item.vehicle_make }}" id="legacyMakeModel">
-      <div class="row g-3 mt-1">
-        <div class="col-md-6"><label class="form-label">Make (free text)</label>
-          <input type="text" name="vehicle_make" class="form-control" placeholder="e.g. Toyota"
-                 value="{{ item.vehicle_make if item and item.vehicle_make else '' }}"></div>
-        <div class="col-md-6"><label class="form-label">Model (free text)</label>
-          <input type="text" name="vehicle_model" class="form-control" placeholder="e.g. Hilux"
-                 value="{{ item.vehicle_model if item and item.vehicle_model else '' }}"></div>
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Match Criteria Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span>1. Vehicle Matching Criteria</span>
+          <span class="badge bg-light text-dark border">Brand / Model / Type</span>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Brand</label>
+              <select name="vehicle_brand_id" id="pmBrandSelect" class="form-select">
+                <option value="">— Select a Brand —</option>
+                {% for b in vehicle_brands %}
+                <option value="{{ b.id }}" {{ 'selected' if item and item.vehicle_brand_id==b.id }}>{{ b.name }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text text-muted">Leave Brand/Model blank to match by Vehicle Type or all vehicles instead.</div>
+              {% if not vehicle_brands %}
+              <div class="alert alert-warning py-2 px-3 mt-2 mb-0 small border border-warning-subtle">
+                No Vehicle Brands yet — <a href="{{ url_for('master_data.vehiclebrand_new') }}" class="fw-semibold">create one first</a>,
+                or use the legacy free-text Make/Model fields below.
+              </div>
+              {% endif %}
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Model</label>
+              <select name="vehicle_model_id" id="pmModelSelect" class="form-select">
+                {% if item and item.vehicle_model_ref %}
+                <option value="{{ item.vehicle_model_ref.id }}" selected>{{ item.vehicle_model_ref.name }}</option>
+                {% else %}
+                <option value="">— Select a Brand first —</option>
+                {% endif %}
+              </select>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Vehicle Type <span class="text-muted small fw-normal">(Fallback)</span></label>
+              <select name="vehicle_type_id" class="form-select fms-select2">
+                <option value="">— All vehicle types —</option>
+                {% for vt in vehicle_types %}
+                <option value="{{ vt.id }}" {{ 'selected' if item and item.vehicle_type_id==vt.id }}>{{ vt.code }} — {{ vt.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-12 border-top pt-2 mt-3">
+              <a class="small fw-semibold text-decoration-none" data-bs-toggle="collapse" href="#legacyMakeModel" role="button">
+                <i class="bi bi-fonts me-1"></i>Or use legacy free-text Make/Model instead ▾
+              </a>
+              <div class="collapse {{ 'show' if item and item.vehicle_make }}" id="legacyMakeModel">
+                <div class="row g-3 mt-1 p-3 bg-light rounded border">
+                  <div class="col-md-6">
+                    <label class="form-label fw-semibold small">Make (Free Text)</label>
+                    <input type="text" name="vehicle_make" class="form-control form-control-sm" placeholder="e.g. Toyota"
+                           value="{{ item.vehicle_make if item and item.vehicle_make else '' }}">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label fw-semibold small">Model (Free Text)</label>
+                    <input type="text" name="vehicle_model" class="form-control form-control-sm" placeholder="e.g. Hilux"
+                           value="{{ item.vehicle_model if item and item.vehicle_model else '' }}">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile Details Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span>2. Vehicle Profile Details <span class="text-muted small fw-normal">— optional</span></span>
+          <span class="badge bg-light text-dark border">Technical Spec Filters</span>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Variant</label>
+              <input type="text" name="variant" class="form-control" placeholder="e.g. 2.8 D-4D"
+                     value="{{ item.variant if item and item.variant else '' }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Engine Type</label>
+              <input type="text" name="engine_type" class="form-control font-monospace" placeholder="e.g. 1GD-FTV"
+                     value="{{ item.engine_type if item and item.engine_type else '' }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Fuel Type</label>
+              <select name="fuel_type" class="form-select">
+                <option value="">— Any —</option>
+                {% for ft in fuel_types %}
+                <option value="{{ ft.code }}" {{ 'selected' if item and item.fuel_type==ft.code }}>{{ ft.description }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Transmission</label>
+              <select name="transmission" class="form-select">
+                <option value="">— Any —</option>
+                {% for t in ['MANUAL', 'AUTOMATIC', 'CVT'] %}
+                <option value="{{ t }}" {{ 'selected' if item and item.transmission==t }}>{{ t|title }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Model Year From</label>
+              <input type="number" name="model_year_from" class="form-control" placeholder="e.g. 2020"
+                     value="{{ item.model_year_from if item and item.model_year_from else '' }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Model Year To</label>
+              <input type="number" name="model_year_to" class="form-control" placeholder="e.g. 2025"
+                     value="{{ item.model_year_to if item and item.model_year_to else '' }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Profile Code</label>
+              <input type="text" name="profile_code" class="form-control font-monospace text-uppercase" placeholder="e.g. HILUX-DIESEL"
+                     value="{{ item.profile_code if item and item.profile_code else '' }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Effective Date</label>
+              <input type="date" name="effective_date" class="form-control"
+                     value="{{ item.effective_date if item and item.effective_date else '' }}">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Profile Description</label>
+              <input type="text" name="profile_description" class="form-control" placeholder="e.g. Toyota Hilux 2.8L Diesel PMS Profile"
+                     value="{{ item.profile_description if item and item.profile_description else '' }}">
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- PM Type & Trigger Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">3. PM Type &amp; Trigger Intervals</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Maintenance Type <span class="text-danger">*</span></label>
+              {% if maintenance_types %}
+              <select name="maintenance_type_id" class="form-select fms-select2" required>
+                <option value="">— Select —</option>
+                {% for mt in maintenance_types %}
+                <option value="{{ mt.id }}" {{ 'selected' if item and item.maintenance_type_id==mt.id }}>{{ mt.code }} — {{ mt.name }}</option>
+                {% endfor %}
+              </select>
+              {% else %}
+              <div class="alert alert-warning py-2 px-3 mb-0 small border border-warning-subtle">
+                No Maintenance Types yet —
+                <a href="{{ url_for('master_data.maintenancetype_new') }}" class="fw-semibold">create one first</a>,
+                then come back to this form.
+              </div>
+              {% endif %}
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Trigger Mode <span class="text-danger">*</span></label>
+              <select name="trigger_mode" class="form-select" required>
+                <option value="KM" {{ 'selected' if item and item.trigger_mode=='KM' }}>KM only</option>
+                <option value="CALENDAR" {{ 'selected' if item and item.trigger_mode=='CALENDAR' }}>Calendar only</option>
+                <option value="HYBRID" {{ 'selected' if not item or item.trigger_mode=='HYBRID' }}>Hybrid (whichever comes first)</option>
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Priority</label>
+              <select name="priority" class="form-select">
+                {% for p in priorities %}
+                <option value="{{ p.code }}" {{ 'selected' if (item and item.priority==p.code) or (not item and p.code=='MEDIUM') }}>{{ p.description }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Trigger KM Interval</label>
+              <div class="input-group">
+                <input type="number" name="interval_km" class="form-control" placeholder="e.g. 10000"
+                       value="{{ item.interval_km if item and item.interval_km else '' }}">
+                <span class="input-group-text bg-light">KM</span>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Trigger Days Interval</label>
+              <div class="input-group">
+                <input type="number" name="interval_days" class="form-control" placeholder="e.g. 180"
+                       value="{{ item.interval_days if item and item.interval_days else '' }}">
+                <span class="input-group-text bg-light">Days (~6 mos)</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Scheduling Policy Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">4. Scheduling Policy &amp; Recalculation</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Next PMS Generation Strategy</label>
+              <select name="next_pms_generation" class="form-select">
+                <option value="MANUAL" {{ 'selected' if item and item.next_pms_generation=='MANUAL' }}>Manual — fleet staff create next schedule by hand</option>
+                <option value="AUTO_SCHEDULE" {{ 'selected' if not item or item.next_pms_generation=='AUTO_SCHEDULE' }}>Auto Generate Schedule (Recommended) — notifies only, no MO created yet</option>
+                <option value="AUTO_MO" {{ 'selected' if item and item.next_pms_generation=='AUTO_MO' }}>Auto Generate Maintenance Order — creates DRAFT order immediately (not recommended)</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Next Due Calculation Method</label>
+              <select name="next_due_calculation_method" class="form-select">
+                <option value="ACTUAL_COMPLETION" {{ 'selected' if not item or item.next_due_calculation_method=='ACTUAL_COMPLETION' }}>Based on Actual Completion (Recommended)</option>
+                <option value="ORIGINAL_SCHEDULE" {{ 'selected' if item and item.next_due_calculation_method=='ORIGINAL_SCHEDULE' }}>Based on Original Schedule</option>
+                <option value="ADMIN_CHOICE" {{ 'selected' if item and item.next_due_calculation_method=='ADMIN_CHOICE' }}>Administrator Selection (falls back to Actual Completion)</option>
+              </select>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Alert Setup Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">5. Alert Thresholds &amp; Escalations</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Notify Before (KM)</label>
+              <div class="input-group">
+                <input type="number" name="notify_before_km" class="form-control" placeholder="Default: 500"
+                       value="{{ item.notify_before_km if item and item.notify_before_km else '' }}">
+                <span class="input-group-text bg-light">KM</span>
+              </div>
+              <div class="form-text text-muted">Leave blank to use system default.</div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Notify Before (Days)</label>
+              <div class="input-group">
+                <input type="number" name="notify_before_days" class="form-control" placeholder="Default: 30"
+                       value="{{ item.notify_before_days if item and item.notify_before_days else '' }}">
+                <span class="input-group-text bg-light">Days</span>
+              </div>
+            </div>
+
+            <div class="col-md-4 d-flex align-items-center mt-md-4">
+              <div class="form-check pt-2">
+                <input type="checkbox" name="escalate_if_overdue" class="form-check-input" id="escalate"
+                       {{ 'checked' if not item or item.escalate_if_overdue }}>
+                <label class="form-check-label fw-semibold small" for="escalate">Escalate to Fleet Admin if overdue</label>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-calendar-check me-1"></i> PM Template Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Match Hierarchy:</strong> Specific Brand &amp; Model rules override general Vehicle Type fallbacks.</li>
+            <li><strong>Hybrid Triggers:</strong> Evaluates odometer readings and calendar elapsed time, triggering whichever threshold is reached first.</li>
+            <li><strong>Auto-Generation:</strong> <code>Auto Generate Schedule</code> is recommended for automated reminders without prematurely locking in DRAFT Maintenance Orders.</li>
+            <li><strong>Recalculation Basis:</strong> Basing next due dates on <em>Actual Completion</em> prevents compounding scheduling drift when service is delayed.</li>
+          </ul>
+        </div>
       </div>
     </div>
   </div>
-
-  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Vehicle Profile Details (optional)</h6></div>
-  <div class="col-md-3"><label class="form-label">Variant</label>
-    <input type="text" name="variant" class="form-control" placeholder="e.g. 2.8 D-4D"
-           value="{{ item.variant if item and item.variant else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">Engine Type</label>
-    <input type="text" name="engine_type" class="form-control" placeholder="e.g. 1GD-FTV"
-           value="{{ item.engine_type if item and item.engine_type else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">Fuel Type</label>
-    <select name="fuel_type" class="form-select">
-      <option value="">— Any —</option>
-      {% for ft in fuel_types %}
-      <option value="{{ ft.code }}" {{ 'selected' if item and item.fuel_type==ft.code }}>{{ ft.description }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-3"><label class="form-label">Transmission</label>
-    <select name="transmission" class="form-select">
-      <option value="">— Any —</option>
-      {% for t in ['MANUAL', 'AUTOMATIC', 'CVT'] %}
-      <option value="{{ t }}" {{ 'selected' if item and item.transmission==t }}>{{ t|title }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-3"><label class="form-label">Model Year From</label>
-    <input type="number" name="model_year_from" class="form-control" placeholder="e.g. 2020"
-           value="{{ item.model_year_from if item and item.model_year_from else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">Model Year To</label>
-    <input type="number" name="model_year_to" class="form-control" placeholder="e.g. 2025"
-           value="{{ item.model_year_to if item and item.model_year_to else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">Profile Code</label>
-    <input type="text" name="profile_code" class="form-control" placeholder="e.g. HILUX-DIESEL"
-           value="{{ item.profile_code if item and item.profile_code else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">Effective Date</label>
-    <input type="date" name="effective_date" class="form-control"
-           value="{{ item.effective_date if item and item.effective_date else '' }}"></div>
-  <div class="col-12"><label class="form-label">Profile Description</label>
-    <input type="text" name="profile_description" class="form-control" placeholder="e.g. Toyota Hilux 2.8L Diesel PMS Profile"
-           value="{{ item.profile_description if item and item.profile_description else '' }}"></div>
-
-  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">PM Type & Trigger</h6></div>
-  <div class="col-md-6"><label class="form-label">Maintenance Type</label>
-    {% if maintenance_types %}
-    <select name="maintenance_type_id" class="form-select fms-select2" required>
-      <option value="">— Select —</option>
-      {% for mt in maintenance_types %}
-      <option value="{{ mt.id }}" {{ 'selected' if item and item.maintenance_type_id==mt.id }}>{{ mt.code }} — {{ mt.name }}</option>
-      {% endfor %}
-    </select>
-    {% else %}
-    <div class="alert alert-warning py-2 px-3 mb-0 small">
-      No Maintenance Types yet —
-      <a href="{{ url_for('master_data.maintenancetype_new') }}">create one first</a>,
-      then come back to this form.
-    </div>
-    {% endif %}</div>
-  <div class="col-md-3"><label class="form-label">Trigger Mode</label>
-    <select name="trigger_mode" class="form-select" required>
-      <option value="KM" {{ 'selected' if item and item.trigger_mode=='KM' }}>KM only</option>
-      <option value="CALENDAR" {{ 'selected' if item and item.trigger_mode=='CALENDAR' }}>Calendar only</option>
-      <option value="HYBRID" {{ 'selected' if not item or item.trigger_mode=='HYBRID' }}>Hybrid (whichever comes first)</option>
-    </select></div>
-  <div class="col-md-3"><label class="form-label">Priority</label>
-    <select name="priority" class="form-select">
-      {% for p in priorities %}
-      <option value="{{ p.code }}" {{ 'selected' if (item and item.priority==p.code) or (not item and p.code=='MEDIUM') }}>{{ p.description }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-6"><label class="form-label">Trigger KM</label>
-    <input type="number" name="interval_km" class="form-control" placeholder="e.g. 10000"
-           value="{{ item.interval_km if item and item.interval_km else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Trigger Days</label>
-    <input type="number" name="interval_days" class="form-control" placeholder="e.g. 180 (~6 months)"
-           value="{{ item.interval_days if item and item.interval_days else '' }}"></div>
-
-  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Scheduling Policy</h6></div>
-  <div class="col-md-6"><label class="form-label">Next PMS Generation</label>
-    <select name="next_pms_generation" class="form-select">
-      <option value="MANUAL" {{ 'selected' if item and item.next_pms_generation=='MANUAL' }}>Manual — fleet staff create the next schedule by hand</option>
-      <option value="AUTO_SCHEDULE" {{ 'selected' if not item or item.next_pms_generation=='AUTO_SCHEDULE' }}>Auto Generate Schedule (Recommended) — notifies only, no Maintenance Order created yet</option>
-      <option value="AUTO_MO" {{ 'selected' if item and item.next_pms_generation=='AUTO_MO' }}>Auto Generate Maintenance Order — creates a DRAFT order immediately (not recommended)</option>
-    </select></div>
-  <div class="col-md-6"><label class="form-label">Next Due Calculation Method</label>
-    <select name="next_due_calculation_method" class="form-select">
-      <option value="ACTUAL_COMPLETION" {{ 'selected' if not item or item.next_due_calculation_method=='ACTUAL_COMPLETION' }}>Based on Actual Completion (Recommended)</option>
-      <option value="ORIGINAL_SCHEDULE" {{ 'selected' if item and item.next_due_calculation_method=='ORIGINAL_SCHEDULE' }}>Based on Original Schedule</option>
-      <option value="ADMIN_CHOICE" {{ 'selected' if item and item.next_due_calculation_method=='ADMIN_CHOICE' }}>Administrator Selection (falls back to Actual Completion for now)</option>
-    </select></div>
-
-  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Alert Setup</h6></div>
-  <div class="col-md-4"><label class="form-label">Notify Before (KM)</label>
-    <input type="number" name="notify_before_km" class="form-control" placeholder="Default: 500"
-           value="{{ item.notify_before_km if item and item.notify_before_km else '' }}">
-    <div class="form-text">Leave blank to use the system default.</div></div>
-  <div class="col-md-4"><label class="form-label">Notify Before (Days)</label>
-    <input type="number" name="notify_before_days" class="form-control" placeholder="Default: 30"
-           value="{{ item.notify_before_days if item and item.notify_before_days else '' }}"></div>
-  <div class="col-md-4 d-flex align-items-end">
-    <div class="form-check">
-      <input type="checkbox" name="escalate_if_overdue" class="form-check-input" id="escalate"
-             {{ 'checked' if not item or item.escalate_if_overdue }}>
-      <label class="form-check-label" for="escalate">Escalate to Fleet Admin if overdue</label>
-    </div></div>
-
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('maintenance_config.pmschedule_list') }}">Cancel</a>
-  </div>
 </form>
-</div></div>
 {% endblock %}
+
 {% block scripts %}
 <script>
 (function () {

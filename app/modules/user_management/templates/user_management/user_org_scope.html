@@ -1,73 +1,134 @@
 {% extends "layout/base.html" %}
 {% block title %}Org Scope — {{ target_user.username }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('user_management.users_list') }}">Users</a></li>
 <li class="breadcrumb-item active">Org Scope — {{ target_user.username }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-1">Organizational Scope</h1>
-<p class="text-muted">{{ target_user.full_name }} ({{ target_user.username }})</p>
-
-<div class="alert alert-info small">
-  <i class="bi bi-info-circle me-1"></i>
-  Controls which branch/business unit's transactions this user may approve
-  when holding a Role-based approval level — the same Role (e.g. "Fleet
-  Manager") can be assigned to different users in different branches
-  without one approving the other's transactions. A user with
-  <strong>no scope assigned</strong> is treated as unrestricted (legacy
-  behavior) until you assign one here.
-</div>
-
-<div class="card mb-3">
-  <div class="card-header">Current Scopes</div>
-  <ul class="list-group list-group-flush">
-    {% for s in scopes %}
-    <li class="list-group-item d-flex justify-content-between align-items-center">
-      <span>
-        <span class="badge text-bg-{{ 'success' if s.scope_type in ['GLOBAL','COMPANY'] else 'info' }}">{{ s.scope_type }}</span>
-        {% if s.scope_type == 'BRANCH' %}{{ s.branch.name }}
-        {% elif s.scope_type == 'BUSINESS_UNIT' %}{{ s.business_unit.name }}
-        {% else %}All branches / business units{% endif %}
-      </span>
-      <form method="post" action="{{ url_for('user_management.user_org_scope_remove', user_id=target_user.id, scope_id=s.id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i></button>
-      </form>
-    </li>
-    {% else %}
-    <li class="list-group-item text-muted">No scope assigned yet — unrestricted (legacy).</li>
-    {% endfor %}
-  </ul>
-</div>
-
-<div class="card"><div class="card-body">
-<h6>Add Scope</h6>
-<form method="post" class="row g-3">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-4"><label class="form-label">Scope Type</label>
-    <select name="scope_type" id="scopeTypeSelect" class="form-select">
-      <option value="BRANCH">Branch</option>
-      <option value="BUSINESS_UNIT">Business Unit</option>
-      <option value="COMPANY">Company-wide</option>
-      <option value="GLOBAL">Global</option>
-    </select></div>
-  <div class="col-md-4" id="branchField"><label class="form-label">Branch</label>
-    <select name="branch_id" class="form-select">
-      <option value="">— Select —</option>
-      {% for b in branches %}<option value="{{ b.id }}">{{ b.code }} — {{ b.name }}</option>{% endfor %}
-    </select></div>
-  <div class="col-md-4 d-none" id="buField"><label class="form-label">Business Unit</label>
-    <select name="business_unit_id" class="form-select">
-      <option value="">— Select —</option>
-      {% for bu in business_units %}<option value="{{ bu.id }}">{{ bu.code }} — {{ bu.name }}</option>{% endfor %}
-    </select></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Add Scope</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('user_management.users_list') }}">Back to Users</a>
+<!-- Header & Page Title -->
+<div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+  <div>
+    <h1 class="h3 mb-1 fw-bold text-dark">Organizational Scope</h1>
+    <p class="text-muted small mb-0">Define approval authority boundaries for <strong>{{ target_user.full_name }}</strong> (<code>{{ target_user.username }}</code>).</p>
   </div>
-</form>
-</div></div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('user_management.users_list') }}">
+    <i class="bi bi-arrow-left me-1"></i>Back to Users
+  </a>
+</div>
+
+<div class="row g-4">
+  <!-- Main Configuration Area -->
+  <div class="col-lg-8">
+
+    <!-- Current Assigned Scopes Card -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+        <span>Active Scope Assignments</span>
+        <span class="badge bg-light text-dark border">{{ scopes|length }} Configured</span>
+      </div>
+      <ul class="list-group list-group-flush">
+        {% for s in scopes %}
+        <li class="list-group-item d-flex justify-content-between align-items-center py-3">
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge text-bg-{{ 'success' if s.scope_type in ['GLOBAL','COMPANY'] else 'info' }} px-2.5 py-1.5 font-monospace">
+              {{ s.scope_type }}
+            </span>
+            <span class="fw-semibold text-dark">
+              {% if s.scope_type == 'BRANCH' %}
+                <i class="bi bi-geo-alt me-1 text-muted"></i>{{ s.branch.name }}
+              {% elif s.scope_type == 'BUSINESS_UNIT' %}
+                <i class="bi bi-diagram-3 me-1 text-muted"></i>{{ s.business_unit.name }}
+              {% else %}
+                <i class="bi bi-globe me-1 text-muted"></i>All branches / business units
+              {% endif %}
+            </span>
+          </div>
+          <form method="post" action="{{ url_for('user_management.user_org_scope_remove', user_id=target_user.id, scope_id=s.id) }}" class="m-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-danger" title="Remove Scope">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </form>
+        </li>
+        {% else %}
+        <li class="list-group-item text-muted text-center py-4">
+          <i class="bi bi-shield-slash fs-4 d-block mb-1 text-muted"></i>
+          No scope assigned yet — user operates with <strong>unrestricted (legacy)</strong> approval authority.
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <!-- Add Scope Form Card -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white fw-bold py-3 border-bottom">Add New Organizational Scope</div>
+      <div class="card-body">
+        <form method="post" class="row g-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+          <div class="col-md-4">
+            <label class="form-label fw-semibold">Scope Type <span class="text-danger">*</span></label>
+            <select name="scope_type" id="scopeTypeSelect" class="form-select">
+              <option value="BRANCH">Branch</option>
+              <option value="BUSINESS_UNIT">Business Unit</option>
+              <option value="COMPANY">Company-wide</option>
+              <option value="GLOBAL">Global</option>
+            </select>
+          </div>
+
+          <div class="col-md-8" id="branchField">
+            <label class="form-label fw-semibold">Target Branch <span class="text-danger">*</span></label>
+            <select name="branch_id" class="form-select">
+              <option value="">— Select branch —</option>
+              {% for b in branches %}
+              <option value="{{ b.id }}">{{ b.code }} — {{ b.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-md-8 d-none" id="buField">
+            <label class="form-label fw-semibold">Target Business Unit <span class="text-danger">*</span></label>
+            <select name="business_unit_id" class="form-select">
+              <option value="">— Select business unit —</option>
+              {% for bu in business_units %}
+              <option value="{{ bu.id }}">{{ bu.code }} — {{ bu.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-12 pt-2">
+            <button class="btn btn-primary px-4 fw-semibold" type="submit">
+              <i class="bi bi-plus-lg me-1"></i>Add Scope Assignment
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right Guidance Panel -->
+  <div class="col-lg-4">
+    <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+      <div class="card-body p-3">
+        <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-shield-lock me-1"></i> Scope Assignment Guide</h6>
+        <div class="alert alert-info border-info-subtle bg-info-subtle p-2.5 mb-3 rounded small">
+          <i class="bi bi-info-circle me-1"></i>
+          Controls which branch or business unit's transactions this user may approve when holding a role-based approval level.
+        </div>
+        <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+          <li><strong>Role Separation:</strong> Assigning scopes lets users share identical roles (e.g., "Fleet Manager") without approving transactions across other branches.</li>
+          <li><strong>Unrestricted Mode:</strong> Accounts with <strong>no assigned scope</strong> maintain legacy unrestricted access across all units.</li>
+          <li><strong>Global & Company:</strong> Select <code>GLOBAL</code> or <code>COMPANY</code> to grant cross-branch approval clearance across the entire system.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
+
 {% block scripts %}
 <script>
 document.getElementById("scopeTypeSelect").addEventListener("change", function () {

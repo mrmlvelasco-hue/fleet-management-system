@@ -1,44 +1,129 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('document_config.schemes_list') }}">Numbering Schemes</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" novalidate class="row g-3">
+<form method="post" novalidate>
   {{ form.hidden_tag() }}
-  <div class="col-md-6">{{ form.document_type_id.label(class="form-label") }}
-    {{ form.document_type_id(class="form-select fms-select2") }}</div>
-  <div class="col-md-3">{{ form.prefix.label(class="form-label") }}
-    {{ form.prefix(class="form-control", id="nsPrefix") }}</div>
-  <div class="col-md-3">{{ form.suffix.label(class="form-label") }}
-    {{ form.suffix(class="form-control", id="nsSuffix") }}</div>
-  <div class="col-md-3">{{ form.digit_count.label(class="form-label") }}
-    {{ form.digit_count(class="form-control", id="nsDigits") }}
-    {% for e in form.digit_count.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
-  <div class="col-md-3">{{ form.separator.label(class="form-label") }}
-    {{ form.separator(class="form-control", id="nsSep") }}</div>
-  <div class="col-md-3">{{ form.reset_policy.label(class="form-label") }}
-    {{ form.reset_policy(class="form-select") }}</div>
-  <div class="col-md-3 d-flex align-items-end gap-3">
-    <div class="form-check">{{ form.include_year(class="form-check-input", id="nsYear") }}
-      {{ form.include_year.label(class="form-check-label") }}</div>
-    <div class="form-check">{{ form.include_month(class="form-check-input", id="nsMonth") }}
-      {{ form.include_month.label(class="form-check-label") }}</div>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Configure document sequence rules, date tokens, digit padding, and reset policies.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('document_config.schemes_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save Scheme
+      </button>
+    </div>
   </div>
-  <div class="col-12">
-    <label class="form-label">Preview</label>
-    <div class="form-control-plaintext fs-5"><code id="nsPreview"></code></div>
-  </div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('document_config.schemes_list') }}">Cancel</a>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Target Document Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Target Document Type</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-12">
+              {{ form.document_type_id.label(class="form-label fw-semibold") }}
+              {{ form.document_type_id(class="form-select fms-select2") }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sequence Structure & Format Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Structure &amp; Formatting</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              {{ form.prefix.label(class="form-label fw-semibold") }}
+              {{ form.prefix(class="form-control font-monospace text-uppercase", id="nsPrefix", placeholder="e.g. WO") }}
+            </div>
+
+            <div class="col-md-6">
+              {{ form.suffix.label(class="form-label fw-semibold") }}
+              {{ form.suffix(class="form-control font-monospace text-uppercase", id="nsSuffix", placeholder="e.g. PH") }}
+            </div>
+
+            <div class="col-md-4">
+              {{ form.digit_count.label(class="form-label fw-semibold") }}
+              {{ form.digit_count(class="form-control", id="nsDigits", placeholder="e.g. 6") }}
+              {% for e in form.digit_count.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+
+            <div class="col-md-4">
+              {{ form.separator.label(class="form-label fw-semibold") }}
+              {{ form.separator(class="form-control font-monospace", id="nsSep", placeholder="-") }}
+            </div>
+
+            <div class="col-md-4">
+              {{ form.reset_policy.label(class="form-label fw-semibold") }}
+              {{ form.reset_policy(class="form-select") }}
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold d-block mb-2">Date Token Inclusion</label>
+              <div class="d-flex gap-4 p-3 border rounded bg-light-subtle">
+                <div class="form-check mb-0">
+                  {{ form.include_year(class="form-check-input", id="nsYear") }}
+                  {{ form.include_year.label(class="form-check-label fw-semibold small") }}
+                </div>
+                <div class="form-check mb-0">
+                  {{ form.include_month(class="form-check-input", id="nsMonth") }}
+                  {{ form.include_month.label(class="form-check-label fw-semibold small") }}
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Generated Preview Card -->
+      <div class="card border-0 shadow-sm mb-4 border-start border-primary border-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span>Generated Format Preview</span>
+          <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Real-Time</span>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-2">Estimated appearance for the first generated sequence number:</p>
+          <div class="p-3 bg-light rounded border">
+            <code id="nsPreview" class="fs-4 text-primary fw-bold font-monospace"></code>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-hash me-1"></i> Numbering Scheme Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Digit Padding:</strong> Set digit count to control zero-padding (e.g. <code>6</code> digits yields <code>000001</code>).</li>
+            <li><strong>Reset Policies:</strong> Configures counter restarts on a yearly, monthly, or continuous basis.</li>
+            <li><strong>Live Preview:</strong> Adjusting prefixes, separators, or date tokens updates the dynamic code sample instantly.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}
+
 {% block scripts %}
 <script>
 (function () {

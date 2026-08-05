@@ -1,41 +1,121 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('master_data.branch_list') }}">Branches</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-6"><label class="form-label">Code</label>
-    <input type="text" name="code" class="form-control"
-           value="{{ item.code if item and item.code else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Name</label>
-    <input type="text" name="name" class="form-control"
-           value="{{ item.name if item and item.name else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Address</label>
-    <input type="text" name="address" class="form-control"
-           value="{{ item.address if item and item.address else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">City</label>
-    <input type="text" name="city" class="form-control"
-           value="{{ item.city if item and item.city else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Phone</label>
-    <input type="text" name="phone" class="form-control"
-           value="{{ item.phone if item and item.phone else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Email</label>
-    <input type="email" name="email" class="form-control"
-           value="{{ item.email if item and item.email else '' }}"></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.branch_list') }}">Cancel</a>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Manage office locations, operational hubs, contact details, and facility attachments.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('master_data.branch_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save
+      </button>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Identity & Location Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Branch Identity & Location</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Branch Code</label>
+              <input type="text" name="code" class="form-control" placeholder="e.g. MNL-01"
+                     value="{{ item.code if item and item.code else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Branch Name</label>
+              <input type="text" name="name" class="form-control" placeholder="e.g. Muntinlupa Main Hub"
+                     value="{{ item.name if item and item.name else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Street Address</label>
+              <input type="text" name="address" class="form-control" placeholder="Building, street, or unit number"
+                     value="{{ item.address if item and item.address else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">City / Municipality</label>
+              <input type="text" name="city" class="form-control" placeholder="City or province"
+                     value="{{ item.city if item and item.city else '' }}">
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Contact Info Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Contact Details</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Phone Number</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-telephone"></i></span>
+                <input type="text" name="phone" class="form-control" placeholder="Landline or mobile number"
+                       value="{{ item.phone if item and item.phone else '' }}">
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Email Address</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-envelope"></i></span>
+                <input type="email" name="email" class="form-control" placeholder="branch@example.com"
+                       value="{{ item.email if item and item.email else '' }}">
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-building me-1"></i> Branch Management Tips</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Branch Code:</strong> Use a standardized abbreviation (e.g. <code>MNT-01</code>) for clear reporting in Asset Transfers and Maintenance Orders.</li>
+            <li><strong>Primary Contact:</strong> Ensure the listed email and phone are actively monitored for dispatch and work order notifications.</li>
+            <li><strong>Attachments:</strong> Save the branch record to enable file uploads (e.g. lease agreements, facility maps).</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
+
+<!-- Attachment Panel (Edit Mode) -->
 {% if item and item.id %}
-{% set reference_table = "branchs" %}
-{% set reference_id = item.id %}
-{% include "master_data/_attachment_panel.html" %}
+<div class="row g-4 mb-4">
+  <div class="col-lg-12">
+    {% set reference_table = "branchs" %}
+    {% set reference_id = item.id %}
+    {% include "master_data/_attachment_panel.html" %}
+  </div>
+</div>
 {% endif %}
 {% endblock %}

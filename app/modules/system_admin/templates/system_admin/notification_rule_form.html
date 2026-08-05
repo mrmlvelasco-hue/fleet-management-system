@@ -1,49 +1,122 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('system_admin.notification_rule_list') }}">Notification Rules</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-4"><label class="form-label">Event Code</label>
-    <select name="event_code" class="form-select" required>
-      {% for code in ['submitted','approved_level','approved_final','rejected','returned','resubmitted','cancelled','pm_due_soon','pm_overdue','registration_due_soon','registration_overdue'] %}
-      <option value="{{ code }}">{{ code }}</option>{% endfor %}
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Channel</label>
-    <select name="channel" class="form-select">
-      <option value="IN_APP">In-App</option>
-      <option value="EMAIL">Email</option>
-      <option value="BOTH">Both</option>
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Recipient Type</label>
-    <select name="recipient_type" id="recipientType" class="form-select" onchange="toggleRecipient()">
-      <option value="SUBMITTER">Submitter</option>
-      <option value="CURRENT_APPROVER">Current Approver</option>
-      <option value="ROLE">Role</option>
-      <option value="SPECIFIC_USER">Specific User</option>
-    </select></div>
-  <div class="col-md-6 d-none" id="roleDiv"><label class="form-label">Role</label>
-    <select name="role_id" class="form-select fms-select2">
-      <option value="">— Select role —</option>
-      {% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
-    </select></div>
-  <div class="col-md-6 d-none" id="userDiv"><label class="form-label">User</label>
-    <select name="user_id" class="form-select fms-select2">
-      <option value="">— Select user —</option>
-      {% for u in users %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
-    </select></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.notification_rule_list') }}">Cancel</a>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Configure automated alert dispatch channels, workflow triggers, and target recipient rules.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.notification_rule_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save Rule
+      </button>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Event Trigger & Channel Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Trigger & Dispatch Channel</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Event Code <span class="text-danger">*</span></label>
+              <select name="event_code" class="form-select font-monospace" required>
+                {% for code in ['submitted','approved_level','approved_final','rejected','returned','resubmitted','cancelled','pm_due_soon','pm_overdue','registration_due_soon','registration_overdue'] %}
+                <option value="{{ code }}">{{ code }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Notification Channel</label>
+              <select name="channel" class="form-select">
+                <option value="IN_APP">In-App</option>
+                <option value="EMAIL">Email</option>
+                <option value="BOTH">Both (In-App &amp; Email)</option>
+              </select>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Target Recipient Configuration Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Recipient Assignment</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Recipient Type <span class="text-danger">*</span></label>
+              <select name="recipient_type" id="recipientType" class="form-select" onchange="toggleRecipient()">
+                <option value="SUBMITTER">Submitter</option>
+                <option value="CURRENT_APPROVER">Current Approver</option>
+                <option value="ROLE">Role</option>
+                <option value="SPECIFIC_USER">Specific User</option>
+              </select>
+            </div>
+
+            <!-- Dynamic Role Select -->
+            <div class="col-md-12 d-none" id="roleDiv">
+              <label class="form-label fw-semibold">Target System Role <span class="text-danger">*</span></label>
+              <select name="role_id" class="form-select fms-select2">
+                <option value="">— Select role —</option>
+                {% for r in roles %}
+                <option value="{{ r.id }}">{{ r.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Dynamic User Select -->
+            <div class="col-md-12 d-none" id="userDiv">
+              <label class="form-label fw-semibold">Target Specific User <span class="text-danger">*</span></label>
+              <select name="user_id" class="form-select fms-select2">
+                <option value="">— Select user —</option>
+                {% for u in users %}
+                <option value="{{ u.id }}">{{ u.username }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-bell me-1"></i> Notification Rules Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Workflow Triggers:</strong> Events like <code>submitted</code> or <code>approved_final</code> fire automatically as documents progress through approval levels.</li>
+            <li><strong>Scheduled Alerts:</strong> PM and registration reminders (e.g., <code>pm_due_soon</code>) are evaluated during nightly background jobs.</li>
+            <li><strong>Recipient Routing:</strong> Choosing <em>Role</em> dispatches alerts to all active users mapped to that role.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}
+
 {% block scripts %}
 <script>
 function toggleRecipient() {

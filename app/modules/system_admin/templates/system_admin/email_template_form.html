@@ -1,66 +1,160 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('system_admin.email_template_list') }}">Email Templates</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-
-<div class="alert alert-info small mb-4">
-  <strong>Available variables:</strong>
-  <code>{{ '{{ recipient_name }}' }}</code>,
-  <code>{{ '{{ document_number }}' }}</code> (e.g. MO-2026-000011 — use this,
-  not the raw id),
-  <code>{{ '{{ view_url }}' }}</code> (link back into the app),
-  <code>{{ '{{ event_code }}' }}</code>, <code>{{ '{{ event_label }}' }}</code>,
-  <code>{{ '{{ reference_table }}' }}</code>, <code>{{ '{{ reference_id }}' }}</code>.
-  For the <code>DOCUMENT_COMMENT</code> event only:
-  <code>{{ '{{ comment_body }}' }}</code>, <code>{{ '{{ author_name }}' }}</code>.
-</div>
-
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3" id="template-form">
+<form method="post" id="template-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-4"><label class="form-label">Event Code</label>
-    <input type="text" name="event_code" class="form-control" value="{{ item.event_code if item else '' }}" {{ 'readonly' if item }} required></div>
-  <div class="col-md-8"><label class="form-label">Name</label>
-    <input type="text" name="name" class="form-control" value="{{ item.name if item else '' }}" required></div>
-  <div class="col-12"><label class="form-label">Subject</label>
-    <input type="text" name="subject" class="form-control" value="{{ item.subject if item else '' }}" required></div>
-  <div class="col-md-6"><label class="form-label">Body HTML</label>
-    <textarea name="body_html" class="form-control font-monospace" rows="10">{{ item.body_html if item else '' }}</textarea></div>
-  <div class="col-md-6"><label class="form-label">Body Text</label>
-    <textarea name="body_text" class="form-control font-monospace" rows="10">{{ item.body_text if item else '' }}</textarea></div>
 
-  <div class="col-12 d-flex justify-content-between align-items-end flex-wrap gap-3">
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Configure system email notifications, subject patterns, and layout templates.</p>
+    </div>
     <div class="d-flex gap-2">
-      <button class="btn btn-primary" type="submit">Save</button>
       <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.email_template_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save Template
+      </button>
     </div>
-    {% if item %}
-    <div class="d-flex align-items-end gap-2">
-      <div>
-        <label class="form-label small mb-1">Preview by sending a test to</label>
-        <input type="email" name="test_email" class="form-control form-control-sm"
-               placeholder="{{ current_user.email }}" value="{{ current_user.email }}" style="min-width:220px">
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Template Identity Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Template Header & Classification</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Event Code <span class="text-danger">*</span></label>
+              <input type="text" name="event_code" class="form-control font-monospace text-uppercase"
+                     value="{{ item.event_code if item else '' }}" {{ 'readonly' if item }} required placeholder="e.g. WORK_ORDER_ASSIGNED">
+              {% if item %}
+              <div class="form-text text-muted">Event code cannot be modified after creation.</div>
+              {% endif %}
+            </div>
+
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Template Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control"
+                     value="{{ item.name if item else '' }}" required placeholder="e.g. Work Order Assignment Notification">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Subject Pattern <span class="text-danger">*</span></label>
+              <input type="text" name="subject" class="form-control"
+                     value="{{ item.subject if item else '' }}" required placeholder="e.g. [FMS] New Work Order Assigned - {{ '{{ document_number }}' }}">
+            </div>
+
+          </div>
+        </div>
       </div>
-      <button class="btn btn-outline-secondary btn-sm" type="submit"
-              formaction="{{ url_for('system_admin.email_template_send_test', tmpl_id=item.id) }}"
-              formnovalidate>
-        <i class="bi bi-envelope-check me-1"></i>Send Test Email</button>
+
+      <!-- Body Editors Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span>Message Bodies</span>
+          <span class="badge bg-light text-dark border">HTML & Plain Text</span>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">HTML Body</label>
+              <textarea name="body_html" class="form-control font-monospace" rows="12" placeholder="<p>Hello {{ '{{ recipient_name }}' }},</p>...">{{ item.body_html if item else '' }}</textarea>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Plain Text Body</label>
+              <textarea name="body_text" class="form-control font-monospace" rows="12" placeholder="Hello {{ '{{ recipient_name }}' }},...">{{ item.body_text if item else '' }}</textarea>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Test Email Dispatcher Card (Edit Mode Only) -->
+      {% if item %}
+      <div class="card border-0 shadow-sm mb-4 border-start border-primary border-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-envelope-check text-primary me-2"></i>Send Test Email</span>
+          <span class="badge bg-info-subtle text-info border border-info-subtle">Live Form Preview</span>
+        </div>
+        <div class="card-body">
+          <div class="row align-items-end g-3">
+            <div class="col-md-8">
+              <label class="form-label fw-semibold mb-1">Target Test Email Address</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-envelope"></i></span>
+                <input type="email" name="test_email" class="form-control"
+                       placeholder="{{ current_user.email }}" value="{{ current_user.email }}">
+              </div>
+            </div>
+            <div class="col-md-4">
+              <button class="btn btn-outline-secondary w-100" type="submit"
+                      formaction="{{ url_for('system_admin.email_template_send_test', tmpl_id=item.id) }}"
+                      formnovalidate>
+                <i class="bi bi-send me-1"></i>Send Test Dispatch
+              </button>
+            </div>
+            <div class="col-12 mt-2">
+              <p class="text-muted small mb-0">
+                <i class="bi bi-info-circle me-1"></i>
+                The test renders with sample data (a fake document number, and for <code>DOCUMENT_COMMENT</code>, a sample comment). It reflects whatever is currently in the fields above, saved or not, so you can verify formatting before saving.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
     </div>
-    {% endif %}
+
+    <!-- Right Guidance & Variables Helper Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-code-slash me-1"></i> Available Placeholders</h6>
+          <p class="text-muted small mb-3">Copy and insert these Jinja context tags directly into your subject or body fields:</p>
+
+          <div class="d-flex flex-wrap gap-1.5 mb-3">
+            <span class="badge bg-white text-dark border font-monospace p-2 me-1 mb-1"><code>{{ '{{ recipient_name }}' }}</code></span>
+            <span class="badge bg-white text-dark border font-monospace p-2 me-1 mb-1"><code>{{ '{{ document_number }}' }}</code></span>
+            <span class="badge bg-white text-dark border font-monospace p-2 me-1 mb-1"><code>{{ '{{ view_url }}' }}</code></span>
+            <span class="badge bg-white text-dark border font-monospace p-2 me-1 mb-1"><code>{{ '{{ event_code }}' }}</code></span>
+            <span class="badge bg-white text-dark border font-monospace p-2 me-1 mb-1"><code>{{ '{{ event_label }}' }}</code></span>
+            <span class="badge bg-white text-dark border font-monospace p-2 me-1 mb-1"><code>{{ '{{ reference_table }}' }}</code></span>
+            <span class="badge bg-white text-dark border font-monospace p-2 me-1 mb-1"><code>{{ '{{ reference_id }}' }}</code></span>
+          </div>
+
+          <div class="border-top pt-3 mt-2">
+            <h6 class="text-uppercase text-muted fw-bold mb-2 small"><i class="bi bi-chat-left-text me-1"></i> Comment Event Tags</h6>
+            <p class="text-muted small mb-2">For <code>DOCUMENT_COMMENT</code> event only:</p>
+            <div class="d-flex flex-wrap gap-1.5">
+              <span class="badge bg-white text-dark border font-monospace p-2 me-1 mb-1"><code>{{ '{{ comment_body }}' }}</code></span>
+              <span class="badge bg-white text-dark border font-monospace p-2 me-1 mb-1"><code>{{ '{{ author_name }}' }}</code></span>
+            </div>
+          </div>
+
+          <div class="border-top pt-3 mt-3">
+            <h6 class="text-uppercase text-muted fw-bold mb-2 small"><i class="bi bi-lightbulb me-1"></i> Usage Tips</h6>
+            <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+              <li>Always use <code>{{ '{{ document_number }}' }}</code> (e.g. <code>MO-2026-000011</code>) instead of the raw database ID.</li>
+              <li>Provide both HTML and Plain Text bodies to prevent delivery issues with email clients that block HTML.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
-
-{% if item %}
-<p class="text-muted small mt-2">
-  The test renders with sample data (a fake document number, and for
-  Document Comment, a sample comment) — it reflects whatever is currently
-  in the fields above, saved or not, so you can check formatting before
-  committing to Save.
-</p>
-{% endif %}
 {% endblock %}

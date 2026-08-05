@@ -1,366 +1,592 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('master_data.vehicle_list') }}">Vehicles</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3"
-      action="{{ url_for('master_data.vehicle_edit', vid=item.id) if item and item.id else url_for('master_data.vehicle_new') }}">
+<form method="post" action="{{ url_for('master_data.vehicle_edit', vid=item.id) if item and item.id else url_for('master_data.vehicle_new') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-4"><label class="form-label">Conduction Number</label>
-    <input type="text" name="conduction_number"
-           class="form-control text-uppercase {{ 'is-invalid' if error_field=='conduction_number' }}"
-           value="{{ item.conduction_number if item else '' }}">
-    {% if error_field=='conduction_number' %}
-    <div class="invalid-feedback">This Conduction Number is already used by another vehicle.</div>
-    {% endif %}
-  </div>
-  <div class="col-md-4"><label class="form-label">Plate Number</label>
-    <input type="text" name="plate_number"
-           class="form-control text-uppercase {{ 'is-invalid' if error_field=='plate_number' }}"
-           value="{{ item.plate_number if item else '' }}">
-    <div class="form-text">Leave blank until LTO plate is assigned.</div>
-    {% if error_field=='plate_number' %}
-    <div class="invalid-feedback">This Plate Number is already used by another vehicle.</div>
-    {% endif %}
-  </div>
-  <div class="col-md-4"><label class="form-label">Chassis Number</label>
-    <input type="text" name="chassis_number" class="form-control"
-           value="{{ item.chassis_number if item else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Engine Number</label>
-    <input type="text" name="engine_number" class="form-control"
-           value="{{ item.engine_number if item else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Vehicle Type</label>
-    <select name="vehicle_type_id" id="vehVehicleTypeSelect" class="form-select fms-select2" required>
-      <option value="">— Select —</option>
-      {% for vt in vehicle_types %}
-      <option value="{{ vt.id }}" {{ 'selected' if item and item.vehicle_type_id==vt.id }}>
-        {{ vt.code }} — {{ vt.name }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Brand</label>
-    <select name="brand" id="vehBrandSelect" class="form-select" required>
-      <option value="">— Select a Brand —</option>
-      {% for b in vehicle_brands %}
-      <option value="{{ b.name }}" {{ 'selected' if item and item.brand==b.name }}>{{ b.name }}</option>
-      {% endfor %}
-    </select>
-    {% if not vehicle_brands %}
-    <div class="form-text">
-      No Vehicle Brands yet —
-      <a href="{{ url_for('master_data.vehiclebrand_new') }}">create one first</a>.
-    </div>
-    {% endif %}
-  </div>
-  <div class="col-md-4"><label class="form-label">Model</label>
-    <select name="model" id="vehModelSelect" class="form-select" required>
-      {% if item and item.model %}
-      <option value="{{ item.model }}" selected>{{ item.model }}</option>
-      {% else %}
-      <option value="">— Select a Brand first —</option>
-      {% endif %}
-    </select>
-    <div class="form-text">
-      Models are managed under
-      <a href="{{ url_for('master_data.vehiclemodel_list') }}">Vehicle Models</a>.
-    </div>
-  </div>
-  <div class="col-md-2"><label class="form-label">Year</label>
-    <input type="number" name="year" class="form-control"
-           value="{{ item.year if item else '' }}" required></div>
-  <div class="col-md-3"><label class="form-label">Variant</label>
-    <input type="text" name="variant" class="form-control"
-           placeholder="e.g. 2.8 D-4D"
-           value="{{ item.variant if item and item.variant else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">Engine Type</label>
-    <input type="text" name="engine_type" class="form-control"
-           placeholder="e.g. 1GD-FTV"
-           value="{{ item.engine_type if item and item.engine_type else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">Transmission</label>
-    <select name="transmission" class="form-select">
-      <option value="">— Not specified —</option>
-      {% for lt in transmissions %}
-      <option value="{{ lt.code }}" {{ 'selected' if item and item.transmission==lt.code }}>{{ lt.description }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-3"><label class="form-label">Current Engine Hours</label>
-    <input type="number" name="current_engine_hours" class="form-control"
-           placeholder="Optional"
-           value="{{ item.current_engine_hours if item and item.current_engine_hours else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">Color</label>
-    <input type="text" name="color" class="form-control"
-           value="{{ item.color if item else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">Fuel Type</label>
-    <select name="fuel_type" class="form-select fms-select2">
-      <option value="">— Select —</option>
-      {% for lt in fuel_types %}
-      <option value="{{ lt.code }}" {{ 'selected' if item and item.fuel_type==lt.code }}>{{ lt.description }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Branch</label>
-    <select name="branch_id" id="vehBranchSelect" class="form-select" required>
-      {% if item and item.branch %}
-      <option value="{{ item.branch.id }}" selected>{{ item.branch.code }} — {{ item.branch.name }}</option>
-      {% else %}
-      <option value="">— Type branch code or name —</option>
-      {% endif %}
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Acquisition Date</label>
-    <input type="date" name="acquisition_date"
-           class="form-control {{ 'is-invalid' if error_field=='acquisition_date' }}"
-           value="{{ item.acquisition_date if item and item.acquisition_date else '' }}">
-    {% if error_field=='acquisition_date' %}
-    <div class="invalid-feedback">Please enter a valid date.</div>
-    {% endif %}
-  </div>
-  <div class="col-md-4"><label class="form-label">Acquisition Cost</label>
-    <input type="text" inputmode="decimal" id="vehAcquisitionCost" name="acquisition_cost"
-           class="form-control text-end"
-           value="{{ item.acquisition_cost if item and item.acquisition_cost else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Status</label>
-    <select name="status" class="form-select">
-      {% for s in ['ACTIVE','INACTIVE','IN_REPAIR','DISPOSED'] %}
-      <option value="{{ s }}" {{ 'selected' if item and item.status==s }}>{{ s }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-8"><label class="form-label">Assigned PM Template</label>
-    <select name="pm_schedule_id" id="vehPmScheduleSelect" class="form-select fms-select2">
-      <option value="">— Auto-match by Make/Model or Vehicle Type —</option>
-      {% for s in pm_schedules %}
-      <option value="{{ s.id }}" {{ 'selected' if item and item.pm_schedule_id==s.id }}>
-        {% if s.vehicle_brand %}{{ s.vehicle_brand.name }} {{ s.vehicle_model_ref.name if s.vehicle_model_ref else '' }}
-        {% elif s.vehicle_make %}{{ s.vehicle_make }} {{ s.vehicle_model }}
-        {% else %}{{ s.vehicle_type.name if s.vehicle_type else 'All Vehicles' }}{% endif %}
-        — {{ s.maintenance_type.name }}
-        {%- if s.profile_code %} [{{ s.profile_code }}{% if s.sequence_position %} #{{ s.sequence_position }}{% endif %}]{% endif %}
-        {%- if s.interval_km %} — {{ "{:,}".format(s.interval_km) }} km{% endif %}
-        {%- if s.interval_days %} / {{ s.interval_days }} days{% endif %}
-      </option>
-      {% endfor %}
-    </select>
-    <div class="form-text">Optional — explicitly pins this vehicle to one PM Template, overriding automatic Make/Model matching. If several packages exist for the same vehicle (e.g. from an imported profile), each is now labeled with its interval so they're no longer indistinguishable.</div></div>
 
-  <div class="col-12">
-    <div class="alert alert-secondary py-2 px-3 mb-0">
-      <strong><i class="bi bi-clock-history me-1"></i>Legacy Vehicle Baseline</strong>
-      <span class="text-muted small">— fill this in only if this vehicle already has real service
-      history from before being added to this system (e.g. a used vehicle, or migrating from another
-      fleet system). Without it, a vehicle with a high odometer but no Maintenance Order on record
-      here will show up as immediately overdue on the Dashboard.</span>
-    </div>
-  </div>
-  <div class="col-md-4"><label class="form-label">Last PM Service Odometer</label>
-    <input type="number" name="last_pm_odometer" class="form-control"
-           value="{{ item.last_pm_odometer if item and item.last_pm_odometer is not none else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Last PM Service Date</label>
-    <input type="date" name="last_pm_date" class="form-control"
-           value="{{ item.last_pm_date if item and item.last_pm_date else '' }}"></div>
-  <div class="col-md-8"><label class="form-label">Assigned Driver</label>
-    <select name="assigned_driver_id" id="vehDriverSelect" class="form-select">
-      {% if item and item.assigned_driver %}
-      <option value="{{ item.assigned_driver.id }}" selected>
-        {{ item.assigned_driver.employee_number }} — {{ item.assigned_driver.last_name }}, {{ item.assigned_driver.first_name }}
-        ({{ item.assigned_driver.license_type }})
-      </option>
-      {% else %}
-      <option value="">— Type employee number or name —</option>
-      {% endif %}
-    </select>
-    <div class="form-text">Optional — maintains accountability for this vehicle; only active drivers are selectable.</div></div>
-
-  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Identifiers</h6></div>
-  <div class="col-md-3"><label class="form-label">FAR No.</label>
-    <input type="text" name="far_number" class="form-control" value="{{ item.far_number if item and item.far_number else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">CR No.</label>
-    <input type="text" name="cr_number" class="form-control" value="{{ item.cr_number if item and item.cr_number else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">MV File No.</label>
-    <input type="text" name="mv_file_number" class="form-control" value="{{ item.mv_file_number if item and item.mv_file_number else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">LTO Office</label>
-    <input type="text" name="lto_office" class="form-control" value="{{ item.lto_office if item and item.lto_office else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">Last Known Registration Expiry</label>
-    <input type="date" name="last_known_registration_expiry" class="form-control"
-           value="{{ item.last_known_registration_expiry if item and item.last_known_registration_expiry else '' }}">
-    <div class="form-text">
-      Only needed if this vehicle has no Vehicle Registration transaction
-      recorded yet (e.g. migrated data) — gives the renewal reminder a
-      real expiry date to trigger from instead of only guessing from the
-      plate number. Ignored automatically once a real registration is
-      recorded.
-    </div>
+  <!-- Header Section -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <h1 class="h3 mb-0">{{ title }}</h1>
   </div>
 
-  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Classification</h6></div>
-  <div class="col-md-4"><label class="form-label">Vehicle Body Type</label>
-    <select name="vehicle_body_type" class="form-select">
-      <option value="">— Select —</option>
-      {% for bt in vehicle_body_types %}
-      <option value="{{ bt.code }}" {{ 'selected' if item and item.vehicle_body_type==bt.code }}>{{ bt.description }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Displacement</label>
-    <input type="text" name="displacement" class="form-control" placeholder="e.g. 2.8L / 1500cc"
-           value="{{ item.displacement if item and item.displacement else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Component Group</label>
-    <select name="component_group" class="form-select">
-      <option value="">— Select —</option>
-      {% for cg in component_groups %}
-      <option value="{{ cg.code }}" {{ 'selected' if item and item.component_group==cg.code }}>{{ cg.description }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-6"><label class="form-label">Supplier</label>
-    <input type="text" name="supplier" class="form-control" value="{{ item.supplier if item and item.supplier else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Leasing Company</label>
-    <input type="text" name="leasing_company" class="form-control" value="{{ item.leasing_company if item and item.leasing_company else '' }}"></div>
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-9">
 
-  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Financials</h6></div>
-  <div class="col-md-4"><label class="form-label">Top-up Amount <span class="text-muted small">(VAT Exclusive)</span></label>
-    <input type="text" inputmode="decimal" id="vehTopUpAmount" name="top_up_amount"
-           class="form-control text-end"
-           value="{{ item.top_up_amount if item and item.top_up_amount else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Assured Value This Year</label>
-    <input type="text" inputmode="decimal" id="vehAssuredValue" name="assured_value_current_year"
-           class="form-control text-end"
-           value="{{ item.assured_value_current_year if item and item.assured_value_current_year else (computed_assured_value if computed_assured_value else '') }}">
-    <div class="form-text">Auto-computed: 10% depreciation per year from Delivery Date (compounding), based on Acquisition Cost. Editable if you need to override with an appraised value.</div></div>
-  <div class="col-md-4"><label class="form-label">Delivery Date</label>
-    <input type="date" name="delivery_date" class="form-control"
-           value="{{ item.delivery_date if item and item.delivery_date else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">Start Date</label>
-    <input type="date" name="start_date" class="form-control"
-           value="{{ item.start_date if item and item.start_date else '' }}"></div>
-  <div class="col-md-3"><label class="form-label">End Date</label>
-    <input type="date" name="end_date" class="form-control"
-           value="{{ item.end_date if item and item.end_date else '' }}"></div>
+      <!-- Basic Vehicle Information -->
+      <div class="card mb-4" id="section-basic">
+        <div class="card-header bg-white fw-bold">Basic Vehicle Information</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">Conduction Number</label>
+              <input type="text" name="conduction_number"
+                     class="form-control text-uppercase {{ 'is-invalid' if error_field=='conduction_number' }}"
+                     value="{{ item.conduction_number if item else '' }}">
+              {% if error_field=='conduction_number' %}
+              <div class="invalid-feedback">This Conduction Number is already used by another vehicle.</div>
+              {% endif %}
+            </div>
 
-  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Insurance</h6></div>
-  <div class="col-md-4"><label class="form-label">Insurance Reference No.</label>
-    <input type="text" name="insurance_reference_number" class="form-control" value="{{ item.insurance_reference_number if item and item.insurance_reference_number else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Comprehensive Policy No.</label>
-    <input type="text" name="comprehensive_policy_number" class="form-control" value="{{ item.comprehensive_policy_number if item and item.comprehensive_policy_number else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Comprehensive Insurance Provider</label>
-    <input type="text" name="comprehensive_insurance_provider" class="form-control" value="{{ item.comprehensive_insurance_provider if item and item.comprehensive_insurance_provider else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">CTPL Policy No.</label>
-    <input type="text" name="ctpl_policy_number" class="form-control" value="{{ item.ctpl_policy_number if item and item.ctpl_policy_number else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">CTPL Insurance Provider</label>
-    <input type="text" name="ctpl_insurance_provider" class="form-control" value="{{ item.ctpl_insurance_provider if item and item.ctpl_insurance_provider else '' }}"></div>
+            <div class="col-md-4">
+              <label class="form-label">Plate Number</label>
+              <input type="text" name="plate_number"
+                     class="form-control text-uppercase {{ 'is-invalid' if error_field=='plate_number' }}"
+                     value="{{ item.plate_number if item else '' }}">
+              <div class="form-text">Leave blank until LTO plate is assigned.</div>
+              {% if error_field=='plate_number' %}
+              <div class="invalid-feedback">This Plate Number is already used by another vehicle.</div>
+              {% endif %}
+            </div>
 
-  <div class="col-12">
-    <div class="row g-2 align-items-end border rounded p-2 mx-0 mb-2">
-      <div class="col-auto"><div class="form-check">
-        <input type="checkbox" name="has_ctpl" class="form-check-input" id="hasCtpl" {{ 'checked' if not item or item.has_ctpl }}>
-        <label class="form-check-label" for="hasCtpl">CTPL</label></div></div>
-      <div class="col-md-3"><label class="form-label small">From Date</label>
-        <input type="date" name="ctpl_from_date" class="form-control form-control-sm" value="{{ item.ctpl_from_date if item and item.ctpl_from_date else '' }}"></div>
-      <div class="col-md-3"><label class="form-label small">To Date</label>
-        <input type="date" name="ctpl_to_date" class="form-control form-control-sm" value="{{ item.ctpl_to_date if item and item.ctpl_to_date else '' }}"></div>
-    </div>
-    <div class="row g-2 align-items-end border rounded p-2 mx-0 mb-2">
-      <div class="col-auto"><div class="form-check">
-        <input type="checkbox" name="has_od_theft_aon" class="form-check-input" id="hasOdTheftAon" {{ 'checked' if not item or item.has_od_theft_aon }}>
-        <label class="form-check-label" for="hasOdTheftAon">OD/THEFT/AON</label></div></div>
-      <div class="col-md-3"><label class="form-label small">From Date</label>
-        <input type="date" name="od_theft_aon_from_date" class="form-control form-control-sm" value="{{ item.od_theft_aon_from_date if item and item.od_theft_aon_from_date else '' }}"></div>
-      <div class="col-md-3"><label class="form-label small">To Date</label>
-        <input type="date" name="od_theft_aon_to_date" class="form-control form-control-sm" value="{{ item.od_theft_aon_to_date if item and item.od_theft_aon_to_date else '' }}"></div>
-    </div>
-    <div class="row g-2 align-items-end border rounded p-2 mx-0 mb-2">
-      <div class="col-auto"><div class="form-check">
-        <input type="checkbox" name="has_vtpl_pd" class="form-check-input" id="hasVtplPd" {{ 'checked' if not item or item.has_vtpl_pd }}>
-        <label class="form-check-label" for="hasVtplPd">VTPL/PD</label></div></div>
-      <div class="col-md-3"><label class="form-label small">From Date</label>
-        <input type="date" name="vtpl_pd_from_date" class="form-control form-control-sm" value="{{ item.vtpl_pd_from_date if item and item.vtpl_pd_from_date else '' }}"></div>
-      <div class="col-md-3"><label class="form-label small">To Date</label>
-        <input type="date" name="vtpl_pd_to_date" class="form-control form-control-sm" value="{{ item.vtpl_pd_to_date if item and item.vtpl_pd_to_date else '' }}"></div>
-    </div>
-    <div class="row g-2 align-items-end border rounded p-2 mx-0 mb-2">
-      <div class="col-auto"><div class="form-check">
-        <input type="checkbox" name="has_vtpl_bi" class="form-check-input" id="hasVtplBi" {{ 'checked' if not item or item.has_vtpl_bi }}>
-        <label class="form-check-label" for="hasVtplBi">VTPL/BI</label></div></div>
-      <div class="col-md-3"><label class="form-label small">From Date</label>
-        <input type="date" name="vtpl_bi_from_date" class="form-control form-control-sm" value="{{ item.vtpl_bi_from_date if item and item.vtpl_bi_from_date else '' }}"></div>
-      <div class="col-md-3"><label class="form-label small">To Date</label>
-        <input type="date" name="vtpl_bi_to_date" class="form-control form-control-sm" value="{{ item.vtpl_bi_to_date if item and item.vtpl_bi_to_date else '' }}"></div>
-    </div>
-    <div class="form-check">
-      <input type="checkbox" name="has_inland_marine" class="form-check-input" id="hasInlandMarine" {{ 'checked' if item and item.has_inland_marine }}>
-      <label class="form-check-label" for="hasInlandMarine">Inland Marine</label>
-    </div>
-  </div>
+            <div class="col-md-4">
+              <label class="form-label">Chassis Number</label>
+              <input type="text" name="chassis_number" class="form-control"
+                     value="{{ item.chassis_number if item else '' }}">
+            </div>
 
-  <div class="col-12"><hr><h6 class="text-muted text-uppercase small">Assignment</h6></div>
-  <div class="col-md-6">
-    <label class="form-label d-block">Assignment</label>
-    <div class="form-check form-check-inline">
-      <input class="form-check-input" type="radio" name="assignment" id="assignPrimary" value="PRIMARY" {{ 'checked' if not item or item.assignment=='PRIMARY' }}>
-      <label class="form-check-label" for="assignPrimary">Primary</label></div>
-    <div class="form-check form-check-inline">
-      <input class="form-check-input" type="radio" name="assignment" id="assignSecondary" value="SECONDARY" {{ 'checked' if item and item.assignment=='SECONDARY' }}>
-      <label class="form-check-label" for="assignSecondary">Secondary</label></div>
-  </div>
-  <div class="col-md-6">
-    <label class="form-label d-block">Assignment Group Classification</label>
-    <div class="form-check form-check-inline">
-      <input class="form-check-input" type="radio" name="assignment_group_classification" id="agcCarPlan" value="CAR_PLAN" {{ 'checked' if item and item.assignment_group_classification=='CAR_PLAN' }}>
-      <label class="form-check-label" for="agcCarPlan">Car Plan</label></div>
-    <div class="form-check form-check-inline">
-      <input class="form-check-input" type="radio" name="assignment_group_classification" id="agcCompanyOwned" value="COMPANY_OWNED" {{ 'checked' if not item or item.assignment_group_classification=='COMPANY_OWNED' }}>
-      <label class="form-check-label" for="agcCompanyOwned">Company Owned</label></div>
-    <div class="form-check form-check-inline">
-      <input class="form-check-input" type="radio" name="assignment_group_classification" id="agcOthers" value="OTHERS" {{ 'checked' if item and item.assignment_group_classification=='OTHERS' }}>
-      <label class="form-check-label" for="agcOthers">Others</label></div>
-  </div>
-  <div class="col-md-4">
-    <label class="form-label d-block">Vehicle Usage</label>
-    <div class="form-check form-check-inline">
-      <input class="form-check-input" type="radio" name="vehicle_usage" id="usageSales" value="SALES" {{ 'checked' if item and item.vehicle_usage=='SALES' }}>
-      <label class="form-check-label" for="usageSales">Sales</label></div>
-    <div class="form-check form-check-inline">
-      <input class="form-check-input" type="radio" name="vehicle_usage" id="usageNonSales" value="NON_SALES" {{ 'checked' if not item or item.vehicle_usage=='NON_SALES' }}>
-      <label class="form-check-label" for="usageNonSales">Non-Sales</label></div>
-  </div>
-  <div class="col-md-4">
-    <label class="form-label d-block">MR-EDS</label>
-    <div class="form-check form-check-inline">
-      <input class="form-check-input" type="radio" name="mr_eds" id="mrEdsYes" value="YES" {{ 'checked' if item and item.mr_eds }}>
-      <label class="form-check-label" for="mrEdsYes">Yes</label></div>
-    <div class="form-check form-check-inline">
-      <input class="form-check-input" type="radio" name="mr_eds" id="mrEdsNo" value="NO" {{ 'checked' if not item or not item.mr_eds }}>
-      <label class="form-check-label" for="mrEdsNo">No</label></div>
-  </div>
-  <div class="col-md-4">
-    <label class="form-label d-block">With Vehicle Contract</label>
-    <div class="form-check form-check-inline">
-      <input class="form-check-input" type="radio" name="with_vehicle_contract" id="wvcYes" value="YES" {{ 'checked' if item and item.with_vehicle_contract }}>
-      <label class="form-check-label" for="wvcYes">Yes</label></div>
-    <div class="form-check form-check-inline">
-      <input class="form-check-input" type="radio" name="with_vehicle_contract" id="wvcNo" value="NO" {{ 'checked' if not item or not item.with_vehicle_contract }}>
-      <label class="form-check-label" for="wvcNo">No</label></div>
-  </div>
+            <div class="col-md-4">
+              <label class="form-label">Engine Number</label>
+              <input type="text" name="engine_number" class="form-control"
+                     value="{{ item.engine_number if item else '' }}">
+            </div>
 
-  <div class="col-12"><hr></div>
-  <div class="col-12"><label class="form-label">Remarks</label>
-    <textarea name="remarks" class="form-control" rows="2">{{ item.remarks if item and item.remarks else '' }}</textarea></div>
-  <div class="col-12"><label class="form-label">Notes</label>
-    <textarea name="notes" class="form-control" rows="2">{{ item.notes if item else '' }}</textarea></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_list') }}">Close</a>
-    {% if item and item.id %}
-    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_clone', vid=item.id) }}">
-      <i class="bi bi-copy me-1"></i>Clone</a>
-    {% endif %}
+            <div class="col-md-4">
+              <label class="form-label">Vehicle Type</label>
+              <select name="vehicle_type_id" id="vehVehicleTypeSelect" class="form-select fms-select2" required>
+                <option value="">— Select —</option>
+                {% for vt in vehicle_types %}
+                <option value="{{ vt.id }}" {{ 'selected' if item and item.vehicle_type_id==vt.id }}>
+                  {{ vt.code }} — {{ vt.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Brand</label>
+              <select name="brand" id="vehBrandSelect" class="form-select" required>
+                <option value="">— Select a Brand —</option>
+                {% for b in vehicle_brands %}
+                <option value="{{ b.name }}" {{ 'selected' if item and item.brand==b.name }}>{{ b.name }}</option>
+                {% endfor %}
+              </select>
+              {% if not vehicle_brands %}
+              <div class="form-text">
+                No Vehicle Brands yet —
+                <a href="{{ url_for('master_data.vehiclebrand_new') }}">create one first</a>.
+              </div>
+              {% endif %}
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Model</label>
+              <select name="model" id="vehModelSelect" class="form-select" required>
+                {% if item and item.model %}
+                <option value="{{ item.model }}" selected>{{ item.model }}</option>
+                {% else %}
+                <option value="">— Select a Brand first —</option>
+                {% endif %}
+              </select>
+              <div class="form-text">
+                Models are managed under
+                <a href="{{ url_for('master_data.vehiclemodel_list') }}">Vehicle Models</a>.
+              </div>
+            </div>
+
+            <div class="col-md-2">
+              <label class="form-label">Year</label>
+              <input type="number" name="year" class="form-control"
+                     value="{{ item.year if item else '' }}" required>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Variant</label>
+              <input type="text" name="variant" class="form-control"
+                     placeholder="e.g. 2.8 D-4D"
+                     value="{{ item.variant if item and item.variant else '' }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Engine Type</label>
+              <input type="text" name="engine_type" class="form-control"
+                     placeholder="e.g. 1GD-FTV"
+                     value="{{ item.engine_type if item and item.engine_type else '' }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Transmission</label>
+              <select name="transmission" class="form-select">
+                <option value="">— Not specified —</option>
+                {% for lt in transmissions %}
+                <option value="{{ lt.code }}" {{ 'selected' if item and item.transmission==lt.code }}>{{ lt.description }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Current Engine Hours</label>
+              <input type="number" name="current_engine_hours" class="form-control"
+                     placeholder="Optional"
+                     value="{{ item.current_engine_hours if item and item.current_engine_hours else '' }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Color</label>
+              <input type="text" name="color" class="form-control"
+                     value="{{ item.color if item else '' }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Fuel Type</label>
+              <select name="fuel_type" class="form-select fms-select2">
+                <option value="">— Select —</option>
+                {% for lt in fuel_types %}
+                <option value="{{ lt.code }}" {{ 'selected' if item and item.fuel_type==lt.code }}>{{ lt.description }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Branch</label>
+              <select name="branch_id" id="vehBranchSelect" class="form-select" required>
+                {% if item and item.branch %}
+                <option value="{{ item.branch.id }}" selected>{{ item.branch.code }} — {{ item.branch.name }}</option>
+                {% else %}
+                <option value="">— Type branch code or name —</option>
+                {% endif %}
+              </select>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Acquisition Date</label>
+              <input type="date" name="acquisition_date"
+                     class="form-control {{ 'is-invalid' if error_field=='acquisition_date' }}"
+                     value="{{ item.acquisition_date if item and item.acquisition_date else '' }}">
+              {% if error_field=='acquisition_date' %}
+              <div class="invalid-feedback">Please enter a valid date.</div>
+              {% endif %}
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Acquisition Cost</label>
+              <input type="text" inputmode="decimal" id="vehAcquisitionCost" name="acquisition_cost"
+                     class="form-control text-end"
+                     value="{{ item.acquisition_cost if item and item.acquisition_cost else '' }}">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Status</label>
+              <select name="status" class="form-select">
+                {% for s in ['ACTIVE','INACTIVE','IN_REPAIR','DISPOSED'] %}
+                <option value="{{ s }}" {{ 'selected' if item and item.status==s }}>{{ s }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-8">
+              <label class="form-label">Assigned PM Template</label>
+              <select name="pm_schedule_id" id="vehPmScheduleSelect" class="form-select fms-select2">
+                <option value="">— Auto-match by Make/Model or Vehicle Type —</option>
+                {% for s in pm_schedules %}
+                <option value="{{ s.id }}" {{ 'selected' if item and item.pm_schedule_id==s.id }}>
+                  {% if s.vehicle_brand %}{{ s.vehicle_brand.name }} {{ s.vehicle_model_ref.name if s.vehicle_model_ref else '' }}
+                  {% elif s.vehicle_make %}{{ s.vehicle_make }} {{ s.vehicle_model }}
+                  {% else %}{{ s.vehicle_type.name if s.vehicle_type else 'All Vehicles' }}{% endif %}
+                  — {{ s.maintenance_type.name }}
+                  {%- if s.profile_code %} [{{ s.profile_code }}{% if s.sequence_position %} #{{ s.sequence_position }}{% endif %}]{% endif %}
+                  {%- if s.interval_km %} — {{ "{:,}".format(s.interval_km) }} km{% endif %}
+                  {%- if s.interval_days %} / {{ s.interval_days }} days{% endif %}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Optional — explicitly pins this vehicle to one PM Template, overriding automatic Make/Model matching. If several packages exist for the same vehicle (e.g. from an imported profile), each is now labeled with its interval so they're no longer indistinguishable.</div>
+            </div>
+
+            <div class="col-12">
+              <div class="alert alert-secondary py-2 px-3 mb-0">
+                <strong><i class="bi bi-clock-history me-1"></i>Legacy Vehicle Baseline</strong>
+                <span class="text-muted small">— fill this in only if this vehicle already has real service
+                history from before being added to this system (e.g. a used vehicle, or migrating from another
+                fleet system). Without it, a vehicle with a high odometer but no Maintenance Order on record
+                here will show up as immediately overdue on the Dashboard.</span>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Last PM Service Odometer</label>
+              <input type="number" name="last_pm_odometer" class="form-control"
+                     value="{{ item.last_pm_odometer if item and item.last_pm_odometer is not none else '' }}">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Last PM Service Date</label>
+              <input type="date" name="last_pm_date" class="form-control"
+                     value="{{ item.last_pm_date if item and item.last_pm_date else '' }}">
+            </div>
+
+            <div class="col-md-8">
+              <label class="form-label">Assigned Driver</label>
+              <select name="assigned_driver_id" id="vehDriverSelect" class="form-select">
+                {% if item and item.assigned_driver %}
+                <option value="{{ item.assigned_driver.id }}" selected>
+                  {{ item.assigned_driver.employee_number }} — {{ item.assigned_driver.last_name }}, {{ item.assigned_driver.first_name }}
+                  ({{ item.assigned_driver.license_type }})
+                </option>
+                {% else %}
+                <option value="">— Type employee number or name —</option>
+                {% endif %}
+              </select>
+              <div class="form-text">Optional — maintains accountability for this vehicle; only active drivers are selectable.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Identification and Compliance -->
+      <div class="card mb-4" id="section-identification">
+        <div class="card-header bg-white fw-bold">Identification and Compliance</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label">FAR No.</label>
+              <input type="text" name="far_number" class="form-control" value="{{ item.far_number if item and item.far_number else '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">CR No.</label>
+              <input type="text" name="cr_number" class="form-control" value="{{ item.cr_number if item and item.cr_number else '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">MV File No.</label>
+              <input type="text" name="mv_file_number" class="form-control" value="{{ item.mv_file_number if item and item.mv_file_number else '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">LTO Office</label>
+              <input type="text" name="lto_office" class="form-control" value="{{ item.lto_office if item and item.lto_office else '' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Last Known Registration Expiry</label>
+              <input type="date" name="last_known_registration_expiry" class="form-control"
+                     value="{{ item.last_known_registration_expiry if item and item.last_known_registration_expiry else '' }}">
+              <div class="form-text">
+                Only needed if this vehicle has no Vehicle Registration transaction
+                recorded yet (e.g. migrated data) — gives the renewal reminder a
+                real expiry date to trigger from instead of only guessing from the
+                plate number. Ignored automatically once a real registration is
+                recorded.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Technical Specifications -->
+      <div class="card mb-4" id="section-technical">
+        <div class="card-header bg-white fw-bold">Technical Specifications</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">Vehicle Body Type</label>
+              <select name="vehicle_body_type" class="form-select">
+                <option value="">— Select —</option>
+                {% for bt in vehicle_body_types %}
+                <option value="{{ bt.code }}" {{ 'selected' if item and item.vehicle_body_type==bt.code }}>{{ bt.description }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Displacement</label>
+              <input type="text" name="displacement" class="form-control" placeholder="e.g. 2.8L / 1500cc"
+                     value="{{ item.displacement if item and item.displacement else '' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Component Group</label>
+              <select name="component_group" class="form-select">
+                <option value="">— Select —</option>
+                {% for cg in component_groups %}
+                <option value="{{ cg.code }}" {{ 'selected' if item and item.component_group==cg.code }}>{{ cg.description }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Supplier</label>
+              <input type="text" name="supplier" class="form-control" value="{{ item.supplier if item and item.supplier else '' }}">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Leasing Company</label>
+              <input type="text" name="leasing_company" class="form-control" value="{{ item.leasing_company if item and item.leasing_company else '' }}">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Financial Details -->
+      <div class="card mb-4" id="section-financial">
+        <div class="card-header bg-white fw-bold">Financial Details</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">Top-up Amount <span class="text-muted small">(VAT Exclusive)</span></label>
+              <input type="text" inputmode="decimal" id="vehTopUpAmount" name="top_up_amount"
+                     class="form-control text-end"
+                     value="{{ item.top_up_amount if item and item.top_up_amount else '' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Assured Value This Year</label>
+              <input type="text" inputmode="decimal" id="vehAssuredValue" name="assured_value_current_year"
+                     class="form-control text-end"
+                     value="{{ item.assured_value_current_year if item and item.assured_value_current_year else (computed_assured_value if computed_assured_value else '') }}">
+              <div class="form-text">Auto-computed: 10% depreciation per year from Delivery Date (compounding), based on Acquisition Cost. Editable if you need to override with an appraised value.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Delivery Date</label>
+              <input type="date" name="delivery_date" class="form-control"
+                     value="{{ item.delivery_date if item and item.delivery_date else '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Start Date</label>
+              <input type="date" name="start_date" class="form-control"
+                     value="{{ item.start_date if item and item.start_date else '' }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">End Date</label>
+              <input type="date" name="end_date" class="form-control"
+                     value="{{ item.end_date if item and item.end_date else '' }}">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Insurance Coverage -->
+      <div class="card mb-4" id="section-insurance">
+        <div class="card-header bg-white fw-bold">Insurance Coverage</div>
+        <div class="card-body">
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label">Insurance Reference No.</label>
+              <input type="text" name="insurance_reference_number" class="form-control" value="{{ item.insurance_reference_number if item and item.insurance_reference_number else '' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Comprehensive Policy No.</label>
+              <input type="text" name="comprehensive_policy_number" class="form-control" value="{{ item.comprehensive_policy_number if item and item.comprehensive_policy_number else '' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Comprehensive Insurance Provider</label>
+              <input type="text" name="comprehensive_insurance_provider" class="form-control" value="{{ item.comprehensive_insurance_provider if item and item.comprehensive_insurance_provider else '' }}">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">CTPL Policy No.</label>
+              <input type="text" name="ctpl_policy_number" class="form-control" value="{{ item.ctpl_policy_number if item and item.ctpl_policy_number else '' }}">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">CTPL Insurance Provider</label>
+              <input type="text" name="ctpl_insurance_provider" class="form-control" value="{{ item.ctpl_insurance_provider if item and item.ctpl_insurance_provider else '' }}">
+            </div>
+          </div>
+
+          <div class="border rounded p-3 bg-light">
+            <div class="row g-2 align-items-end mb-2">
+              <div class="col-auto">
+                <div class="form-check">
+                  <input type="checkbox" name="has_ctpl" class="form-check-input" id="hasCtpl" {{ 'checked' if not item or item.has_ctpl }}>
+                  <label class="form-check-label fw-semibold" for="hasCtpl">CTPL</label>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1">From Date</label>
+                <input type="date" name="ctpl_from_date" class="form-control form-control-sm" value="{{ item.ctpl_from_date if item and item.ctpl_from_date else '' }}">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1">To Date</label>
+                <input type="date" name="ctpl_to_date" class="form-control form-control-sm" value="{{ item.ctpl_to_date if item and item.ctpl_to_date else '' }}">
+              </div>
+            </div>
+
+            <div class="row g-2 align-items-end mb-2">
+              <div class="col-auto">
+                <div class="form-check">
+                  <input type="checkbox" name="has_od_theft_aon" class="form-check-input" id="hasOdTheftAon" {{ 'checked' if not item or item.has_od_theft_aon }}>
+                  <label class="form-check-label fw-semibold" for="hasOdTheftAon">OD/THEFT/AON</label>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1">From Date</label>
+                <input type="date" name="od_theft_aon_from_date" class="form-control form-control-sm" value="{{ item.od_theft_aon_from_date if item and item.od_theft_aon_from_date else '' }}">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1">To Date</label>
+                <input type="date" name="od_theft_aon_to_date" class="form-control form-control-sm" value="{{ item.od_theft_aon_to_date if item and item.od_theft_aon_to_date else '' }}">
+              </div>
+            </div>
+
+            <div class="row g-2 align-items-end mb-2">
+              <div class="col-auto">
+                <div class="form-check">
+                  <input type="checkbox" name="has_vtpl_pd" class="form-check-input" id="hasVtplPd" {{ 'checked' if not item or item.has_vtpl_pd }}>
+                  <label class="form-check-label fw-semibold" for="hasVtplPd">VTPL/PD</label>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1">From Date</label>
+                <input type="date" name="vtpl_pd_from_date" class="form-control form-control-sm" value="{{ item.vtpl_pd_from_date if item and item.vtpl_pd_from_date else '' }}">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1">To Date</label>
+                <input type="date" name="vtpl_pd_to_date" class="form-control form-control-sm" value="{{ item.vtpl_pd_to_date if item and item.vtpl_pd_to_date else '' }}">
+              </div>
+            </div>
+
+            <div class="row g-2 align-items-end mb-2">
+              <div class="col-auto">
+                <div class="form-check">
+                  <input type="checkbox" name="has_vtpl_bi" class="form-check-input" id="hasVtplBi" {{ 'checked' if not item or item.has_vtpl_bi }}>
+                  <label class="form-check-label fw-semibold" for="hasVtplBi">VTPL/BI</label>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1">From Date</label>
+                <input type="date" name="vtpl_bi_from_date" class="form-control form-control-sm" value="{{ item.vtpl_bi_from_date if item and item.vtpl_bi_from_date else '' }}">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small mb-1">To Date</label>
+                <input type="date" name="vtpl_bi_to_date" class="form-control form-control-sm" value="{{ item.vtpl_bi_to_date if item and item.vtpl_bi_to_date else '' }}">
+              </div>
+            </div>
+
+            <div class="form-check mt-2">
+              <input type="checkbox" name="has_inland_marine" class="form-check-input" id="hasInlandMarine" {{ 'checked' if item and item.has_inland_marine }}>
+              <label class="form-check-label fw-semibold" for="hasInlandMarine">Inland Marine</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Assignments and Remarks -->
+      <div class="card mb-4" id="section-assignment">
+        <div class="card-header bg-white fw-bold">Assignments and Remarks</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label d-block fw-semibold">Assignment</label>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="assignment" id="assignPrimary" value="PRIMARY" {{ 'checked' if not item or item.assignment=='PRIMARY' }}>
+                <label class="form-check-label" for="assignPrimary">Primary</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="assignment" id="assignSecondary" value="SECONDARY" {{ 'checked' if item and item.assignment=='SECONDARY' }}>
+                <label class="form-check-label" for="assignSecondary">Secondary</label>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label d-block fw-semibold">Assignment Group Classification</label>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="assignment_group_classification" id="agcCarPlan" value="CAR_PLAN" {{ 'checked' if item and item.assignment_group_classification=='CAR_PLAN' }}>
+                <label class="form-check-label" for="agcCarPlan">Car Plan</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="assignment_group_classification" id="agcCompanyOwned" value="COMPANY_OWNED" {{ 'checked' if not item or item.assignment_group_classification=='COMPANY_OWNED' }}>
+                <label class="form-check-label" for="agcCompanyOwned">Company Owned</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="assignment_group_classification" id="agcOthers" value="OTHERS" {{ 'checked' if item and item.assignment_group_classification=='OTHERS' }}>
+                <label class="form-check-label" for="agcOthers">Others</label>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label d-block fw-semibold">Vehicle Usage</label>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="vehicle_usage" id="usageSales" value="SALES" {{ 'checked' if item and item.vehicle_usage=='SALES' }}>
+                <label class="form-check-label" for="usageSales">Sales</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="vehicle_usage" id="usageNonSales" value="NON_SALES" {{ 'checked' if not item or item.vehicle_usage=='NON_SALES' }}>
+                <label class="form-check-label" for="usageNonSales">Non-Sales</label>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label d-block fw-semibold">MR-EDS</label>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="mr_eds" id="mrEdsYes" value="YES" {{ 'checked' if item and item.mr_eds }}>
+                <label class="form-check-label" for="mrEdsYes">Yes</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="mr_eds" id="mrEdsNo" value="NO" {{ 'checked' if not item or not item.mr_eds }}>
+                <label class="form-check-label" for="mrEdsNo">No</label>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label d-block fw-semibold">With Vehicle Contract</label>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="with_vehicle_contract" id="wvcYes" value="YES" {{ 'checked' if item and item.with_vehicle_contract }}>
+                <label class="form-check-label" for="wvcYes">Yes</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="with_vehicle_contract" id="wvcNo" value="NO" {{ 'checked' if not item or not item.with_vehicle_contract }}>
+                <label class="form-check-label" for="wvcNo">No</label>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">Remarks</label>
+              <textarea name="remarks" class="form-control" rows="2">{{ item.remarks if item and item.remarks else '' }}</textarea>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">Notes</label>
+              <textarea name="notes" class="form-control" rows="2">{{ item.notes if item else '' }}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="d-flex gap-2 mb-4">
+        <button class="btn btn-primary" type="submit">Save</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_list') }}">Close</a>
+        {% if item and item.id %}
+        <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_clone', vid=item.id) }}">
+          <i class="bi bi-copy me-1"></i>Clone
+        </a>
+        {% endif %}
+      </div>
+
+    </div>
+
+    <!-- Sticky Navigation Column -->
+    <div class="col-lg-3 d-none d-lg-block">
+      <div class="card border-0 bg-light sticky-top" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small">Navigation</h6>
+          <div class="nav flex-column nav-pills gap-1">
+            <a class="nav-link text-dark py-1 px-2" href="#section-basic">Basic Vehicle Information</a>
+            <a class="nav-link text-dark py-1 px-2" href="#section-identification">Identification & Compliance</a>
+            <a class="nav-link text-dark py-1 px-2" href="#section-technical">Technical Specifications</a>
+            <a class="nav-link text-dark py-1 px-2" href="#section-financial">Financial Details</a>
+            <a class="nav-link text-dark py-1 px-2" href="#section-insurance">Insurance Coverage</a>
+            <a class="nav-link text-dark py-1 px-2" href="#section-assignment">Assignments & Remarks</a>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
+
 {% if item and item.id %}
 {% set reference_table = "vehicles" %}
 {% set reference_id = item.id %}
 {% include "master_data/_attachment_panel.html" %}
 {% endif %}
 {% endblock %}
+
 {% block scripts %}
 <script>
 if (window.formatMoneyInput) {

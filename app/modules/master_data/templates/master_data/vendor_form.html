@@ -1,119 +1,256 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('master_data.vendor_list') }}">Vendors</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-6"><label class="form-label">Code</label>
-    <input type="text" name="code" class="form-control"
-           value="{{ item.code if item and item.code else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Name</label>
-    <input type="text" name="name" class="form-control"
-           value="{{ item.name if item and item.name else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Address</label>
-    <input type="text" name="address" class="form-control"
-           value="{{ item.address if item and item.address else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">City</label>
-    <input type="text" name="city" class="form-control"
-           value="{{ item.city if item and item.city else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Phone</label>
-    <input type="text" name="phone" class="form-control"
-           value="{{ item.phone if item and item.phone else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Email</label>
-    <input type="email" name="email" class="form-control"
-           value="{{ item.email if item and item.email else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">TIN</label>
-    <input type="text" name="tin" class="form-control"
-           value="{{ item.tin if item and item.tin else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Contact Person</label>
-    <input type="text" name="contact_person" class="form-control"
-           value="{{ item.contact_person if item and item.contact_person else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Vendor Type</label>
-    <select name="vendor_type" class="form-select">
-      {% for vt in vendor_types %}
-      <option value="{{ vt.code }}" {{ 'selected' if item and item.vendor_type==vt.code }}>{{ vt.description }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-12"><label class="form-label">Serves These Branches</label>
-    <select name="branch_ids" id="vendorBranchSelect" class="form-select" multiple>
-      {% if item %}
-      {% for b in item.branches %}
-      <option value="{{ b.id }}" selected>{{ b.code }} — {{ b.name }}</option>
-      {% endfor %}
-      {% endif %}
-    </select>
-    <div class="form-text">Leave blank if this vendor serves every branch
-      (e.g. a nationwide supplier). Assign specific branches for a local
-      shop that only realistically serves nearby locations — e.g. a
-      Laguna shop that also covers Manila.</div></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vendor_list') }}">Cancel</a>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Manage supplier profiles, contact details, tax identification, and branch coverage.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vendor_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save
+      </button>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Vendor Profile & Classification Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Vendor Identity & Classification</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Vendor Code</label>
+              <input type="text" name="code" class="form-control" placeholder="e.g. VEND-001"
+                     value="{{ item.code if item and item.code else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Vendor Type</label>
+              <select name="vendor_type" class="form-select">
+                {% for vt in vendor_types %}
+                <option value="{{ vt.code }}" {{ 'selected' if item and item.vendor_type==vt.code }}>{{ vt.description }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Vendor Name</label>
+              <input type="text" name="name" class="form-control" placeholder="Company or supplier business name"
+                     value="{{ item.name if item and item.name else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Tax Identification Number (TIN)</label>
+              <input type="text" name="tin" class="form-control" placeholder="000-000-000-000"
+                     value="{{ item.tin if item and item.tin else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Primary Contact Person</label>
+              <input type="text" name="contact_person" class="form-control" placeholder="Full name of primary representative"
+                     value="{{ item.contact_person if item and item.contact_person else '' }}">
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Address & Contact Info Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Contact & Location Details</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Street Address</label>
+              <input type="text" name="address" class="form-control" placeholder="Building, street, or unit number"
+                     value="{{ item.address if item and item.address else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">City / Municipality</label>
+              <input type="text" name="city" class="form-control" placeholder="City or province"
+                     value="{{ item.city if item and item.city else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Phone Number</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-telephone"></i></span>
+                <input type="text" name="phone" class="form-control" placeholder="Landline or mobile number"
+                       value="{{ item.phone if item and item.phone else '' }}">
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Email Address</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-envelope"></i></span>
+                <input type="email" name="email" class="form-control" placeholder="supplier@example.com"
+                       value="{{ item.email if item and item.email else '' }}">
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Operational Scope Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Operational Coverage</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Serves These Branches</label>
+              <select name="branch_ids" id="vendorBranchSelect" class="form-select" multiple>
+                {% if item %}
+                {% for b in item.branches %}
+                <option value="{{ b.id }}" selected>{{ b.code }} — {{ b.name }}</option>
+                {% endfor %}
+                {% endif %}
+              </select>
+              <div class="form-text">
+                Leave blank if this vendor serves every branch (e.g. a nationwide supplier). Assign specific branches for a local shop that only realistically serves nearby locations — e.g. a Laguna shop that also covers Manila.
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-shop me-1"></i> Vendor Setup Tips</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Branch Coverage:</strong> Restricting branches helps purchase order selectors auto-filter relevant local suppliers.</li>
+            <li><strong>Tax & Invoicing:</strong> Ensure the TIN matches official receipts for seamless tax compliance during invoice matching.</li>
+            <li><strong>Additional Contacts:</strong> Save the main vendor profile first to enable secondary contact management below.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
-{% if item and item.id %}
-{% set reference_table = "vendors" %}
-{% set reference_id = item.id %}
-{% include "master_data/_attachment_panel.html" %}
 
-<div class="card mt-3">
-  <div class="card-header">Other Contact</div>
-  <div class="card-body">
-    <div class="row g-3">
-      <div class="col-md-5">
+{# Additional Attachments & Contacts Section (Available upon Edit) #}
+{% if item and item.id %}
+<div class="row g-4 mb-4">
+  <div class="col-lg-12">
+    {% set reference_table = "vendors" %}
+    {% set reference_id = item.id %}
+    {% include "master_data/_attachment_panel.html" %}
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-people me-2 text-primary"></i>Other Contacts</span>
+    <span class="badge bg-light text-dark border">{{ item.other_contacts|selectattr("is_active")|list|length }} Contacts</span>
+  </div>
+  <div class="card-body p-4">
+    <div class="row g-4">
+
+      <!-- Add Contact Form -->
+      <div class="col-md-5 border-end pe-md-4">
+        <h6 class="fw-bold text-dark mb-3 small text-uppercase">Add New Contact</h6>
         <form method="post" action="{{ url_for('master_data.vendor_contact_add', vid=item.id) }}" class="row g-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="col-12"><label class="form-label small">Contact Person / Name</label>
-            <input type="text" name="contact_name" class="form-control form-control-sm" required></div>
-          <div class="col-12"><label class="form-label small">Tel Number</label>
-            <input type="text" name="tel_number" class="form-control form-control-sm"></div>
-          <div class="col-12"><label class="form-label small">Cel Number</label>
-            <input type="text" name="cel_number" class="form-control form-control-sm"></div>
-          <div class="col-12"><label class="form-label small">Email Address</label>
-            <input type="email" name="email" class="form-control form-control-sm"></div>
-          <div class="col-12"><label class="form-label small">Position / Role</label>
-            <input type="text" name="position" class="form-control form-control-sm"
-                   placeholder="e.g. Finance, Sales, Support"></div>
+
           <div class="col-12">
-            <button class="btn btn-sm btn-outline-primary" type="submit">
-              <i class="bi bi-plus-lg me-1"></i>Add</button>
+            <label class="form-label small fw-semibold">Contact Person / Name</label>
+            <input type="text" name="contact_name" class="form-control form-control-sm" required placeholder="Full Name">
+          </div>
+
+          <div class="col-6">
+            <label class="form-label small fw-semibold">Tel Number</label>
+            <input type="text" name="tel_number" class="form-control form-control-sm" placeholder="Landline">
+          </div>
+
+          <div class="col-6">
+            <label class="form-label small fw-semibold">Cel Number</label>
+            <input type="text" name="cel_number" class="form-control form-control-sm" placeholder="Mobile">
+          </div>
+
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Email Address</label>
+            <input type="email" name="email" class="form-control form-control-sm" placeholder="email@example.com">
+          </div>
+
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Position / Role</label>
+            <input type="text" name="position" class="form-control form-control-sm" placeholder="e.g. Finance, Sales, Support">
+          </div>
+
+          <div class="col-12 mt-3">
+            <button class="btn btn-sm btn-primary w-100" type="submit">
+              <i class="bi bi-plus-lg me-1"></i>Add Contact
+            </button>
           </div>
         </form>
       </div>
-      <div class="col-md-7">
-        <div class="list-group">
+
+      <!-- Contacts List -->
+      <div class="col-md-7 ps-md-4">
+        <h6 class="fw-bold text-dark mb-3 small text-uppercase">Contact Directory</h6>
+        <div class="list-group list-group-flush">
         {% for c in item.other_contacts if c.is_active %}
-          <div class="list-group-item d-flex justify-content-between align-items-start">
+          <div class="list-group-item px-0 py-2.5 d-flex justify-content-between align-items-start border-bottom">
             <div>
-              <strong>{{ c.contact_name }}</strong>
-              {% if c.position %}<span class="badge text-bg-secondary ms-1">{{ c.position }}</span>{% endif %}
-              <div class="small text-muted">
-                {% if c.tel_number %}Tel: {{ c.tel_number }}{% endif %}
-                {% if c.cel_number %} · Cel: {{ c.cel_number }}{% endif %}
-                {% if c.email %} · {{ c.email }}{% endif %}
+              <div class="fw-semibold text-dark">
+                {{ c.contact_name }}
+                {% if c.position %}
+                <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle ms-1 font-monospace fw-normal">{{ c.position }}</span>
+                {% endif %}
+              </div>
+              <div class="small text-muted mt-1">
+                {% if c.tel_number %}<span><i class="bi bi-telephone me-1"></i>{{ c.tel_number }}</span>{% endif %}
+                {% if c.cel_number %}<span class="ms-2"><i class="bi bi-phone me-1"></i>{{ c.cel_number }}</span>{% endif %}
+                {% if c.email %}<span class="ms-2"><i class="bi bi-envelope me-1"></i>{{ c.email }}</span>{% endif %}
               </div>
             </div>
             <form method="post" action="{{ url_for('master_data.vendor_contact_delete', vid=item.id, cid=c.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-trash"></i></button>
+              <button class="btn btn-sm btn-outline-danger py-1 px-2" title="Delete Contact">
+                <i class="bi bi-trash"></i>
+              </button>
             </form>
           </div>
         {% else %}
-          <p class="text-muted mb-0">No additional contacts yet.</p>
+          <div class="text-center py-4 text-muted small">
+            <i class="bi bi-person-lines-fill fs-3 d-block mb-1 text-secondary"></i>
+            No additional contacts recorded yet.
+          </div>
         {% endfor %}
         </div>
       </div>
+
     </div>
   </div>
 </div>
 {% endif %}
 {% endblock %}
+
 {% block scripts %}
 <script>
   if (window.jQuery) {

@@ -1,31 +1,111 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('approval_config.matrix_list') }}">Approval Matrix</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" novalidate class="row g-3">
+<form method="post" novalidate>
   {{ form.hidden_tag() }}
-  <div class="col-md-6">{{ form.document_type_id.label(class="form-label") }}
-    {{ form.document_type_id(class="form-select fms-select2") }}</div>
-  <div class="col-md-6">{{ form.approval_path_id.label(class="form-label") }}
-    {{ form.approval_path_id(class="form-select fms-select2") }}</div>
-  <div class="col-md-3">{{ form.min_amount.label(class="form-label") }}
-    {{ form.min_amount(class="form-control") }}
-    <div class="form-text">Leave both amounts blank for amount-independent documents.</div></div>
-  <div class="col-md-3">{{ form.max_amount.label(class="form-label") }}
-    {{ form.max_amount(class="form-control") }}</div>
-  <div class="col-md-3">{{ form.effective_from.label(class="form-label") }}
-    {{ form.effective_from(class="form-control", type="date") }}</div>
-  <div class="col-md-3">{{ form.effective_to.label(class="form-label") }}
-    {{ form.effective_to(class="form-control", type="date") }}</div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('approval_config.matrix_list') }}">Cancel</a>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Map document types and financial thresholds to specific sequential approval paths.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('approval_config.matrix_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save Rule
+      </button>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Document & Path Mapping Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Workflow Mapping</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              {{ form.document_type_id.label(class="form-label fw-semibold") }}
+              {{ form.document_type_id(class="form-select fms-select2") }}
+            </div>
+
+            <div class="col-md-6">
+              {{ form.approval_path_id.label(class="form-label fw-semibold") }}
+              {{ form.approval_path_id(class="form-select fms-select2") }}
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Thresholds & Validity Period Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Financial Thresholds &amp; Validity</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              {{ form.min_amount.label(class="form-label fw-semibold") }}
+              <div class="input-group">
+                <span class="input-group-text bg-light">₱</span>
+                {{ form.min_amount(class="form-control", placeholder="0.00") }}
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              {{ form.max_amount.label(class="form-label fw-semibold") }}
+              <div class="input-group">
+                <span class="input-group-text bg-light">₱</span>
+                {{ form.max_amount(class="form-control", placeholder="No limit") }}
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="form-text text-muted">
+                <i class="bi bi-info-circle me-1"></i>
+                Leave both amount fields blank for non-financial or amount-independent document workflows.
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              {{ form.effective_from.label(class="form-label fw-semibold") }}
+              {{ form.effective_from(class="form-control", type="date") }}
+            </div>
+
+            <div class="col-md-6">
+              {{ form.effective_to.label(class="form-label fw-semibold") }}
+              {{ form.effective_to(class="form-control", type="date") }}
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-diagram-2 me-1"></i> Matrix Routing Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Threshold Matching:</strong> Transactions are routed based on total document value falling within min and max ranges.</li>
+            <li><strong>Effective Dates:</strong> Optional start and end dates allow pre-scheduling approval rule transitions or temporary policy overrides.</li>
+            <li><strong>Path Execution:</strong> Documents evaluate active rules sequentially upon initial submission.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}

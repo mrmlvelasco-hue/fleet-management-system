@@ -1,9 +1,11 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('transactions.maintenanceorder_list') }}">Maintenance Orders</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
 {# `submitted` holds what the person typed when validation failed, so a
    single bad field no longer clears the whole form. Order matters:
@@ -11,202 +13,335 @@
 {% macro keep(field, fallback='') -%}
 {{ submitted.get(field) if submitted and submitted.get(field) else fallback }}
 {%- endmacro %}
-<h1 class="h3 mb-4">{{ title }}</h1>
 
-<div class="card mb-3" id="moVehicleInfoPanel" style="{{ 'display:none;' if not prefill_vehicle }}">
-  <div class="card-header"><i class="bi bi-truck me-1"></i>Vehicle Information</div>
-  <div class="card-body">
-    <dl class="row mb-0">
-      <dt class="col-sm-2">Plate Number</dt><dd class="col-sm-4" id="moviPlate">{{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number if prefill_vehicle else '' }}</dd>
-      <dt class="col-sm-2">Brand / Model</dt><dd class="col-sm-4" id="moviBrandModel">{{ prefill_vehicle.brand ~ ' ' ~ prefill_vehicle.model if prefill_vehicle else '' }}</dd>
-      <dt class="col-sm-2">Branch / Sales Office</dt><dd class="col-sm-4" id="moviBranch">{{ prefill_vehicle.branch.name if prefill_vehicle and prefill_vehicle.branch else '' }}</dd>
-      <dt class="col-sm-2">Current Assignee</dt><dd class="col-sm-4" id="moviAssignee">{{ prefill_vehicle.assigned_driver.full_name if prefill_vehicle and prefill_vehicle.assigned_driver else '—' }}</dd>
-      <dt class="col-sm-2">Assignee Position</dt><dd class="col-sm-4" id="moviPosition">{{ (prefill_vehicle.assigned_driver.job_title or '—') if prefill_vehicle and prefill_vehicle.assigned_driver else '—' }}</dd>
-      <dt class="col-sm-2">Current Odometer</dt><dd class="col-sm-4" id="moviOdometer">{{ "{:,}".format(prefill_vehicle.current_odometer) if prefill_vehicle and prefill_vehicle.current_odometer else '—' }}</dd>
-    </dl>
-  </div>
-</div>
-
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-6"><label class="form-label">Category</label>
-    <select name="order_category" id="moOrderCategorySelect" class="form-select" required>
-      <option value="MAINTENANCE" {{ 'selected' if prefill.order_category != 'OPERATIONAL' }}>Maintenance</option>
-      <option value="OPERATIONAL" {{ 'selected' if prefill.order_category == 'OPERATIONAL' }}>Operational</option>
-    </select>
-    <div class="form-text">Operational orders (Deployment, Administrative, Disposal, Accessories) are normal fleet work requests — they don't need a Maintenance Type or PM Scope.</div></div>
-  <div class="col-md-6"><label class="form-label">Transaction Type <span class="text-muted small">(optional)</span></label>
-    <select name="transaction_type_id" id="moTransactionTypeSelect" class="form-select fms-select2">
-      <option value="">— None —</option>
-      {% for group_name, types in transaction_types_by_group.items() %}
-      <optgroup label="{{ group_name|title }}">
-        {% for tt in types %}
-        <option value="{{ tt.id }}" data-category="{{ tt.order_category }}"
-                data-code="{{ tt.code }}"
-                {{ 'selected' if prefill.transaction_type_id==tt.id }}>{{ tt.name }}</option>
-        {% endfor %}
-      </optgroup>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-6"><label class="form-label">Vehicle</label>
-    <div class="input-group">
-      <select name="vehicle_id" id="moVehicleSelect" class="form-select" required>
-        {% if prefill_vehicle %}
-        <option value="{{ prefill_vehicle.id }}" selected>
-          {{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number }} — {{ prefill_vehicle.brand }} {{ prefill_vehicle.model }}
-        </option>
-        {% else %}
-        <option value="">— Type plate number, make, or model —</option>
-        {% endif %}
-      </select>
-      <button type="button" class="btn btn-outline-secondary" id="moVehicleModalBtn" title="Advanced search">
-        <i class="bi bi-search"></i></button>
-    </div></div>
-  <div id="moMaintenanceFieldsWrapper" class="row g-3">
-  <div class="col-md-6"><label class="form-label">Maintenance Type</label>
-    <select name="maintenance_type_id" id="moMaintenanceTypeSelect" class="form-select fms-select2" required>
-      <option value="">— Select —</option>
-      {% for mt in maintenance_types %}
-      <option value="{{ mt.id }}" {{ 'selected' if prefill.maintenance_type_id==mt.id }}>{{ mt.code }} — {{ mt.name }} ({{ mt.category }})</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-6"><label class="form-label">PM Scope Template <span class="text-muted small">(optional — generates checklist; filtered to this vehicle)</span></label>
-    <select name="scope_template_id" id="moScopeTemplateSelect" class="form-select fms-select2">
-      <option value="">— None (Corrective / unscheduled) —</option>
-      {% for st in scope_templates %}
-      <option value="{{ st.id }}" {{ 'selected' if prefill.scope_template_id==st.id }}>
-        {{ st.name }}{{ ' (next due)' if st.id == due_scope_template_id else '' }}</option>
-      {% endfor %}
-    </select>
-    <div class="form-text" id="moScopeTemplateHint">
-      {% if not prefill_vehicle %}Select a vehicle first to see its applicable PM packages.{% endif %}
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Create work requests, preventive maintenance schedules, or operational asset orders.</p>
     </div>
-    {% if pm_recommendation and pm_recommendation.recommended_package %}
-    {% set _st = pm_recommendation.status %}
-    <div class="alert {{ 'alert-danger' if _st == 'OVERDUE' else 'alert-warning' if _st == 'DUE' else 'alert-info' }} py-2 px-3 mt-2 mb-0" id="moPmRecommendation">
-      <div class="d-flex align-items-center gap-2">
-        <span class="badge {{ 'text-bg-danger' if _st == 'OVERDUE' else 'text-bg-warning' if _st == 'DUE' else 'text-bg-info' }}">{{ _st }}</span>
-        <strong>Recommended PM package auto-selected</strong>
-      </div>
-      <div class="small mt-1">
-        <div>Due by:
-          {% if pm_recommendation.due_by == 'BOTH' %}KM or Date (whichever comes first)
-          {% elif pm_recommendation.due_by == 'KM' %}Kilometers
-          {% elif pm_recommendation.due_by == 'MONTHS' %}Calendar (months)
-          {% else %}—{% endif %}
-        </div>
-        {% if pm_recommendation.due_odometer %}<div>Due odometer: {{ "{:,}".format(pm_recommendation.due_odometer) }} km</div>{% endif %}
-        {% if pm_recommendation.due_date %}<div>Due date: {{ pm_recommendation.due_date }}</div>{% endif %}
-        <div class="text-muted">{{ pm_recommendation.reason }}</div>
-        {% if pm_recommendation.beyond_defined_cycle %}
-        <div class="mt-1 fw-semibold">⚠ This vehicle is beyond the last defined PM package — please confirm the correct package to apply.</div>
-        {% endif %}
-      </div>
-    </div>
-    {% endif %}
-    <div class="card card-body p-2 mt-2" id="moWorkDescriptionPanel" style="display:none;">
-      <div class="small text-uppercase text-muted fw-semibold mb-1">Work Description Template</div>
-      <p class="mb-1" id="moWorkDescriptionText"></p>
-      <p class="text-muted small mb-1">
-        Pre-fills a Maintenance Order's description when created against this
-        schedule, with pm2-pm9 tokens resolved to the actual vehicle/driver/branch at that time.
-      </p>
-    </div>
-    <div class="mt-2" id="moScopeDetailsWrapper" style="display:none;">
-      <button class="btn btn-sm btn-outline-secondary" type="button"
-              data-bs-toggle="collapse" data-bs-target="#moScopeDetailsCollapse">
-        <i class="bi bi-list-check me-1"></i>View Scope Details
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('transactions.maintenanceorder_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save as Draft
       </button>
-      <div class="collapse mt-2" id="moScopeDetailsCollapse">
-        <div class="card card-body p-2">
-          <table class="table table-sm mb-0" id="moScopeDetailsTable">
-            <thead><tr><th>#</th><th>Code</th><th>Description</th>
-              <th>Labor Hrs</th><th>Parts</th></tr></thead>
-            <tbody></tbody>
-          </table>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Column -->
+    <div class="col-lg-8">
+
+      <!-- Order Type & Target Vehicle -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Order Details & Vehicle</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Category</label>
+              <select name="order_category" id="moOrderCategorySelect" class="form-select" required>
+                <option value="MAINTENANCE" {{ 'selected' if prefill.order_category != 'OPERATIONAL' }}>Maintenance</option>
+                <option value="OPERATIONAL" {{ 'selected' if prefill.order_category == 'OPERATIONAL' }}>Operational</option>
+              </select>
+              <div class="form-text">Operational orders (Deployment, Administrative, Disposal, Accessories) are normal fleet work requests — they don't need a Maintenance Type or PM Scope.</div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Transaction Type <span class="text-muted small fw-normal">(optional)</span></label>
+              <select name="transaction_type_id" id="moTransactionTypeSelect" class="form-select fms-select2">
+                <option value="">— None —</option>
+                {% for group_name, types in transaction_types_by_group.items() %}
+                <optgroup label="{{ group_name|title }}">
+                  {% for tt in types %}
+                  <option value="{{ tt.id }}" data-category="{{ tt.order_category }}"
+                          data-code="{{ tt.code }}"
+                          {{ 'selected' if prefill.transaction_type_id==tt.id }}>{{ tt.name }}</option>
+                  {% endfor %}
+                </optgroup>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Vehicle</label>
+              <div class="input-group">
+                <select name="vehicle_id" id="moVehicleSelect" class="form-select" required>
+                  {% if prefill_vehicle %}
+                  <option value="{{ prefill_vehicle.id }}" selected>
+                    {{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number }} — {{ prefill_vehicle.brand }} {{ prefill_vehicle.model }}
+                  </option>
+                  {% else %}
+                  <option value="">— Type plate number, make, or model —</option>
+                  {% endif %}
+                </select>
+                <button type="button" class="btn btn-outline-secondary" id="moVehicleModalBtn" title="Advanced search">
+                  <i class="bi bi-search"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Dynamic Vehicle Information Summary (Moved right below vehicle selection) -->
+            <div class="col-12">
+              <div class="card bg-light border-0 mt-2" id="moVehicleInfoPanel" style="{{ 'display:none;' if not prefill_vehicle }}">
+                <div class="card-header bg-transparent py-2 border-bottom d-flex align-items-center gap-2 fw-semibold text-dark small">
+                  <i class="bi bi-truck text-primary fs-6"></i> Vehicle Information Summary
+                </div>
+                <div class="card-body p-3">
+                  <dl class="row mb-0 gy-2 small">
+                    <dt class="col-sm-2 text-muted fw-semibold">Plate Number</dt>
+                    <dd class="col-sm-4 fw-bold font-monospace mb-0" id="moviPlate">{{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number if prefill_vehicle else '' }}</dd>
+
+                    <dt class="col-sm-2 text-muted fw-semibold">Brand / Model</dt>
+                    <dd class="col-sm-4 fw-semibold text-dark mb-0" id="moviBrandModel">{{ prefill_vehicle.brand ~ ' ' ~ prefill_vehicle.model if prefill_vehicle else '' }}</dd>
+
+                    <dt class="col-sm-2 text-muted fw-semibold">Branch / Office</dt>
+                    <dd class="col-sm-4 mb-0" id="moviBranch">{{ prefill_vehicle.branch.name if prefill_vehicle and prefill_vehicle.branch else '' }}</dd>
+
+                    <dt class="col-sm-2 text-muted fw-semibold">Current Assignee</dt>
+                    <dd class="col-sm-4 mb-0" id="moviAssignee">{{ prefill_vehicle.assigned_driver.full_name if prefill_vehicle and prefill_vehicle.assigned_driver else '—' }}</dd>
+
+                    <dt class="col-sm-2 text-muted fw-semibold">Assignee Position</dt>
+                    <dd class="col-sm-4 text-secondary mb-0" id="moviPosition">{{ (prefill_vehicle.assigned_driver.job_title or '—') if prefill_vehicle and prefill_vehicle.assigned_driver else '—' }}</dd>
+
+                    <dt class="col-sm-2 text-muted fw-semibold">Current Odometer</dt>
+                    <dd class="col-sm-4 font-monospace fw-semibold mb-0" id="moviOdometer">{{ "{:,}".format(prefill_vehicle.current_odometer) if prefill_vehicle and prefill_vehicle.current_odometer else '—' }}</dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+
+          </div>
         </div>
       </div>
-    </div></div>
-  </div>
-  <div class="col-md-6"><label class="form-label">Vendor (optional)</label>
-    <select name="vendor_id" id="moVendorSelect" class="form-select">
-      <option value="">— Type vendor code or name —</option>
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Scheduled Date</label>
-    <input type="date" name="scheduled_date" class="form-control" required
-           value="{{ keep('scheduled_date', prefill.scheduled_date or '') }}"></div>
-  <div class="col-md-4"><label class="form-label">Odometer at Service</label>
-    <input type="number" name="odometer_at_service" class="form-control"
-           value="{{ keep('odometer_at_service', prefill.odometer_at_service or '') }}"></div>
-  <div class="col-md-4"><label class="form-label">Estimated Cost</label>
-    <input type="text" inputmode="decimal" name="estimated_cost" class="form-control js-money" placeholder="0.00"
-           value="{{ keep('estimated_cost') }}"></div>
-  <div class="col-md-6"><label class="form-label">Assigned Mechanic</label>
-    <input type="text" name="assigned_mechanic" class="form-control"
-           value="{{ keep('assigned_mechanic') }}"></div>
-  <div class="col-md-6" id="moDriverFieldWrapper" style="display:none;">
-    <label class="form-label">Driver / Assignee</label>
-    <select name="driver_id" id="moDriverSelect" class="form-select">
-      <option value="">— Type employee number or name —</option>
-    </select>
-    <div class="form-text">
-      This is the "Vehicle Assignment Memo" — completing this order will
-      update the vehicle's current Assigned Driver to this person,
-      exactly like an approved Authority To Drive does. Use this for a
-      formal handover record (e.g. reassigning after a temporary CASA/
-      service custody).
+
+      <!-- Scope & Maintenance Details -->
+      <div id="moMaintenanceFieldsWrapper" class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Maintenance Type & Scope</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Maintenance Type</label>
+              <select name="maintenance_type_id" id="moMaintenanceTypeSelect" class="form-select fms-select2" required>
+                <option value="">— Select —</option>
+                {% for mt in maintenance_types %}
+                <option value="{{ mt.id }}" {{ 'selected' if prefill.maintenance_type_id==mt.id }}>{{ mt.code }} — {{ mt.name }} ({{ mt.category }})</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">PM Scope Template <span class="text-muted small fw-normal">(optional)</span></label>
+              <select name="scope_template_id" id="moScopeTemplateSelect" class="form-select fms-select2">
+                <option value="">— None (Corrective / unscheduled) —</option>
+                {% for st in scope_templates %}
+                <option value="{{ st.id }}" {{ 'selected' if prefill.scope_template_id==st.id }}>
+                  {{ st.name }}{{ ' (next due)' if st.id == due_scope_template_id else '' }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text" id="moScopeTemplateHint">
+                {% if not prefill_vehicle %}Select a vehicle first to see its applicable PM packages.{% endif %}
+              </div>
+            </div>
+
+            <!-- Recommendation Alert -->
+            {% if pm_recommendation and pm_recommendation.recommended_package %}
+            {% set _st = pm_recommendation.status %}
+            <div class="col-12">
+              <div class="alert {{ 'alert-danger' if _st == 'OVERDUE' else 'alert-warning' if _st == 'DUE' else 'alert-info' }} py-2 px-3 mb-0" id="moPmRecommendation">
+                <div class="d-flex align-items-center gap-2">
+                  <span class="badge {{ 'text-bg-danger' if _st == 'OVERDUE' else 'text-bg-warning' if _st == 'DUE' else 'text-bg-info' }}">{{ _st }}</span>
+                  <strong>Recommended PM package auto-selected</strong>
+                </div>
+                <div class="small mt-1">
+                  <div>Due by:
+                    {% if pm_recommendation.due_by == 'BOTH' %}KM or Date (whichever comes first)
+                    {% elif pm_recommendation.due_by == 'KM' %}Kilometers
+                    {% elif pm_recommendation.due_by == 'MONTHS' %}Calendar (months)
+                    {% else %}—{% endif %}
+                  </div>
+                  {% if pm_recommendation.due_odometer %}<div>Due odometer: {{ "{:,}".format(pm_recommendation.due_odometer) }} km</div>{% endif %}
+                  {% if pm_recommendation.due_date %}<div>Due date: {{ pm_recommendation.due_date }}</div>{% endif %}
+                  <div class="text-muted">{{ pm_recommendation.reason }}</div>
+                  {% if pm_recommendation.beyond_defined_cycle %}
+                  <div class="mt-1 fw-semibold">⚠ This vehicle is beyond the last defined PM package — please confirm the correct package to apply.</div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            {% endif %}
+
+            <!-- Description Template & Scope Details -->
+            <div class="col-12">
+              <div class="card card-body bg-light border-0 p-3" id="moWorkDescriptionPanel" style="display:none;">
+                <div class="small text-uppercase text-muted fw-bold mb-1">Work Description Template</div>
+                <p class="mb-1 text-dark fw-semibold" id="moWorkDescriptionText"></p>
+                <p class="text-muted small mb-0">
+                  Pre-fills a Maintenance Order's description when created against this schedule, with pm2-pm9 tokens resolved to the actual vehicle/driver/branch at that time.
+                </p>
+              </div>
+
+              <div class="mt-2" id="moScopeDetailsWrapper" style="display:none;">
+                <button class="btn btn-sm btn-outline-secondary" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#moScopeDetailsCollapse">
+                  <i class="bi bi-list-check me-1"></i>View Scope Details
+                </button>
+                <div class="collapse mt-2" id="moScopeDetailsCollapse">
+                  <div class="card card-body p-0 border">
+                    <table class="table table-sm table-hover mb-0" id="moScopeDetailsTable">
+                      <thead class="table-light text-uppercase small">
+                        <tr>
+                          <th>#</th>
+                          <th>Code</th>
+                          <th>Description</th>
+                          <th>Labor Hrs</th>
+                          <th>Parts</th>
+                        </tr>
+                      </thead>
+                      <tbody></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Execution & Vendor Details -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Scheduling & Assignment Details</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Vendor <span class="text-muted small fw-normal">(optional)</span></label>
+              <select name="vendor_id" id="moVendorSelect" class="form-select">
+                <option value="">— Type vendor code or name —</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Scheduled Date</label>
+              <input type="date" name="scheduled_date" class="form-control" required
+                     value="{{ keep('scheduled_date', prefill.scheduled_date or '') }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Odometer at Service</label>
+              <div class="input-group">
+                <input type="number" name="odometer_at_service" class="form-control"
+                       value="{{ keep('odometer_at_service', prefill.odometer_at_service or '') }}">
+                <span class="input-group-text bg-light">km</span>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Estimated Cost</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light">₱</span>
+                <input type="text" inputmode="decimal" name="estimated_cost" class="form-control js-money text-end" placeholder="0.00"
+                       value="{{ keep('estimated_cost') }}">
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Assigned Mechanic</label>
+              <input type="text" name="assigned_mechanic" class="form-control" placeholder="Mechanic or service shop technician"
+                     value="{{ keep('assigned_mechanic') }}">
+            </div>
+
+            <!-- Dynamic Driver Assignment Wrapper -->
+            <div class="col-12" id="moDriverFieldWrapper" style="display:none;">
+              <div class="p-3 bg-light rounded border">
+                <label class="form-label fw-semibold">Driver / Assignee</label>
+                <select name="driver_id" id="moDriverSelect" class="form-select">
+                  <option value="">— Type employee number or name —</option>
+                </select>
+                <div class="form-text">
+                  This is the "Vehicle Assignment Memo" — completing this order will update the vehicle's current Assigned Driver to this person, exactly like an approved Authority To Drive does.
+                </div>
+
+                <label class="form-label mt-3 fw-semibold">Assignment Classification</label>
+                <select name="assignment_classification" class="form-select">
+                  <option value="">— Select —</option>
+                  {% for lk in assignment_classifications %}
+                  <option value="{{ lk.code }}">{{ lk.description }}</option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">
+                  Printed as the checked box on the Vehicle Assignment Memo. Maintained under System Administration → Lookup Maintenance (<code>ASSIGNMENT_CLASSIFICATION</code>).
+                </div>
+              </div>
+            </div>
+
+            <!-- Dynamic Destination Branch Wrapper -->
+            <div class="col-12" id="moDestinationBranchFieldWrapper" style="display:none;">
+              <div class="p-3 bg-light rounded border">
+                <label class="form-label fw-semibold">Destination Branch</label>
+                <select name="destination_branch_id" id="moDestinationBranchSelect" class="form-select">
+                  <option value="">— Select destination branch —</option>
+                  {% for b in branches %}
+                  <option value="{{ b.id }}">{{ b.name }}</option>
+                  {% endfor %}
+                </select>
+                <div class="form-text">
+                  This is the "Asset Transfer Report" (ATR) — completing this order will move the vehicle to this branch and generate a printable ATR reference number.
+                </div>
+              </div>
+            </div>
+
+            <!-- Dynamic Disposal Fields Wrapper -->
+            <div class="col-12" id="moDisposalFieldsWrapper" style="display:none;">
+              <div class="p-3 bg-light rounded border">
+                <label class="form-label fw-semibold">Disposal Value <span class="text-muted small fw-normal">(optional)</span></label>
+                <div class="input-group mb-2">
+                  <span class="input-group-text bg-white">₱</span>
+                  <input type="text" inputmode="decimal" name="disposal_value" class="form-control js-money text-end" placeholder="0.00">
+                </div>
+
+                <label class="form-label fw-semibold">Disposal Recipient <span class="text-muted small fw-normal">(optional)</span></label>
+                <input type="text" name="disposal_recipient" class="form-control mb-2"
+                       placeholder="Buyer, auction house, donation recipient, or insurance company">
+                <div class="form-text">
+                  This is the "Asset Disposal Report" (ADR) — completing this order will retire the vehicle (status: Disposed) and generate a printable ADR reference number.
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Description / Notes</label>
+              <textarea name="description" class="form-control" rows="3" placeholder="Enter detailed work instructions or context...">{{ keep('description') }}</textarea>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
     </div>
-    <label class="form-label mt-2">Assignment Classification</label>
-    <select name="assignment_classification" class="form-select">
-      <option value="">— Select —</option>
-      {% for lk in assignment_classifications %}
-      <option value="{{ lk.code }}">{{ lk.description }}</option>
-      {% endfor %}
-    </select>
-    <div class="form-text">
-      Printed as the checked box on the Vehicle Assignment Memo.
-      Maintained under System Administration → Lookup Maintenance
-      (<code>ASSIGNMENT_CLASSIFICATION</code>).
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-info-circle me-1"></i> Order Workflow Tips</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Operational Category:</strong> Automatically hides PM Scope & Maintenance Type requirements for non-maintenance asset requests.</li>
+            <li><strong>Vehicle Selection:</strong> Selecting a vehicle auto-fills its current odometer and filters eligible PM packages.</li>
+            <li><strong>Dynamic Modules:</strong> Special transaction types like Asset Transfers, Driver Reassignments, and Disposals open dedicated form modules below.</li>
+          </ul>
+        </div>
+      </div>
     </div>
-  </div>
-  <div class="col-md-6" id="moDestinationBranchFieldWrapper" style="display:none;">
-    <label class="form-label">Destination Branch</label>
-    <select name="destination_branch_id" id="moDestinationBranchSelect" class="form-select">
-      <option value="">— Select destination branch —</option>
-      {% for b in branches %}
-      <option value="{{ b.id }}">{{ b.name }}</option>
-      {% endfor %}
-    </select>
-    <div class="form-text">
-      This is the "Asset Transfer Report" (ATR) — completing this order
-      will move the vehicle to this branch and generate a printable ATR
-      reference number, for a formal branch-to-branch ownership/custody
-      transfer.
-    </div>
-  </div>
-  <div class="col-md-6" id="moDisposalFieldsWrapper" style="display:none;">
-    <label class="form-label">Disposal Value <span class="text-muted small">(optional)</span></label>
-    <input type="text" inputmode="decimal" name="disposal_value" class="form-control js-money" placeholder="0.00">
-    <label class="form-label mt-2">Disposal Recipient <span class="text-muted small">(optional)</span></label>
-    <input type="text" name="disposal_recipient" class="form-control"
-           placeholder="Buyer, auction house, donation recipient, or insurance company">
-    <div class="form-text">
-      This is the "Asset Disposal Report" (ADR) — completing this order
-      will retire the vehicle (status: Disposed) and generate a printable
-      ADR reference number. The disposal reason is the Transaction Type
-      selected above.
-    </div>
-  </div>
-  <div class="col-12"><label class="form-label">Description</label>
-    <textarea name="description" class="form-control" rows="2">{{ keep('description') }}</textarea></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save as Draft</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.maintenanceorder_list') }}">Cancel</a>
   </div>
 </form>
-</div></div>
 {% endblock %}
+
 {% block scripts %}
 <script>
   if (window.jQuery) {
@@ -218,8 +353,6 @@
       initAjaxSelect("#moVendorSelect", "{{ url_for('api_search.search_vendors') }}",
         { placeholder: "Type vendor code or name...", allowClear: true });
 
-      // Operational-category orders are normal fleet work requests and
-      // must never require a Maintenance Type or PM Scope Template.
       function toggleMaintenanceFields() {
         var isOperational = $("#moOrderCategorySelect").val() === "OPERATIONAL";
         var $wrapper = $("#moMaintenanceFieldsWrapper");
@@ -235,11 +368,6 @@
       $("#moOrderCategorySelect").on("change", toggleMaintenanceFields);
       toggleMaintenanceFields();
 
-      // The Driver/Assignee field ("Vehicle Assignment Memo") only makes
-      // sense for the Deployment group's assignment-family transaction
-      // types -- showing it for every Operational order (e.g. Disposal,
-      // Accessories) would be confusing since those have nothing to do
-      // with who's driving the vehicle.
       var ASSIGNMENT_CODES = ["DEP-ASSIGNMENT", "DEP-REASSIGNMENT",
                               "DEP-RELOCATION", "DEP-TRANSFER"];
       function toggleDriverField() {
@@ -259,10 +387,6 @@
       $("#moTransactionTypeSelect").on("change", toggleDriverField);
       toggleDriverField();
 
-      // Destination Branch ("Asset Transfer Report") only makes sense
-      // for the branch-to-branch movement transaction types -- a plain
-      // reassignment or a simple driver assignment isn't necessarily
-      // moving the vehicle to a different branch at all.
       var TRANSFER_CODES = ["DEP-RELOCATION", "DEP-TRANSFER"];
       function toggleDestinationBranchField() {
         var $opt = $("#moTransactionTypeSelect option:selected");
@@ -278,11 +402,6 @@
       $("#moTransactionTypeSelect").on("change", toggleDestinationBranchField);
       toggleDestinationBranchField();
 
-      // Disposal fields ("Asset Disposal Report") show for any
-      // DISPOSAL-group transaction type -- all share the "DIS-" code
-      // prefix (Scrappage, Carnapped, Total Loss, Uneconomical, Sold,
-      // Donated), so a simple prefix check covers the whole group
-      // without needing to hardcode each individual code.
       function toggleDisposalFields() {
         var $opt = $("#moTransactionTypeSelect option:selected");
         var code = $opt.attr("data-code") || "";
@@ -313,8 +432,6 @@
             $("#moviPosition").text(data.position);
             $("#moviOdometer").text(data.odometer != null ? data.odometer.toLocaleString() : "—");
             $("#moVehicleInfoPanel").show();
-            // Odometer at Service defaults to the vehicle's current
-            // reading if the field hasn't been touched yet.
             var odoField = $('input[name="odometer_at_service"]');
             if (!odoField.val() && data.odometer != null) {
               odoField.val(data.odometer);
@@ -322,10 +439,6 @@
           });
       }
 
-      // Re-fetches the Scope Template dropdown filtered to whichever
-      // vehicle + maintenance type are currently selected — never the
-      // unfiltered global list. Fixes the reported bug where an
-      // unrelated vehicle's checklist showed up as a selectable option.
       function refreshScopeTemplates() {
         var vehicleId = $("#moVehicleSelect").val();
         var mtId = $("#moMaintenanceTypeSelect").val();
@@ -359,9 +472,6 @@
       });
       $("#moMaintenanceTypeSelect").on("change", refreshScopeTemplates);
 
-      // Collapsed-by-default "View Scope Details" preview — lets a
-      // fleet manager see exactly which activities a PM Scope Template
-      // includes before saving, not just its name.
       function refreshScopeDetails() {
         var templateId = $("#moScopeTemplateSelect").val();
         var $wrapper = $("#moScopeDetailsWrapper");
@@ -400,8 +510,6 @@
         refreshScopeDetails();
         if (!$(this).val()) { $("#moWorkDescriptionPanel").hide(); }
       });
-      // Initial state on page load, in case a scope template is already
-      // pre-selected (e.g. the auto-selected "next due" package).
       refreshScopeDetails();
     });
   }

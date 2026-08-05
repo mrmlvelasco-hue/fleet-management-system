@@ -1,32 +1,89 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('approval_config.paths_list') }}">Approval Paths</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
 <form method="post" novalidate>
   {{ form.hidden_tag() }}
-  <div class="row g-3 mb-3">
-    <div class="col-md-4">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}
-      {% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
-    <div class="col-md-8">{{ form.description.label(class="form-label") }}{{ form.description(class="form-control") }}</div>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Configure sequential approval levels, approver assignments, and workflow path rules.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('approval_config.paths_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save Path
+      </button>
+    </div>
   </div>
 
-  <h2 class="h6 text-uppercase text-muted">Approval Levels (in order)</h2>
-  <div id="levelRows"></div>
-  <button type="button" class="btn btn-outline-primary btn-sm mb-3" id="addLevel">
-    <i class="bi bi-plus-lg me-1"></i>Add level</button>
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
 
-  <div>
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('approval_config.paths_list') }}">Cancel</a>
+      <!-- Path Identity Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Approval Path Overview</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-5">
+              {{ form.name.label(class="form-label fw-semibold") }}
+              {{ form.name(class="form-control", placeholder="e.g. Standard Fleet Work Order Path") }}
+              {% for e in form.name.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+
+            <div class="col-md-7">
+              {{ form.description.label(class="form-label fw-semibold") }}
+              {{ form.description(class="form-control", placeholder="Brief summary of when this approval sequence applies...") }}
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Sequential Approval Levels Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span>Sequential Approval Levels</span>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="addLevel">
+            <i class="bi bi-plus-lg me-1"></i>Add Level
+          </button>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">Define the step-by-step routing sequence. Documents progress from Level 1 onward upon each sign-off.</p>
+
+          <!-- Dynamic Rows Container -->
+          <div id="levelRows" class="d-grid gap-2"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-diagram-3 me-1"></i> Approval Path Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Sequential Routing:</strong> Requests advance through levels sequentially in numerical order (1, 2, 3...).</li>
+            <li><strong>Role-Based Approvers:</strong> Recommended for flexibility. Any user mapped to the target role with matching branch scope can approve.</li>
+            <li><strong>Specific User Approvers:</strong> Locks approval level sign-off directly to a specific individual account.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}
+
 {% block scripts %}
 <script>
 (function () {
@@ -48,25 +105,25 @@
 
   function renumber() {
     container.querySelectorAll(".level-row").forEach(function (row, i) {
-      row.querySelector(".level-no").textContent = i + 1;
+      row.querySelector(".level-no").textContent = "Level " + (i + 1);
     });
   }
 
   function addRow(data) {
     data = data || {type: "ROLE", roleId: null, userId: null};
     var row = document.createElement("div");
-    row.className = "level-row row g-2 align-items-center mb-2";
+    row.className = "level-row row g-2 align-items-center p-2 border rounded bg-light-subtle";
     row.innerHTML =
-      '<div class="col-auto"><span class="badge text-bg-primary level-no"></span></div>' +
-      '<div class="col-md-3"><select name="level_approver_type" class="form-select lvl-type">' +
+      '<div class="col-auto"><span class="badge bg-primary font-monospace level-no"></span></div>' +
+      '<div class="col-md-3"><select name="level_approver_type" class="form-select form-select-sm lvl-type">' +
       '<option value="ROLE"' + (data.type === "ROLE" ? " selected" : "") + '>Role</option>' +
       '<option value="USER"' + (data.type === "USER" ? " selected" : "") + '>Specific user</option>' +
       '</select></div>' +
-      '<div class="col-md-4 lvl-role"><select name="level_role_id" class="form-select">' +
+      '<div class="col-md-5 lvl-role"><select name="level_role_id" class="form-select form-select-sm">' +
       options(roles, data.roleId) + '</select></div>' +
-      '<div class="col-md-4 lvl-user d-none"><select name="level_user_id" class="form-select">' +
+      '<div class="col-md-5 lvl-user d-none"><select name="level_user_id" class="form-select form-select-sm">' +
       options(users, data.userId) + '</select></div>' +
-      '<div class="col-auto"><button type="button" class="btn btn-outline-danger btn-sm lvl-remove">' +
+      '<div class="col-auto ms-auto"><button type="button" class="btn btn-outline-danger btn-sm lvl-remove" title="Remove Level">' +
       '<i class="bi bi-trash"></i></button></div>';
     container.appendChild(row);
 

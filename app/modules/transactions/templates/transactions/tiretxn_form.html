@@ -1,47 +1,110 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('transactions.tiretxn_list') }}">Tire Transactions</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-6"><label class="form-label">Tire</label>
-    <select name="tire_id" class="form-select fms-select2" required>
-      <option value="">— Select tire —</option>
-      {% for t in tires %}<option value="{{ t.id }}">{{ t.serial_number }} — {{ t.brand }} {{ t.size }}</option>{% endfor %}
-    </select></div>
-  <div class="col-md-6"><label class="form-label">Action</label>
-    <select name="action" class="form-select" required>
-      <option value="MOUNT">Mount</option>
-      <option value="DISMOUNT">Dismount</option>
-      <option value="RETREAD">Retread</option>
-      <option value="DISPOSE">Dispose</option>
-    </select></div>
-  <div class="col-md-6"><label class="form-label">Vehicle (required for Mount)</label>
-    <div class="input-group">
-      <select name="vehicle_id" id="tirtxVehicleSelect" class="form-select">
-        <option value="">— Type plate number, make, or model —</option>
-      </select>
-      <button type="button" class="btn btn-outline-secondary" id="tirtxVehicleModalBtn" title="Advanced search">
-        <i class="bi bi-search"></i></button>
-    </div></div>
-  <div class="col-md-6"><label class="form-label">Transaction Date</label>
-    <input type="date" name="transaction_date" class="form-control" required></div>
-  <div class="col-md-6"><label class="form-label">Odometer at Service</label>
-    <input type="number" name="odometer_at_service" class="form-control"></div>
-  <div class="col-12"><label class="form-label">Remarks</label>
-    <textarea name="remarks" class="form-control" rows="2"></textarea></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.tiretxn_list') }}">Cancel</a>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Record tire installation, removal, retreading, and disposal actions.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('transactions.tiretxn_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save
+      </button>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Tire Identification Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Tire &amp; Action Details</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Tire <span class="text-danger">*</span></label>
+              <select name="tire_id" class="form-select fms-select2" required>
+                <option value="">— Select tire —</option>
+                {% for t in tires %}<option value="{{ t.id }}">{{ t.serial_number }} — {{ t.brand }} {{ t.size }}</option>{% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Action <span class="text-danger">*</span></label>
+              <select name="action" class="form-select" required>
+                <option value="MOUNT">Mount</option>
+                <option value="DISMOUNT">Dismount</option>
+                <option value="RETREAD">Retread</option>
+                <option value="DISPOSE">Dispose</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Vehicle <span class="text-muted small fw-normal">(Required for Mount)</span></label>
+              <div class="input-group">
+                <select name="vehicle_id" id="tirtxVehicleSelect" class="form-select">
+                  <option value="">— Type plate number, make, or model —</option>
+                </select>
+                <button type="button" class="btn btn-outline-secondary" id="tirtxVehicleModalBtn" title="Advanced search">
+                  <i class="bi bi-search"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Transaction Date <span class="text-danger">*</span></label>
+              <input type="date" name="transaction_date" class="form-control" required>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Odometer at Service <span class="text-muted small fw-normal">(Optional)</span></label>
+              <div class="input-group">
+                <input type="number" name="odometer_at_service" class="form-control" placeholder="e.g. 15000">
+                <span class="input-group-text bg-light">KM</span>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Remarks &amp; Notes</label>
+              <textarea name="remarks" class="form-control" rows="3" placeholder="Enter condition notes, position details, or reason for dismount/disposal..."></textarea>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-disc me-1"></i> Tire Management Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Mounting Rules:</strong> Selecting <em>Mount</em> requires associating a target vehicle to update active placement records.</li>
+            <li><strong>Odometer Baseline:</strong> Recording service odometer readings helps track tread wear rates and calculate total tire lifespan mileage.</li>
+            <li><strong>Retread &amp; Disposal:</strong> Dismounted tires can be logged for retreading or disposed of once tread depth limits are reached.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}
+
 {% block scripts %}
 <script>
   if (window.jQuery) {

@@ -1,61 +1,136 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('transactions.atd_list') }}">Authority To Drive</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-6"><label class="form-label">Vehicle</label>
-    <div class="input-group">
-      <select name="vehicle_id" id="atdVehicleSelect" class="form-select" required>
-        {% if prefill_vehicle %}
-        <option value="{{ prefill_vehicle.id }}" selected>
-          {{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number }} — {{ prefill_vehicle.brand }} {{ prefill_vehicle.model }}
-        </option>
-        {% else %}
-        <option value="">— Type plate number, make, or model —</option>
-        {% endif %}
-      </select>
-      <button type="button" class="btn btn-outline-secondary" id="atdVehicleModalBtn" title="Advanced search">
-        <i class="bi bi-search"></i></button>
-    </div></div>
-  <div class="col-md-6"><label class="form-label">Driver</label>
-    <select name="driver_id" id="atdDriverSelect" class="form-select" required>
-      <option value="">— Type employee number or name —</option>
-    </select></div>
-  <div class="col-12"><label class="form-label">Purpose</label>
-    <input type="text" name="purpose" class="form-control" required
-           value="{{ prefill.purpose or '' }}"></div>
-  {% if prefill_order %}
-  <input type="hidden" name="maintenance_order_id" value="{{ prefill_order.id }}">
-  <div class="col-12">
-    <div class="alert alert-info py-2 px-3 mb-0 small">
-      <i class="bi bi-link-45deg me-1"></i>Linked to Work Order
-      <strong>{{ prefill_order.document_number }}</strong> — this will show on the
-      printed authorization as "with WO no. {{ prefill_order.document_number }}"
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Issue driver authorization permits and log dispatch details for assigned fleet vehicles.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('transactions.atd_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save as Draft
+      </button>
     </div>
   </div>
-  {% endif %}
-  <div class="col-md-6"><label class="form-label">Valid From</label>
-    <input type="date" name="valid_from" class="form-control" required
-           value="{{ prefill.valid_from or '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Valid To</label>
-    <input type="date" name="valid_to" class="form-control" required
-           value="{{ prefill.valid_to or '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Odometer Reading (Out) <span class="text-muted small">(optional)</span></label>
-    <input type="number" name="odometer_out" class="form-control"
-           value="{{ prefill_vehicle.current_odometer if prefill_vehicle and prefill_vehicle.current_odometer else '' }}"></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save as Draft</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.atd_list') }}">Cancel</a>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Vehicle & Driver Assignment Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Vehicle & Driver Assignment</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Vehicle</label>
+              <div class="input-group">
+                <select name="vehicle_id" id="atdVehicleSelect" class="form-select" required>
+                  {% if prefill_vehicle %}
+                  <option value="{{ prefill_vehicle.id }}" selected>
+                    {{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number }} — {{ prefill_vehicle.brand }} {{ prefill_vehicle.model }}
+                  </option>
+                  {% else %}
+                  <option value="">— Type plate number, make, or model —</option>
+                  {% endif %}
+                </select>
+                <button type="button" class="btn btn-outline-secondary" id="atdVehicleModalBtn" title="Advanced search">
+                  <i class="bi bi-search"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Driver</label>
+              <select name="driver_id" id="atdDriverSelect" class="form-select" required>
+                <option value="">— Type employee number or name —</option>
+              </select>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Purpose / Reason for Use</label>
+              <input type="text" name="purpose" class="form-control" placeholder="Specify official business, client visit, or dispatch details" required
+                     value="{{ prefill.purpose or '' }}">
+            </div>
+
+            {% if prefill_order %}
+            <input type="hidden" name="maintenance_order_id" value="{{ prefill_order.id }}">
+            <div class="col-12">
+              <div class="alert alert-info border-info-subtle bg-info-subtle py-2.5 px-3 mb-0 rounded d-flex align-items-center gap-2">
+                <i class="bi bi-link-45deg fs-5 text-info"></i>
+                <div>
+                  <strong>Linked to Work Order:</strong> {{ prefill_order.document_number }} — this will show on the printed authorization as <em>"with WO no. {{ prefill_order.document_number }}"</em>.
+                </div>
+              </div>
+            </div>
+            {% endif %}
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Authorization Validity & Dispatch Reading Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Validity Period & Odometer</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Valid From</label>
+              <input type="date" name="valid_from" class="form-control" required
+                     value="{{ prefill.valid_from or '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Valid To</label>
+              <input type="date" name="valid_to" class="form-control" required
+                     value="{{ prefill.valid_to or '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Odometer Reading (Out) <span class="text-muted small fw-normal">(optional)</span></label>
+              <div class="input-group">
+                <input type="number" name="odometer_out" class="form-control" placeholder="0"
+                       value="{{ prefill_vehicle.current_odometer if prefill_vehicle and prefill_vehicle.current_odometer else '' }}">
+                <span class="input-group-text bg-light">km</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Helper Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-shield-check me-1"></i> ATD Guidelines</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Authorization Coverage:</strong> Drivers must present a valid Authority To Drive permit prior to dispatch.</li>
+            <li><strong>Linked Orders:</strong> Maintenance or service movement orders automatically reflect on printed ATD slips.</li>
+            <li><strong>Odometer Tracking:</strong> Setting the initial <em>Odometer Out</em> establishes the dispatch baseline reading.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}
+
 {% block scripts %}
 <script>
   if (window.jQuery) {

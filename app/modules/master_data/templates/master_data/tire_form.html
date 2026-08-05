@@ -1,66 +1,156 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('master_data.tire_list') }}">Tires</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-6"><label class="form-label">Serial Number</label>
-    <input type="text" name="serial_number" class="form-control"
-           value="{{ item.serial_number if item and item.serial_number else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Brand</label>
-    <input type="text" name="brand" class="form-control"
-           value="{{ item.brand if item and item.brand else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Size</label>
-    <input type="text" name="size" class="form-control"
-           value="{{ item.size if item and item.size else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Type</label>
-    <select name="tire_type" class="form-select">
-      {% for tt in tire_types %}
-      <option value="{{ tt.code }}" {{ 'selected' if item and item.tire_type==tt.code }}>{{ tt.description }}</option>
-      {% endfor %}
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Purchase Date</label>
-    <input type="date" name="purchase_date" class="form-control"
-           value="{{ item.purchase_date if item and item.purchase_date else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Purchase Cost</label>
-    <input type="number" step="any" name="purchase_cost" class="form-control"
-           value="{{ item.purchase_cost if item and item.purchase_cost else '' }}"></div>
-  <div class="col-md-4"><label class="form-label">Tread Depth (initial)</label>
-    <input type="number" step="any" name="tread_depth_initial" class="form-control"
-           value="{{ item.tread_depth_initial if item and item.tread_depth_initial else '' }}"></div>
-  <div class="col-md-6"><label class="form-label">Vendor</label>
-    <select name="vendor_id" id="tireVendorSelect" class="form-select">
-      {% if item and item.vendor %}
-      <option value="{{ item.vendor.id }}" selected>{{ item.vendor.code }} — {{ item.vendor.name }}</option>
-      {% else %}
-      <option value="">— Type vendor code or name —</option>
-      {% endif %}
-    </select></div>
-  <div class="col-md-6"><label class="form-label">Branch (warehouse/stock location)</label>
-    <select name="branch_id" id="tireBranchSelect" class="form-select">
-      {% if item and item.branch %}
-      <option value="{{ item.branch.id }}" selected>{{ item.branch.code }} — {{ item.branch.name }}</option>
-      {% else %}
-      <option value="">— Type branch code or name —</option>
-      {% endif %}
-    </select></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.tire_list') }}">Cancel</a>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Register tire inventory, track initial wear specs, procurement details, and stock locations.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('master_data.tire_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save
+      </button>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Specification & Identity Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Tire Specification & Identity</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Serial Number</label>
+              <input type="text" name="serial_number" class="form-control text-uppercase font-monospace" placeholder="e.g. SN-89210384"
+                     value="{{ item.serial_number if item and item.serial_number else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Brand</label>
+              <input type="text" name="brand" class="form-control" placeholder="e.g. Bridgestone, Michelin"
+                     value="{{ item.brand if item and item.brand else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Size</label>
+              <input type="text" name="size" class="form-control" placeholder="e.g. 11R22.5, 295/80R22.5"
+                     value="{{ item.size if item and item.size else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Type</label>
+              <select name="tire_type" class="form-select">
+                {% for tt in tire_types %}
+                <option value="{{ tt.code }}" {{ 'selected' if item and item.tire_type==tt.code }}>{{ tt.description }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Purchase & Initial Condition Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Procurement & Condition</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Purchase Date</label>
+              <input type="date" name="purchase_date" class="form-control"
+                     value="{{ item.purchase_date if item and item.purchase_date else '' }}">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Purchase Cost</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light">₱</span>
+                <input type="number" step="any" name="purchase_cost" class="form-control" placeholder="0.00"
+                       value="{{ item.purchase_cost if item and item.purchase_cost else '' }}">
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Tread Depth (Initial)</label>
+              <div class="input-group">
+                <input type="number" step="any" name="tread_depth_initial" class="form-control" placeholder="e.g. 15"
+                       value="{{ item.tread_depth_initial if item and item.tread_depth_initial else '' }}">
+                <span class="input-group-text bg-light">mm</span>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Vendor</label>
+              <select name="vendor_id" id="tireVendorSelect" class="form-select">
+                {% if item and item.vendor %}
+                <option value="{{ item.vendor.id }}" selected>{{ item.vendor.code }} — {{ item.vendor.name }}</option>
+                {% else %}
+                <option value="">— Type vendor code or name —</option>
+                {% endif %}
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Stock Location (Branch)</label>
+              <select name="branch_id" id="tireBranchSelect" class="form-select">
+                {% if item and item.branch %}
+                <option value="{{ item.branch.id }}" selected>{{ item.branch.code }} — {{ item.branch.name }}</option>
+                {% else %}
+                <option value="">— Type branch code or name —</option>
+                {% endif %}
+              </select>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-disc me-1"></i> Tire Management Tips</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Serial Numbers:</strong> Uniquely identifies individual tire assets for wear tracking and retread lifecycle management.</li>
+            <li><strong>Initial Tread Depth:</strong> Establishes the baseline depth to calculate wear percentage during routine fleet inspections.</li>
+            <li><strong>Stock Location:</strong> Tracks current inventory warehouse before the tire is mounted on a vehicle axle.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
+
+<!-- Attachment Panel (Edit Mode) -->
 {% if item and item.id %}
-{% set reference_table = "tires" %}
-{% set reference_id = item.id %}
-{% include "master_data/_attachment_panel.html" %}
+<div class="row g-4 mb-4">
+  <div class="col-lg-12">
+    {% set reference_table = "tires" %}
+    {% set reference_id = item.id %}
+    {% include "master_data/_attachment_panel.html" %}
+  </div>
+</div>
 {% endif %}
 {% endblock %}
+
 {% block scripts %}
 <script>
   if (window.jQuery) {

@@ -1,45 +1,121 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('transactions.purchaserequest_list') }}">Purchase Requests</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
-{% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-6"><label class="form-label">Department (optional)</label>
-    <select name="department_id" class="form-select fms-select2">
-      <option value="">— None —</option>
-      {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
-    </select></div>
-  <div class="col-md-6"><label class="form-label">Suggested Vendor (optional)</label>
-    <select name="vendor_id" id="prVendorSelect" class="form-select">
-      <option value="">— Type vendor code or name —</option>
-    </select></div>
-  <div class="col-12"><label class="form-label">Description</label>
-    <input type="text" name="description" class="form-control" required></div>
-  <div class="col-md-6"><label class="form-label">Justification</label>
-    <input type="text" name="justification" class="form-control"></div>
-  <div class="col-md-6"><label class="form-label">Needed By</label>
-    <input type="date" name="needed_by_date" class="form-control"></div>
 
-  <div class="col-12">
-    <label class="form-label">Line Items</label>
-    <div id="lineRows"></div>
-    <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="addLineRow">
-      <i class="bi bi-plus-lg"></i> Add Line Item</button>
-    <div class="mt-2"><strong>Total: <span id="lineTotal">0.00</span></strong></div>
+{% block content %}
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Create requisition records, itemize requested goods or services, and define procurement schedules.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('transactions.purchaserequest_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save as Draft
+      </button>
+    </div>
   </div>
 
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save as Draft</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.purchaserequest_list') }}">Cancel</a>
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Request Details Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Requisition Overview</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Department <span class="text-muted small fw-normal">(Optional)</span></label>
+              <select name="department_id" class="form-select fms-select2">
+                <option value="">— None —</option>
+                {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Suggested Vendor <span class="text-muted small fw-normal">(Optional)</span></label>
+              <select name="vendor_id" id="prVendorSelect" class="form-select">
+                <option value="">— Type vendor code or name —</option>
+              </select>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Description / Purpose <span class="text-danger">*</span></label>
+              <input type="text" name="description" class="form-control" required placeholder="e.g. Annual Fleet Spare Battery Replacement Stock">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Justification <span class="text-muted small fw-normal">(Optional)</span></label>
+              <input type="text" name="justification" class="form-control" placeholder="e.g. Required for preventative maintenance compliance">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Needed By Date <span class="text-muted small fw-normal">(Optional)</span></label>
+              <input type="date" name="needed_by_date" class="form-control">
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Line Items Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span>Line Items &amp; Itemized Costs</span>
+          <button type="button" class="btn btn-sm btn-outline-primary" id="addLineRow">
+            <i class="bi bi-plus-lg me-1"></i>Add Line Item
+          </button>
+        </div>
+        <div class="card-body">
+          <!-- Item Headers -->
+          <div class="row g-2 mb-2 px-1 text-uppercase text-muted small fw-bold d-none d-md-flex">
+            <div class="col-md-5">Item Description</div>
+            <div class="col-md-2">Quantity</div>
+            <div class="col-md-3">Unit Cost (₱)</div>
+            <div class="col-md-2 text-center">Action</div>
+          </div>
+
+          <div id="lineRows" class="d-grid gap-2"></div>
+
+          <!-- Total Summary Bar -->
+          <div class="d-flex justify-content-end align-items-center mt-3 pt-3 border-top">
+            <div class="text-end">
+              <span class="text-muted small me-2">Estimated Total:</span>
+              <span class="h5 mb-0 font-monospace text-primary fw-bold">₱<span id="lineTotal">0.00</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-cart-check me-1"></i> Purchase Request Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Suggested Vendor:</strong> Specifying an initial supplier helps streamline formal PO creation during approval.</li>
+            <li><strong>Itemized Calculations:</strong> Line item amounts are calculated dynamically based on input quantity and unit cost.</li>
+            <li><strong>Draft Saving:</strong> Requests saved as drafts can be modified prior to final departmental submission.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}
+
 {% block scripts %}
 <script>
 function recalcTotal() {
@@ -57,8 +133,8 @@ function addLineRow() {
   div.innerHTML =
     '<div class="col-md-5"><input type="text" name="item_description" class="form-control form-control-sm" placeholder="Item description" required></div>' +
     '<div class="col-md-2"><input type="number" step="0.01" name="quantity" class="form-control form-control-sm line-qty" placeholder="Qty" required></div>' +
-    '<div class="col-md-3"><input type="number" step="0.01" name="unit_cost" class="form-control form-control-sm line-cost" placeholder="Unit Cost" required></div>' +
-    '<div class="col-md-2"><button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="bi bi-trash"></i></button></div>';
+    '<div class="col-md-3"><div class="input-group input-group-sm"><span class="input-group-text bg-light">₱</span><input type="number" step="0.01" name="unit_cost" class="form-control form-control-sm line-cost" placeholder="Unit Cost" required></div></div>' +
+    '<div class="col-md-2 text-center"><button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove item"><i class="bi bi-trash"></i></button></div>';
   document.getElementById("lineRows").appendChild(div);
   div.querySelector(".remove-row").addEventListener("click", function () { div.remove(); recalcTotal(); });
   div.querySelectorAll(".line-qty, .line-cost").forEach(function (el) {

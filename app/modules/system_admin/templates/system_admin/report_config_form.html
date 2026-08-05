@@ -1,43 +1,87 @@
 {% extends "layout/base.html" %}
 {% block title %}Register Report{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('system_admin.report_config_list') }}">Report Config</a></li>
 <li class="breadcrumb-item active">Register Report</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">Register Report</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-4">
-    <label class="form-label fw-semibold">Report Code</label>
-    <input type="text" name="report_code" class="form-control" required
-           placeholder="RPT_FLEET_SUMMARY">
-    <div class="form-text">Unique, uppercase. Prefix with RPT_.</div>
-  </div>
-  <div class="col-md-8">
-    <label class="form-label fw-semibold">Name</label>
-    <input type="text" name="name" class="form-control" required
-           placeholder="Fleet Summary">
-  </div>
-  <div class="col-12">
-    <label class="form-label fw-semibold">Description</label>
-    <input type="text" name="description" class="form-control"
-           placeholder="What this report shows and who it's for.">
-  </div>
-  <div class="col-12">
-    <label class="form-label fw-semibold">Target</label>
-    <input type="text" name="template_path" class="form-control"
-           placeholder="endpoint:transactions.tripticket_print">
-    <div class="form-text">
-      For a print report, use <code>endpoint:&lt;blueprint.route&gt;</code>.
-      Leave blank for a list report to be wired to a query later.
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">Register Report</h1>
+      <p class="text-muted small mb-0">Define system report endpoints, registry codes, and target routing for print/list modules.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.report_config_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Register Report
+      </button>
     </div>
   </div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Register</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.report_config_list') }}">Cancel</a>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Report Registration Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Report Definition & Target</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Report Code <span class="text-danger">*</span></label>
+              <input type="text" name="report_code" class="form-control text-uppercase font-monospace" required
+                     placeholder="RPT_FLEET_SUMMARY">
+              <div class="form-text text-muted">Unique, uppercase identifier. Must be prefixed with <code>RPT_</code>.</div>
+            </div>
+
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Report Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control" required
+                     placeholder="Fleet Summary">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Description</label>
+              <input type="text" name="description" class="form-control"
+                     placeholder="What this report shows and who it's for.">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Target Route / Endpoint</label>
+              <input type="text" name="template_path" class="form-control font-monospace"
+                     placeholder="endpoint:transactions.tripticket_print">
+              <div class="form-text text-muted">
+                For a print report, use <code>endpoint:&lt;blueprint.route&gt;</code>.
+                Leave blank for a list report to be wired to a query later.
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-gear me-1"></i> Report Registration Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Report Code:</strong> Enforces standard module key naming (e.g. <code>RPT_FLEET_SUMMARY</code>) for system access control checking.</li>
+            <li><strong>Endpoint Routing:</strong> Maps print actions directly to blueprint functions using the <code>endpoint:</code> syntax.</li>
+            <li><strong>List Query Integration:</strong> Leave target blank when defining new custom query configurations.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}

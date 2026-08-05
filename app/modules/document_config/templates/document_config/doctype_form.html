@@ -1,31 +1,93 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('document_config.doctypes_list') }}">Document Types</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" novalidate class="row g-3">
+<form method="post" novalidate>
   {{ form.hidden_tag() }}
-  <div class="col-md-3">{{ form.code.label(class="form-label") }}{{ form.code(class="form-control") }}
-    {% for e in form.code.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
-  <div class="col-md-9">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}
-    {% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
-  <div class="col-12">{{ form.description.label(class="form-label") }}{{ form.description(class="form-control") }}</div>
-  <div class="col-12">
-    {% for f in [form.requires_approval, form.auto_numbering, form.printable,
-                 form.mobile_available, form.attachment_allowed] %}
-    <div class="form-check form-check-inline">
-      {{ f(class="form-check-input") }}{{ f.label(class="form-check-label") }}
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Configure document classifications, behavior rules, feature toggles, and numbering constraints.</p>
     </div>
-    {% endfor %}
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('document_config.doctypes_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save Document Type
+      </button>
+    </div>
   </div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('document_config.doctypes_list') }}">Cancel</a>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Document Identification Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Document Specification</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-3">
+              {{ form.code.label(class="form-label fw-semibold") }}
+              {{ form.code(class="form-control font-monospace text-uppercase", placeholder="e.g. WO") }}
+              {% for e in form.code.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+
+            <div class="col-md-9">
+              {{ form.name.label(class="form-label fw-semibold") }}
+              {{ form.name(class="form-control", placeholder="e.g. Work Order") }}
+              {% for e in form.name.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+
+            <div class="col-12">
+              {{ form.description.label(class="form-label fw-semibold") }}
+              {{ form.description(class="form-control", placeholder="Brief summary of document purpose and operational use case...") }}
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature Toggles Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Operational Rules & Capabilities</div>
+        <div class="card-body">
+          <div class="row row-cols-1 row-cols-md-2 g-3">
+            {% for f in [form.requires_approval, form.auto_numbering, form.printable,
+                         form.mobile_available, form.attachment_allowed] %}
+            <div class="col">
+              <div class="form-check p-3 border rounded bg-light-subtle h-100 d-flex align-items-center">
+                {{ f(class="form-check-input ms-0 me-2") }}
+                {{ f.label(class="form-check-label fw-semibold small mb-0") }}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-file-earmark-check me-1"></i> Document Type Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Document Code:</strong> Unique system prefix used when generating auto-numbered document identifiers (e.g., <code>WO-2026-00001</code>).</li>
+            <li><strong>Approval Rule:</strong> When enabled, submitted documents are routed through configured approval matrices before taking effect.</li>
+            <li><strong>Attachments:</strong> Controls whether users can upload supporting receipts, photos, or technical manuals to individual records.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}

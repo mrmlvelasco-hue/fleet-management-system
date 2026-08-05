@@ -1,87 +1,118 @@
 {% extends "layout/base.html" %}
 {% block title %}Data Quality Settings{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('system_admin.data_quality') }}">Fleet Data Quality</a></li>
 <li class="breadcrumb-item active">Settings</li>
 {% endblock %}
+
 {% block content %}
 <div class="fms-exec">
 
-<h1 class="h3 mb-1">Data Quality Settings</h1>
-<p class="text-muted">
-  Decide which vehicle fields count towards the Data Quality score, which
-  are mandatory, and how much each is worth. Every field on the Vehicle
-  record is listed — switch off whatever doesn't apply to your fleet.
-</p>
-
-<div class="alert alert-info">
-  <strong>Included in Score</strong> means the field affects the percentage.
-  <strong>Required</strong> means the business treats it as mandatory, and a
-  vehicle missing it is flagged. They're separate decisions — a field can be
-  worth tracking without being mandatory.
-  <br>
-  <span class="text-muted small">
-    Weights are relative, not out of 100. A field with weight 10 counts twice
-    as much as one with weight 5. Current total across included fields:
-    <strong>{{ total_weight }}</strong>.
-  </span>
-</div>
-
-<form method="post">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-  <div class="d-flex justify-content-end gap-2 mb-3">
-    <button type="button" class="btn btn-outline-secondary btn-sm" id="dqSelectAll">Include all</button>
-    <button type="button" class="btn btn-outline-secondary btn-sm" id="dqSelectNone">Include none</button>
-    <button class="btn btn-primary btn-sm"><i class="bi bi-save me-1"></i>Save Settings</button>
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">Data Quality Settings</h1>
+      <p class="text-muted small mb-0">Configure vehicle field scoring weights, mandatory business requirements, and audit evaluation parameters.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.data_quality') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit" form="dqSettingsForm">
+        <i class="bi bi-save me-1"></i>Save Settings
+      </button>
+    </div>
   </div>
 
-  {% for group, fields in grouped %}
-  <div class="ent-panel mb-3">
-    <div class="ent-panel__head">
-      <h2 class="ent-panel__title">{{ group|title }}</h2>
-      <span class="text-muted small">{{ fields|length }} field(s)</span>
-    </div>
-    <div class="ent-panel__body p-0">
-      <table class="table ent-grid mb-0">
-        <thead><tr>
-          <th>Field</th>
-          <th style="width:130px;" class="text-center">Included in Score</th>
-          <th style="width:110px;" class="text-center">Required</th>
-          <th style="width:110px;">Weight</th>
-        </tr></thead>
-        <tbody>
-        {% for f in fields %}
-          <tr>
-            <td>{{ f.label }}<span class="ent-grid__sub">{{ f.field_name }}</span></td>
-            <td class="text-center">
-              <input class="form-check-input dq-include" type="checkbox"
-                     name="include_in_score" value="{{ f.id }}"
-                     {{ 'checked' if f.include_in_score }}>
-            </td>
-            <td class="text-center">
-              <input class="form-check-input" type="checkbox"
-                     name="is_required" value="{{ f.id }}"
-                     {{ 'checked' if f.is_required }}>
-            </td>
-            <td>
-              <input type="number" class="form-control form-control-sm"
-                     name="weight_{{ f.id }}" value="{{ f.weight }}"
-                     min="1" max="100">
-            </td>
-          </tr>
+  <form method="post" id="dqSettingsForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="row g-4">
+      <!-- Main Fields Configuration Area -->
+      <div class="col-lg-8">
+
+        <!-- Selection Toolbar -->
+        <div class="card border-0 shadow-sm mb-4">
+          <div class="card-body py-2.5 d-flex justify-content-between align-items-center">
+            <span class="fw-semibold text-dark small"><i class="bi bi-sliders me-1 text-primary"></i> Batch Field Configuration</span>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="dqSelectAll">Include All</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="dqSelectNone">Include None</button>
+            </div>
+          </div>
+        </div>
+
+        {% for group, fields in grouped %}
+        <!-- Group Panel Card -->
+        <div class="card border-0 shadow-sm mb-4">
+          <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+            <span>{{ group|title }}</span>
+            <span class="badge bg-light text-muted border fw-normal">{{ fields|length }} field(s)</span>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table ent-grid align-middle mb-0">
+                <thead class="table-light small text-uppercase text-muted">
+                  <tr>
+                    <th class="ps-3">Field Name</th>
+                    <th style="width: 140px;" class="text-center">Included in Score</th>
+                    <th style="width: 120px;" class="text-center">Required</th>
+                    <th style="width: 120px;" class="pe-3">Weight</th>
+                  </tr>
+                </thead>
+                <tbody>
+                {% for f in fields %}
+                  <tr>
+                    <td class="ps-3">
+                      <span class="fw-semibold text-dark d-block">{{ f.label }}</span>
+                      <code class="font-monospace text-muted small">{{ f.field_name }}</code>
+                    </td>
+                    <td class="text-center">
+                      <input class="form-check-input dq-include" type="checkbox"
+                             name="include_in_score" value="{{ f.id }}"
+                             {{ 'checked' if f.include_in_score }}>
+                    </td>
+                    <td class="text-center">
+                      <input class="form-check-input" type="checkbox"
+                             name="is_required" value="{{ f.id }}"
+                             {{ 'checked' if f.is_required }}>
+                    </td>
+                    <td class="pe-3">
+                      <input type="number" class="form-control form-control-sm text-center font-monospace"
+                             name="weight_{{ f.id }}" value="{{ f.weight }}"
+                             min="1" max="100">
+                    </td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
         {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% endfor %}
 
-  <div class="d-flex justify-content-end gap-2 mb-4">
-    <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.data_quality') }}">Cancel</a>
-    <button class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Settings</button>
-  </div>
-</form>
+      </div>
+
+      <!-- Right Guidance Panel -->
+      <div class="col-lg-4">
+        <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+          <div class="card-body p-3">
+            <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-gear me-1"></i> Field Evaluation Rules</h6>
+
+            <div class="alert alert-info border-info-subtle bg-info-subtle p-2.5 mb-3 rounded small">
+              <i class="bi bi-info-circle me-1"></i>
+              <strong>Score Calculation:</strong> Current total weight across all active fields is <strong class="badge bg-white text-dark border font-monospace fs-6">{{ total_weight }}</strong>.
+            </div>
+
+            <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+              <li><strong>Included in Score:</strong> Determines whether this field factor directly influences the vehicle's completeness percentage.</li>
+              <li><strong>Required Flag:</strong> Marks a field as mandatory; vehicles missing required fields trigger compliance alerts on the scorecard.</li>
+              <li><strong>Relative Weights:</strong> Weights operate on a relative scale rather than percentage totals. A field with weight <code>10</code> carries double the impact of one weighted <code>5</code>.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
 
 </div>
 {% endblock %}

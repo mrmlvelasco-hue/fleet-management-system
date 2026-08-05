@@ -1,40 +1,96 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('maintenance_config.mo_transaction_type_list') }}">MO Transaction Types</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-6"><label class="form-label">Code</label>
-    <input type="text" name="code" class="form-control" required
-           placeholder="e.g. DEP-ASSIGNMENT"></div>
-  <div class="col-md-6"><label class="form-label">Name</label>
-    <input type="text" name="name" class="form-control" required
-           placeholder="e.g. Assignment"></div>
-  <div class="col-md-6"><label class="form-label">Category</label>
-    <select name="order_category" class="form-select" required>
-      <option value="MAINTENANCE">Maintenance</option>
-      <option value="OPERATIONAL">Operational</option>
-    </select></div>
-  <div class="col-md-6"><label class="form-label">Group <span class="text-muted small">(optional — organizes the dropdown)</span></label>
-    <select name="group" class="form-select">
-      <option value="">— None —</option>
-      <option value="MAINTENANCE">Maintenance</option>
-      <option value="DEPLOYMENT">Deployment</option>
-      <option value="ADMINISTRATIVE">Administrative</option>
-      <option value="DISPOSAL">Disposal</option>
-      <option value="ACCESSORIES">Accessories</option>
-    </select></div>
-  <div class="col-md-4"><label class="form-label">Sort Order</label>
-    <input type="number" name="sort_order" class="form-control" value="0"></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('maintenance_config.mo_transaction_type_list') }}">Cancel</a>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Configure transaction classifications, order categories, dropdown grouping, and sort priority.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('maintenance_config.mo_transaction_type_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save Transaction Type
+      </button>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Transaction Type Details Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Transaction Type Specification</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Type Code <span class="text-danger">*</span></label>
+              <input type="text" name="code" class="form-control font-monospace text-uppercase" required
+                     placeholder="e.g. DEP-ASSIGNMENT">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Type Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control" required
+                     placeholder="e.g. Assignment">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Order Category <span class="text-danger">*</span></label>
+              <select name="order_category" class="form-select" required>
+                <option value="MAINTENANCE">Maintenance</option>
+                <option value="OPERATIONAL">Operational</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Group <span class="text-muted small fw-normal">(Optional)</span></label>
+              <select name="group" class="form-select">
+                <option value="">— None —</option>
+                <option value="MAINTENANCE">Maintenance</option>
+                <option value="DEPLOYMENT">Deployment</option>
+                <option value="ADMINISTRATIVE">Administrative</option>
+                <option value="DISPOSAL">Disposal</option>
+                <option value="ACCESSORIES">Accessories</option>
+              </select>
+              <div class="form-text text-muted">Used to organize options into optgroups within dropdown menus.</div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Sort Order</label>
+              <input type="number" name="sort_order" class="form-control" value="0">
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-tags me-1"></i> Transaction Type Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Type Code:</strong> Unique alphanumeric identifier (e.g. <code>DEP-ASSIGNMENT</code>) used internally by work order routing modules.</li>
+            <li><strong>Order Category:</strong> Segregates standard technical <em>Maintenance</em> tasks from non-technical <em>Operational</em> actions.</li>
+            <li><strong>Group &amp; Sort Order:</strong> Grouping clusters related choices together, while sort order dictates the visual display sequence in drop-down menus.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}

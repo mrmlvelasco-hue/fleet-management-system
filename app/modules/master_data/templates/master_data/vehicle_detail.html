@@ -1,152 +1,319 @@
 {% extends "layout/base.html" %}
 {% block title %}Vehicle — {{ vehicle.plate_number or vehicle.conduction_number }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('master_data.vehicle_list') }}">Vehicles</a></li>
 <li class="breadcrumb-item active">{{ vehicle.plate_number or vehicle.conduction_number }}</li>
 {% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between mb-3">
-  <h1 class="h3">{{ vehicle.brand }} {{ vehicle.model }} ({{ vehicle.year }})</h1>
+<!-- Page Header & Main Actions -->
+<div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+  <div>
+    <h1 class="h3 mb-1 fw-bold">{{ vehicle.brand }} {{ vehicle.model }} <span class="text-muted fw-normal">({{ vehicle.year }})</span></h1>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge text-bg-{{ 'success' if vehicle.status=='ACTIVE' else 'warning' if vehicle.status=='IN_REPAIR' else 'danger' }}">
+        {{ vehicle.status }}
+      </span>
+      <span class="text-muted small">Branch: {{ vehicle.branch.name if vehicle.branch else '—' }}</span>
+    </div>
+  </div>
   <div class="d-flex gap-2">
     <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_print', vid=vehicle.id) }}" target="_blank">
-      <i class="bi bi-printer me-1"></i>Print / PDF</a>
+      <i class="bi bi-printer me-1"></i>Print / PDF
+    </a>
     {% if current_user.has_permission('vehicle.update') %}
-    <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_edit', vid=vehicle.id) }}">
-      <i class="bi bi-pencil me-1"></i>Edit</a>
+    <a class="btn btn-primary" href="{{ url_for('master_data.vehicle_edit', vid=vehicle.id) }}">
+      <i class="bi bi-pencil me-1"></i>Edit
+    </a>
     {% endif %}
   </div>
 </div>
-<div class="row g-3">
-  <div class="col-md-6">
-    <div class="card h-100"><div class="card-header">Identification</div>
-    <div class="card-body">
-      <dl class="row mb-0">
-        <dt class="col-sm-5">Plate Number</dt><dd class="col-sm-7">{{ vehicle.plate_number or '— (not yet assigned)' }}</dd>
-        <dt class="col-sm-5">Conduction No.</dt><dd class="col-sm-7">{{ vehicle.conduction_number or '—' }}</dd>
-        <dt class="col-sm-5">Chassis</dt><dd class="col-sm-7">{{ vehicle.chassis_number or '—' }}</dd>
-        <dt class="col-sm-5">Engine</dt><dd class="col-sm-7">{{ vehicle.engine_number or '—' }}</dd>
-        <dt class="col-sm-5">Type</dt><dd class="col-sm-7">{{ vehicle.vehicle_type.name if vehicle.vehicle_type else '—' }}</dd>
-        <dt class="col-sm-5">Fuel</dt><dd class="col-sm-7">{{ vehicle.fuel_type or '—' }}</dd>
-        <dt class="col-sm-5">Color</dt><dd class="col-sm-7">{{ vehicle.color or '—' }}</dd>
-        <dt class="col-sm-5">Variant</dt><dd class="col-sm-7">{{ vehicle.variant or '—' }}</dd>
-        <dt class="col-sm-5">Engine Type</dt><dd class="col-sm-7">{{ vehicle.engine_type or '—' }}</dd>
-        <dt class="col-sm-5">Transmission</dt><dd class="col-sm-7">{{ vehicle.transmission or '—' }}</dd>
-        <dt class="col-sm-5">Engine Hours</dt><dd class="col-sm-7">{{ vehicle.current_engine_hours if vehicle.current_engine_hours else '—' }}</dd>
-      </dl>
-    </div></div>
+
+<div class="row g-4">
+  <!-- Sticky Quick Navigation Menu -->
+  <div class="col-lg-3 d-none d-lg-block">
+    <div class="card border-0 bg-light sticky-top" style="top: 1rem;">
+      <div class="card-body p-3">
+        <h6 class="text-uppercase text-muted fw-bold mb-3 small">Quick Navigation</h6>
+        <div class="nav flex-column nav-pills gap-1">
+          <a class="nav-link text-dark py-1 px-2" href="#section-basic">Basic Information</a>
+          <a class="nav-link text-dark py-1 px-2" href="#section-specs">Technical Specifications</a>
+          <a class="nav-link text-dark py-1 px-2" href="#section-compliance">Identification & Compliance</a>
+          <a class="nav-link text-dark py-1 px-2" href="#section-financial">Financial Details</a>
+          <a class="nav-link text-dark py-1 px-2" href="#section-insurance">Insurance Coverage</a>
+          <a class="nav-link text-dark py-1 px-2" href="#section-assignment">Assignment & Remarks</a>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="col-md-6">
-    <div class="card h-100"><div class="card-header">Assignment & Status</div>
-    <div class="card-body">
-      <dl class="row mb-0">
-        <dt class="col-sm-5">Status</dt>
-        <dd class="col-sm-7"><span class="badge text-bg-{{ 'success' if vehicle.status=='ACTIVE' else 'warning' if vehicle.status=='IN_REPAIR' else 'danger' }}">{{ vehicle.status }}</span></dd>
-        <dt class="col-sm-5">Branch</dt><dd class="col-sm-7">{{ vehicle.branch.name if vehicle.branch else '—' }}</dd>
-        <dt class="col-sm-5">Assigned Driver</dt>
-        <dd class="col-sm-7">{% if vehicle.assigned_driver %}{{ vehicle.assigned_driver.employee_number }} — {{ vehicle.assigned_driver.last_name }}, {{ vehicle.assigned_driver.first_name }} ({{ vehicle.assigned_driver.license_type }}){% else %}—{% endif %}</dd>
-        <dt class="col-sm-5">Odometer</dt><dd class="col-sm-7">{{ "{:,.0f}".format(vehicle.current_odometer) if vehicle.current_odometer else '0' }} km</dd>
-        <dt class="col-sm-5">Acquisition</dt><dd class="col-sm-7">{{ vehicle.acquisition_date or '—' }}</dd>
-        <dt class="col-sm-5">Cost</dt><dd class="col-sm-7">{{ "{:,.2f}".format(vehicle.acquisition_cost) if vehicle.acquisition_cost else '—' }}</dd>
-      </dl>
-    </div></div>
+
+  <!-- Main Vehicle Details -->
+  <div class="col-lg-9">
+
+    <!-- Basic Information -->
+    <div class="card mb-4" id="section-basic">
+      <div class="card-header bg-white fw-bold">Basic Vehicle Information</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-4 text-muted">Conduction Number</dt>
+          <dd class="col-sm-8 fw-semibold">{{ vehicle.conduction_number or '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Plate Number</dt>
+          <dd class="col-sm-8 fw-semibold">{{ vehicle.plate_number or '— (Not assigned)' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Vehicle Type</dt>
+          <dd class="col-sm-8">{{ vehicle.vehicle_type.name if vehicle.vehicle_type else '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Brand / Model</dt>
+          <dd class="col-sm-8">{{ vehicle.brand or '—' }} {{ vehicle.model or '' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Year / Variant</dt>
+          <dd class="col-sm-8">{{ vehicle.year or '—' }} {% if vehicle.variant %}({{ vehicle.variant }}){% endif %}</dd>
+
+          <dt class="col-sm-4 text-muted">Color / Fuel</dt>
+          <dd class="col-sm-8">{{ vehicle.color or '—' }} / {{ vehicle.fuel_type or '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Current Odometer</dt>
+          <dd class="col-sm-8">{{ "{:,.0f}".format(vehicle.current_odometer) if vehicle.current_odometer else '0' }} km</dd>
+
+          <dt class="col-sm-4 text-muted">Current Engine Hours</dt>
+          <dd class="col-sm-8">{{ vehicle.current_engine_hours if vehicle.current_engine_hours else '—' }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <!-- Technical Specifications -->
+    <div class="card mb-4" id="section-specs">
+      <div class="card-header bg-white fw-bold">Technical Specifications</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-4 text-muted">Chassis Number</dt>
+          <dd class="col-sm-8 font-monospace">{{ vehicle.chassis_number or '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Engine Number</dt>
+          <dd class="col-sm-8 font-monospace">{{ vehicle.engine_number or '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Transmission</dt>
+          <dd class="col-sm-8">{{ vehicle.transmission or '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Engine Type</dt>
+          <dd class="col-sm-8">{{ vehicle.engine_type or '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Displacement</dt>
+          <dd class="col-sm-8">{{ vehicle.displacement or '—' }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <!-- Identification & Compliance -->
+    <div class="card mb-4" id="section-compliance">
+      <div class="card-header bg-white fw-bold">Identification & Compliance</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-4 text-muted">MV File No.</dt>
+          <dd class="col-sm-8">{{ vehicle.mv_file_number or '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">LTO Office</dt>
+          <dd class="col-sm-8">{{ vehicle.lto_office or '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Last Known Reg Expiry</dt>
+          <dd class="col-sm-8">{{ vehicle.last_known_registration_expiry or '—' }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <!-- Financial Details -->
+    <div class="card mb-4" id="section-financial">
+      <div class="card-header bg-white fw-bold">Financial Details</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-4 text-muted">Acquisition Date</dt>
+          <dd class="col-sm-8">{{ vehicle.acquisition_date or '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Acquisition Cost</dt>
+          <dd class="col-sm-8">{{ "{:,.2f}".format(vehicle.acquisition_cost) if vehicle.acquisition_cost else '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Insured Value (This Year)</dt>
+          <dd class="col-sm-8">{{ "{:,.2f}".format(vehicle.assured_value_current_year) if vehicle.assured_value_current_year else '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Delivery Date</dt>
+          <dd class="col-sm-8">{{ vehicle.delivery_date or '—' }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <!-- Assignment & Remarks -->
+    <div class="card mb-4" id="section-assignment">
+      <div class="card-header bg-white fw-bold">Assignment & Driver Details</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-4 text-muted">Assigned Driver</dt>
+          <dd class="col-sm-8">
+            {% if vehicle.assigned_driver %}
+              {{ vehicle.assigned_driver.employee_number }} — {{ vehicle.assigned_driver.last_name }}, {{ vehicle.assigned_driver.first_name }} ({{ vehicle.assigned_driver.license_type }})
+            {% else %}
+              <span class="text-muted">Unassigned</span>
+            {% endif %}
+          </dd>
+
+          <dt class="col-sm-4 text-muted">Branch / Location</dt>
+          <dd class="col-sm-8">{{ vehicle.branch.name if vehicle.branch else '—' }}</dd>
+
+          <dt class="col-sm-4 text-muted">Remarks</dt>
+          <dd class="col-sm-8">{{ vehicle.remarks or '—' }}</dd>
+        </dl>
+      </div>
+    </div>
+
   </div>
 </div>
 
-{% if maintenance_history %}
-<div class="card mt-4">
-  <div class="card-header"><i class="bi bi-clock-history me-1"></i>Maintenance History</div>
-  <div class="card-body p-0">
-  <table class="table table-striped mb-0">
-    <thead><tr><th>Date</th><th>Work Order</th><th>Category</th><th>PM Type</th><th>Cost</th><th>Vendor</th></tr></thead>
-    <tbody>
-    {% for m in maintenance_history %}
-      <tr>
-        <td>{{ m.completed_date }}</td>
-        <td>
-          {% if current_user.has_permission('maintenanceorder.view') %}
-          <a href="{{ url_for('transactions.maintenanceorder_detail', oid=m.id) }}">{{ m.document_number }}</a>
-          {% else %}{{ m.document_number }}{% endif %}
-        </td>
-        <td><span class="badge text-bg-{{ 'info' if m.category in ['PM', 'PREVENTIVE'] else 'warning' if m.category in ['CM', 'CORRECTIVE'] else 'secondary' }}">{{ m.category or m.order_category or '—' }}</span></td>
-        <td>{{ m.maintenance_type.name if m.maintenance_type else (m.transaction_type.name if m.transaction_type else '—') }}</td>
-        <td>{{ "{:,.2f}".format(m.actual_cost) if m.actual_cost else '—' }}</td>
-        <td>{{ m.vendor.name if m.vendor else '—' }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
-</div>
-{% endif %}
-
+<!-- Registration Status Summary -->
 {% if registration_status %}
-<div class="card mt-4">
-  <div class="card-header"><i class="bi bi-calendar2-check me-1"></i>Registration Status</div>
+<div class="card mt-2 mb-4">
+  <div class="card-header bg-white fw-bold"><i class="bi bi-calendar2-check me-1"></i> Registration Status</div>
   <div class="card-body">
     <div class="row g-3">
-      <div class="col-md-3"><div class="text-muted small">Plate Number</div>
-        <div class="fw-semibold">{{ item.plate_number or item.conduction_number or '—' }}</div></div>
-      <div class="col-md-3"><div class="text-muted small">Plate Schedule</div>
+      <div class="col-md-3">
+        <div class="text-muted small">Plate Number</div>
+        <div class="fw-semibold">{{ vehicle.plate_number or vehicle.conduction_number or '—' }}</div>
+      </div>
+      <div class="col-md-3">
+        <div class="text-muted small">Plate Schedule</div>
         <div class="fw-semibold">
           {% if registration_status.lto_month %}
             Month {{ registration_status.lto_month }}{% if registration_status.lto_week %}, Week {{ registration_status.lto_week }}{% endif %}
           {% else %}—{% endif %}
-        </div></div>
-      <div class="col-md-3"><div class="text-muted small">Latest OR / CR Number</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="text-muted small">Latest OR / CR Number</div>
         <div class="fw-semibold">
           {% if registration_status.last_registration %}
             {{ registration_status.last_registration.or_number or '—' }} / {{ registration_status.last_registration.cr_number or '—' }}
           {% else %}—{% endif %}
-        </div></div>
-      <div class="col-md-3"><div class="text-muted small">Registration Expiry</div>
-        <div class="fw-semibold">{{ registration_status.stored_expiry_date or registration_status.suggested_due_date or '—' }}</div></div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="text-muted small">Registration Expiry</div>
+        <div class="fw-semibold">{{ registration_status.stored_expiry_date or registration_status.suggested_due_date or '—' }}</div>
+      </div>
     </div>
     <div class="mt-3 d-flex align-items-center gap-2">
       <span class="text-muted small">Due Status:</span>
       <span class="badge text-bg-{{ 'danger' if registration_status.status == 'OVERDUE' else 'warning' if registration_status.status in ('DUE_SOON','NO_RECORD') else 'success' }}">
-        {{ registration_status.status }}</span>
+        {{ registration_status.status }}
+      </span>
       <span class="text-muted small">({{ registration_status.source }})</span>
       {% if registration_status.source == 'MANUAL_ENTRY' %}
       <span class="text-muted small" title="Set manually on the Vehicle Master form — no digitized Vehicle Registration transaction exists yet for this vehicle">
-        <i class="bi bi-info-circle"></i> from Vehicle Master's Last Known Registration Expiry</span>
+        <i class="bi bi-info-circle"></i> from Vehicle Master's Last Known Registration Expiry
+      </span>
       {% endif %}
       {% if registration_status.warning == 'REGISTRATION_DATE_MISMATCH' %}
       <span class="badge text-bg-warning">
-        <i class="bi bi-exclamation-triangle me-1"></i>Stored expiry differs from the plate's LTO schedule — please verify.</span>
+        <i class="bi bi-exclamation-triangle me-1"></i>Stored expiry differs from the plate's LTO schedule — please verify.
+      </span>
       {% endif %}
     </div>
   </div>
 </div>
 {% endif %}
 
-{% if registration_history %}
-<div class="card mt-4">
-  <div class="card-header"><i class="bi bi-card-checklist me-1"></i>Registration History</div>
+<!-- Maintenance History Table -->
+{% if maintenance_history %}
+<div class="card mb-4">
+  <div class="card-header bg-white fw-bold"><i class="bi bi-clock-history me-1"></i> Maintenance History</div>
   <div class="card-body p-0">
-  <table class="table table-striped mb-0">
-    <thead><tr><th>Doc No.</th><th>Type</th><th>Reg. Date</th><th>Expiry</th><th>Plate</th><th>Status</th></tr></thead>
-    <tbody>
-    {% for r in registration_history %}
-      <tr>
-        <td>
-          {% if current_user.has_permission('vehicleregistration.view') %}
-          <a href="{{ url_for('transactions.vehicleregistration_detail', rid=r.id) }}">{{ r.document_number or '—' }}</a>
-          {% else %}{{ r.document_number or '—' }}{% endif %}
-        </td>
-        <td>{{ r.registration_type }}</td>
-        <td>{{ r.registration_date or '—' }}</td>
-        <td>{{ r.expiry_date or '—' }}</td>
-        <td>{{ r.plate_number or '—' }}</td>
-        <td><span class="badge text-bg-{{ 'success' if r.status=='COMPLETED' else 'danger' if r.status=='CANCELLED' else 'secondary' }}">{{ r.status }}</span></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Work Order</th>
+            <th>Category</th>
+            <th>PM Type</th>
+            <th>Cost</th>
+            <th>Vendor</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for m in maintenance_history %}
+          <tr>
+            <td>{{ m.completed_date }}</td>
+            <td>
+              {% if current_user.has_permission('maintenanceorder.view') %}
+              <a href="{{ url_for('transactions.maintenanceorder_detail', oid=m.id) }}">{{ m.document_number }}</a>
+              {% else %}
+              {{ m.document_number }}
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge text-bg-{{ 'info' if m.category in ['PM', 'PREVENTIVE'] else 'warning' if m.category in ['CM', 'CORRECTIVE'] else 'secondary' }}">
+                {{ m.category or m.order_category or '—' }}
+              </span>
+            </td>
+            <td>{{ m.maintenance_type.name if m.maintenance_type else (m.transaction_type.name if m.transaction_type else '—') }}</td>
+            <td>{{ "{:,.2f}".format(m.actual_cost) if m.actual_cost else '—' }}</td>
+            <td>{{ m.vendor.name if m.vendor else '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endif %}
 
+<!-- Registration History Table -->
+{% if registration_history %}
+<div class="card mb-4">
+  <div class="card-header bg-white fw-bold"><i class="bi bi-card-checklist me-1"></i> Registration History</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Doc No.</th>
+            <th>Type</th>
+            <th>Reg. Date</th>
+            <th>Expiry</th>
+            <th>Plate</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in registration_history %}
+          <tr>
+            <td>
+              {% if current_user.has_permission('vehicleregistration.view') %}
+              <a href="{{ url_for('transactions.vehicleregistration_detail', rid=r.id) }}">{{ r.document_number or '—' }}</a>
+              {% else %}
+              {{ r.document_number or '—' }}
+              {% endif %}
+            </td>
+            <td>{{ r.registration_type }}</td>
+            <td>{{ r.registration_date or '—' }}</td>
+            <td>{{ r.expiry_date or '—' }}</td>
+            <td>{{ r.plate_number or '—' }}</td>
+            <td>
+              <span class="badge text-bg-{{ 'success' if r.status=='COMPLETED' else 'danger' if r.status=='CANCELLED' else 'secondary' }}">
+                {{ r.status }}
+              </span>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Attachment Panel Component -->
 {% set reference_table = "vehicles" %}
 {% set reference_id = vehicle.id %}
 {% include "master_data/_attachment_panel.html" %}
+
 {% endblock %}

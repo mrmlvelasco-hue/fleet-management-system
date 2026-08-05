@@ -1,49 +1,131 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('transactions.tripticket_list') }}">Trip Tickets</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" class="row g-3">
+<form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="col-md-6"><label class="form-label">Vehicle</label>
-    <div class="input-group">
-      <select name="vehicle_id" id="ttVehicleSelect" class="form-select" required>
-        <option value="">— Type plate number, make, or model —</option>
-      </select>
-      <button type="button" class="btn btn-outline-secondary" id="ttVehicleModalBtn"
-              title="Advanced search">
-        <i class="bi bi-search"></i>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Issue new trip tickets, assign drivers, record dispatch schedules, and track vehicle departure logs.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('transactions.tripticket_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save as Draft
       </button>
-    </div></div>
-  <div class="col-md-6"><label class="form-label">Driver (from Master)</label>
-    <select name="driver_id" id="ttDriverSelect" class="form-select">
-      <option value="">— Manual entry below, or type to search —</option>
-    </select>
-    <div class="form-text">Leave blank and fill "Manual Driver Name" only if
-      System Parameter REQUIRE_DRIVER_FROM_MASTER = NO.</div></div>
-  <div class="col-md-6"><label class="form-label">Manual Driver Name</label>
-    <input type="text" name="driver_name_manual" class="form-control"></div>
-  <div class="col-md-6"><label class="form-label">Destination</label>
-    <input type="text" name="destination" class="form-control" required></div>
-  <div class="col-12"><label class="form-label">Purpose</label>
-    <input type="text" name="purpose" class="form-control" required></div>
-  <div class="col-md-4"><label class="form-label">Departure Date/Time</label>
-    <input type="datetime-local" name="departure_datetime" class="form-control" required></div>
-  <div class="col-md-4"><label class="form-label">Odometer Out</label>
-    <input type="number" name="odometer_out" class="form-control"></div>
-  <div class="col-md-4"><label class="form-label">Passengers</label>
-    <input type="text" name="passengers" class="form-control"></div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save as Draft</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('transactions.tripticket_list') }}">Cancel</a>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Vehicle & Driver Assignment Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Vehicle &amp; Driver Assignment</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Target Vehicle <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <select name="vehicle_id" id="ttVehicleSelect" class="form-select" required>
+                  <option value="">— Type plate number, make, or model —</option>
+                </select>
+                <button type="button" class="btn btn-outline-secondary" id="ttVehicleModalBtn" title="Advanced search">
+                  <i class="bi bi-search"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Driver (from Master)</label>
+              <select name="driver_id" id="ttDriverSelect" class="form-select">
+                <option value="">— Manual entry below, or type to search —</option>
+              </select>
+              <div class="form-text text-muted">Leave blank and fill "Manual Driver Name" only if System Parameter <code>REQUIRE_DRIVER_FROM_MASTER = NO</code>.</div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Manual Driver Name <span class="text-muted small fw-normal">(Optional)</span></label>
+              <input type="text" name="driver_name_manual" class="form-control" placeholder="e.g. Juan Cruz (External/Subcontractor)">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Departure Date/Time <span class="text-danger">*</span></label>
+              <input type="datetime-local" name="departure_datetime" class="form-control" required>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Route, Manifest & Odometer Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Itinerary, Manifest &amp; Odometer Baseline</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Destination / Route <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-geo-alt-fill"></i></span>
+                <input type="text" name="destination" class="form-control" required placeholder="e.g. Central Warehouse / Metro Outlets">
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Odometer Out <span class="text-muted small fw-normal">(Optional)</span></label>
+              <div class="input-group">
+                <input type="number" name="odometer_out" class="form-control font-monospace" placeholder="e.g. 24500">
+                <span class="input-group-text bg-light">KM</span>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Purpose of Travel <span class="text-danger">*</span></label>
+              <input type="text" name="purpose" class="form-control" required placeholder="e.g. Scheduled client delivery, stock replenishment, executive transport...">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Passengers / Escorts <span class="text-muted small fw-normal">(Optional)</span></label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-people"></i></span>
+                <input type="text" name="passengers" class="form-control" placeholder="e.g. John Doe, Maria Santos (or passenger count)">
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-ticket-perforated me-1"></i> Trip Ticket Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Driver Verification:</strong> Driver selection defaults from master records. Manual override depends on system parameters.</li>
+            <li><strong>Odometer Baseline:</strong> Capturing initial departure mileage enables automatic calculation of total trip distance upon return.</li>
+            <li><strong>Draft Saving:</strong> Saving as draft allows modifying route specifications and passenger lists prior to final dispatch approval.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}
+
 {% block scripts %}
 <script>
   if (window.jQuery) {

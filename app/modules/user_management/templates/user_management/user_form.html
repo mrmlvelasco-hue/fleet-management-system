@@ -1,32 +1,131 @@
 {% extends "layout/base.html" %}
 {% block title %}{{ title }}{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('user_management.users_list') }}">Users</a></li>
 <li class="breadcrumb-item active">{{ title }}</li>
 {% endblock %}
+
 {% block content %}
-<h1 class="h3 mb-4">{{ title }}</h1>
-<div class="card"><div class="card-body">
-<form method="post" novalidate class="row g-3">
+<form method="post" novalidate>
   {{ form.hidden_tag() }}
-  <div class="col-md-6">{{ form.username.label(class="form-label") }}{{ form.username(class="form-control") }}
-    {% for e in form.username.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
-  <div class="col-md-6">{{ form.email.label(class="form-label") }}{{ form.email(class="form-control") }}
-    {% for e in form.email.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
-  <div class="col-md-6">{{ form.first_name.label(class="form-label") }}{{ form.first_name(class="form-control") }}</div>
-  <div class="col-md-6">{{ form.last_name.label(class="form-label") }}{{ form.last_name(class="form-control") }}</div>
-  <div class="col-md-4">{{ form.employee_id.label(class="form-label") }}{{ form.employee_id(class="form-control") }}</div>
-  <div class="col-md-4">{{ form.branch_id.label(class="form-label") }}{{ form.branch_id(class="form-select fms-select2") }}</div>
-  <div class="col-md-4">{{ form.department_id.label(class="form-label") }}{{ form.department_id(class="form-select fms-select2") }}</div>
-  <div class="col-md-6">{{ form.password.label(class="form-label") }}{{ form.password(class="form-control") }}
-    <div class="form-text">Leave blank to keep unchanged (edit) or auto-assign a temp password (new).</div>
-    {% for e in form.password.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
-  <div class="col-md-6">{{ form.roles.label(class="form-label") }}{{ form.roles(class="form-select fms-select2", multiple=True) }}</div>
-  <div class="col-12 form-check ms-2">{{ form.must_change_password(class="form-check-input") }}{{ form.must_change_password.label(class="form-check-label") }}</div>
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-    <a class="btn btn-outline-secondary" href="{{ url_for('user_management.users_list') }}">Cancel</a>
+
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">{{ title }}</h1>
+      <p class="text-muted small mb-0">Manage system user account credentials, organizational placement, and access permissions.</p>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('user_management.users_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save User
+      </button>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form Area -->
+    <div class="col-lg-8">
+
+      <!-- Account Credentials & Identity Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Account Credentials & Profile</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              {{ form.username.label(class="form-label fw-semibold") }}
+              {{ form.username(class="form-control font-monospace", placeholder="e.g. jdoe") }}
+              {% for e in form.username.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+
+            <div class="col-md-6">
+              {{ form.email.label(class="form-label fw-semibold") }}
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-envelope"></i></span>
+                {{ form.email(class="form-control", placeholder="jdoe@company.com") }}
+              </div>
+              {% for e in form.email.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+
+            <div class="col-md-6">
+              {{ form.first_name.label(class="form-label fw-semibold") }}
+              {{ form.first_name(class="form-control") }}
+            </div>
+
+            <div class="col-md-6">
+              {{ form.last_name.label(class="form-label fw-semibold") }}
+              {{ form.last_name(class="form-control") }}
+            </div>
+
+            <div class="col-md-6">
+              {{ form.password.label(class="form-label fw-semibold") }}
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-key"></i></span>
+                {{ form.password(class="form-control") }}
+              </div>
+              <div class="form-text text-muted">Leave blank to keep unchanged (edit) or auto-assign a temp password (new).</div>
+              {% for e in form.password.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+
+            <div class="col-md-6 d-flex align-items-center mt-md-4">
+              <div class="form-check pt-3">
+                {{ form.must_change_password(class="form-check-input") }}
+                {{ form.must_change_password.label(class="form-check-label fw-semibold") }}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Organizational Scope & Roles Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Organizational Placement & Access Roles</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-4">
+              {{ form.employee_id.label(class="form-label fw-semibold") }}
+              {{ form.employee_id(class="form-control") }}
+            </div>
+
+            <div class="col-md-4">
+              {{ form.branch_id.label(class="form-label fw-semibold") }}
+              {{ form.branch_id(class="form-select fms-select2") }}
+            </div>
+
+            <div class="col-md-4">
+              {{ form.department_id.label(class="form-label fw-semibold") }}
+              {{ form.department_id(class="form-select fms-select2") }}
+            </div>
+
+            <div class="col-12">
+              {{ form.roles.label(class="form-label fw-semibold") }}
+              {{ form.roles(class="form-select fms-select2", multiple=True) }}
+              <div class="form-text text-muted">Assign one or more roles to dictate system module access and permission scopes.</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-shield-lock me-1"></i> User Provisioning Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Account Security:</strong> Force password reset on first login when setting up new accounts.</li>
+            <li><strong>Branch Context:</strong> Primary branch setting filters default fleet and work order transaction scopes.</li>
+            <li><strong>Role Mapping:</strong> Multiple roles allow granular access across approval workflows and administrative panels.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </form>
-</div></div>
 {% endblock %}

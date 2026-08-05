@@ -1,93 +1,162 @@
 {% extends "layout/base.html" %}
 {% block title %}Email Configuration{% endblock %}
+
 {% block breadcrumbs %}
 <li class="breadcrumb-item"><a href="{{ url_for('system_admin.email_template_list') }}">Email Templates</a></li>
 <li class="breadcrumb-item active">Email Configuration</li>
 {% endblock %}
-{% block content %}
-<h1 class="h3 mb-4">Email Configuration</h1>
-<p class="text-muted">
-  Configure SMTP delivery so Notification Rules set to "Email" or "Both"
-  actually send real messages — e.g. notifying the current approver by
-  email the moment a document reaches their level, not just via the
-  in-app bell icon.
-</p>
 
-<div class="card mb-3"><div class="card-body">
-<form method="post" class="row g-3">
+{% block content %}
+<form method="post" id="emailConfigForm">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-  <div class="col-12">
-    <div class="form-check form-switch">
-      <input type="checkbox" class="form-check-input" id="isEnabled" name="is_enabled"
-             {{ 'checked' if config.is_enabled }}>
-      <label class="form-check-label" for="isEnabled">
-        <strong>Enable Email Sending</strong>
-        <span class="text-muted small d-block">When off, notifications still work in-app — email is simply skipped, not an error.</span>
-      </label>
+  <!-- Header & Primary Actions -->
+  <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <div>
+      <h1 class="h3 mb-1 fw-bold text-dark">Email Configuration</h1>
+      <p class="text-muted small mb-0">Manage SMTP server connections, authentication credentials, sender profiles, and live test dispatches.</p>
+    </div>
+    {% if current_user.has_permission('emailtemplate.update') %}
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('system_admin.email_template_list') }}">Cancel</a>
+      <button class="btn btn-primary px-4" type="submit">
+        <i class="bi bi-save me-1"></i>Save Configuration
+      </button>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="row g-4">
+    <!-- Main Form & Test Area -->
+    <div class="col-lg-8">
+
+      <!-- SMTP Server Settings Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
+          <span>SMTP Gateway Settings</span>
+          <div class="form-check form-switch mb-0">
+            <input type="checkbox" class="form-check-input" id="isEnabled" name="is_enabled"
+                   {{ 'checked' if config.is_enabled }}>
+            <label class="form-check-label fw-semibold text-dark small" for="isEnabled">Enable Email Sending</label>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">SMTP Host</label>
+              <input type="text" name="smtp_host" class="form-control font-monospace"
+                     placeholder="e.g. smtp.gmail.com or smtp.office365.com"
+                     value="{{ config.smtp_host or '' }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">SMTP Port</label>
+              <input type="number" name="smtp_port" class="form-control font-monospace"
+                     value="{{ config.smtp_port or 587 }}">
+            </div>
+
+            <div class="col-md-3 d-flex align-items-end">
+              <div class="form-check mb-2">
+                <input type="checkbox" class="form-check-input" id="useTls" name="use_tls"
+                       {{ 'checked' if config.use_tls }}>
+                <label class="form-check-label fw-semibold text-dark small" for="useTls">Use TLS/STARTTLS</label>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">SMTP Username</label>
+              <input type="text" name="smtp_username" class="form-control"
+                     value="{{ config.smtp_username or '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">SMTP Password</label>
+              <input type="password" name="smtp_password" class="form-control"
+                     placeholder="{{ '(unchanged — leave blank to keep current password)' if config.smtp_password else 'Enter password' }}">
+              <div class="form-text text-muted">Leave blank to keep the existing password when updating other fields.</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Sender Profile Card -->
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Sender Identity</div>
+        <div class="card-body">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">From Email Address</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-envelope"></i></span>
+                <input type="email" name="from_email" class="form-control"
+                       placeholder="fleet@yourcompany.com"
+                       value="{{ config.from_email or '' }}">
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">From Display Name</label>
+              <input type="text" name="from_name" class="form-control"
+                     placeholder="e.g. Fleet Management System"
+                     value="{{ config.from_name or '' }}">
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Test Dispatch Card -->
+      {% if current_user.has_permission('emailtemplate.update') %}
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white fw-bold py-3 border-bottom">Confirm Setup — Send Test Email</div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">
+            Sends a real test message using the saved settings above to verify SMTP connectivity prior to enabling automated workflow notifications.
+          </p>
+          <div class="row g-2 align-items-end">
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Send Test To</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="bi bi-send"></i></span>
+                <input type="email" name="test_email" class="form-control" form="testEmailForm"
+                       placeholder="{{ current_user.email }}" value="{{ current_user.email }}">
+              </div>
+            </div>
+            <div class="col-md-4">
+              <button class="btn btn-outline-primary w-100" type="submit" form="testEmailForm">
+                <i class="bi bi-send-check me-1"></i>Send Test Email
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+
+    <!-- Right Guidance Panel -->
+    <div class="col-lg-4">
+      <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
+        <div class="card-body p-3">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-mailbox me-1"></i> Email Delivery Guide</h6>
+          <ul class="text-muted small ps-3 mb-0 d-grid gap-2">
+            <li><strong>Toggle Switch:</strong> When email sending is toggled off, system alerts remain functional via in-app notifications while email dispatch is skipped cleanly.</li>
+            <li><strong>Approval Alerts:</strong> Configuring an active SMTP connection sends real-time email alerts directly to assigned approvers upon document routing.</li>
+            <li><strong>Verification Step:</strong> Always click <em>Save Configuration</em> before triggering a <em>Test Email</em> to ensure updated credentials are used.</li>
+          </ul>
+        </div>
+      </div>
     </div>
   </div>
-
-  <div class="col-md-6"><label class="form-label">SMTP Host</label>
-    <input type="text" name="smtp_host" class="form-control"
-           placeholder="e.g. smtp.gmail.com or smtp.office365.com"
-           value="{{ config.smtp_host or '' }}"></div>
-  <div class="col-md-3"><label class="form-label">SMTP Port</label>
-    <input type="number" name="smtp_port" class="form-control"
-           value="{{ config.smtp_port or 587 }}"></div>
-  <div class="col-md-3 d-flex align-items-end">
-    <div class="form-check">
-      <input type="checkbox" class="form-check-input" id="useTls" name="use_tls"
-             {{ 'checked' if config.use_tls }}>
-      <label class="form-check-label" for="useTls">Use TLS/STARTTLS</label>
-    </div></div>
-
-  <div class="col-md-6"><label class="form-label">SMTP Username</label>
-    <input type="text" name="smtp_username" class="form-control"
-           value="{{ config.smtp_username or '' }}"></div>
-  <div class="col-md-6"><label class="form-label">SMTP Password</label>
-    <input type="password" name="smtp_password" class="form-control"
-           placeholder="{{ '(unchanged — leave blank to keep current password)' if config.smtp_password else 'Enter password' }}">
-    <div class="form-text">Leave blank to keep the existing password when only changing another field.</div></div>
-
-  <div class="col-md-6"><label class="form-label">From Email</label>
-    <input type="email" name="from_email" class="form-control"
-           placeholder="fleet@yourcompany.com"
-           value="{{ config.from_email or '' }}"></div>
-  <div class="col-md-6"><label class="form-label">From Name</label>
-    <input type="text" name="from_name" class="form-control"
-           value="{{ config.from_name or '' }}"></div>
-
-  {% if current_user.has_permission('emailtemplate.update') %}
-  <div class="col-12">
-    <button class="btn btn-primary" type="submit">Save</button>
-  </div>
-  {% endif %}
 </form>
-</div></div>
 
+<!-- Separate Form for Test Dispatch to avoid nested form issues -->
 {% if current_user.has_permission('emailtemplate.update') %}
-<div class="card"><div class="card-header">Confirm Setup — Send Test Email</div>
-  <div class="card-body">
-    <p class="text-muted small">
-      Sends a real test message using the settings above (save them first)
-      — the quickest way to confirm SMTP is actually working before relying
-      on it for approval notifications.
-    </p>
-    <form method="post" action="{{ url_for('system_admin.email_config_send_test') }}"
-          class="row g-2 align-items-end">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="col-md-6">
-        <label class="form-label">Send test to</label>
-        <input type="email" name="test_email" class="form-control"
-               placeholder="{{ current_user.email }}" value="{{ current_user.email }}">
-      </div>
-      <div class="col-md-3">
-        <button class="btn btn-outline-primary" type="submit">
-          <i class="bi bi-send me-1"></i>Send Test Email</button>
-      </div>
-    </form>
-  </div>
-</div>
+<form method="post" action="{{ url_for('system_admin.email_config_send_test') }}" id="testEmailForm">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+</form>
 {% endif %}
 {% endblock %}
