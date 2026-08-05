@@ -71,6 +71,9 @@ for _code, _desc in [
     ("analytics.view", "View the Analytics page (fleet, PM and cost charts)"),
     ("dataquality.view", "View the Fleet Data Quality Scorecard"),
     ("dataquality.manage", "Configure Data Quality fields, weights and thresholds"),
+    ("fuel.view", "View fuel transactions and analytics"),
+    ("fuel.create", "Record fuel transactions and import statements"),
+    ("fuel.update", "Correct or confirm a flagged odometer reading"),
 ]:
     _m, _a = _code.split(".")
     registry.register(_code, _m, _a, _desc)

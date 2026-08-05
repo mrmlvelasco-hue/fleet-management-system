@@ -1,0 +1,101 @@
+{% extends "layout/base.html" %}
+{% block title %}New Fuel Transaction{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.fuel_list') }}">Fuel Management</a></li>
+<li class="breadcrumb-item active">New</li>
+{% endblock %}
+{% block content %}
+<div class="fms-exec">
+<h1 class="h3 mb-3">New Fuel Transaction</h1>
+
+<div class="ent-panel">
+  <div class="ent-panel__body">
+    <form method="post" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="col-md-6">
+        <label class="form-label">Vehicle <span class="text-danger">*</span></label>
+        <select name="vehicle_id" class="form-select fms-select2" required>
+          <option value="">— Select —</option>
+          {% for v in vehicles %}
+          <option value="{{ v.id }}" {{ 'selected' if submitted and submitted.get('vehicle_id')|string == v.id|string }}>
+            {{ v.plate_number or v.conduction_number }} — {{ v.brand }} {{ v.model }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Fuel Card</label>
+        <select name="fuel_card_id" class="form-select">
+          <option value="">— None / Cash —</option>
+          {% for c in cards %}
+          <option value="{{ c.id }}" {{ 'selected' if submitted and submitted.get('fuel_card_id')|string == c.id|string }}>
+            {{ c.card_number }} ({{ c.provider or 'Unknown' }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">Date &amp; Time <span class="text-danger">*</span></label>
+        <input type="datetime-local" name="transaction_date" class="form-control" required
+               value="{{ submitted.get('transaction_date') if submitted else '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Station</label>
+        <input type="text" name="station" class="form-control"
+               value="{{ submitted.get('station') if submitted else '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Fuel Type</label>
+        <select name="fuel_type" class="form-select">
+          <option value="">— Select —</option>
+          <option value="DIESEL" {{ 'selected' if submitted and submitted.get('fuel_type') == 'DIESEL' }}>Diesel</option>
+          <option value="GASOLINE" {{ 'selected' if submitted and submitted.get('fuel_type') == 'GASOLINE' }}>Gasoline</option>
+        </select>
+      </div>
+
+      <div class="col-md-4">
+        <label class="form-label">Litres <span class="text-danger">*</span></label>
+        <input type="text" inputmode="decimal" name="litres" class="form-control" required
+               value="{{ submitted.get('litres') if submitted else '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Price / Litre</label>
+        <input type="text" inputmode="decimal" name="price_per_litre" class="form-control"
+               value="{{ submitted.get('price_per_litre') if submitted else '' }}">
+        <div class="form-text">Leave blank to calculate from litres and total.</div>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Total Amount <span class="text-danger">*</span></label>
+        <input type="text" inputmode="decimal" name="total_amount" class="form-control js-money" required
+               value="{{ submitted.get('total_amount') if submitted else '' }}">
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">Odometer Reading</label>
+        <input type="number" name="odometer_reported" class="form-control"
+               value="{{ submitted.get('odometer_reported') if submitted else '' }}">
+        <div class="form-text">
+          Leave blank if not captured — do not guess. A questionable reading
+          will be flagged automatically rather than rejected.
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Receipt / Reference No.</label>
+        <input type="text" name="reference_number" class="form-control"
+               value="{{ submitted.get('reference_number') if submitted else '' }}">
+      </div>
+
+      <div class="col-12">
+        <label class="form-label">Remarks</label>
+        <textarea name="remarks" class="form-control" rows="2">{{ submitted.get('remarks') if submitted else '' }}</textarea>
+      </div>
+
+      <div class="col-12">
+        <button class="btn btn-primary"><i class="bi bi-save me-1"></i>Save Transaction</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('transactions.fuel_list') }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+</div>
+{% endblock %}

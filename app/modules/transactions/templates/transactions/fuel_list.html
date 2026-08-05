@@ -1,0 +1,167 @@
+{% extends "layout/base.html" %}
+{% block title %}Fuel Management{% endblock %}
+{% block breadcrumbs %}<li class="breadcrumb-item active">Fuel Management</li>{% endblock %}
+{% block content %}
+<div class="fms-exec">
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h1 class="h3 mb-1">Fuel Management</h1>
+    <p class="text-muted mb-0">Fuel transactions, consumption and odometer validation.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('transactions.fuel_analytics') }}">
+      <i class="bi bi-bar-chart me-1"></i>Analytics</a>
+    {% if current_user.has_permission('fuel.create') %}
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('transactions.fuel_import') }}">
+      <i class="bi bi-upload me-1"></i>Import</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('transactions.fuel_export') }}">
+      <i class="bi bi-download me-1"></i>Export</a>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('transactions.fuel_new') }}">
+      <i class="bi bi-plus-lg me-1"></i>New Transaction</a>
+    {% endif %}
+  </div>
+</div>
+
+{# Headline figures #}
+<div class="ent-kpi-grid mb-3">
+  <div class="ent-kpi">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-fuel-pump"></i></span>
+      <div class="ent-kpi__meta">
+        <div class="ent-kpi__label">Fills (last 30 days)</div>
+        <div class="ent-kpi__value">{{ summary.fills }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="ent-kpi ent-kpi--teal">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-cash-coin"></i></span>
+      <div class="ent-kpi__meta">
+        <div class="ent-kpi__label">Spend</div>
+        <div class="ent-kpi__value">₱{{ "{:,.0f}".format(summary.spend) }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="ent-kpi ent-kpi--sky">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-speedometer2"></i></span>
+      <div class="ent-kpi__meta">
+        <div class="ent-kpi__label">Avg. km/L</div>
+        <div class="ent-kpi__value">{{ summary.avg_kmpl if summary.avg_kmpl is not none else '—' }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="ent-kpi ent-kpi--amber">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-flag"></i></span>
+      <div class="ent-kpi__meta">
+        <div class="ent-kpi__label">Flagged</div>
+        <div class="ent-kpi__value">{{ summary.flagged }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="ent-kpi ent-kpi--rose">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-exclamation-triangle"></i></span>
+      <div class="ent-kpi__meta">
+        <div class="ent-kpi__label">Untrusted Odometer</div>
+        <div class="ent-kpi__value">{{ summary.untrusted_odometer }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ent-panel">
+  <div class="ent-panel__head">
+    <div class="btn-group btn-group-sm" role="group">
+      <a class="btn {{ 'btn-primary' if view == 'all' else 'btn-outline-secondary' }}"
+         href="{{ url_for('transactions.fuel_list') }}">All</a>
+      <a class="btn {{ 'btn-primary' if view == 'flagged' else 'btn-outline-secondary' }}"
+         href="{{ url_for('transactions.fuel_list', view='flagged') }}">
+        Exceptions{% if summary.flagged or summary.untrusted_odometer %}
+        <span class="badge text-bg-danger ms-1">{{ summary.flagged }}</span>{% endif %}</a>
+    </div>
+    <span class="text-muted small">{{ rows|length }} shown</span>
+  </div>
+  <div class="ent-panel__body p-0" style="max-height: 620px; overflow-y: auto;">
+    <table class="table ent-grid mb-0">
+      <thead><tr>
+        <th>Date</th><th>Vehicle</th><th>Station</th>
+        <th class="text-end">Litres</th><th class="text-end">Total</th>
+        <th>Odometer</th><th>km/L</th><th>Flags</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for t in rows %}
+        <tr>
+          <td class="text-nowrap">{{ t.transaction_date.strftime('%Y-%m-%d %H:%M') if t.transaction_date else '—' }}</td>
+          <td>
+            {% if t.vehicle %}
+            <a class="ent-grid__link" href="{{ url_for('master_data.vehicle_detail', vid=t.vehicle.id) }}">
+              {{ t.vehicle.plate_number or t.vehicle.conduction_number }}</a>
+            <span class="ent-grid__sub">{{ t.vehicle.brand }} {{ t.vehicle.model }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ t.station or '—' }}</td>
+          <td class="text-end">{{ "%.1f"|format(t.litres) if t.litres else '—' }}</td>
+          <td class="text-end">₱{{ "{:,.2f}".format(t.total_amount) if t.total_amount else '—' }}</td>
+          <td>
+            <span class="ent-badge {{ 'ent-badge--success' if t.odometer_status == 'OK'
+                        else ('ent-badge--warning' if t.odometer_status == 'CORRECTED'
+                        else 'ent-badge--danger') }}">
+              {{ t.odometer_status|title }}</span>
+            {% if t.odometer_note %}
+            <div class="ent-grid__sub" title="{{ t.odometer_note }}">{{ t.odometer_note[:60] }}{{ '…' if t.odometer_note|length > 60 }}</div>
+            {% endif %}
+          </td>
+          <td>{{ t.km_per_litre if t.km_per_litre is not none else '—' }}</td>
+          <td>
+            {% if t.anomaly_flags %}
+            {% for code in t.anomaly_flags.split(',') %}
+            <span class="ent-badge ent-badge--warning d-inline-block mb-1">{{ labels.get(code, code) }}</span>
+            {% endfor %}
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="text-nowrap">
+            {% if current_user.has_permission('fuel.update') and t.odometer_status in ('SUSPECT', 'MISSING') %}
+            <form method="post" action="{{ url_for('transactions.fuel_accept_odometer', tid=t.id) }}" class="d-inline"
+                  data-confirm="Confirm {{ t.odometer_reported }} is the correct odometer reading?">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-success" title="Confirm this reading is correct">
+                <i class="bi bi-check-lg"></i></button>
+            </form>
+            <button class="btn btn-sm btn-outline-secondary" title="Enter the correct reading"
+                    data-bs-toggle="modal" data-bs-target="#correctModal{{ t.id }}">
+              <i class="bi bi-pencil"></i></button>
+            <div class="modal fade" id="correctModal{{ t.id }}" tabindex="-1">
+              <div class="modal-dialog modal-sm"><div class="modal-content">
+                <form method="post" action="{{ url_for('transactions.fuel_correct_odometer', tid=t.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <div class="modal-header"><h6 class="modal-title">Correct Odometer</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                  <div class="modal-body">
+                    <label class="form-label small">Reported: {{ t.odometer_reported or '—' }}</label>
+                    <input type="number" name="odometer" class="form-control" required
+                           placeholder="Correct odometer reading">
+                  </div>
+                  <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-sm btn-primary">Save</button>
+                  </div>
+                </form>
+              </div></div>
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9" class="text-center text-muted py-4">
+          No fuel transactions {{ 'need review' if view == 'flagged' else 'recorded yet' }}.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div>
+{% endblock %}

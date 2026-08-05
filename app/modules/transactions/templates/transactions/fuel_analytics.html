@@ -1,0 +1,95 @@
+{% extends "layout/base.html" %}
+{% block title %}Fuel Analytics{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.fuel_list') }}">Fuel Management</a></li>
+<li class="breadcrumb-item active">Analytics</li>
+{% endblock %}
+{% block content %}
+<div class="fms-exec">
+<h1 class="h3 mb-1">Fuel Analytics</h1>
+<p class="text-muted mb-3">Consumption and cost by vehicle, worst efficiency first — vehicles with no measurable
+  reading sort last, since they are a data gap, not a performance one.</p>
+
+<div class="ent-kpi-grid mb-3">
+  <div class="ent-kpi">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-fuel-pump"></i></span>
+      <div class="ent-kpi__meta"><div class="ent-kpi__label">Fills</div>
+        <div class="ent-kpi__value">{{ summary.fills }}</div></div>
+    </div>
+  </div>
+  <div class="ent-kpi ent-kpi--teal">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-droplet"></i></span>
+      <div class="ent-kpi__meta"><div class="ent-kpi__label">Litres</div>
+        <div class="ent-kpi__value">{{ "{:,.0f}".format(summary.litres) }}</div></div>
+    </div>
+  </div>
+  <div class="ent-kpi ent-kpi--sky">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-cash-coin"></i></span>
+      <div class="ent-kpi__meta"><div class="ent-kpi__label">Spend</div>
+        <div class="ent-kpi__value">₱{{ "{:,.0f}".format(summary.spend) }}</div></div>
+    </div>
+  </div>
+  <div class="ent-kpi ent-kpi--amber">
+    <div class="ent-kpi__head">
+      <span class="ent-kpi__icon"><i class="bi bi-tag"></i></span>
+      <div class="ent-kpi__meta"><div class="ent-kpi__label">Avg. Price / Litre</div>
+        <div class="ent-kpi__value">₱{{ summary.avg_price }}</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="ent-panel">
+  <div class="ent-panel__head">
+    <h2 class="ent-panel__title">Consumption by Vehicle</h2>
+    <span class="text-muted small">Worst first</span>
+  </div>
+  <div class="ent-panel__body p-0" style="max-height: 560px; overflow-y: auto;">
+    <table class="table ent-grid mb-0">
+      <thead><tr>
+        <th>Vehicle</th><th class="text-end">Fills</th><th class="text-end">Litres</th>
+        <th class="text-end">Spend</th><th class="text-end">Distance</th>
+        <th style="width:140px;">km/L</th><th class="text-end">₱/km</th><th class="text-end">Flagged</th>
+      </tr></thead>
+      <tbody>
+      {% for r in by_vehicle %}
+        <tr>
+          <td>
+            {% if r.vehicle %}
+            <a class="ent-grid__link" href="{{ url_for('master_data.vehicle_detail', vid=r.vehicle.id) }}">
+              {{ r.vehicle.plate_number or r.vehicle.conduction_number }}</a>
+            <span class="ent-grid__sub">{{ r.vehicle.brand }} {{ r.vehicle.model }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-end">{{ r.fills }}</td>
+          <td class="text-end">{{ "%.1f"|format(r.litres) }}</td>
+          <td class="text-end">₱{{ "{:,.0f}".format(r.spend) }}</td>
+          <td class="text-end">{{ "{:,}".format(r.distance) if r.distance else '—' }} km</td>
+          <td>
+            {% if r.km_per_litre %}
+            <div class="d-flex align-items-center gap-2">
+              <div class="dq-bar flex-grow-1">
+                <div class="dq-bar__fill dq-fill-{{ 'excellent' if r.km_per_litre >= 8
+                            else ('warning' if r.km_per_litre >= 5 else 'critical') }}"
+                     style="width: {{ [r.km_per_litre * 6, 100]|min }}%;"></div>
+              </div>
+              <span class="dq-pct">{{ r.km_per_litre }}</span>
+            </div>
+            {% else %}<span class="text-muted small">Not enough data</span>{% endif %}
+          </td>
+          <td class="text-end">{{ '₱' + r.cost_per_km|string if r.cost_per_km else '—' }}</td>
+          <td class="text-end">
+            {% if r.flagged %}<span class="badge text-bg-danger">{{ r.flagged }}</span>{% else %}—{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="text-center text-muted py-4">No fuel data in this period.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</div>
+{% endblock %}

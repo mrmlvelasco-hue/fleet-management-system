@@ -1,0 +1,71 @@
+{% extends "layout/base.html" %}
+{% block title %}Import Fuel Statement{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('transactions.fuel_list') }}">Fuel Management</a></li>
+<li class="breadcrumb-item active">Import</li>
+{% endblock %}
+{% block content %}
+<div class="fms-exec">
+<h1 class="h3 mb-1">Import Fuel Statement</h1>
+<p class="text-muted mb-3">
+  Upload a fuel card statement directly — columns are matched by name, so
+  exact ordering does not matter. Prefer a known-good layout?
+  <a href="{{ url_for('transactions.fuel_template') }}">Download the template</a>.
+</p>
+
+<div class="ent-panel mb-3">
+  <div class="ent-panel__body">
+    <form method="post" enctype="multipart/form-data" class="row g-3 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-7">
+        <label class="form-label">Statement file (.xlsx)</label>
+        <input type="file" name="file" class="form-control" accept=".xlsx" required>
+      </div>
+      <div class="col-md-5 d-flex gap-2">
+        <button type="submit" name="commit" value="0" class="btn btn-outline-primary">
+          <i class="bi bi-eye me-1"></i>Preview (dry run)</button>
+        <button type="submit" name="commit" value="1" class="btn btn-primary"
+                data-confirm="This will import the file for real. Continue?">
+          <i class="bi bi-upload me-1"></i>Import</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if stats %}
+<div class="ent-panel">
+  <div class="ent-panel__head">
+    <h2 class="ent-panel__title">Result</h2>
+  </div>
+  <div class="ent-panel__body">
+    <div class="row g-3 mb-3">
+      <div class="col-md-3"><div class="text-muted small">Rows in file</div>
+        <div class="h4 mb-0">{{ stats.total_rows }}</div></div>
+      <div class="col-md-3"><div class="text-muted small">Created</div>
+        <div class="h4 mb-0 text-success">{{ stats.created }}</div></div>
+      <div class="col-md-3"><div class="text-muted small">Skipped</div>
+        <div class="h4 mb-0 text-danger">{{ stats.skipped }}</div></div>
+      <div class="col-md-3"><div class="text-muted small">Flagged for review</div>
+        <div class="h4 mb-0 text-warning">{{ stats.get('flagged', 0) + stats.get('untrusted_odometer', 0) }}</div></div>
+    </div>
+
+    {% if stats.errors %}
+    <h6>Rows skipped</h6>
+    <table class="table ent-grid mb-0">
+      <thead><tr><th style="width:70px;">Row</th><th>Identifier</th><th>Problem(s)</th></tr></thead>
+      <tbody>
+      {% for e in stats.errors %}
+        <tr>
+          <td>{{ e.row }}</td>
+          <td>{{ e.identifier }}</td>
+          <td>{{ e.problems|join('; ') }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+</div>
+{% endblock %}

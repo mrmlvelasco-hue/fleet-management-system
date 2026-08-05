@@ -149,7 +149,8 @@ def _to_datetime(value):
     if isinstance(value, datetime):
         return value
     text = str(value).strip()
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M",   # <input type="datetime-local">
+               "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
                "%m/%d/%Y %H:%M", "%m/%d/%Y", "%d/%m/%Y %H:%M", "%d/%m/%Y",
                "%d-%b-%Y %H:%M", "%d-%b-%Y"):
         try:
