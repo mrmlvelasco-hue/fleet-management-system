@@ -502,3 +502,12 @@
   display: inline-block; width: 10px; height: 10px; border-radius: 3px;
   margin-right: .25rem; vertical-align: middle;
 }
+
+/* ── List screen pattern (Vehicle Master and future rollout) ───────────── */
+.btn-teal { background-color: #3b8b93; color: #fff; border: none; }
+.btn-teal:hover { background-color: #2f7178; color: #fff; }
+.badge-soft-success { background-color: #c8e6c9; color: #2e7d32; }
+.badge-soft-warning { background-color: #ffe0b2; color: #e65100; }
+.badge-soft-danger  { background-color: #ffcdd2; color: #c62828; }
+.plate-text { font-weight: 700; color: #212529; letter-spacing: .5px; }
+.ent-list-table > :not(caption) > * > * { padding: .75rem 1rem; vertical-align: middle; }

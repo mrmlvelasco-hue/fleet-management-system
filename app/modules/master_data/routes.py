@@ -692,8 +692,29 @@ def vehicle_list():
     show_disposed = request.args.get("show_disposed") == "1"
     items = VehicleService().list(include_inactive=True, user=current_user,
                                   include_disposed=show_disposed)
+    # Filter dropdown options -- real data, not placeholder-only <select>
+    # elements. Branch and Vehicle Type come from the same master lists
+    # used everywhere else in the app; Status is the fixed set of values
+    # the column actually holds.
+    from app.modules.master_data.org.service import BranchService
+    from app.modules.master_data.reference.service import VehicleTypeService
+    branches = BranchService().list()
+    vehicle_types = VehicleTypeService().list()
+    statuses = ["ACTIVE", "INACTIVE", "IN_REPAIR", "DISPOSED"]
+
+    # So the "Show/Hide Disposed Vehicles" toggle can say how many it
+    # actually found -- without this, clicking it when there happen to
+    # be zero disposed vehicles looks exactly like the click did
+    # nothing, which is indistinguishable from a broken filter.
+    all_including_disposed = VehicleService().list(
+        include_inactive=True, user=current_user, include_disposed=True)
+    disposed_count = sum(1 for v in all_including_disposed
+                        if v.status == "DISPOSED")
+
     return render_template("master_data/vehicle_list.html", items=items,
-                           show_disposed=show_disposed)
+                           show_disposed=show_disposed,
+                           branches=branches, vehicle_types=vehicle_types,
+                           statuses=statuses, disposed_count=disposed_count)
 
 
 @bp.route("/reports/vehicle-activity-history")
