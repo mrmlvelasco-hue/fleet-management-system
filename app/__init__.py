@@ -175,6 +175,25 @@ def create_app(config_name: str | None = None) -> Flask:
 
     @app.errorhandler(500)
     def server_error(e):
+        # MUST happen first, before anything else touches the database.
+        # A DB-related exception (a constraint violation, a deadlock)
+        # leaves the SQLAlchemy session in a "pending rollback" state --
+        # every further query on it raises PendingRollbackError instead
+        # of running, INCLUDING the ones this very error page needs
+        # (current_user.is_authenticated in base.html triggers a lazy
+        # load). Without this rollback, that second failure replaces our
+        # own styled error page -- with its reference code the person
+        # can actually report back -- with Flask/Werkzeug's raw fallback
+        # page, which is what was seen in the reported screenshot: no
+        # reference code, no branding, just "Internal Server Error" in
+        # the browser's default serif font. The original exception is
+        # still the one logged below; this only clears the session so
+        # OUR page can render at all.
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
         # A short reference code the person can read off the screen (or
         # a screenshot) and give you, so you can find the matching
         # traceback in the server log without them needing to describe

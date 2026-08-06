@@ -7,6 +7,8 @@ can be marked COMPLETED; Corrective orders have no checklist requirement
 (unscheduled/reactive repair work)."""
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
+
 from app.extensions import db
 from app.core.numbering.numbering_service import AutoNumberingService
 from app.modules.transactions.base_service import BaseTransactionService
@@ -134,29 +136,60 @@ class MaintenanceOrderService(BaseTransactionService):
                 if maintenance_type_id else None)
 
         numbering = AutoNumberingService()
+        doc_number = None
         try:
             doc_number = numbering.generate(self.document_type_code)
         except Exception:
-            doc_number = None
+            pass  # never block creation for a numbering-scheme failure
 
-        order = MaintenanceOrder(
-            document_number=doc_number, vehicle_id=vehicle_id,
-            order_category=order_category, transaction_type_id=transaction_type_id,
-            maintenance_type_id=maintenance_type_id,
-            category=mtype.category if mtype else None,
-            pm_schedule_id=pm_schedule_id,
-            scope_template_id=scope_template_id, description=description,
-            odometer_at_service=odometer_at_service,
-            scheduled_date=scheduled_date,
-            assigned_mechanic=assigned_mechanic, vendor_id=vendor_id,
-            estimated_cost=estimated_cost, status="DRAFT",
-            driver_id=driver_id, destination_branch_id=destination_branch_id,
-            origin_branch_id=origin_branch_id,
-            disposal_value=disposal_value, disposal_recipient=disposal_recipient,
-            assignment_classification=assignment_classification,
-            requested_by=user.id if user else None)
+        def _build_order(number):
+            return MaintenanceOrder(
+                document_number=number, vehicle_id=vehicle_id,
+                order_category=order_category, transaction_type_id=transaction_type_id,
+                maintenance_type_id=maintenance_type_id,
+                category=mtype.category if mtype else None,
+                pm_schedule_id=pm_schedule_id,
+                scope_template_id=scope_template_id, description=description,
+                odometer_at_service=odometer_at_service,
+                scheduled_date=scheduled_date,
+                assigned_mechanic=assigned_mechanic, vendor_id=vendor_id,
+                estimated_cost=estimated_cost, status="DRAFT",
+                driver_id=driver_id, destination_branch_id=destination_branch_id,
+                origin_branch_id=origin_branch_id,
+                disposal_value=disposal_value, disposal_recipient=disposal_recipient,
+                assignment_classification=assignment_classification,
+                requested_by=user.id if user else None)
+
+        # Retried ONLY on a genuine document-number collision -- the
+        # reported bug: under concurrent submission the counter can
+        # hand out a number that a near-simultaneous request already
+        # committed, and the previous code let that reach the user as
+        # an unhandled 500 rather than quietly moving on to the next
+        # real number. Confirmed as a numbering collision (not some
+        # other constraint failing) by checking whether that exact
+        # number is already taken before retrying -- an unrelated
+        # failure surfaces immediately instead of retrying against a
+        # wall it can't get past.
+        order = _build_order(doc_number)
         db.session.add(order)
-        db.session.flush()
+        for attempt in range(3):
+            try:
+                db.session.flush()
+                break
+            except IntegrityError:
+                db.session.rollback()
+                if (doc_number is None
+                        or not MaintenanceOrder.query.filter_by(
+                            document_number=doc_number).first()):
+                    raise
+                try:
+                    doc_number = numbering.generate(self.document_type_code)
+                except Exception:
+                    doc_number = None
+                order = _build_order(doc_number)
+                db.session.add(order)
+        else:
+            db.session.flush()  # let the final attempt's error surface plainly
 
         if scope_template_id:
             template = db.session.get(PMScopeTemplate, scope_template_id)
