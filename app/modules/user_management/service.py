@@ -61,6 +61,14 @@ class UserService:
             from app.core.security.password_policy import PasswordPolicyService
             PasswordPolicyService().record_password_change(
                 user, user.password_hash)
+            # A locked account stays locked purely on failed_login_attempts
+            # -- that check runs BEFORE password verification, so setting
+            # a brand new password did nothing for a locked user; they
+            # would still be rejected on the very next login attempt.
+            # Setting a new password is the natural point an administrator
+            # is already vouching for this user, so clear the lockout here
+            # too rather than requiring a second, separate action.
+            user.failed_login_attempts = 0
         if role_ids is not None:
             user.roles.clear()
             self._assign_roles(user, role_ids)
@@ -69,6 +77,18 @@ class UserService:
 
     def deactivate_user(self, user_id):
         self.users.soft_delete(user_id)
+
+    def unlock_user(self, user_id):
+        """Clear a lockout without touching the password -- the person
+        may remember their correct password perfectly well and simply
+        mistyped it too many times; forcing a password reset on top of
+        that would be an unnecessary extra step."""
+        user = self.users.get_by_id(user_id, include_inactive=True)
+        if user is None:
+            return None
+        user.failed_login_attempts = 0
+        db.session.commit()
+        return user
         db.session.commit()
 
     def _assign_roles(self, user, role_ids):

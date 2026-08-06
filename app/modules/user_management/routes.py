@@ -61,7 +61,10 @@ def _grouped_permissions():
 @require_permission("user.view")
 def users_list():
     users = UserRepository().list(include_inactive=True)
-    return render_template("user_management/users_list.html", users=users)
+    from flask import current_app
+    return render_template("user_management/users_list.html", users=users,
+                           max_failed_attempts=current_app.config[
+                               "MAX_FAILED_LOGIN_ATTEMPTS"])
 
 
 @bp.route("/users/data")
@@ -132,6 +135,18 @@ def users_deactivate(user_id):
     UserService().deactivate_user(user_id)
     flash("User deactivated.", "info")
     return redirect(url_for("user_management.users_list"))
+
+
+@bp.route("/users/<int:user_id>/unlock", methods=["POST"])
+@login_required
+@require_permission("user.update")
+def users_unlock(user_id):
+    user = UserService().unlock_user(user_id)
+    if user is None:
+        flash("User not found.", "warning")
+    else:
+        flash(f"{user.username}'s account has been unlocked.", "success")
+    return redirect(request.referrer or url_for("user_management.users_list"))
 
 
 # ---------- Roles ----------

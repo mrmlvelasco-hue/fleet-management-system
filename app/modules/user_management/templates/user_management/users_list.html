@@ -13,7 +13,7 @@
 <table class="table table-striped fms-datatable">
   <thead><tr>
     <th>Username</th><th>Name</th><th>Email</th><th>Roles</th>
-    <th>Active</th><th>Last login</th><th></th>
+    <th>Active</th><th>Status</th><th>Last login</th><th></th>
   </tr></thead>
   <tbody>
   {% for u in users %}
@@ -24,8 +24,29 @@
       <td>{% for r in u.roles %}<span class="badge text-bg-secondary">{{ r.name }}</span> {% endfor %}</td>
       <td>{% if u.is_active %}<span class="badge text-bg-success">Yes</span>
           {% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
+      <td>
+        {% if u.failed_login_attempts >= max_failed_attempts %}
+        <span class="badge text-bg-danger" title="{{ u.failed_login_attempts }} failed login attempt(s)">
+          <i class="bi bi-lock-fill me-1"></i>Locked</span>
+        {% elif u.failed_login_attempts > 0 %}
+        <span class="badge text-bg-warning"
+              title="{{ u.failed_login_attempts }} of {{ max_failed_attempts }} failed attempts before lockout">
+          {{ u.failed_login_attempts }}/{{ max_failed_attempts }} attempts</span>
+        {% else %}
+        <span class="text-muted small">OK</span>
+        {% endif %}
+      </td>
       <td>{{ u.last_login_at or '—' }}</td>
       <td class="text-end">
+        {% if current_user.has_permission('user.update') and u.failed_login_attempts >= max_failed_attempts %}
+        <form method="post" class="d-inline"
+              action="{{ url_for('user_management.users_unlock', user_id=u.id) }}"
+              data-confirm="Unlock {{ u.username }}'s account? They will be able to sign in again with their existing password.">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-outline-warning" title="Unlock account">
+            <i class="bi bi-unlock"></i></button>
+        </form>
+        {% endif %}
         {% if current_user.has_permission('user.update') %}
         <a class="btn btn-sm btn-outline-secondary"
            href="{{ url_for('user_management.users_edit', user_id=u.id) }}">
