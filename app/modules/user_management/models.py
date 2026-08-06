@@ -52,6 +52,22 @@ class User(db.Model, BaseModel, UserMixin):
                               nullable=True)
     last_login_at = db.Column(db.DateTime, nullable=True)
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
+    # Deliberately a per-account flag rather than a hardcoded check
+    # against the literal username "admin" -- that would silently break
+    # if the account were ever renamed, and would be invisible to
+    # anyone reading the authentication code. A real, visible toggle
+    # any user.update holder can see and set (or unset) on any account,
+    # not just one baked-in exception.
+    #
+    # The tradeoff is real and worth stating: an exempt account can be
+    # brute-forced with unlimited attempts, since the one defence this
+    # system has against that is switched off for it. That's the
+    # correct trade ONLY for a small number of trusted "break glass"
+    # accounts (typically the seeded System Administrator) where being
+    # permanently locked out of the one account that can unlock every
+    # other account is the worse failure mode -- it should not become
+    # the default for ordinary users.
+    is_lockout_exempt = db.Column(db.Boolean, default=False, nullable=False)
     must_change_password = db.Column(db.Boolean, default=False, nullable=False)
     # When the current password_hash was set — needed to enforce
     # PASSWORD_EXPIRY_DAYS/PASSWORD_WARNING_DAYS (System Parameters that

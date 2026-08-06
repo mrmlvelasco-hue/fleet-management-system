@@ -180,7 +180,14 @@ def _seed_admin(admin_password: str) -> None:
         admin = User(username="admin", email="admin@example.com",
                      password_hash=hash_password(admin_password),
                      first_name="System", last_name="Administrator",
-                     must_change_password=True)
+                     must_change_password=True,
+                     # The one account every other account's lockout can
+                     # be recovered through; being permanently locked out
+                     # of IT is the worse failure mode. Only applied at
+                     # creation -- an existing admin account is never
+                     # retroactively changed, so this never silently
+                     # overrides a choice an administrator already made.
+                     is_lockout_exempt=True)
         admin.roles.append(role)
         db.session.add(admin)
         click.echo("Admin user created (username: admin).")

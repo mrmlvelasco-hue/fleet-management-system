@@ -18,14 +18,25 @@
   <tbody>
   {% for u in users %}
     <tr>
-      <td>{{ u.username }}</td>
+      <td>{{ u.username }}
+        {% if u.is_lockout_exempt %}
+        <i class="bi bi-shield-fill-check text-primary ms-1"
+           title="Exempt from account lockout"></i>
+        {% endif %}
+      </td>
       <td>{{ u.full_name }}</td>
       <td>{{ u.email }}</td>
       <td>{% for r in u.roles %}<span class="badge text-bg-secondary">{{ r.name }}</span> {% endfor %}</td>
       <td>{% if u.is_active %}<span class="badge text-bg-success">Yes</span>
           {% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
       <td>
-        {% if u.failed_login_attempts >= max_failed_attempts %}
+        {% if u.is_lockout_exempt and u.failed_login_attempts >= max_failed_attempts %}
+        {# Exempt, so never actually locked -- but a counter this high
+           is still worth flagging as a security signal (repeated wrong
+           passwords against this account), just not as "Locked". #}
+        <span class="badge text-bg-warning" title="{{ u.failed_login_attempts }} failed attempt(s) -- exempt from lockout, so this account is NOT blocked">
+          <i class="bi bi-shield-exclamation me-1"></i>Watch</span>
+        {% elif u.failed_login_attempts >= max_failed_attempts %}
         <span class="badge text-bg-danger" title="{{ u.failed_login_attempts }} failed login attempt(s)">
           <i class="bi bi-lock-fill me-1"></i>Locked</span>
         {% elif u.failed_login_attempts > 0 %}
@@ -38,7 +49,7 @@
       </td>
       <td>{{ u.last_login_at or '—' }}</td>
       <td class="text-end">
-        {% if current_user.has_permission('user.update') and u.failed_login_attempts >= max_failed_attempts %}
+        {% if current_user.has_permission('user.update') and not u.is_lockout_exempt and u.failed_login_attempts >= max_failed_attempts %}
         <form method="post" class="d-inline"
               action="{{ url_for('user_management.users_unlock', user_id=u.id) }}"
               data-confirm="Unlock {{ u.username }}'s account? They will be able to sign in again with their existing password.">

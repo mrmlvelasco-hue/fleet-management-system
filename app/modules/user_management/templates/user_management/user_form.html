@@ -76,6 +76,16 @@
               </div>
             </div>
 
+            <div class="col-12">
+              <div class="form-check">
+                {{ form.is_lockout_exempt(class="form-check-input") }}
+                {{ form.is_lockout_exempt.label(class="form-check-label fw-semibold") }}
+              </div>
+              <div class="form-text text-warning">
+                <i class="bi bi-exclamation-triangle me-1"></i>{{ form.is_lockout_exempt.description }}
+              </div>
+            </div>
+
           </div>
         </div>
       </div>

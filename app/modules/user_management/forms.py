@@ -23,6 +23,13 @@ class UserForm(FlaskForm):
     password = PasswordField("Password", validators=[Optional()])
     roles = SelectMultipleField("Roles", coerce=int)
     must_change_password = BooleanField("Require password change at next login")
+    is_lockout_exempt = BooleanField(
+        "Exempt from account lockout",
+        description="Never locked out after failed login attempts. "
+                   "Reserve this for a small number of trusted "
+                   "administrator accounts -- an exempt account can be "
+                   "attempted with unlimited tries, since the one "
+                   "defence against that is switched off for it.")
 
     def validate_password(self, field):
         if not field.data:

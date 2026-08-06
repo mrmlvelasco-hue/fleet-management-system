@@ -287,23 +287,43 @@
     <span class="text-muted small">{{ 'All time' if fuel_summary.is_all_time else 'Last 30 days' }}</span>
   </div>
   <div class="ent-panel__body">
-    <div class="row g-3 text-center">
-      <div class="col-6 col-md-3">
-        <div class="text-muted small">Fills</div>
-        <div class="h4 mb-0">{{ fuel_summary.fills }}</div>
+    <div class="ent-kpi-grid mb-0">
+      <div class="ent-kpi ent-kpi--sky">
+        <div class="ent-kpi__head">
+          <span class="ent-kpi__icon"><i class="bi bi-fuel-pump"></i></span>
+          <div class="ent-kpi__meta">
+            <div class="ent-kpi__label">Fills</div>
+            <div class="ent-kpi__value">{{ fuel_summary.fills }}</div>
+          </div>
+        </div>
       </div>
-      <div class="col-6 col-md-3">
-        <div class="text-muted small">Spend</div>
-        <div class="h4 mb-0">₱{{ "{:,.0f}".format(fuel_summary.spend) }}</div>
+      <div class="ent-kpi ent-kpi--teal">
+        <div class="ent-kpi__head">
+          <span class="ent-kpi__icon"><i class="bi bi-cash-coin"></i></span>
+          <div class="ent-kpi__meta">
+            <div class="ent-kpi__label">Spend</div>
+            <div class="ent-kpi__value">₱{{ "{:,.0f}".format(fuel_summary.spend) }}</div>
+          </div>
+        </div>
       </div>
-      <div class="col-6 col-md-3">
-        <div class="text-muted small">Avg. km/L</div>
-        <div class="h4 mb-0">{{ fuel_summary.avg_kmpl if fuel_summary.avg_kmpl is not none else '—' }}</div>
+      <div class="ent-kpi">
+        <div class="ent-kpi__head">
+          <span class="ent-kpi__icon"><i class="bi bi-speedometer2"></i></span>
+          <div class="ent-kpi__meta">
+            <div class="ent-kpi__label">Avg. km/L</div>
+            <div class="ent-kpi__value">{{ fuel_summary.avg_kmpl if fuel_summary.avg_kmpl is not none else '—' }}</div>
+          </div>
+        </div>
       </div>
-      <div class="col-6 col-md-3">
-        <div class="text-muted small">Needs Review</div>
-        <div class="h4 mb-0 {{ 'text-danger' if fuel_summary.needs_review }}">
-          {{ fuel_summary.needs_review }}</div>
+      <div class="ent-kpi {{ 'ent-kpi--rose' if fuel_summary.needs_review else '' }}">
+        <div class="ent-kpi__head">
+          <span class="ent-kpi__icon"><i class="bi bi-exclamation-triangle"></i></span>
+          <div class="ent-kpi__meta">
+            <div class="ent-kpi__label">Needs Review</div>
+            <div class="ent-kpi__value {{ 'text-danger' if fuel_summary.needs_review }}">
+              {{ fuel_summary.needs_review }}</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

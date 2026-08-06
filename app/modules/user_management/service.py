@@ -21,7 +21,8 @@ class UserService:
 
     def create_user(self, username, email, password, first_name=None,
                     last_name=None, role_ids=None, must_change_password=False,
-                    employee_id=None, branch_id=None, department_id=None):
+                    employee_id=None, branch_id=None, department_id=None,
+                    is_lockout_exempt=False):
         if self.users.get_by_username(username) is not None:
             raise DuplicateUsernameError(f"Username '{username}' already exists.")
         user = self.users.create(
@@ -30,7 +31,8 @@ class UserService:
             first_name=first_name, last_name=last_name,
             employee_id=employee_id, branch_id=branch_id,
             department_id=department_id,
-            must_change_password=must_change_password)
+            must_change_password=must_change_password,
+            is_lockout_exempt=is_lockout_exempt)
         self._assign_roles(user, role_ids or [])
         db.session.flush()
         from app.core.security.password_policy import PasswordPolicyService
@@ -40,10 +42,13 @@ class UserService:
 
     def update_user(self, user_id, *, email=None, first_name=None,
                     last_name=None, role_ids=None, password=None,
-                    employee_id=None, branch_id=None, department_id=None):
+                    employee_id=None, branch_id=None, department_id=None,
+                    is_lockout_exempt=None):
         user = self.users.get_by_id(user_id, include_inactive=True)
         if user is None:
             return None
+        if is_lockout_exempt is not None:
+            user.is_lockout_exempt = is_lockout_exempt
         if email is not None:
             user.email = email
         if first_name is not None:

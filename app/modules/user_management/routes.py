@@ -91,7 +91,8 @@ def users_new():
                 employee_id=form.employee_id.data or None,
                 branch_id=form.branch_id.data or None,
                 department_id=form.department_id.data or None,
-                must_change_password=form.must_change_password.data or not form.password.data)
+                must_change_password=form.must_change_password.data or not form.password.data,
+                is_lockout_exempt=form.is_lockout_exempt.data)
             flash("User created.", "success")
             return redirect(url_for("user_management.users_list"))
         except DuplicateUsernameError as exc:
@@ -118,7 +119,8 @@ def users_edit(user_id):
             employee_id=form.employee_id.data or None,
             branch_id=form.branch_id.data or None,
             department_id=form.department_id.data or None,
-            password=form.password.data or None)
+            password=form.password.data or None,
+            is_lockout_exempt=form.is_lockout_exempt.data)
         flash("User updated.", "success")
         return redirect(url_for("user_management.users_list"))
     form.roles.data = [r.id for r in user.roles]
