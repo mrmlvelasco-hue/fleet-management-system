@@ -234,3 +234,81 @@ def test_template_warns_about_realistic_distance_between_fills():
     text = "\n".join(str(c.value) for row in ref.iter_rows() for c in row
                     if c.value)
     assert "3,000 km" in text or "3000 km" in text
+
+
+def test_summary_falls_back_to_all_time_when_recent_window_is_empty(db):
+    """Reported: a real 9-row import all dated 34 days ago showed
+    'Fills (last 30 days): 0, Spend: P0' next to a table plainly
+    showing all 9 rows -- reproduced exactly with the reported file.
+    The window must fall back to all-time data rather than show a
+    misleading zero next to a list that has rows in it."""
+    from datetime import datetime, timedelta
+    from app.modules.master_data.reference.service import VehicleTypeService
+    from app.modules.master_data.org.service import BranchService
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.transactions.fuel.models import FuelTransaction
+    from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+
+    vt = VehicleTypeService().create(code="LV-ALLT", name="Light",
+                                     category="LIGHT")
+    branch = BranchService().create(code="BR-ALLT", name="Branch ALLT")
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Vios", year=2020,
+        branch_id=branch.id, conduction_number="ALLT-1")
+    db.session.commit()
+
+    old = FuelTransaction(
+        vehicle_id=vehicle.id,
+        transaction_date=datetime.now() - timedelta(days=34),
+        litres=45, total_amount=2700, odometer_reported=10000)
+    db.session.add(old)
+    db.session.commit()
+
+    summary = FuelAnalyticsService().summary()
+    assert summary["is_all_time"] is True
+    assert summary["fills"] == 1
+    assert summary["spend"] == 2700
+
+
+def test_summary_stays_scoped_to_30_days_when_recent_data_exists(db):
+    """The fallback must only engage when the window is genuinely
+    empty -- if there IS recent data, older transactions outside the
+    window must still be excluded as before."""
+    from datetime import datetime, timedelta
+    from app.modules.master_data.reference.service import VehicleTypeService
+    from app.modules.master_data.org.service import BranchService
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.transactions.fuel.models import FuelTransaction
+    from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+
+    vt = VehicleTypeService().create(code="LV-RECENT", name="Light",
+                                     category="LIGHT")
+    branch = BranchService().create(code="BR-RECENT", name="Branch RECENT")
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Vios", year=2020,
+        branch_id=branch.id, conduction_number="RECENT-1")
+    db.session.commit()
+
+    db.session.add(FuelTransaction(
+        vehicle_id=vehicle.id,
+        transaction_date=datetime.now() - timedelta(days=60),
+        litres=45, total_amount=2700))
+    db.session.add(FuelTransaction(
+        vehicle_id=vehicle.id, transaction_date=datetime.now() - timedelta(days=5),
+        litres=40, total_amount=2400))
+    db.session.commit()
+
+    summary = FuelAnalyticsService().summary()
+    assert summary["is_all_time"] is False
+    assert summary["fills"] == 1          # only the recent one
+    assert summary["spend"] == 2400
+
+
+def test_summary_empty_fleet_is_not_marked_all_time(db):
+    """A fleet with zero fuel history anywhere must not claim the empty
+    result is an 'all time' figure -- there is nothing to fall back
+    to."""
+    from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+    summary = FuelAnalyticsService().summary()
+    assert summary["is_all_time"] is False
+    assert summary["fills"] == 0

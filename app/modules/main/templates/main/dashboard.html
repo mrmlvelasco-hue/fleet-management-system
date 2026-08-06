@@ -284,7 +284,7 @@
 <div class="ent-panel mb-3">
   <div class="ent-panel__head">
     <h2 class="ent-panel__title">Fuel Management</h2>
-    <span class="text-muted small">Last 30 days</span>
+    <span class="text-muted small">{{ 'All time' if fuel_summary.is_all_time else 'Last 30 days' }}</span>
   </div>
   <div class="ent-panel__body">
     <div class="row g-3 text-center">

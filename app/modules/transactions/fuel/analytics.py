@@ -150,16 +150,37 @@ class FuelAnalyticsService:
 
     @request_cached("fuel_summary")
     def summary(self, user=None, days=30) -> dict:
+        """Fleet-wide fuel summary for the given window.
+
+        If the window contains nothing but the fleet DOES have fuel
+        history, this falls back to reporting ALL of it rather than
+        showing 0 fills / P0 spend next to a transaction list that
+        plainly has rows in it -- which is exactly the kind of
+        misleading zero this project avoids everywhere else (a missing
+        odometer reading shows as missing, not 0; a KPI card with no
+        baseline shows no percentage, not 0%). A demo or a freshly
+        imported statement dated slightly more than `days` ago must not
+        look like the import silently failed.
+
+        `is_all_time` tells the caller whether the fallback engaged, so
+        the UI can label the figure honestly ("All time" instead of
+        "Last 30 days") rather than let a wider window pass silently as
+        if it were the one that was asked for.
+        """
         from app.modules.transactions.fuel.models import FuelTransaction
         from datetime import date
         start = date.today() - timedelta(days=days)
 
         rows = (FuelTransaction.query
                .filter(FuelTransaction.transaction_date >= start).all())
+        is_all_time = False
+        if not rows and FuelTransaction.query.first() is not None:
+            rows = FuelTransaction.query.all()
+            is_all_time = True
         if not rows:
             return {"fills": 0, "litres": 0, "spend": 0, "avg_price": 0,
                    "avg_kmpl": None, "flagged": 0, "untrusted_odometer": 0,
-                   "needs_review": 0}
+                   "needs_review": 0, "is_all_time": False}
 
         litres = sum(Decimal(str(r.litres or 0)) for r in rows)
         spend = sum(Decimal(str(r.total_amount or 0)) for r in rows)
@@ -185,6 +206,7 @@ class FuelAnalyticsService:
             "needs_review": sum(
                 1 for r in rows
                 if r.anomaly_flags or r.odometer_status in ("SUSPECT", "MISSING")),
+            "is_all_time": is_all_time,
         }
 
     @request_cached("fuel_by_vehicle")
