@@ -2,9 +2,10 @@
 Vehicle Movement. Thin controllers — all business logic lives in the
 per-module services / the shared ApprovalEngine."""
 from datetime import date, datetime, timedelta
+import uuid
 
 from flask import (Blueprint, render_template, redirect, url_for, flash,
-                   request, abort, jsonify)
+                   request, abort, jsonify, current_app)
 from flask_login import login_required, current_user
 
 from app.core.security.decorators import require_permission
@@ -63,7 +64,29 @@ for _mod in ["tripticket", "atd", "vehiclemovement", "maintenanceorder",
 
 
 def _flash_engine_error(exc):
-    flash(str(exc), "danger")
+    """Show the exception's message directly ONLY when it is one of
+    this codebase's own deliberately-raised business-rule exceptions
+    (InvalidOrderStateError, NoExistingRegistrationError, and so on) --
+    those are hand-written to be read by the person using the system.
+
+    Anything else -- a raw SQLAlchemy/database error, a third-party
+    library exception -- was never written for a human audience and
+    must not be shown verbatim: it can include the full SQL statement,
+    real column names, and literal parameter values, exactly as
+    happened in a real reported incident (a duplicate-key error shown
+    to the end user included the entire INSERT statement). That gets a
+    generic, safe message with a reference code instead; the real
+    detail still goes to the server log, same pattern as the global 500
+    handler.
+    """
+    if type(exc).__module__.startswith("app."):
+        flash(str(exc), "danger")
+        return
+    ref = uuid.uuid4().hex[:8].upper()
+    current_app.logger.exception("Flashed error [ref=%s]: %s", ref, exc)
+    flash(f"Something went wrong completing this action "
+         f"(reference {ref}). Please try again, and let your "
+         f"administrator know if it keeps happening.", "danger")
 
 
 def _print_report_context(item):

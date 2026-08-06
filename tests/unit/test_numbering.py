@@ -85,3 +85,40 @@ def test_preview_does_not_consume(db, tt_scheme):
     svc = AutoNumberingService()
     svc._now = lambda: (2026, 7)
     assert svc.generate("TT") == "TT-2026-000001"
+
+
+def test_counter_survives_a_rollback_in_the_callers_transaction(db, tt_scheme):
+    """The actual bug behind a real production crash: the counter used
+    to only be flushed, not committed, so a caller that rolled back
+    after a failed insert (e.g. retrying a numbering collision) also
+    undid the counter's own advance -- the very next generate() call
+    would return the SAME number that just failed, forever. The
+    counter must be durable the instant generate() returns, independent
+    of anything the caller does with its own transaction afterward."""
+    svc = AutoNumberingService()
+    first = svc.generate("TT")
+
+    # Simulate the caller rolling back (e.g. because the number it just
+    # got collided with an existing row) WITHOUT committing anything.
+    db.session.rollback()
+
+    second = svc.generate("TT")
+    assert second != first, (
+        "the counter's own advance was undone by the caller's rollback")
+
+
+def test_counter_advance_does_not_depend_on_the_caller_committing(db, tt_scheme):
+    """generate() must not require the caller to ever commit for the
+    counter to have genuinely moved -- confirmed by checking the
+    counter's real database value directly after generate() returns,
+    with nothing committed on the calling session at all."""
+    from app.modules.document_config.models import NumberingCounter
+
+    svc = AutoNumberingService()
+    svc.generate("TT")
+    # Nothing committed on db.session at all -- a fresh query must
+    # still see the advance, because it was committed independently.
+    db.session.rollback()
+    counter = NumberingCounter.query.first()
+    assert counter is not None
+    assert counter.last_number == 1
