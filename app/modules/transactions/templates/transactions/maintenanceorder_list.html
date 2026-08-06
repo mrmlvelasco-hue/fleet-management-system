@@ -12,7 +12,7 @@
 <div class="card"><div class="card-body">
 <table class="table table-striped fms-datatable">
   <thead><tr>
-    <th>Doc No.</th><th>Vehicle</th><th>Type</th><th>Category</th>
+    <th>Doc No.</th><th>Vehicle</th><th>Type</th><th>Classification</th><th>Category</th>
     <th>Scheduled</th><th>Status</th><th>Requested By</th><th></th>
   </tr></thead>
   <tbody>
@@ -21,6 +21,21 @@
       <td>{{ o.document_number or '—' }}</td>
       <td>{{ o.vehicle.plate_number or o.vehicle.conduction_number if o.vehicle else '—' }}</td>
       <td>{{ o.maintenance_type.name if o.maintenance_type else (o.transaction_type.name if o.transaction_type else '—') }}</td>
+      <td>
+        {# Same four buckets as the Dashboard's "Maintenance Orders by
+           Type" chart -- read from the shared classification so this
+           column and that chart can never tell a different story about
+           the same order. Previously an OPERATIONAL order (which has no
+           maintenance_type) showed a bare dash here with nothing
+           explaining why. #}
+        {% set bucket = o.maintenance_class_bucket %}
+        <span class="badge text-bg-{{ 'info' if bucket == 'PREVENTIVE'
+                    else 'warning' if bucket == 'CORRECTIVE'
+                    else 'primary' if bucket == 'PREDICTIVE'
+                    else 'secondary' if bucket == 'OPERATIONAL'
+                    else 'light text-dark' }}">
+          {{ o.maintenance_class_label }}</span>
+      </td>
       <td><span class="badge text-bg-{{ 'info' if o.category in ['PM', 'PREVENTIVE'] else 'warning' if o.category in ['CM', 'CORRECTIVE'] else 'secondary' }}">{{ o.category or o.order_category or '—' }}</span></td>
       <td>{{ o.scheduled_date }}</td>
       <td><span class="badge text-bg-{{ 'success' if o.status=='COMPLETED' else 'primary' if o.status=='IN_PROGRESS' else 'danger' if o.status=='CANCELLED' else 'secondary' }}">{{ o.status }}</span></td>

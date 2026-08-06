@@ -203,14 +203,11 @@ class DashboardAnalyticsService:
         happened and would overstate every bucket.
         """
         from app.modules.transactions.maintenance_order.models import (
-            MaintenanceOrder, TransactionType)
+            MaintenanceOrder, TransactionType, MAINTENANCE_CLASS_LABELS)
         from app.modules.system_admin.services.system_parameter_service import (
             SystemParameterService)
 
-        label_of = {"PREVENTIVE": "Preventive Maintenance",
-                   "CORRECTIVE": "Corrective Maintenance",
-                   "PREDICTIVE": "Predictive Maintenance",
-                   "OPERATIONAL": "Operational"}
+        label_of = MAINTENANCE_CLASS_LABELS
 
         bucket = case(
             # An OPERATIONAL order is operational regardless of anything

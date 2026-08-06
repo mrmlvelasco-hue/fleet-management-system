@@ -5,6 +5,22 @@ from app.extensions import db
 from app.core.models.base import BaseModel
 
 
+# Shared with DashboardAnalyticsService.maintenance_orders_by_type() --
+# ONE place both the dashboard chart's SQL classification and the MO
+# list's per-row column read from, so a label can never drift between
+# the two. Previously the list showed only the raw maintenance_type or
+# transaction_type name (or a bare dash for an OPERATIONAL order, which
+# has neither), with no way to see which of the dashboard's four
+# reporting buckets a given order actually falls into.
+MAINTENANCE_CLASS_LABELS = {
+    "PREVENTIVE": "Preventive Maintenance",
+    "CORRECTIVE": "Corrective Maintenance",
+    "PREDICTIVE": "Predictive Maintenance",
+    "OPERATIONAL": "Operational",
+    "UNCLASSIFIED": "Unclassified",
+}
+
+
 class TransactionType(db.Model, BaseModel):
     """Per the MO Module Enhancement spec: 'Every Transaction Type
     belongs to exactly one Category.' Admin-configurable master data —
@@ -151,6 +167,33 @@ class MaintenanceOrder(db.Model, BaseModel):
                                          foreign_keys=[destination_branch_id])
     origin_branch = db.relationship("Branch", foreign_keys=[origin_branch_id])
     requester = db.relationship("User", foreign_keys=[requested_by])
+
+    @property
+    def maintenance_class_bucket(self):
+        """PREVENTIVE / CORRECTIVE / PREDICTIVE / OPERATIONAL /
+        UNCLASSIFIED -- the exact same four (or five) buckets the
+        Dashboard's "Maintenance Orders by Type" chart counts into.
+
+        Mirrors DashboardAnalyticsService.maintenance_orders_by_type()'s
+        SQL case() branch for branch, deliberately, rather than being a
+        second, independently-written rule that could quietly drift
+        from it -- a test asserts they agree on the same real data.
+        """
+        if self.order_category == "OPERATIONAL":
+            return "OPERATIONAL"
+        if self.transaction_type is not None:
+            if self.transaction_type.maintenance_class:
+                return self.transaction_type.maintenance_class
+        elif self.transaction_type_id is None:
+            # No transaction type recorded (older PM orders that predate
+            # transaction types) is preventive by definition.
+            return "PREVENTIVE"
+        return "UNCLASSIFIED"
+
+    @property
+    def maintenance_class_label(self):
+        return MAINTENANCE_CLASS_LABELS.get(
+            self.maintenance_class_bucket, "Unclassified")
     approval_instance = db.relationship("ApprovalInstance")
     checklist_items = db.relationship(
         "MaintenanceChecklistItem", backref="order",
