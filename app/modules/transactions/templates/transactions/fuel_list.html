@@ -98,7 +98,17 @@
           {% endfor %}
         </select>
       </div>
-      {% if selected_branch_id or selected_vehicle_status %}
+      <div class="col-md-2">
+        <input type="date" class="form-control form-control-sm" name="date_from"
+               value="{{ selected_date_from }}" onchange="this.form.submit()"
+               title="From date" placeholder="From">
+      </div>
+      <div class="col-md-2">
+        <input type="date" class="form-control form-control-sm" name="date_to"
+               value="{{ selected_date_to }}" onchange="this.form.submit()"
+               title="To date" placeholder="To">
+      </div>
+      {% if selected_branch_id or selected_vehicle_status or selected_date_from or selected_date_to %}
       <div class="col-auto">
         <a class="btn btn-sm btn-outline-secondary"
            href="{{ url_for('transactions.fuel_list', view=view if view=='flagged' else None) }}">Clear filters</a>
@@ -112,9 +122,9 @@
   <div class="ent-panel__head">
     <div class="btn-group btn-group-sm" role="group">
       <a class="btn {{ 'btn-primary' if view == 'all' else 'btn-outline-secondary' }}"
-         href="{{ url_for('transactions.fuel_list', branch_id=selected_branch_id, vehicle_status=selected_vehicle_status) }}">All</a>
+         href="{{ url_for('transactions.fuel_list', branch_id=selected_branch_id, vehicle_status=selected_vehicle_status, date_from=selected_date_from, date_to=selected_date_to) }}">All</a>
       <a class="btn {{ 'btn-primary' if view == 'flagged' else 'btn-outline-secondary' }}"
-         href="{{ url_for('transactions.fuel_list', view='flagged', branch_id=selected_branch_id, vehicle_status=selected_vehicle_status) }}">
+         href="{{ url_for('transactions.fuel_list', view='flagged', branch_id=selected_branch_id, vehicle_status=selected_vehicle_status, date_from=selected_date_from, date_to=selected_date_to) }}">
         {# All-time count, matching what this tab actually shows -- the
            30-day summary figure used here previously could read "0"
            while an older unresolved flag still appeared on click. #}
@@ -145,6 +155,24 @@
           <td class="text-end">{{ "%.1f"|format(t.litres) if t.litres else '—' }}</td>
           <td class="text-end">₱{{ "{:,.2f}".format(t.total_amount) if t.total_amount else '—' }}</td>
           <td>
+            <div class="text-nowrap">
+              {# The number as ENCODED -- what the driver/card actually
+                 reported, never altered. Shown first and always,
+                 because this is the figure a reviewer checking a flag
+                 needs to compare against the vehicle's real mileage. #}
+              <span title="Odometer as encoded">
+                <i class="bi bi-pencil-square text-muted" style="font-size:.7rem;"></i>
+                {{ "{:,}".format(t.odometer_reported) if t.odometer_reported is not none else '—' }}
+              </span>
+              {# The figure consumption is actually computed from, only
+                 shown when it differs from what was encoded (a
+                 correction was applied) -- repeating an identical
+                 number twice adds nothing but clutter. #}
+              {% if t.odometer_used is not none and t.odometer_used != t.odometer_reported %}
+              <span class="text-success" title="Odometer used for consumption (corrected)">
+                → {{ "{:,}".format(t.odometer_used) }}</span>
+              {% endif %}
+            </div>
             <span class="ent-badge {{ 'ent-badge--success' if t.odometer_status == 'OK'
                         else ('ent-badge--warning' if t.odometer_status == 'CORRECTED'
                         else 'ent-badge--danger') }}">

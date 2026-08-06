@@ -1,7 +1,7 @@
 """Transactions blueprint (Phase 3a): Trip Ticket, Authority To Drive,
 Vehicle Movement. Thin controllers — all business logic lives in the
 per-module services / the shared ApprovalEngine."""
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from flask import (Blueprint, render_template, redirect, url_for, flash,
                    request, abort, jsonify)
@@ -1819,6 +1819,8 @@ def fuel_list():
     view = request.args.get("view", "all")
     branch_id = request.args.get("branch_id", type=int)
     vehicle_status = request.args.get("vehicle_status", "")
+    date_from = request.args.get("date_from", "")
+    date_to = request.args.get("date_to", "")
 
     query = FuelTransaction.query
     if view == "flagged":
@@ -1834,6 +1836,26 @@ def fuel_list():
         if vehicle_status:
             query = query.filter(Vehicle.status == vehicle_status)
 
+    # Parsed defensively: a hand-edited or malformed date in the URL
+    # must narrow the results silently, not 500 the whole page.
+    if date_from:
+        try:
+            query = query.filter(FuelTransaction.transaction_date
+                                >= datetime.strptime(date_from, "%Y-%m-%d"))
+        except ValueError:
+            date_from = ""
+    if date_to:
+        try:
+            # Inclusive of the whole end day, not just its midnight --
+            # otherwise a transaction logged at 3pm on the end date
+            # would be silently excluded from a range that names that
+            # exact date.
+            query = query.filter(
+                FuelTransaction.transaction_date
+                < datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1))
+        except ValueError:
+            date_to = ""
+
     rows = query.order_by(FuelTransaction.transaction_date.desc()).limit(500).all()
     svc = FuelAnalyticsService()
     return render_template("transactions/fuel_list.html", rows=rows,
@@ -1841,6 +1863,8 @@ def fuel_list():
                            summary=svc.summary(),
                            exceptions=svc.exceptions_count(),
                            labels=FuelAnomalyCodes.LABELS,
+                           selected_date_from=date_from,
+                           selected_date_to=date_to,
                            branches=BranchService().list(),
                            selected_branch_id=branch_id,
                            selected_vehicle_status=vehicle_status)
