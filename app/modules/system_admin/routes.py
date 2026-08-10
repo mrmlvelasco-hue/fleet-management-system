@@ -75,6 +75,7 @@ for _code, _desc in [
     ("fuel.create", "Record fuel transactions and import statements"),
     ("fuel.update", "Correct or confirm a flagged odometer reading"),
     ("fuel.delete", "Delete an entire fuel import batch (undo a wrong upload)"),
+    ("historymigration.import", "Import historical vehicle maintenance and registration records from paper records"),
 ]:
     _m, _a = _code.split(".")
     registry.register(_code, _m, _a, _desc)

@@ -20,6 +20,10 @@
         {% if current_user.has_permission('vehicle.create') %}
         <li><a class="dropdown-item" href="{{ url_for('master_data.vehicle_import') }}">
           <i class="bi bi-upload me-2"></i>Import from Excel</a></li>
+        {% if current_user.has_permission('historymigration.import') %}
+        <li><a class="dropdown-item" href="{{ url_for('master_data.vehicle_history_import') }}">
+          <i class="bi bi-clock-history me-2"></i>Vehicle History Migration</a></li>
+        {% endif %}
         {% endif %}
         <li><hr class="dropdown-divider"></li>
         <li>

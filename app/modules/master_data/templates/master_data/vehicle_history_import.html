@@ -1,0 +1,152 @@
+{% extends "layout/base.html" %}
+{% block title %}Vehicle History Migration{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.vehicle_list') }}">Vehicles</a></li>
+<li class="breadcrumb-item active">History Migration</li>
+{% endblock %}
+{% block content %}
+<h1 class="h3 mb-1">Vehicle History Migration</h1>
+<p class="text-muted mb-4">
+  Bring in past maintenance and registration records from paper files.
+  Imported records are marked historical and completed — they never
+  enter the live approval workflow or affect current document numbering.
+</p>
+
+<div class="card mb-3"><div class="card-body">
+  <h6 class="mb-2">Step 1 — Give your team the template</h6>
+  <p class="text-muted small mb-2">
+    The template has an Instructions sheet explaining exactly how to
+    fill it in from paper records, including the one rule that matters
+    most: leave a cell blank rather than guess a value that isn't known.
+  </p>
+  <a class="btn btn-outline-primary btn-sm"
+     href="{{ url_for('master_data.vehicle_history_import_template') }}">
+    <i class="bi bi-file-earmark-excel me-1"></i>Download Vehicle History Migration Template
+  </a>
+</div></div>
+
+<div class="card mb-3"><div class="card-body">
+  <h6 class="mb-2">Step 2 — Upload the filled-in file</h6>
+  <form method="post" enctype="multipart/form-data" class="row g-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="col-md-8">
+      <label class="form-label">Filled-in template (.xlsx)</label>
+      <input type="file" name="file" accept=".xlsx" class="form-control" required>
+    </div>
+    <div class="col-12">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="commit" value="1" id="commitCheck">
+        <label class="form-check-label" for="commitCheck">
+          Import for real (leave unticked to preview without saving anything)
+        </label>
+      </div>
+    </div>
+    <div class="col-12">
+      <button class="btn btn-primary">Upload</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('master_data.vehicle_list') }}">Cancel</a>
+    </div>
+  </form>
+</div></div>
+
+{% if result %}
+<div class="card mb-3">
+  <div class="card-header">
+    {{ 'Preview result (nothing was saved)' if was_dry_run else 'Import result' }}
+  </div>
+  <div class="card-body">
+    <div class="row text-center mb-3">
+      <div class="col-md-3">
+        <div class="h5 mb-0">{{ result.maintenance.total_rows }}</div>
+        <div class="small text-muted">Maintenance rows read</div>
+      </div>
+      <div class="col-md-3">
+        <div class="h5 mb-0 text-success">{{ result.maintenance.created }}</div>
+        <div class="small text-muted">{{ 'Would import' if was_dry_run else 'Imported' }} (Maintenance)</div>
+      </div>
+      <div class="col-md-3">
+        <div class="h5 mb-0">{{ result.registration.total_rows }}</div>
+        <div class="small text-muted">Registration rows read</div>
+      </div>
+      <div class="col-md-3">
+        <div class="h5 mb-0 text-success">{{ result.registration.created }}</div>
+        <div class="small text-muted">{{ 'Would import' if was_dry_run else 'Imported' }} (Registration)</div>
+      </div>
+    </div>
+
+    {% if result.errors %}
+    <h6>Rows needing attention</h6>
+    <p class="text-muted small">
+      These rows were skipped — the rest still {{ 'would import' if was_dry_run else 'imported' }}.
+      Fix them in the spreadsheet and upload again.
+    </p>
+    <table class="table table-sm">
+      <thead><tr><th>Sheet</th><th style="width:90px;">Row</th><th>Vehicle</th><th>Problem</th></tr></thead>
+      <tbody>
+        {% for e in result.errors %}
+        <tr>
+          <td>{{ e.sheet }}</td>
+          <td>{{ e.row }}</td>
+          <td>{{ e.identifier }}</td>
+          <td>{{ e.problems | join('; ') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-success mb-0"><i class="bi bi-check-circle me-1"></i>No problems found.</p>
+    {% endif %}
+
+    {% if not was_dry_run and result.batch_id %}
+    <div class="alert alert-success mt-3 mb-0 d-flex justify-content-between align-items-center">
+      <span>This upload is recorded as one batch, so it can be undone
+        as a whole if it turns out to be the wrong file.</span>
+      <form method="post" action="{{ url_for('master_data.vehicle_history_delete_batch', batch_id=result.batch_id) }}"
+            data-confirm="Remove every record from this upload? This cannot be undone.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-danger">
+          <i class="bi bi-trash me-1"></i>Undo this upload</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# Recent uploads -- lets a wrong file from a past session be found and
+   undone too, not just the one just submitted. Same reasoning as the
+   fuel import's own Recent Uploads panel: a bulk historical migration
+   is exactly the kind of one-shot operation where an undo matters
+   most. #}
+{% if batches %}
+<div class="card">
+  <div class="card-header">Recent Uploads</div>
+  <div class="card-body p-0">
+    <table class="table table-sm mb-0">
+      <thead><tr>
+        <th>File</th><th>Uploaded</th><th>By</th>
+        <th class="text-end">Maintenance</th><th class="text-end">Registration</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for b in batches %}
+        <tr>
+          <td><i class="bi bi-file-earmark-spreadsheet me-1"></i>{{ b.filename or '—' }}</td>
+          <td class="text-nowrap">{{ b.imported_at.strftime('%Y-%m-%d %H:%M') if b.imported_at else '—' }}</td>
+          <td>{{ (users[b.imported_by].first_name ~ ' ' ~ users[b.imported_by].last_name) if b.imported_by in users else '—' }}</td>
+          <td class="text-end">{{ b.maintenance_rows }}</td>
+          <td class="text-end">{{ b.registration_rows }}</td>
+          <td class="text-end">
+            <form method="post" action="{{ url_for('master_data.vehicle_history_delete_batch', batch_id=b.id) }}"
+                  data-confirm="Remove every record from '{{ b.filename }}'? This cannot be undone.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger" title="Delete this upload">
+                <i class="bi bi-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

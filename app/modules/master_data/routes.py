@@ -817,6 +817,92 @@ def vehicle_import():
                            result=result, was_dry_run=was_dry_run)
 
 
+@bp.route("/vehicles/history-migration/template")
+@login_required
+@require_permission("historymigration.import")
+def vehicle_history_import_template():
+    from flask import send_file
+    from io import BytesIO
+    from app.modules.history_migration.import_service import build_template
+    data = build_template()
+    return send_file(
+        BytesIO(data), as_attachment=True,
+        download_name="Vehicle_History_Migration_Template.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument"
+                "spreadsheetml.sheet")
+
+
+@bp.route("/vehicles/history-migration", methods=["GET", "POST"])
+@login_required
+@require_permission("historymigration.import")
+def vehicle_history_import():
+    from app.modules.history_migration.import_service import (
+        import_vehicle_history)
+    from app.modules.history_migration.models import HistoricalImportBatch
+    from app.modules.user_management.models import User
+
+    result = None
+    was_dry_run = True
+    if request.method == "POST":
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            flash("Please choose a filled-in template file to upload.",
+                 "warning")
+        else:
+            # Default to a preview: nothing is written unless the
+            # person explicitly ticks "import for real", matching the
+            # vehicle importer's own safety pattern -- an accidental
+            # upload of the wrong file can't create hundreds of
+            # historical records.
+            was_dry_run = request.form.get("commit") != "1"
+            try:
+                result = import_vehicle_history(
+                    upload.stream, dry_run=was_dry_run,
+                    filename=upload.filename, user_id=current_user.id)
+                if was_dry_run:
+                    flash(f"Preview only — nothing saved. "
+                         f"{result['maintenance']['created']} maintenance "
+                         f"record(s) and "
+                         f"{result['registration']['created']} "
+                         f"registration record(s) would import.", "info")
+                else:
+                    flash(f"Import complete: "
+                         f"{result['maintenance']['created']} maintenance "
+                         f"record(s) and "
+                         f"{result['registration']['created']} "
+                         f"registration record(s) created.", "success")
+            except Exception as exc:
+                flash(str(exc), "danger")
+
+    batches = (HistoricalImportBatch.query
+              .order_by(HistoricalImportBatch.imported_at.desc())
+              .limit(30).all())
+    users = {u.id: u for u in User.query.all()}
+    return render_template("master_data/vehicle_history_import.html",
+                           result=result, was_dry_run=was_dry_run,
+                           batches=batches, users=users)
+
+
+@bp.route("/vehicles/history-migration/<int:batch_id>/delete",
+         methods=["POST"])
+@login_required
+@require_permission("historymigration.import")
+def vehicle_history_delete_batch(batch_id):
+    """Undo one bad historical upload -- removes exactly the rows that
+    one file created, across both Maintenance and Registration history
+    at once."""
+    from app.modules.history_migration.import_service import (
+        delete_historical_batch)
+    count = delete_historical_batch(batch_id)
+    if count:
+        flash(f"Removed {count} historical record(s) from that upload.",
+             "success")
+    else:
+        flash("That batch was not found — it may already have been "
+             "removed.", "warning")
+    return redirect(url_for("master_data.vehicle_history_import"))
+
+
 @bp.route("/vehicles/<int:vid>/print")
 @login_required
 @require_permission("vehicle.view")
