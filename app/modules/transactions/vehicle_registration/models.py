@@ -25,6 +25,10 @@ class VehicleRegistration(db.Model, BaseModel):
 
     # DRAFT | PENDING | APPROVED | COMPLETED | CANCELLED
     status = db.Column(db.String(12), default="DRAFT", nullable=False)
+    is_historical = db.Column(db.Boolean, default=False, nullable=False)
+    historical_batch_id = db.Column(
+        db.Integer, db.ForeignKey("historical_import_batches.id"),
+        nullable=True)
 
     requested_by = db.Column(db.Integer, db.ForeignKey("users.id"),
                              nullable=True)

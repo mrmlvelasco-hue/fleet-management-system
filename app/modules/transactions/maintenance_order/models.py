@@ -150,6 +150,15 @@ class MaintenanceOrder(db.Model, BaseModel):
     # DRAFT | PENDING | APPROVED | IN_PROGRESS | COMPLETED | CANCELLED —
     # physical lifecycle, separate from the linked ApprovalInstance.status.
     status = db.Column(db.String(12), default="DRAFT", nullable=False)
+    # A row imported from paper records, not created through the live
+    # workflow. Historical rows import directly as COMPLETED with no
+    # approval_instance -- they must never appear in "For My Action" or
+    # count toward this period's approval statistics; the work already
+    # happened, sometimes years ago.
+    is_historical = db.Column(db.Boolean, default=False, nullable=False)
+    historical_batch_id = db.Column(
+        db.Integer, db.ForeignKey("historical_import_batches.id"),
+        nullable=True)
 
     requested_by = db.Column(db.Integer, db.ForeignKey("users.id"),
                              nullable=True)

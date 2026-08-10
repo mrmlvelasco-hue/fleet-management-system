@@ -111,6 +111,48 @@ CATEGORY_TO_MTYPE = {
 }
 
 
+def _load_scope_details_index(wb):
+    """{(make, model, pm_cd, task_cd) lowercased: [scope line text, ...]}
+    sorted by Line_No, from the "Scope Details" sheet.
+
+    This is the NEW file format's real checklist source: the main
+    sheet's Scope column no longer contains checklist text at all --
+    it contains an instruction sentence for a human reader ("See Sheet
+    Scope Details with Parameter of Brand=... Task_CD=... PM_CD=..."),
+    telling them to look the real steps up in this sheet.
+
+    The join key doesn't need to be extracted from that sentence by
+    regex, though -- the main sheet's own row ALREADY carries Make,
+    Model, Task_CD and PM_CD as separate columns, so this indexes
+    directly on those and the instruction sentence is never parsed at
+    all. Returns {} (empty) if the sheet doesn't exist, so a file in
+    the OLDER inline-text format degrades cleanly to the previous
+    behaviour rather than failing.
+    """
+    if "Scope Details" not in wb.sheetnames:
+        return {}
+    ws = wb["Scope Details"]
+    header = [c.value for c in ws[1]]
+    idx = {h: i for i, h in enumerate(header)}
+    required = ["Make", "Model", "PM_CD", "Task_CD", "Line_No", "Scope_Detail"]
+    if any(h not in idx for h in required):
+        return {}   # not this sheet's expected shape -- degrade cleanly
+
+    raw = defaultdict(list)
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if row is None or row[idx["Scope_Detail"]] is None:
+            continue
+        key = (str(row[idx["Make"]] or "").strip().lower(),
+              str(row[idx["Model"]] or "").strip().lower(),
+              str(row[idx["PM_CD"]] or "").strip(),
+              str(row[idx["Task_CD"]] or "").strip())
+        line_no = row[idx["Line_No"]] or 0
+        raw[key].append((line_no, str(row[idx["Scope_Detail"]]).strip()))
+
+    return {key: [text for _n, text in sorted(lines, key=lambda t: t[0])]
+           for key, lines in raw.items()}
+
+
 def _cumulative_km_from_work_description(work_desc: str):
     """Extracts the absolute cumulative odometer milestone from a work-
     description like "65,000 km servicing of ..." or "First 1,000 km
@@ -194,6 +236,13 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
         raise ValueError(f"Expected column(s) not found in {xlsx_path}: "
                          f"{missing}. Found: {header_row}")
 
+    # Real per-package checklists, when the file has this sheet (see
+    # _load_scope_details_index's docstring for why). {} for an
+    # older-format file, which then falls back to text-splitting the
+    # Scope column itself, exactly as before.
+    scope_index = _load_scope_details_index(wb)
+    has_pm_cd = "PM_CD" in idx
+
     rows = list(ws.iter_rows(min_row=2, values_only=True))
     groups = defaultdict(list)
     for r in rows:
@@ -275,7 +324,17 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
             if not interval_km and not interval_days:
                 continue  # nothing usable to schedule on
 
-            activity_texts = _split_scope_into_items(scope_text)
+            activity_texts = None
+            if has_pm_cd:
+                pm_cd = row[idx["PM_CD"]]
+                join_key = (str(make or "").strip().lower(),
+                          str(model or "").strip().lower(),
+                          str(pm_cd or "").strip(), str(task_cd or "").strip())
+                activity_texts = scope_index.get(join_key)
+            if not activity_texts:
+                # Older-format file (or no join match found) -- the
+                # Scope column holds literal checklist text directly.
+                activity_texts = _split_scope_into_items(scope_text)
             if len(stats["samples"]) < 10:
                 stats["samples"].append({
                     "task_cd": task_cd, "make": make, "model": model,

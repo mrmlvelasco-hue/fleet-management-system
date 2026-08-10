@@ -121,6 +121,8 @@
         // even if one were used, so this stays bottom-anchored at every
         // size -- only the text/box shrink, not the position.
         cutout: "62%",
+        animation: { animateRotate: true, animateScale: true,
+                    duration: 1200, easing: "easeOutQuart" },
         plugins: { legend: { display: !hideLegend, position: "bottom",
                             labels: { boxWidth: legendBoxSize(),
                                      font: { size: legendFontSize() } } } }
@@ -135,6 +137,7 @@
       options: {
         responsive: true, maintainAspectRatio: false,
         indexAxis: horizontal ? "y" : "x",
+        animation: { duration: 1200, easing: "easeOutQuart" },
         plugins: { legend: { display: false } },
         scales: {
           x: { ticks: { font: { size: legendFontSize() },
@@ -154,6 +157,7 @@
                          fill: true, tension: 0.3 }] },
       options: {
         responsive: true, maintainAspectRatio: false,
+        animation: { duration: 1400, easing: "easeOutQuad" },
         plugins: { legend: { display: false } },
         scales: {
           x: { ticks: { font: { size: legendFontSize() },

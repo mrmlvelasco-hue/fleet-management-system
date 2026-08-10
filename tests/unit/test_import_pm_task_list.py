@@ -352,3 +352,122 @@ def test_reset_detaches_external_references_instead_of_failing(
 
     assert PMSchedule.query.count() == 0
     assert PMScopeTemplate.query.count() == 0
+
+
+# ── Scope Details join (new file format) ────────────────────────────────────
+
+def _make_workbook_with_scope_details(path):
+    """Reproduces the NEW file's real shape: the main sheet's Scope
+    column holds an instruction sentence for a human reader, not
+    checklist text -- the real checklist lives in a separate, joined
+    "Scope Details" sheet. This is what a real Ford Escape row in the
+    actual reported file looks like."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    headers = ["Make", "Model", "Description", "Task_CD", "PM_CD",
+              "WorkDescription", "Scope", "KM Reading", "KMDesc",
+              "Calendar", "CALDesc", "Hourly", "HourDesc",
+              "PMDescription", "Planned_CD", "Planned", "Sort"]
+    ws.append(headers)
+    ws.append([
+        "Ford", "Escape", "Vehicle Preventive Maintenance Ford Escape",
+        "S02-00001", "004-001-00001",
+        "First 1,000 km servicing of pm2 pm3 with Plate no. pm4",
+        "See Sheet Scope Details with Parameter of Brand =Ford Model "
+        "Escape Task_CD ='S02-00001' and PM_CD ='004-001-00001'",
+        "1KM", "First 1000 Km", "1MTH", "Every Month", 0, "NULL",
+        "Vehicle Preventive Maintenance", "S02",
+        "Vehicle Preventive Maintenance", 1])
+
+    scope = wb.create_sheet("Scope Details")
+    scope.append(["Make", "Model", "PM_CD", "Task_CD", "Line_No",
+                 "Scope_Detail"])
+    scope.append(["Ford", "Escape", "004-001-00001", "S02-00001", 2,
+                 "Check tire pressure and condition."])
+    scope.append(["Ford", "Escape", "004-001-00001", "S02-00001", 1,
+                 "Perform first 1,000 km PMS except change of oil and "
+                 "oil filter."])
+    scope.append(["Ford", "Escape", "004-001-00001", "S02-00001", 3,
+                 "Inspect brake fluid level."])
+    wb.save(path)
+    return path
+
+
+def test_scope_details_join_produces_the_real_checklist(db, tmp_path):
+    """The actual regression: without the join, the Scope column's own
+    instruction sentence would be treated as one (nonsensical) checklist
+    item. With it, the real 3-line checklist from the Scope Details
+    sheet is used instead."""
+    path = _make_workbook_with_scope_details(tmp_path / "vems_new.xlsx")
+    stats = import_pm_task_list(str(path), dry_run=True)
+    assert stats["packages_created"] == 1
+    assert stats["scope_items_created"] == 3   # not 1
+
+
+def test_scope_details_lines_are_ordered_by_line_no_not_sheet_order(
+        db, tmp_path):
+    """The fixture deliberately writes Line_No out of order (2, 1, 3) --
+    confirms the join sorts by Line_No rather than trusting row order in
+    the source sheet."""
+    path = _make_workbook_with_scope_details(tmp_path / "vems_new.xlsx")
+    stats = import_pm_task_list(str(path), dry_run=False)
+    from app.modules.maintenance_config.models import PMScopeItem
+    items = (PMScopeItem.query.order_by(PMScopeItem.sort_order).all())
+    assert [i.activity_description for i in items] == [
+        "Perform first 1,000 km PMS except change of oil and oil filter.",
+        "Check tire pressure and condition.",
+        "Inspect brake fluid level.",
+    ]
+
+
+def test_instruction_sentence_never_becomes_a_scope_item(db, tmp_path):
+    """The literal bug being fixed: the Scope column's own instruction
+    text must never end up stored as if it were real checklist
+    content."""
+    path = _make_workbook_with_scope_details(tmp_path / "vems_new.xlsx")
+    import_pm_task_list(str(path), dry_run=False)
+    from app.modules.maintenance_config.models import PMScopeItem
+    for item in PMScopeItem.query.all():
+        assert "See Sheet Scope Details" not in item.activity_description
+
+
+def test_older_format_file_without_scope_details_sheet_still_works(
+        db, tmp_path):
+    """Backward compatibility: a file with no Scope Details sheet at
+    all (the older format) must fall back to text-splitting the Scope
+    column directly, exactly as it always has."""
+    path = _make_pm_task_list_workbook(tmp_path / "older.xlsx")
+    stats = import_pm_task_list(str(path), dry_run=True)
+    assert stats["packages_created"] > 0
+    assert stats["scope_items_created"] > 0
+
+
+def test_a_row_with_no_join_match_falls_back_gracefully(db, tmp_path):
+    """A row whose Make/Model/PM_CD/Task_CD combination has no matching
+    rows in Scope Details (a genuine gap in the source data) must not
+    crash the import -- it falls back to text-splitting that row's own
+    Scope column, same as the older format."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    headers = ["Make", "Model", "Description", "Task_CD", "PM_CD",
+              "WorkDescription", "Scope", "KM Reading", "KMDesc",
+              "Calendar", "CALDesc", "Hourly", "HourDesc",
+              "PMDescription", "Planned_CD", "Planned", "Sort"]
+    ws.append(headers)
+    ws.append([
+        "Toyota", "Vios", "Vehicle Preventive Maintenance Toyota Vios",
+        "S09-00099", "999-999-99999", "Some service",
+        "1. Change oil. 2. Check filter.",
+        "5KMS", "5000 Km", None, None, 0, "NULL",
+        "Vehicle Preventive Maintenance", "S09",
+        "Vehicle Preventive Maintenance", 1])
+    wb.create_sheet("Scope Details").append(
+        ["Make", "Model", "PM_CD", "Task_CD", "Line_No", "Scope_Detail"])
+    path = tmp_path / "no_match.xlsx"
+    wb.save(path)
+
+    stats = import_pm_task_list(str(path), dry_run=True)
+    assert stats["packages_created"] == 1
+    assert stats["scope_items_created"] == 2   # from text-splitting
