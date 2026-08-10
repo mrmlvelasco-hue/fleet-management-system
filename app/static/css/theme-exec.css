@@ -80,21 +80,57 @@
   display: grid; gap: .85rem; margin-bottom: 1.15rem;
   grid-template-columns: repeat(auto-fit, minmax(186px, 1fr));
 }
+
+/* Entrance: cards fade + rise into place with a small stagger between
+   each, rather than all appearing at once. Ported from the uploaded
+   template's Framer Motion stagger (0.08s between children, 0.1s
+   initial delay) as plain CSS -- same visual result, zero new
+   dependencies. nth-child covers up to 8 cards, comfortably more than
+   the 6 currently on the dashboard. */
+@keyframes ent-kpi-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ent-kpi {
+  animation: ent-kpi-in .5s cubic-bezier(.22,1,.36,1) both;
+}
+.ent-kpi-grid .ent-kpi:nth-child(1) { animation-delay: .10s; }
+.ent-kpi-grid .ent-kpi:nth-child(2) { animation-delay: .18s; }
+.ent-kpi-grid .ent-kpi:nth-child(3) { animation-delay: .26s; }
+.ent-kpi-grid .ent-kpi:nth-child(4) { animation-delay: .34s; }
+.ent-kpi-grid .ent-kpi:nth-child(5) { animation-delay: .42s; }
+.ent-kpi-grid .ent-kpi:nth-child(6) { animation-delay: .50s; }
+.ent-kpi-grid .ent-kpi:nth-child(7) { animation-delay: .58s; }
+.ent-kpi-grid .ent-kpi:nth-child(8) { animation-delay: .66s; }
+@media (prefers-reduced-motion: reduce) {
+  .ent-kpi { animation: none; }
+}
+
 .ent-kpi {
   display: block; background: #fff; border: 1px solid var(--ent-slate-200);
   border-radius: 12px; padding: .95rem 1rem .85rem;
   box-shadow: var(--ent-shadow-sm); text-decoration: none;
-  transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+  /* A gentle spring-like curve (overshoots slightly, settles back) on
+     hover, rather than a flat linear ease -- matches the "springy"
+     feel of the template's whileHover, approximated without a JS
+     animation library. */
+  transition: box-shadow .25s cubic-bezier(.34,1.56,.64,1),
+             transform .25s cubic-bezier(.34,1.56,.64,1),
+             border-color .18s ease;
 }
 .ent-kpi:hover {
-  box-shadow: var(--ent-shadow-md); transform: translateY(-2px);
+  box-shadow: var(--ent-shadow-md); transform: translateY(-4px);
   border-color: #C7D9F7;
+}
+.ent-kpi:hover .ent-kpi__icon {
+  transform: scale(1.1);
 }
 .ent-kpi__head { display: flex; align-items: flex-start; gap: .7rem; }
 .ent-kpi__icon {
   flex: 0 0 auto; width: 42px; height: 42px; border-radius: 11px;
   display: flex; align-items: center; justify-content: center;
   font-size: 1.15rem; background: var(--ent-blue-50); color: var(--ent-blue);
+  transition: transform .25s cubic-bezier(.34,1.56,.64,1);
 }
 /* Per-card icon tints, so six cards read as distinct at a glance rather
    than a wall of identical blue. */
