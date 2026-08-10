@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from tests.conftest import tiny_jpeg_file
 
 import pytest
 
@@ -24,7 +25,7 @@ def env(db):
     driver = DriverService().create(
         employee_number="EMP-ODOFIX1", first_name="Ana", last_name="Cruz",
         license_number="LIC-ODOFIX1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id, photo_file=tiny_jpeg_file())
     DocumentTypeService().create(code="TT", name="Trip Ticket",
                                  requires_approval=False, auto_numbering=True)
     from app.modules.document_config.models import DocumentType

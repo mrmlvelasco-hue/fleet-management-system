@@ -1,4 +1,5 @@
 from datetime import date
+from tests.conftest import tiny_jpeg_file
 
 import pytest
 
@@ -28,7 +29,7 @@ def test_non_driver_assignee_does_not_require_license_fields(db, branch):
     personal driver)."""
     person = DriverService().create(
         employee_number="EMP-ASSIGNEE2", first_name="Maria", last_name="Santos",
-        branch_id=branch.id, assignee_type="EMPLOYEE")
+        branch_id=branch.id, assignee_type="EMPLOYEE", photo_file=tiny_jpeg_file())
     assert person.license_number is None
     assert person.assignee_type == "EMPLOYEE"
 
@@ -36,7 +37,7 @@ def test_non_driver_assignee_does_not_require_license_fields(db, branch):
 def test_person_id_auto_generated(db, branch):
     person = DriverService().create(
         employee_number="EMP-ASSIGNEE3", first_name="Test", last_name="Person",
-        branch_id=branch.id, assignee_type="EMPLOYEE")
+        branch_id=branch.id, assignee_type="EMPLOYEE", photo_file=tiny_jpeg_file())
     assert person.person_id is not None
     assert person.person_id.startswith("PID-")
 
@@ -44,7 +45,7 @@ def test_person_id_auto_generated(db, branch):
 def test_extended_profile_fields_are_optional(db, branch):
     person = DriverService().create(
         employee_number="EMP-ASSIGNEE4", first_name="Minimal", last_name="Profile",
-        branch_id=branch.id, assignee_type="EMPLOYEE")
+        branch_id=branch.id, assignee_type="EMPLOYEE", photo_file=tiny_jpeg_file())
     assert person.suffix is None
     assert person.nickname is None
     assert person.section is None
@@ -71,7 +72,8 @@ def test_full_profile_fields_can_be_set(db, branch):
         complete_address="123 Main St, Manila",
         emergency_contact_person="Jane Doe", emergency_contact_number="0917-000-1111",
         business_name="Full Profile Consulting Inc.",
-        business_contact_no="02-9999-0000", business_address="456 Business Ave")
+        business_contact_no="02-9999-0000", business_address="456 Business Ave",
+        photo_file=tiny_jpeg_file())
     assert person.suffix == "Jr."
     assert person.nickname == "Full-Chan"
     assert person.section == "IT Support"
@@ -94,6 +96,7 @@ def test_existing_driver_creation_pattern_still_works_unchanged(db, branch):
     person = DriverService().create(
         employee_number="EMP-ASSIGNEE6", first_name="Legacy", last_name="Caller",
         license_number="LIC-ASSIGNEE6", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+        photo_file=tiny_jpeg_file())
     assert person.assignee_type == "DRIVER"
     assert person.license_number == "LIC-ASSIGNEE6"

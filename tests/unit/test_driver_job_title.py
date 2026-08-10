@@ -1,4 +1,5 @@
 from datetime import date
+from tests.conftest import tiny_jpeg_file
 
 from app.modules.master_data.driver.service import DriverService
 from app.modules.master_data.org.service import BranchService
@@ -10,7 +11,7 @@ def test_driver_can_have_job_title(db):
         employee_number="EMP-JOBTITLE1", first_name="Juan", last_name="Dela Cruz",
         license_number="LIC-JOBTITLE1", license_expiry=date(2030, 1, 1),
         license_type="PROFESSIONAL", branch_id=branch.id,
-        job_title="Sales Representative")
+        job_title="Sales Representative", photo_file=tiny_jpeg_file())
     assert driver.job_title == "Sales Representative"
 
 
@@ -19,5 +20,6 @@ def test_job_title_is_optional(db):
     driver = DriverService().create(
         employee_number="EMP-JOBTITLE2", first_name="Ana", last_name="Reyes",
         license_number="LIC-JOBTITLE2", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+        photo_file=tiny_jpeg_file())
     assert driver.job_title is None

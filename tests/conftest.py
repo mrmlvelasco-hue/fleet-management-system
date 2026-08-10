@@ -45,3 +45,20 @@ def client(app):
 @pytest.fixture()
 def db(app):
     return _db
+
+
+def tiny_jpeg_file(filename="test_photo.jpg"):
+    """Minimal valid JPEG bytes as a Werkzeug FileStorage, small enough
+    not to need Pillow as a test dependency. Driver/assignee creation
+    requires a photo, so any test that creates a driver needs one of
+    these."""
+    import io
+    from werkzeug.datastructures import FileStorage
+    data = bytes.fromhex(
+        "ffd8ffe000104a46494600010100000100010000ffdb004300080606070605"
+        "08070707090908090a141009090a1e14141117141a1a1a1a1a1a1a1a1a1a1a"
+        "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a"
+        "1a1a1a1a1a1affc9000b080001000101011100ffcc00060010100501ffda00"
+        "080101000000013fd2ffd9")
+    return FileStorage(stream=io.BytesIO(data), filename=filename,
+                       content_type="image/jpeg")

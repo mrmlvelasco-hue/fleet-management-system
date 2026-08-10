@@ -1278,7 +1278,10 @@ def driver_new():
     employment_types = LookupService().get_by_type_with_fallback("EMPLOYMENT_TYPE")
     if request.method == "POST":
         try:
-            DriverService().create(**_driver_fields())
+            DriverService().create(
+                **_driver_fields(),
+                photo_file=request.files.get("photo"),
+                user=current_user)
             flash("Driver created.", "success")
             return redirect(url_for("master_data.driver_list"))
         except (DuplicateDriverError, DateFormatError,
@@ -1311,6 +1314,8 @@ def driver_edit(did):
         try:
             DriverService().update(
                 did,
+                photo_file=request.files.get("photo"),
+                user=current_user,
                 assignee_type=assignee_type,
                 first_name=f.get("first_name", ""),
                 last_name=f.get("last_name", ""),

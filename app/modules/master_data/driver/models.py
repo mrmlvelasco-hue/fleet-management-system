@@ -44,6 +44,20 @@ class Driver(db.Model, BaseModel):
     # field (PM7) — kept distinct from `position` above, since the spec
     # lists Position and Job Title as two separate fields.
     job_title = db.Column(db.String(100), nullable=True)
+
+    # The photo shown on the printed Vehicle Assignment Memo and Vehicle
+    # Issuance / Receiving Checklist -- reuses the existing generic
+    # Attachment infrastructure (stored in the shared database, not a
+    # local disk path) rather than a new storage mechanism.
+    #
+    # Nullable at the DB level, same reasoning as license_number above:
+    # an existing driver record must not become impossible to save just
+    # because it predates this field. DriverService.create() requires a
+    # photo for every NEW driver; editing an existing one without a
+    # photo does not force adding one on an unrelated change.
+    photo_attachment_id = db.Column(
+        db.Integer, db.ForeignKey("attachments.id"), nullable=True)
+    photo = db.relationship("Attachment", foreign_keys=[photo_attachment_id])
     cost_center = db.Column(db.String(50), nullable=True)
     # EMPLOYMENT_STATUS / EMPLOYMENT_TYPE lookups
     employment_status = db.Column(db.String(20), nullable=True)

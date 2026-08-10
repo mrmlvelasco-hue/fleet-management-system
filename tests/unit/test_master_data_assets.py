@@ -1,5 +1,6 @@
 import pytest
 from datetime import date, timedelta
+from tests.conftest import tiny_jpeg_file
 
 from app.modules.master_data.vehicle.service import (
     VehicleService, DuplicateVehicleError)
@@ -83,7 +84,8 @@ def test_create_driver(db, branch):
         employee_number="EMP-001", first_name="Juan",
         last_name="dela Cruz", license_number="N01-12-345678",
         license_expiry=date.today() + timedelta(days=365),
-        license_type="PRO", branch_id=branch.id)
+        license_type="PRO", branch_id=branch.id,
+        photo_file=tiny_jpeg_file())
     assert d.id is not None
 
 
@@ -92,12 +94,14 @@ def test_duplicate_license_rejected(db, branch):
     svc.create(employee_number="EMP-002", first_name="Ana",
                last_name="Santos", license_number="N01-99-999999",
                license_expiry=date.today() + timedelta(days=365),
-               license_type="NON-PRO", branch_id=branch.id)
+               license_type="NON-PRO", branch_id=branch.id,
+               photo_file=tiny_jpeg_file())
     with pytest.raises(DuplicateDriverError):
         svc.create(employee_number="EMP-003", first_name="Bob",
                    last_name="Reyes", license_number="N01-99-999999",
                    license_expiry=date.today() + timedelta(days=365),
-                   license_type="NON-PRO", branch_id=branch.id)
+                   license_type="NON-PRO", branch_id=branch.id,
+                   photo_file=tiny_jpeg_file())
 
 
 def test_expiring_licenses(db, branch):
@@ -105,11 +109,13 @@ def test_expiring_licenses(db, branch):
     svc.create(employee_number="EMP-004", first_name="Carlos",
                last_name="Lopez", license_number="N01-11-111111",
                license_expiry=date.today() + timedelta(days=20),
-               license_type="PRO", branch_id=branch.id)
+               license_type="PRO", branch_id=branch.id,
+               photo_file=tiny_jpeg_file())
     svc.create(employee_number="EMP-005", first_name="Diana",
                last_name="Cruz", license_number="N01-22-222222",
                license_expiry=date.today() + timedelta(days=200),
-               license_type="PRO", branch_id=branch.id)
+               license_type="PRO", branch_id=branch.id,
+               photo_file=tiny_jpeg_file())
     expiring = svc.get_expiring_licenses(days=30)
     assert len(expiring) == 1
     assert expiring[0].employee_number == "EMP-004"

@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from tests.conftest import tiny_jpeg_file
 
 import pytest
 
@@ -25,7 +26,7 @@ def env(db):
     driver = DriverService().create(
         employee_number="EMP-ACTGUARD1", first_name="Lino", last_name="Ramos",
         license_number="LIC-ACTGUARD1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch_a.id)
+        license_type="PROFESSIONAL", branch_id=branch_a.id, photo_file=tiny_jpeg_file())
 
     requester = User(username="actguard_requester",
                      email="actguard_requester@x.com", password_hash="x")

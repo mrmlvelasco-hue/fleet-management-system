@@ -1,4 +1,5 @@
 from datetime import date
+from tests.conftest import tiny_jpeg_file
 
 import pytest
 
@@ -24,7 +25,7 @@ def env(db):
     driver = DriverService().create(
         employee_number="EMP-ATDFIELDS1", first_name="Alwin", last_name="Delo Santos",
         license_number="LIC-ATDFIELDS1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id, photo_file=tiny_jpeg_file())
     return branch, vt, vehicle, driver
 
 

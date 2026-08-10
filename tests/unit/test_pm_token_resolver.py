@@ -1,4 +1,5 @@
 from datetime import date
+from tests.conftest import tiny_jpeg_file
 
 import pytest
 
@@ -19,7 +20,7 @@ def env(db):
         employee_number="EMP-TOKEN1", first_name="Juan", last_name="Dela Cruz",
         license_number="LIC-TOKEN1", license_expiry=date(2030, 1, 1),
         license_type="PROFESSIONAL", branch_id=branch.id,
-        job_title="Sales Representative")
+        job_title="Sales Representative", photo_file=tiny_jpeg_file())
     vehicle = VehicleService().create(
         vehicle_type_id=vt.id, brand="Honda", model="HR-V", year=2024,
         branch_id=branch.id, conduction_number="TOKEN-000",

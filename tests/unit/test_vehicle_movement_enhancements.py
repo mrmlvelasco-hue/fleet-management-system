@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from tests.conftest import tiny_jpeg_file
 
 import pytest
 
@@ -21,7 +22,7 @@ def env(db):
     driver = DriverService().create(
         employee_number="EMP-VM1", first_name="Rey", last_name="Torres",
         license_number="LIC-VM1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id, photo_file=tiny_jpeg_file())
     vehicle = VehicleService().create(
         vehicle_type_id=vt.id, brand="Toyota", model="Hiace", year=2024,
         branch_id=branch.id, conduction_number="VM-000",
@@ -54,7 +55,7 @@ def test_create_allows_overriding_driver(db, env):
     other_driver = DriverService().create(
         employee_number="EMP-VM2", first_name="Ben", last_name="Reyes",
         license_number="LIC-VM2", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id, photo_file=tiny_jpeg_file())
     mv = VehicleMovementService().create(
         vehicle_id=vehicle.id, movement_type="TRANSFER",
         from_location="HQ", to_location="Branch B",

@@ -1,4 +1,5 @@
 from datetime import date
+from tests.conftest import tiny_jpeg_file
 
 import pytest
 
@@ -16,11 +17,13 @@ def env(db):
     manila_driver = DriverService().create(
         employee_number="EMP-MNL1", first_name="Ana", last_name="Reyes",
         license_number="LIC-MNL1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=manila.id)
+        license_type="PROFESSIONAL", branch_id=manila.id,
+        photo_file=tiny_jpeg_file())
     cebu_driver = DriverService().create(
         employee_number="EMP-CEB1", first_name="Ben", last_name="Cruz",
         license_number="LIC-CEB1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=cebu.id)
+        license_type="PROFESSIONAL", branch_id=cebu.id,
+        photo_file=tiny_jpeg_file())
 
     manila_user = User(username="drvscope_manila", email="drvscope_manila@x.com",
                        password_hash="x")

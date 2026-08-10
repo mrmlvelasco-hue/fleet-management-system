@@ -38,7 +38,8 @@ class EmergencyContactService:
 class DriverService:
     def create(self, employee_number, first_name, last_name,
                branch_id, assignee_type="DRIVER", license_number=None,
-               license_expiry=None, license_type=None, **kwargs):
+               license_expiry=None, license_type=None, photo_file=None,
+               user=None, **kwargs):
         # DRIVER-type assignees keep the exact original requirement —
         # license details are mandatory. Every other assignee type
         # (Employee, Consultant, Third Party Delivery) can be assigned a
@@ -48,6 +49,16 @@ class DriverService:
             raise InvalidAssigneeError(
                 "License Number, Expiry, and Type are required for a "
                 "Driver-type assignee.")
+        # A photo is required for EVERY new assignee, regardless of
+        # type -- it prints on the Vehicle Assignment Memo and the
+        # Vehicle Issuance / Receiving Checklist for any assignee, not
+        # just literal drivers. Checked here, before anything is
+        # written, so a missing photo never leaves a half-created
+        # record behind.
+        if photo_file is None or not getattr(photo_file, "filename", ""):
+            raise InvalidAssigneeError(
+                "A photo is required when creating a new driver or "
+                "assignee record.")
         if license_number and Driver.query.filter_by(
                 license_number=license_number).first():
             raise DuplicateDriverError(
@@ -66,6 +77,16 @@ class DriverService:
             branch_id=branch_id, **kwargs)
         db.session.add(obj)
         db.session.commit()
+
+        # The attachment references this driver's own id, so the
+        # upload can only happen once the row (and its id) exist --
+        # the validation above already guaranteed a file was provided.
+        from app.core.attachments.attachment_service import AttachmentService
+        attachment = AttachmentService().upload(
+            photo_file, reference_table="drivers", reference_id=obj.id,
+            user=user)
+        obj.photo_attachment_id = attachment.id
+        db.session.commit()
         return obj
 
     def _generate_person_id(self) -> str:
@@ -77,11 +98,22 @@ class DriverService:
             Driver.person_id.like(f"PID-{year}-%")).count()
         return f"PID-{year}-{count + 1:06d}"
 
-    def update(self, record_id, **kwargs):
+    def update(self, record_id, photo_file=None, user=None, **kwargs):
         obj = db.session.get(Driver, record_id)
         if obj:
             for k, v in kwargs.items():
                 setattr(obj, k, v)
+            # Optional: replacing an existing photo, or adding one to a
+            # record that predates this field. Never required here --
+            # only at creation -- so editing an unrelated field on an
+            # existing driver can't be blocked by a missing photo.
+            if photo_file is not None and getattr(photo_file, "filename", ""):
+                from app.core.attachments.attachment_service import (
+                    AttachmentService)
+                attachment = AttachmentService().upload(
+                    photo_file, reference_table="drivers",
+                    reference_id=obj.id, user=user)
+                obj.photo_attachment_id = attachment.id
             db.session.commit()
         return obj
 

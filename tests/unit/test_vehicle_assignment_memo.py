@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 """Tests for the Vehicle Assignment Memo (VAM) print -- the formal
 company memo for Assignment/Reassignment orders, matching the corporate
 paper form (Location, Date, assignee, classification checkboxes,
@@ -53,7 +54,7 @@ def driver(db, branch):
     return DriverService().create(
         first_name="Alex", last_name="Calonge", employee_number="EMP-VAM-01",
         branch_id=branch.id, license_number="LIC-VAM-01",
-        license_expiry=date(2030, 1, 1), license_type="Professional")
+        license_expiry=date(2030, 1, 1), license_type="Professional", photo_file=tiny_jpeg_file())
 
 
 def test_assignment_classification_persists_on_reassignment_order(

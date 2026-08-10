@@ -7,7 +7,7 @@
 {% endblock %}
 
 {% block content %}
-<form method="post">
+<form method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
   <!-- Header & Primary Actions -->
@@ -304,6 +304,38 @@
 
     <!-- Right Guidance Panel -->
     <div class="col-lg-4">
+      <div class="card border-0 bg-light mb-4">
+        <div class="card-body p-3 text-center">
+          <h6 class="text-uppercase text-muted fw-bold mb-3 small">
+            <i class="bi bi-camera me-1"></i>Photo
+            {% if not item %}<span class="text-danger">*</span>{% endif %}
+          </h6>
+          {# Shown on the printed Vehicle Assignment Memo and Vehicle
+             Issuance/Receiving Checklist -- previously always a blank
+             box on those documents, since no driver record had
+             anywhere to store one. #}
+          <div class="mb-2">
+            {% if item and item.photo_attachment_id %}
+            <img src="{{ url_for('master_data.attachment_view', att_id=item.photo_attachment_id) }}"
+                 id="photoPreview" class="rounded border" alt="Current photo"
+                 style="width:140px;height:130px;object-fit:cover;">
+            {% else %}
+            <div id="photoPlaceholder" class="border rounded d-flex align-items-center justify-content-center text-muted mx-auto"
+                 style="width:140px;height:130px;">
+              <i class="bi bi-person" style="font-size:2.5rem;"></i>
+            </div>
+            <img id="photoPreview" class="rounded border d-none mx-auto d-block"
+                 style="width:140px;height:130px;object-fit:cover;" alt="Selected photo preview">
+            {% endif %}
+          </div>
+          <input type="file" name="photo" id="photoInput" class="form-control form-control-sm"
+                 accept="image/png,image/jpeg,image/jpg" {{ 'required' if not item }}>
+          <div class="form-text">
+            {% if item %}Leave blank to keep the current photo.
+            {% else %}Required for every new driver or assignee record.{% endif %}
+          </div>
+        </div>
+      </div>
       <div class="card border-0 bg-light sticky-top mb-4" style="top: 1rem;">
         <div class="card-body p-3">
           <h6 class="text-uppercase text-muted fw-bold mb-3 small"><i class="bi bi-person-badge me-1"></i> Assignee Roles Guide</h6>
@@ -406,10 +438,30 @@
 
 {% block scripts %}
 <script>
+(function () {
+  var input = document.getElementById("photoInput");
+  var preview = document.getElementById("photoPreview");
+  var placeholder = document.getElementById("photoPlaceholder");
+  if (!input || !preview) return;
+  input.addEventListener("change", function () {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      preview.src = e.target.result;
+      preview.classList.remove("d-none");
+      if (placeholder) placeholder.classList.add("d-none");
+    };
+    reader.readAsDataURL(file);
+  });
+})();
+</script>
+<script>
 if (window.jQuery) {
   jQuery(function () {
     initAjaxSelect("#drvBranchSelect", "{{ url_for('api_search.search_branches') }}",
       { placeholder: "Type branch code or name..." });
+
 
     function toggleAssigneeSections() {
       var assigneeType = $("#assigneeTypeSelect").val();

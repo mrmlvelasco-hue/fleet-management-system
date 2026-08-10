@@ -67,7 +67,18 @@
         <div><strong>EDS UNIT</strong> (EDS-SR, MR-EDS, TPD, Business Partner, Operator)</div>
       </div>
     </div>
-    <div class="photo-box"></div>
+    {% if item.driver and item.driver.photo_attachment_id %}
+    <div class="photo-box">
+      <img src="{{ url_for('master_data.attachment_view', att_id=item.driver.photo_attachment_id) }}"
+           alt="{{ item.driver.full_name }}"
+           style="width:100%;height:100%;object-fit:cover;">
+    </div>
+    {% else %}
+    <div class="photo-box" style="display:flex;align-items:center;justify-content:center;
+                text-align:center;font-size:9px;color:#888;padding:4px;">
+      No Photo on File
+    </div>
+    {% endif %}
   </div>
 
   <table class="info">
