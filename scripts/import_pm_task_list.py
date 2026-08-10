@@ -335,6 +335,16 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
                 # Older-format file (or no join match found) -- the
                 # Scope column holds literal checklist text directly.
                 activity_texts = _split_scope_into_items(scope_text)
+            # Each package's OWN row already carries its own correct,
+            # package-specific description ("...1,000 km " for the
+            # first-service package, "...5,000 km " for every one
+            # after) -- confirmed directly against a real reported
+            # case. Using it here, not the group-level task_description
+            # frozen from the group's first row, which is what
+            # previously made every package after the first display
+            # the FIRST package's km figure in its own name/label,
+            # regardless of that package's real interval.
+            row_description = row[idx["Description"]] or task_description
             if len(stats["samples"]) < 10:
                 stats["samples"].append({
                     "task_cd": task_cd, "make": make, "model": model,
@@ -353,7 +363,7 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
                     vehicle_model=str(model) if brand_id is None else None,
                     vehicle_brand_id=brand_id, vehicle_model_id=model_id,
                     profile_code=str(task_cd),
-                    profile_description=str(task_description),
+                    profile_description=str(row_description),
                     sequence_position=seq_pos,
                     interval_km=interval_km, interval_days=interval_days,
                     interval_hours=interval_hours,
@@ -368,8 +378,8 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
                     } for i, text in enumerate(activity_texts)]
                     PMScopeTemplateService().create(
                         maintenance_type_id=mtype.id,
-                        name=f"{task_description} - Package {seq_pos}"[:120],
-                        description=str(task_description),
+                        name=f"{row_description} - Package {seq_pos}"[:120],
+                        description=str(row_description),
                         pm_schedule_id=sched.id, items=items)
             stats["scope_items_created"] += len(activity_texts)
             stats["packages_created"] += 1

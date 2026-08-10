@@ -471,3 +471,87 @@ def test_a_row_with_no_join_match_falls_back_gracefully(db, tmp_path):
     stats = import_pm_task_list(str(path), dry_run=True)
     assert stats["packages_created"] == 1
     assert stats["scope_items_created"] == 2   # from text-splitting
+
+
+def test_each_package_uses_its_own_description_not_the_groups_first_row(
+        db, tmp_path):
+    """Reported regression: every package after the first in a Task_CD
+    group displayed the FIRST package's own km figure in its name,
+    even though each row in the real source file already carries its
+    own correct, package-specific Description (confirmed directly
+    against a real reported file: package 1's row says '...1,000 km',
+    package 2's row says '...5,000 km', package 3's row says
+    '...10,000 km' -- all different, all correct in the source, all
+    being silently overwritten with package 1's text before this fix).
+    """
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    headers = ["Task_CD", "Make", "Model", "Description", "PMDescription",
+              "WorkDescription", "Scope", "KM Reading", "Calendar",
+              "Hourly", "Sort"]
+    ws.append(headers)
+    ws.append(["TV-001", "Toyota", "Vios",
+              "Vehicle Preventive Maintenance Toyota Vios 1,000 km ",
+              "Vehicle Preventive Maintenance", "First 1,000 km service",
+              "1. Change oil.", "1KM", None, None, 1])
+    ws.append(["TV-001", "Toyota", "Vios",
+              "Vehicle Preventive Maintenance Toyota Vios 5,000 km ",
+              "Vehicle Preventive Maintenance", "Every 5,000 km service",
+              "1. Rotate tires.", "5KMS", None, None, 2])
+    ws.append(["TV-001", "Toyota", "Vios",
+              "Vehicle Preventive Maintenance Toyota Vios 10,000 km ",
+              "Vehicle Preventive Maintenance", "10,000 km service",
+              "1. Replace filters.", "10KMS", None, None, 3])
+    path = tmp_path / "package_names.xlsx"
+    wb.save(path)
+
+    import_pm_task_list(str(path), dry_run=False)
+
+    from app.modules.maintenance_config.models import PMSchedule, PMScopeTemplate
+    templates = (PMScopeTemplate.query
+                .join(PMSchedule)
+                .filter(PMSchedule.profile_code == "TV-001")
+                .order_by(PMSchedule.sequence_position).all())
+    assert len(templates) == 3
+    assert "1,000 km" in templates[0].name
+    assert "5,000 km" in templates[1].name    # NOT 1,000 km
+    assert "10,000 km" in templates[2].name   # NOT 1,000 km
+    # And each schedule's own profile_description matches too, not just
+    # the scope template's display name.
+    scheds = (PMSchedule.query.filter_by(profile_code="TV-001")
+             .order_by(PMSchedule.sequence_position).all())
+    assert "5,000 km" in scheds[1].profile_description
+    assert "10,000 km" in scheds[2].profile_description
+
+
+def test_a_package_with_a_blank_description_falls_back_to_the_group_default(
+        db, tmp_path):
+    """Defensive case: if one specific row's own Description is blank,
+    it must not become the literal string 'None' -- falls back to the
+    group's first-row description instead."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    headers = ["Task_CD", "Make", "Model", "Description", "PMDescription",
+              "WorkDescription", "Scope", "KM Reading", "Calendar",
+              "Hourly", "Sort"]
+    ws.append(headers)
+    ws.append(["TV-002", "Toyota", "Vios", "Toyota Vios PM Schedule",
+              "Vehicle Preventive Maintenance", "First service",
+              "1. Change oil.", "1KM", None, None, 1])
+    ws.append(["TV-002", "Toyota", "Vios", None,   # blank on purpose
+              "Vehicle Preventive Maintenance", "Second service",
+              "1. Rotate tires.", "5KMS", None, None, 2])
+    path = tmp_path / "blank_description.xlsx"
+    wb.save(path)
+
+    import_pm_task_list(str(path), dry_run=False)
+
+    from app.modules.maintenance_config.models import PMSchedule, PMScopeTemplate
+    templates = (PMScopeTemplate.query
+                .join(PMSchedule)
+                .filter(PMSchedule.profile_code == "TV-002")
+                .order_by(PMSchedule.sequence_position).all())
+    assert "None" not in templates[1].name
+    assert templates[1].name  # not empty either
