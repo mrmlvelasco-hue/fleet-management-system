@@ -129,6 +129,50 @@ def get_vehicle(api_user, vehicle_id):
     return jsonify(_vehicle_json(vehicle, include_pm=True))
 
 
+def _apply_odometer_update(vehicle, raw):
+    """Shared by both the vehicle_id and plate-number odometer
+    endpoints, so the two entry points can never enforce different
+    rules -- there is exactly one place that decides what a valid
+    reading looks like.
+
+    Returns (response_dict, http_status). Does not commit if the
+    reading is rejected.
+    """
+    if raw is None:
+        return {"error": "bad_request",
+               "message": "'odometer' is required."}, 400
+    try:
+        reading = int(float(str(raw).replace(",", "")))
+    except (TypeError, ValueError):
+        return {"error": "bad_request",
+               "message": f"'odometer' must be a number, got {raw!r}."}, 400
+    if reading < 0:
+        return {"error": "bad_request",
+               "message": "'odometer' cannot be negative."}, 400
+
+    previous = vehicle.current_odometer
+    if previous is not None and reading < previous:
+        return {
+            "error": "conflict",
+            "message": f"Reading {reading:,} is lower than the vehicle's "
+                       f"current odometer {previous:,}. An odometer cannot "
+                       f"decrease; ignoring to protect PM scheduling.",
+            "current_odometer": previous,
+        }, 409
+
+    vehicle.current_odometer = reading
+    db.session.commit()
+
+    return {
+        "vehicle_id": vehicle.id,
+        "plate_number": vehicle.plate_number or vehicle.conduction_number,
+        "previous_odometer": previous,
+        "current_odometer": reading,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        **{"pm_status": _vehicle_json(vehicle, include_pm=True)["pm_status"]},
+    }, 200
+
+
 @bp.route("/vehicles/<int:vehicle_id>/odometer", methods=["POST"])
 @api_auth_required("vehicle.update")
 def update_odometer(api_user, vehicle_id):
@@ -154,41 +198,43 @@ def update_odometer(api_user, vehicle_id):
                                   "this account."}), 404
 
     payload = request.get_json(silent=True) or {}
-    raw = payload.get("odometer")
-    if raw is None:
-        return jsonify({"error": "bad_request",
-                       "message": "'odometer' is required."}), 400
-    try:
-        reading = int(float(str(raw).replace(",", "")))
-    except (TypeError, ValueError):
-        return jsonify({"error": "bad_request",
-                       "message": f"'odometer' must be a number, got "
-                                  f"{raw!r}."}), 400
-    if reading < 0:
-        return jsonify({"error": "bad_request",
-                       "message": "'odometer' cannot be negative."}), 400
+    body, status = _apply_odometer_update(vehicle, payload.get("odometer"))
+    return jsonify(body), status
 
-    previous = vehicle.current_odometer
-    if previous is not None and reading < previous:
+
+@bp.route("/vehicles/by-plate/odometer", methods=["POST"])
+@api_auth_required("vehicle.update")
+def update_odometer_by_plate(api_user):
+    """Same as POST /vehicles/<id>/odometer, but looked up by plate or
+    conduction number instead of the internal vehicle id -- for a
+    source system (an SMS-consolidation tool, a fleet-card reader) that
+    only knows the plate, not this system's own database id.
+
+    A body parameter rather than a URL path segment specifically
+    because a plate number can contain characters ('/', spaces) that
+    would need careful URL-encoding in a path; a JSON body avoids that
+    entirely for the calling system.
+    """
+    payload = request.get_json(silent=True) or {}
+    plate = (payload.get("plate_number") or "").strip()
+    if not plate:
+        return jsonify({"error": "bad_request",
+                       "message": "'plate_number' is required."}), 400
+
+    from app.modules.master_data.vehicle.service import VehicleService
+    needle = plate.upper()
+    match = next((v for v in VehicleService().list(user=api_user)
+                 if (v.plate_number or "").upper() == needle
+                 or (v.conduction_number or "").upper() == needle), None)
+    if match is None:
         return jsonify({
-            "error": "conflict",
-            "message": f"Reading {reading:,} is lower than the vehicle's "
-                       f"current odometer {previous:,}. An odometer cannot "
-                       f"decrease; ignoring to protect PM scheduling.",
-            "current_odometer": previous,
-        }), 409
+            "error": "not_found",
+            "message": f"No vehicle found with plate or conduction number "
+                      f"'{plate}'.",
+        }), 404
 
-    vehicle.current_odometer = reading
-    db.session.commit()
-
-    return jsonify({
-        "vehicle_id": vehicle.id,
-        "plate_number": vehicle.plate_number or vehicle.conduction_number,
-        "previous_odometer": previous,
-        "current_odometer": reading,
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
-        **{"pm_status": _vehicle_json(vehicle, include_pm=True)["pm_status"]},
-    })
+    body, status = _apply_odometer_update(match, payload.get("odometer"))
+    return jsonify(body), status
 
 
 @bp.route("/vehicles/<int:vehicle_id>/pm-status", methods=["GET"])
