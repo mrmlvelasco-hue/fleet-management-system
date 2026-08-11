@@ -96,41 +96,10 @@
   {% endfor %}
 </div>
 
-{# ── Approval workflow ─────────────────────────────────────────────── #}
+{# ── Registration Status / Maintenance Management / Approval Workflow ── #}
 <div class="row g-3 mb-3">
-  <div class="col-12">
-    <div class="ent-panel">
-      <div class="ent-panel__head">
-        <h2 class="ent-panel__title">Approval Workflow</h2>
-      </div>
-      <div class="ent-panel__body">
-        <div class="ent-flow">
-          {% set steps = [
-            ('Draft', workflow.draft, 'draft', 'bi-file-earmark'),
-            ('Submitted', workflow.submitted, 'submitted', 'bi-send'),
-            ('For Approval', workflow.for_approval, 'review', 'bi-person-check'),
-            ('Approved', workflow.approved, 'approved', 'bi-check-lg'),
-            ('Completed', workflow.completed, 'done', 'bi-flag-fill')] %}
-          {% for label, count, tone, icon in steps %}
-          <div class="ent-flow__step">
-            <div class="ent-flow__dot ent-flow__dot--{{ tone }}"><i class="bi {{ icon }}"></i></div>
-            <div class="ent-flow__label">{{ label }}</div>
-            <div class="ent-flow__count" data-counter="{{ count }}">{{ count }}</div>
-          </div>
-          {% if not loop.last %}<div class="ent-flow__arrow"><i class="bi bi-arrow-right"></i></div>{% endif %}
-          {% endfor %}
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# Registration health as a compact donut instead of an unbounded table.
-   After a migration ~100 vehicles can be overdue at once, and that table
-   pushed everything below it off the screen. The shape belongs here; the
-   per-vehicle detail belongs on the report, one click away. #}
-<div class="row g-3 mb-3">
-  <div class="col-12 col-xl-6">
+  {% if panel_visible.REGISTRATION_STATUS %}
+  <div class="col-12 col-lg-4">
     <div class="ent-panel">
       <div class="ent-panel__head">
         <h2 class="ent-panel__title">Vehicle Registration Status</h2>
@@ -155,7 +124,69 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
+  {% if panel_visible.MAINTENANCE_MANAGEMENT %}
+  <div class="col-12 col-lg-4">
+    <div class="ent-panel">
+      <div class="ent-panel__head">
+        <h2 class="ent-panel__title">Maintenance Management</h2>
+      </div>
+      <div class="ent-panel__body">
+        <div class="fms-chart-box" style="height: 220px;">
+          <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
+          <canvas id="chartMaintenanceManagement"></canvas>
+        </div>
+      </div>
+      <div class="ent-panel__foot">
+        <span id="mmScopeCaption">&mdash;</span>
+        <a href="{{ url_for('system_admin.report_pms_compliance', generate=1) }}">View details &rarr;</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if panel_visible.APPROVAL_WORKFLOW %}
+  <div class="col-12 col-lg-4">
+    <div class="ent-panel">
+      <div class="ent-panel__head">
+        <h2 class="ent-panel__title">Approval Workflow</h2>
+      </div>
+      <div class="ent-panel__body">
+        <div class="ent-flow">
+          {% set steps = [
+            ('Draft', workflow.draft, 'draft', 'bi-file-earmark'),
+            ('Submitted', workflow.submitted, 'submitted', 'bi-send'),
+            ('For Approval', workflow.for_approval, 'review', 'bi-person-check'),
+            ('Approved', workflow.approved, 'approved', 'bi-check-lg'),
+            ('Completed', workflow.completed, 'done', 'bi-flag-fill')] %}
+          {% for label, count, tone, icon in steps %}
+          <div class="ent-flow__step">
+            <div class="ent-flow__dot ent-flow__dot--{{ tone }}"><i class="bi {{ icon }}"></i></div>
+            <div class="ent-flow__label">{{ label }}</div>
+            <div class="ent-flow__count" data-counter="{{ count }}">{{ count }}</div>
+          </div>
+          {% if not loop.last %}<div class="ent-flow__arrow"><i class="bi bi-arrow-right"></i></div>{% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      <div class="ent-panel__foot">
+        {# The workflow's own five stages already sum to "everything
+           currently in flight" -- computed here rather than via a
+           second query, so this total can never disagree with the
+           stage counts sitting right above it. #}
+        <span>Total in Workflow: {{ workflow.draft + workflow.submitted + workflow.for_approval + workflow.approved + workflow.completed }}</span>
+        <a href="#for-my-action">View workflow &rarr;</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# The two "due" lists, paired together directly under the summary row
+   above -- both can be long after a migration, so both get real
+   pagination rather than an unbounded scroll. #}
+<div class="row g-3 mb-3">
   <div class="col-12 col-xl-6">
     <div class="ent-panel">
       <div class="ent-panel__head">
@@ -174,14 +205,27 @@
       </div>
     </div>
   </div>
-</div>
 
-<div class="card mb-3" id="dueMaintenanceWidget">
-  <div class="card-body text-center text-muted py-4" id="dueMaintenanceLoading">
-    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-    Loading vehicles due for maintenance...
+  <div class="col-12 col-xl-6">
+    <div class="ent-panel">
+      <div class="ent-panel__head">
+        <h2 class="ent-panel__title">Vehicles Due for Maintenance</h2>
+        <span class="badge text-bg-warning rounded-pill" data-tile="MAINTENANCE">&mdash;</span>
+      </div>
+      <div class="ent-panel__body p-0" id="dueMaintenanceWidget">
+        <div class="text-center text-muted py-4" id="dueMaintenanceLoading">
+          <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+          Loading&hellip;
+        </div>
+      </div>
+      <div class="ent-panel__foot">
+        <span>Overdue first</span>
+        <a href="{{ url_for('system_admin.report_pms_compliance', generate=1) }}">View all &rarr;</a>
+      </div>
+    </div>
   </div>
 </div>
+
 
 {# ── For My Action + Security ──────────────────────────────────────── #}
 <div class="row g-3 mb-3">
@@ -268,6 +312,7 @@
     </div>
   </div>
 
+  {% if panel_visible.SECURITY_COMPLIANCE %}
   <div class="col-12 col-xl-5">
     <div class="ent-panel">
       <div class="ent-panel__head">
@@ -293,9 +338,10 @@
       </div>
     </div>
   </div>
+  {% endif %}
 </div>
 
-{% if fuel_summary and current_user.has_permission('fuel.view') %}
+{% if fuel_summary and current_user.has_permission('fuel.view') and panel_visible.FUEL_MANAGEMENT %}
 <div class="ent-panel mb-3">
   <div class="ent-panel__head">
     <h2 class="ent-panel__title">Fuel Management</h2>
@@ -349,8 +395,10 @@
 </div>
 {% endif %}
 
+{% if panel_visible.ANALYTICS %}
 <h5 class="mt-4 mb-3">Analytics</h5>
 {% with compact=true %}{% include "main/_charts.html" %}{% endwith %}
+{% endif %}
 
 {# ── Module ribbon ─────────────────────────────────────────────────── #}
 {% set ribbon = [
@@ -406,14 +454,24 @@
       if (rg2) { window.FMSDashFX.setValue(rg2, data.registration_count); }
 
       var m = document.getElementById("dueMaintenanceWidget");
-      if (m) { m.outerHTML = data.due_maintenance_html || ""; }
-      // innerHTML, not outerHTML: this element is now the panel BODY,
-      // so replacing the element itself would tear out the panel's
-      // header and footer with it.
+      if (m) { m.innerHTML = data.due_maintenance_html || ""; }
+      // innerHTML, not outerHTML: both these elements are the panel
+      // BODY, so replacing the element itself would tear out the
+      // panel's header and footer along with it.
       var g = document.getElementById("dueRegistrationWidget");
       if (g) { g.innerHTML = data.due_registration_html || ""; }
       document.querySelectorAll('[data-tile="REGISTRATIONS"]').forEach(
         function (b) { window.FMSDashFX.setValue(b, data.registration_count); });
+      document.querySelectorAll('[data-tile="MAINTENANCE"]').forEach(
+        function (b) { window.FMSDashFX.setValue(b, data.maintenance_count); });
+
+      // Real pagination for both "due" lists -- after a migration
+      // either one can run to 100+ rows, and every row is already in
+      // the DOM at this point (server-rendered, not lazy-fetched), so
+      // paging is just hiding rows past the current page rather than
+      // a second request.
+      paginateTable("dueMaintenanceTable", 5);
+      paginateTable("dueRegistrationTable", 5);
     })
     .catch(function () {
       // A failure here must not leave spinners turning forever -- show
@@ -426,6 +484,49 @@
         if (el) { el.textContent = "Could not load this section. Please refresh."; }
       });
     });
+
+  // Generic pager: works for any table with real rows already in the
+  // DOM. Deliberately not tied to one specific list's ids, unlike the
+  // "For My Action" pager, since two different tables need this now
+  // and a third might in the future.
+  function paginateTable(tableId, pageSize) {
+    var table = document.getElementById(tableId);
+    if (!table) return;
+    var rows = [].slice.call(table.querySelectorAll("tbody tr.due-page-row"));
+    var pagerBar = document.querySelector('.due-pager[data-pager-for="' + tableId + '"]');
+    if (rows.length <= pageSize) {
+      if (pagerBar) pagerBar.classList.add("d-none");
+      return;
+    }
+    if (!pagerBar) return;
+
+    var page = 1;
+    var pages = Math.ceil(rows.length / pageSize);
+    var info = pagerBar.querySelector(".due-pager__info");
+    var prev = pagerBar.querySelector(".due-pager__prev");
+    var next = pagerBar.querySelector(".due-pager__next");
+
+    function render(p) {
+      page = p;
+      var start = (p - 1) * pageSize;
+      var end = start + pageSize;
+      rows.forEach(function (row, idx) {
+        row.style.display = (idx >= start && idx < end) ? "" : "none";
+      });
+      if (info) {
+        info.textContent = "Showing " + (start + 1) + "\u2013" +
+          Math.min(end, rows.length) + " of " + rows.length;
+      }
+      if (prev) prev.disabled = page === 1;
+      if (next) next.disabled = page === pages;
+    }
+
+    if (prev) prev.addEventListener("click", function () { if (page > 1) render(page - 1); });
+    if (next) next.addEventListener("click", function () { if (page < pages) render(page + 1); });
+    pagerBar.classList.remove("d-none");
+    pagerBar.classList.add("d-flex");
+    render(1);
+  }
 })();
 </script>
 {% endblock %}

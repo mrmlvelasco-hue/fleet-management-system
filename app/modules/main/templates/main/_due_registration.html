@@ -7,7 +7,7 @@
    scrollbar via .table-responsive.
 
    The panel owns the chrome; this owns the rows. #}
-<table class="table ent-grid mb-0">
+<table class="table ent-grid mb-0" id="dueRegistrationTable">
   <thead>
     <tr>
       <th scope="col">Vehicle</th>
@@ -17,7 +17,7 @@
   </thead>
   <tbody>
   {% for d in due_registrations %}
-    <tr>
+    <tr class="due-page-row">
       <td>
         <a href="{{ d.url }}" class="ent-grid__link">
           {{ d.vehicle.plate_number or d.vehicle.conduction_number }}
@@ -40,3 +40,10 @@
   {% endfor %}
   </tbody>
 </table>
+<div class="d-none justify-content-between align-items-center px-3 py-2 border-top small due-pager" data-pager-for="dueRegistrationTable">
+  <span class="text-muted due-pager__info"></span>
+  <div class="btn-group btn-group-sm">
+    <button type="button" class="btn btn-outline-secondary due-pager__prev">Previous</button>
+    <button type="button" class="btn btn-outline-secondary due-pager__next">Next</button>
+  </div>
+</div>

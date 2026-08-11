@@ -336,6 +336,15 @@ def _seed_dashboard_widgets() -> None:
         ("VEHICLE_LIST", "Vehicle List", "bi-list-ul", 11),
         ("DUE_MAINTENANCE", "Vehicles Due for Maintenance", "bi-wrench", 12),
         ("DUE_REGISTRATION", "Vehicles Due for Registration", "bi-card-checklist", 13),
+        # Panels added after this catalog was first written -- each one
+        # was fully visible on the dashboard with no way to turn it off
+        # from Customize until these rows existed.
+        ("REGISTRATION_STATUS", "Vehicle Registration Status", "bi-pie-chart", 14),
+        ("MAINTENANCE_MANAGEMENT", "Maintenance Management", "bi-bar-chart", 15),
+        ("APPROVAL_WORKFLOW", "Approval Workflow", "bi-signpost-2", 16),
+        ("SECURITY_COMPLIANCE", "Security and Compliance", "bi-shield-check", 17),
+        ("FUEL_MANAGEMENT", "Fuel Management", "bi-fuel-pump", 18),
+        ("ANALYTICS", "Analytics", "bi-graph-up", 19),
     ]
     for code, label, icon, sort in widgets:
         if not DashboardWidget.query.filter_by(code=code).first():

@@ -42,6 +42,7 @@
       </div>
     </div></div>
   </div>
+  {% if not compact %}
   <div class="col-lg-6">
     <div class="card h-100 chart-observer-card"><div class="card-body">
       <h6 class="card-title mb-3">
@@ -56,6 +57,7 @@
       </div>
     </div></div>
   </div>
+  {% endif %}
   <div class="col-12">
     <div class="card chart-observer-card"><div class="card-body">
       <h6 class="card-title mb-3">Maintenance Cost Trend (last 6 months)</h6>
@@ -302,6 +304,20 @@ document.addEventListener("DOMContentLoaded", function () {
           animateCounter(document.getElementById('moTotalVal'), totalMo, 1200);
         }
       }
+      function renderMaintenanceManagement(canvas) {
+        // Same source data as the Maintenance Orders by Type chart
+        // further down the page -- one fetch, two views of the same
+        // numbers, so they can never disagree with each other.
+        if (!d.mo_by_type || !d.mo_by_type.labels.length) return;
+        bar(canvas, d.mo_by_type, false);
+        var caption = document.getElementById("mmScopeCaption");
+        if (caption) {
+          var totalMo = d.mo_by_type.data.reduce(function (a, b) { return a + b; }, 0);
+          var yrs = d.mo_by_type.years;
+          var yearLabel = yrs === 1 ? new Date().getFullYear() : (yrs === 0 ? "all years" : "last " + yrs + " years");
+          caption.textContent = "Total: " + totalMo + " (" + yearLabel + ")";
+        }
+      }
       function renderCostTrend(canvas) {
         if (d.maintenance_cost_trend) line(canvas, d.maintenance_cost_trend);
       }
@@ -334,6 +350,7 @@ document.addEventListener("DOMContentLoaded", function () {
         chartFleetByBranch: renderFleetByBranch,
         chartPmCompliance: renderPmCompliance,
         chartMoByType: renderMoByType,
+        chartMaintenanceManagement: renderMaintenanceManagement,
         chartCostTrend: renderCostTrend,
         chartRegistrationStatus: renderRegistrationStatus
       };
@@ -342,9 +359,9 @@ document.addEventListener("DOMContentLoaded", function () {
         var handler = renderMap[canvas.id];
         if (!handler || canvas.__fxRendered) return;
         canvas.__fxRendered = true;
-        var card = canvas.closest(".chart-observer-card") || canvas.closest(".card");
+        var box = canvas.closest(".fms-chart-box");
         handler(canvas);
-        if (card) removeSpinner(card);
+        if (box) removeSpinner(box);
       }
 
       // Lazy render: a card's chart only initialises once the card is
@@ -365,7 +382,7 @@ document.addEventListener("DOMContentLoaded", function () {
         : null;
 
       var targets = document.querySelectorAll(
-        ".chart-observer-card, #chartRegistrationStatus");
+        ".chart-observer-card, #chartRegistrationStatus, #chartMaintenanceManagement");
       if (observer) {
         targets.forEach(function (el) { observer.observe(el); });
       } else {

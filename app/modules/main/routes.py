@@ -58,6 +58,25 @@ def _widget_exists(code: str) -> bool:
     return DashboardWidget.query.filter_by(code=code).first() is not None
 
 
+_PANEL_WIDGET_CODES = ("REGISTRATION_STATUS", "MAINTENANCE_MANAGEMENT",
+                       "APPROVAL_WORKFLOW", "SECURITY_COMPLIANCE",
+                       "FUEL_MANAGEMENT", "ANALYTICS")
+
+
+def _panel_visibility(visible_codes: set) -> dict:
+    """{widget_code: bool} for the panels added to the dashboard after
+    the widget catalog was first written -- Registration Status,
+    Maintenance Management, Approval Workflow, Security and Compliance,
+    Fuel Management, and Analytics. Every one of these was always fully
+    visible with no way to turn it off from Customize until these
+    catalog rows existed. Same "unregistered = show it" rule as
+    _widget_exists() everywhere else in this file, so an install that
+    hasn't re-run `flask seed all` yet doesn't lose a panel it always
+    had."""
+    return {code: (code in visible_codes or not _widget_exists(code))
+           for code in _PANEL_WIDGET_CODES}
+
+
 @bp.route("/")
 @login_required
 def dashboard():
@@ -205,9 +224,11 @@ def dashboard():
     # Cheap bounded aggregate (30-day window, simple SUM/COUNT) -- unlike
     # the PM/registration due calculations this doesn't need to be
     # deferred to the async widgets endpoint. Gated so the query doesn't
-    # run at all for a user without fuel.view.
+    # run at all for a user without fuel.view, OR one who has hidden
+    # this panel from Customize.
     fuel_summary = None
-    if current_user.has_permission("fuel.view"):
+    panel_visible = _panel_visibility(visible_codes)
+    if current_user.has_permission("fuel.view") and panel_visible["FUEL_MANAGEMENT"]:
         from app.modules.transactions.fuel.analytics import FuelAnalyticsService
         fuel_summary = FuelAnalyticsService().summary(user=current_user)
 
@@ -220,7 +241,8 @@ def dashboard():
                            workflow=_analytics.approval_workflow_counts(
                                user=current_user),
                            kpi_trends=_analytics.kpi_trends(user=current_user),
-                           fuel_summary=fuel_summary)
+                           fuel_summary=fuel_summary,
+                           panel_visible=panel_visible)
 
 
 def _compute_due_widgets(user):

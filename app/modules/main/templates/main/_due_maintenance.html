@@ -1,30 +1,50 @@
-<div class="row g-3 mt-1">
-  <div class="col-12">
-    <div class="card">
-      <div class="card-header d-flex align-items-center gap-2">
-        <span class="fw-semibold">Vehicles Due for Maintenance</span>
-        <span class="badge text-bg-warning rounded-pill">{{ due_vehicles|length }}</span>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-sm mb-0">
-          <thead><tr>
-            <th>Vehicle</th><th>Maintenance Type</th><th>Status</th><th>Next Due (KM)</th><th>Next Due (Date)</th>
-          </tr></thead>
-          <tbody>
-          {% for d in due_vehicles %}
-            <tr>
-              <td><a href="{{ d.url }}">{{ d.vehicle.plate_number or d.vehicle.conduction_number }} — {{ d.vehicle.brand }} {{ d.vehicle.model }}</a></td>
-              <td>{{ d.maintenance_type }}</td>
-              <td><span class="badge text-bg-{{ 'danger' if d.status=='OVERDUE' else 'warning' }}">{{ d.status }}</span></td>
-              <td>{{ d.next_due_km or '—' }}</td>
-              <td>{{ d.next_due_date or '—' }}</td>
-            </tr>
-          {% else %}
-            <tr><td colspan="5" class="text-center text-muted py-4">No vehicles currently due for maintenance.</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
+{# Table ONLY -- no card, no header, no title. Same pattern as
+   _due_registration.html: the panel already provides its own header
+   (title + count badge) and footer, so this partial owns only the
+   rows. Each row is tagged with a data-* index so the pagination
+   script (called right after this HTML is injected) can page through
+   a long list rather than render every row unbounded. #}
+<table class="table ent-grid mb-0" id="dueMaintenanceTable">
+  <thead>
+    <tr>
+      <th scope="col">Vehicle</th>
+      <th scope="col">Maintenance Type</th>
+      <th scope="col">Status</th>
+      <th scope="col">Next Due (KM)</th>
+      <th scope="col" class="text-end">Next Due (Date)</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for d in due_vehicles %}
+    <tr class="due-page-row">
+      <td>
+        <a href="{{ d.url }}" class="ent-grid__link">
+          {{ d.vehicle.plate_number or d.vehicle.conduction_number }}
+        </a>
+        <span class="ent-grid__sub">{{ d.vehicle.brand }} {{ d.vehicle.model }}</span>
+      </td>
+      <td>{{ d.maintenance_type }}</td>
+      <td>
+        <span class="ent-badge ent-badge--{{ 'danger' if d.status == 'OVERDUE' else 'warning' }}">
+          {{ 'Overdue' if d.status == 'OVERDUE' else 'Due Soon' }}
+        </span>
+      </td>
+      <td>{{ d.next_due_km or '—' }}</td>
+      <td class="text-end text-nowrap">{{ d.next_due_date or '—' }}</td>
+    </tr>
+  {% else %}
+    <tr>
+      <td colspan="5" class="text-center text-muted py-4">
+        No vehicles currently due for maintenance.
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<div class="d-none justify-content-between align-items-center px-3 py-2 border-top small due-pager" data-pager-for="dueMaintenanceTable">
+  <span class="text-muted due-pager__info"></span>
+  <div class="btn-group btn-group-sm">
+    <button type="button" class="btn btn-outline-secondary due-pager__prev">Previous</button>
+    <button type="button" class="btn btn-outline-secondary due-pager__next">Next</button>
   </div>
 </div>

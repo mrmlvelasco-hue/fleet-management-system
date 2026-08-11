@@ -6,7 +6,7 @@
 <div class="card"><div class="card-body">
 <form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <p class="text-muted">Select which KPI widgets to show on your dashboard.</p>
+  <p class="text-muted">Select which tiles, panels, and charts to show on your dashboard.</p>
   <div class="row g-3 mb-4">
   {% for w in widgets %}
     {% set visible = user_configs.get(w.code, w.default_visible) %}
