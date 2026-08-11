@@ -7,34 +7,43 @@
    inline pixel styles, specifically so the mobile media queries below
    can shrink them further -- a 300px-tall donut with a bottom legend
    is fine on a desktop card but wastes most of a phone screen's height
-   while still requiring the same amount of scrolling to get past it. #}
+   while still requiring the same amount of scrolling to get past it.
+
+   Charts are lazy-rendered: each card only initialises its Chart.js
+   instance once actually scrolled into view, rather than all five
+   firing immediately on page load regardless of whether the person
+   ever scrolls that far -- a real cost saving on a page that already
+   does a fair amount of work on first paint. #}
 <div class="row g-3" id="fmsChartsRow">
   <div class="col-lg-6">
-    <div class="card h-100"><div class="card-body">
+    <div class="card h-100 chart-observer-card"><div class="card-body">
       <h6 class="card-title mb-3">Fleet by Status</h6>
       <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
+        <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
         <canvas id="chartFleetByStatus"></canvas>
       </div>
     </div></div>
   </div>
   <div class="col-lg-6">
-    <div class="card h-100"><div class="card-body">
+    <div class="card h-100 chart-observer-card"><div class="card-body">
       <h6 class="card-title mb-3">Fleet by Branch</h6>
       <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
+        <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
         <canvas id="chartFleetByBranch"></canvas>
       </div>
     </div></div>
   </div>
   <div class="col-lg-6">
-    <div class="card h-100"><div class="card-body">
+    <div class="card h-100 chart-observer-card"><div class="card-body">
       <h6 class="card-title mb-3">PM Compliance</h6>
       <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
+        <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
         <canvas id="chartPmCompliance"></canvas>
       </div>
     </div></div>
   </div>
   <div class="col-lg-6">
-    <div class="card h-100"><div class="card-body">
+    <div class="card h-100 chart-observer-card"><div class="card-body">
       <h6 class="card-title mb-3">
         Maintenance Orders by Type
         {# Scope stated on the chart itself: a count that silently covers
@@ -42,21 +51,22 @@
         <span class="text-muted small fw-normal" id="moTypeScope"></span>
       </h6>
       <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
+        <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
         <canvas id="chartMoByType"></canvas>
       </div>
     </div></div>
   </div>
   <div class="col-12">
-    <div class="card"><div class="card-body">
+    <div class="card chart-observer-card"><div class="card-body">
       <h6 class="card-title mb-3">Maintenance Cost Trend (last 6 months)</h6>
       <div class="fms-chart-box fms-chart-box--tall {{ 'fms-chart-box--compact' if compact }}">
+        <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
         <canvas id="chartCostTrend"></canvas>
       </div>
     </div></div>
   </div>
-  <div class="col-12 text-center text-muted small py-3" id="fmsChartsLoading">
-    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-    Loading charts...
+  <div class="col-12 text-center text-muted small py-3 d-none" id="fmsChartsLoading">
+    Could not load charts.
   </div>
 </div>
 
@@ -66,164 +76,318 @@
   .fms-chart-box--compact { height: 220px; }
   .fms-chart-box--compact.fms-chart-box--tall { height: 260px; }
 
-  /* Phones and small tablets -- matches the app's own mobile breakpoint
-     (theme.css, the sidebar/off-canvas rules) so charts, navigation and
-     everything else agree on what "mobile" means. A fixed 220-340px
-     chart made sense next to a full desktop card; on a 375px-wide phone
-     that height forces a lot of scrolling just to get past five charts
-     stacked full-width, so every box shrinks further here regardless of
-     whether the compact/tall variant was requested. */
+  .fms-chart-spinner {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.85);
+    z-index: 2;
+    transition: opacity 0.3s ease;
+  }
+
+  /* Entrance for the card itself, independent of whether its chart has
+     rendered yet -- the card appears first, then the spinner (if the
+     chart hasn't loaded) or the chart (if it has). */
+  .chart-observer-card {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+               transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .chart-observer-card.fx-in-view {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
   @media (max-width: 860px) {
     .fms-chart-box,
     .fms-chart-box--compact { height: 200px; }
     .fms-chart-box--tall,
     .fms-chart-box--compact.fms-chart-box--tall { height: 230px; }
   }
-  /* Small phones specifically -- legend text and axis labels need a
-     little more room relative to the chart itself here, handled by the
-     JS below reducing Chart.js's own font sizes at this width; the
-     canvas height stays the same as the 860px tier so that JS-side
-     shrink has where it needs. */
   @media (max-width: 420px) {
     .fms-chart-box,
     .fms-chart-box--compact { height: 190px; }
   }
+
+  /* ── Hero Banner Image Aspect Fix ────────────────────────────── */
+  .ent-hero {
+    position: relative;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 24px 32px;
+    overflow: hidden;
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+  }
+  .ent-hero__art {
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 50%;
+    height: 100%;
+    z-index: 1;
+    pointer-events: none;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+  }
+  .ent-hero__art img {
+    max-width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: right bottom;
+  }
 </style>
 
 <script>
-(function () {
-  // Chart.js is registered globally by the vendored chart.umd.min.js.
-  // Colour meanings are decided SERVER-SIDE (DashboardAnalyticsService.
-  // COLORS) and sent with the data, rather than duplicated here, so
-  // "OVERDUE" is the same red on every chart on every page without two
-  // places to keep in sync.
-
-  // A CSS media query can shrink the CANVAS's box, but it can't shrink
-  // Chart.js's own legend/tick text -- that's a JS-level option, so it
-  // has to be read at chart-creation time. Matches the same breakpoints
-  // theme.css uses for the chart boxes themselves (860px "mobile",
-  // 420px "small phone"), so a chart's text and its box shrink in step
-  // rather than a large legend cramming into a box that just got
-  // smaller out from under it.
+document.addEventListener("DOMContentLoaded", function () {
   function isMobile() { return window.matchMedia("(max-width: 860px)").matches; }
   function isSmallPhone() { return window.matchMedia("(max-width: 420px)").matches; }
   function legendFontSize() { return isSmallPhone() ? 10 : (isMobile() ? 11 : 12); }
   function legendBoxSize() { return isMobile() ? 10 : 12; }
 
+  function removeSpinner(cardEl) {
+    var sp = cardEl.querySelector(".fms-chart-spinner");
+    if (!sp) return;
+    sp.style.opacity = "0";
+    setTimeout(function () { if (sp.parentNode) sp.remove(); }, 300);
+  }
+
+  function animateCounter(el, targetValue, duration, formatFn) {
+    if (!el) return;
+    let startTimestamp = null;
+    const startValue = 0;
+    const step = function (timestamp) {
+      if (!startTimestamp) startTimestamp = timestamp;
+      const progress = Math.min((timestamp - startTimestamp) / (duration || 1200), 1);
+      const easeProgress = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(easeProgress * (targetValue - startValue) + startValue);
+      el.textContent = formatFn ? formatFn(current) : current.toLocaleString();
+      if (progress < 1) {
+        window.requestAnimationFrame(step);
+      } else {
+        el.textContent = formatFn ? formatFn(targetValue) : targetValue.toLocaleString();
+      }
+    };
+    window.requestAnimationFrame(step);
+  }
+
   function donut(ctx, payload, hideLegend) {
     return new Chart(ctx, {
       type: "doughnut",
-      data: { labels: payload.labels,
-             datasets: [{ data: payload.data, backgroundColor: payload.colors }] },
+      data: {
+        labels: payload.labels,
+        datasets: [{
+          data: payload.data,
+          backgroundColor: payload.colors,
+          borderRadius: 8,
+          borderWidth: 2,
+          borderColor: "#ffffff",
+          spacing: 3
+        }]
+      },
       options: {
-        responsive: true, maintainAspectRatio: false,
-        // A phone's narrow width leaves little room for a side legend
-        // even if one were used, so this stays bottom-anchored at every
-        // size -- only the text/box shrink, not the position.
-        cutout: "62%",
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "72%",
         animation: { animateRotate: true, animateScale: true,
                     duration: 1200, easing: "easeOutQuart" },
-        plugins: { legend: { display: !hideLegend, position: "bottom",
-                            labels: { boxWidth: legendBoxSize(),
-                                     font: { size: legendFontSize() } } } }
-      }
-    });
-  }
-  function bar(ctx, payload, horizontal) {
-    return new Chart(ctx, {
-      type: "bar",
-      data: { labels: payload.labels,
-             datasets: [{ data: payload.data, backgroundColor: payload.colors }] },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        indexAxis: horizontal ? "y" : "x",
-        animation: { duration: 1200, easing: "easeOutQuart" },
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { font: { size: legendFontSize() },
-                       maxRotation: isMobile() ? 45 : 0,
-                       autoSkip: true } },
-          y: { beginAtZero: true, ticks: { font: { size: legendFontSize() } } }
+        plugins: {
+          legend: {
+            display: !hideLegend,
+            position: "bottom",
+            labels: { boxWidth: legendBoxSize(), font: { size: legendFontSize() } }
+          }
         }
       }
     });
   }
+
+  function bar(ctx, payload, horizontal) {
+    return new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: payload.labels,
+        datasets: [{
+          data: payload.data,
+          backgroundColor: payload.colors,
+          borderRadius: 6,
+          borderSkipped: false
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: horizontal ? "y" : "x",
+        animation: { duration: 1200, easing: "easeOutQuart" },
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { font: { size: legendFontSize() }, maxRotation: isMobile() ? 45 : 0, autoSkip: true }
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { font: { size: legendFontSize() } }
+          }
+        }
+      }
+    });
+  }
+
   function line(ctx, payload) {
     return new Chart(ctx, {
       type: "line",
-      data: { labels: payload.labels,
-             datasets: [{ label: "Actual Cost", data: payload.data,
-                         borderColor: "#065A82", backgroundColor: "rgba(6,90,130,.12)",
-                         fill: true, tension: 0.3 }] },
+      data: {
+        labels: payload.labels,
+        datasets: [{
+          label: "Actual Cost",
+          data: payload.data,
+          borderColor: "#065A82",
+          backgroundColor: "rgba(6,90,130,.12)",
+          fill: true,
+          tension: 0.3
+        }]
+      },
       options: {
-        responsive: true, maintainAspectRatio: false,
+        responsive: true,
+        maintainAspectRatio: false,
         animation: { duration: 1400, easing: "easeOutQuad" },
         plugins: { legend: { display: false } },
         scales: {
-          x: { ticks: { font: { size: legendFontSize() },
-                       maxRotation: isMobile() ? 60 : 0,
-                       // A tight phone screen can't fit 6 month labels
-                       // without overlap even rotated -- thin them out
-                       // rather than let them collide illegibly.
-                       autoSkip: true, maxTicksLimit: isSmallPhone() ? 4 : (isMobile() ? 6 : 12) } },
-          y: { beginAtZero: true,
-              ticks: { font: { size: legendFontSize() },
-                      // "₱150,000" at full precision doesn't fit a
-                      // phone's y-axis column -- abbreviate on mobile
-                      // only, where the space genuinely isn't there.
-                      callback: v => isMobile()
-                        ? "₱" + (v >= 1000 ? (v / 1000) + "k" : v)
-                        : "₱" + v.toLocaleString() } }
+          x: {
+            ticks: { font: { size: legendFontSize() }, maxRotation: isMobile() ? 60 : 0, autoSkip: true, maxTicksLimit: isSmallPhone() ? 4 : (isMobile() ? 6 : 12) }
+          },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              font: { size: legendFontSize() },
+              callback: function (v) {
+                return isMobile()
+                  ? "₱" + (v >= 1000 ? (v / 1000) + "k" : v)
+                  : "₱" + v.toLocaleString();
+              }
+            }
+          }
         }
       }
     });
   }
 
   fetch("{{ url_for('main.dashboard_charts') }}")
-    .then(r => r.json())
-    .then(d => {
-      document.getElementById("fmsChartsLoading").remove();
-      if (d.fleet_by_status.labels.length)
-        donut(document.getElementById("chartFleetByStatus"), d.fleet_by_status);
-      if (d.fleet_by_branch.labels.length)
-        bar(document.getElementById("chartFleetByBranch"), d.fleet_by_branch, true);
-      if (d.pm_compliance.labels.length)
-        donut(document.getElementById("chartPmCompliance"), d.pm_compliance);
-      if (d.mo_by_type.labels.length)
-        bar(document.getElementById("chartMoByType"), d.mo_by_type, false);
-      var moScope = document.getElementById("moTypeScope");
-      if (moScope && d.mo_by_type) {
-        var yrs = d.mo_by_type.years;
-        moScope.textContent = yrs === 0 ? "\u2014 all years"
-          : (yrs === 1 ? "\u2014 " + new Date().getFullYear()
-                       : "\u2014 last " + yrs + " years");
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      function renderFleetByStatus(canvas) {
+        if (d.fleet_by_status && d.fleet_by_status.labels.length) donut(canvas, d.fleet_by_status);
       }
-      line(document.getElementById("chartCostTrend"), d.maintenance_cost_trend);
-
-      // Registration Status donut -- only present on the Dashboard, so
-      // guarded rather than assumed. Its built-in legend is suppressed
-      // in favour of the richer count + percentage list beside it.
-      var regCanvas = document.getElementById("chartRegistrationStatus");
-      if (regCanvas && d.registration_status) {
+      function renderFleetByBranch(canvas) {
+        if (d.fleet_by_branch && d.fleet_by_branch.labels.length) bar(canvas, d.fleet_by_branch, true);
+      }
+      function renderPmCompliance(canvas) {
+        if (d.pm_compliance && d.pm_compliance.labels.length) donut(canvas, d.pm_compliance);
+      }
+      function renderMoByType(canvas) {
+        if (!d.mo_by_type || !d.mo_by_type.labels.length) return;
+        bar(canvas, d.mo_by_type, false);
+        var moScope = document.getElementById("moTypeScope");
+        if (moScope) {
+          var totalMo = d.mo_by_type.data.reduce(function (a, b) { return a + b; }, 0);
+          var yrs = d.mo_by_type.years;
+          var scopeText = yrs === 0 ? "all years" : (yrs === 1 ? new Date().getFullYear() : "last " + yrs + " years");
+          moScope.innerHTML = '— Total: <span id="moTotalVal">0</span> (' + scopeText + ')';
+          animateCounter(document.getElementById('moTotalVal'), totalMo, 1200);
+        }
+      }
+      function renderCostTrend(canvas) {
+        if (d.maintenance_cost_trend) line(canvas, d.maintenance_cost_trend);
+      }
+      function renderRegistrationStatus(canvas) {
+        if (!d.registration_status) return;
         var r = d.registration_status;
-        donut(regCanvas, r, true);
+        donut(canvas, r, true);
         var totalEl = document.getElementById("regTotal");
-        if (totalEl) { totalEl.textContent = r.total.toLocaleString(); }
+        if (totalEl) animateCounter(totalEl, r.total, 1200);
         var legend = document.getElementById("regLegend");
         if (legend) {
           legend.innerHTML = r.labels.map(function (label, i) {
             return '<li class="ent-legend__item">' +
               '<span class="ent-legend__dot" style="background:' + r.colors[i] + '"></span>' +
               '<span class="ent-legend__label">' + label + '</span>' +
-              '<span class="ent-legend__value">' + r.data[i].toLocaleString() +
-              ' <span class="ent-legend__pct">(' + r.pct[i] + '%)</span></span></li>';
+              '<span class="ent-legend__value">' +
+                '<span id="regVal_' + i + '">0</span> ' +
+                '<span class="ent-legend__pct">(<span id="regPct_' + i + '">0</span>%)</span>' +
+              '</span></li>';
           }).join("");
+          r.data.forEach(function (val, i) {
+            animateCounter(document.getElementById('regVal_' + i), val, 1200);
+            animateCounter(document.getElementById('regPct_' + i), r.pct[i], 1200);
+          });
         }
       }
+
+      var renderMap = {
+        chartFleetByStatus: renderFleetByStatus,
+        chartFleetByBranch: renderFleetByBranch,
+        chartPmCompliance: renderPmCompliance,
+        chartMoByType: renderMoByType,
+        chartCostTrend: renderCostTrend,
+        chartRegistrationStatus: renderRegistrationStatus
+      };
+
+      function renderCanvas(canvas) {
+        var handler = renderMap[canvas.id];
+        if (!handler || canvas.__fxRendered) return;
+        canvas.__fxRendered = true;
+        var card = canvas.closest(".chart-observer-card") || canvas.closest(".card");
+        handler(canvas);
+        if (card) removeSpinner(card);
+      }
+
+      // Lazy render: a card's chart only initialises once the card is
+      // actually scrolled into view. chartRegistrationStatus lives
+      // outside this partial (directly on the dashboard), so it's
+      // observed separately alongside the cards this partial owns.
+      var observer = ("IntersectionObserver" in window)
+        ? new IntersectionObserver(function (entries, obs) {
+            entries.forEach(function (entry) {
+              if (!entry.isIntersecting) return;
+              entry.target.classList.add("fx-in-view");
+              var canvas = entry.target.tagName === "CANVAS"
+                ? entry.target : entry.target.querySelector("canvas");
+              if (canvas) renderCanvas(canvas);
+              obs.unobserve(entry.target);
+            });
+          }, { threshold: 0.15 })
+        : null;
+
+      var targets = document.querySelectorAll(
+        ".chart-observer-card, #chartRegistrationStatus");
+      if (observer) {
+        targets.forEach(function (el) { observer.observe(el); });
+      } else {
+        // No IntersectionObserver support: render everything immediately
+        // rather than leave every chart permanently blank.
+        targets.forEach(function (el) {
+          el.classList.add("fx-in-view");
+          var canvas = el.tagName === "CANVAS" ? el : el.querySelector("canvas");
+          if (canvas) renderCanvas(canvas);
+        });
+      }
     })
-    .catch(() => {
-      const el = document.getElementById("fmsChartsLoading");
-      if (el) el.textContent = "Could not load charts. Please refresh.";
+    .catch(function () {
+      document.querySelectorAll(".fms-chart-spinner").forEach(function (el) {
+        el.style.opacity = "0";
+        setTimeout(function () { if (el.parentNode) el.remove(); }, 300);
+      });
+      var el = document.getElementById("fmsChartsLoading");
+      if (el) {
+        el.classList.remove("d-none");
+        el.textContent = "Could not load charts. Please refresh.";
+      }
     });
-})();
+});
 </script>

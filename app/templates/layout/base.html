@@ -26,6 +26,7 @@
   <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/theme-enterprise.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/theme-exec.css') }}" rel="stylesheet">
+  {% block extra_css %}{% endblock %}
 </head>
 <body>
 {% if current_user.is_authenticated %}

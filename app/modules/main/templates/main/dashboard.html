@@ -1,5 +1,8 @@
 {% extends "layout/base.html" %}
 {% block title %}Dashboard{% endblock %}
+{% block extra_css %}
+<link href="{{ url_for('static', filename='css/dashboard-animations.css') }}" rel="stylesheet">
+{% endblock %}
 {% block breadcrumbs %}<li class="breadcrumb-item active">Dashboard</li>{% endblock %}
 {% block page_banner %}
 <div class="fms-exec fms-exec--banner">
@@ -45,7 +48,7 @@
       <span class="ent-kpi__icon"><i class="bi {{ card.icon }}"></i></span>
       <div class="ent-kpi__meta">
         <div class="ent-kpi__label">{{ card.title }}</div>
-        <div class="ent-kpi__value" {% if card.deferred %}data-kpi="{{ card.code }}"{% endif %}>
+        <div class="ent-kpi__value" {% if card.deferred %}data-kpi="{{ card.code }}"{% elif card.value is number %}data-counter="{{ card.value }}"{% endif %}>
           {%- if card.deferred -%}
           <span class="spinner-border spinner-border-sm text-muted" role="status"></span>
           {%- else -%}{{ card.value }}{%- endif -%}
@@ -112,7 +115,7 @@
           <div class="ent-flow__step">
             <div class="ent-flow__dot ent-flow__dot--{{ tone }}"><i class="bi {{ icon }}"></i></div>
             <div class="ent-flow__label">{{ label }}</div>
-            <div class="ent-flow__count">{{ count }}</div>
+            <div class="ent-flow__count" data-counter="{{ count }}">{{ count }}</div>
           </div>
           {% if not loop.last %}<div class="ent-flow__arrow"><i class="bi bi-arrow-right"></i></div>{% endif %}
           {% endfor %}
@@ -226,9 +229,9 @@
         {% if for_my_action %}
         <div class="ent-worklist" id="for-my-action-list">
           <div class="ent-worklist__head">Awaiting your approval</div>
-          <div class="list-group list-group-flush">
+          <div class="list-group list-group-flush" id="approvalWorklistGroup">
             {% for item in for_my_action %}
-            <a href="{{ item.url }}" class="list-group-item list-group-item-action px-0">
+            <a href="{{ item.url }}" class="list-group-item list-group-item-action px-0 worklist-item">
               <div class="d-flex justify-content-between align-items-start gap-2">
                 <div class="min-w-0">
                   <span class="fw-semibold">{{ item.document_number }}</span>
@@ -245,6 +248,18 @@
             </a>
             {% endfor %}
           </div>
+          {# Hidden by the JS itself when there are 5 or fewer items --
+             no page-count logic needed here, it only becomes visible
+             once it actually has something to page through. #}
+          {% if for_my_action|length > 5 %}
+          <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top small">
+            <span class="text-muted" id="actionWorklistPageInfo">Showing 1–5 of {{ for_my_action|length }}</span>
+            <div class="btn-group btn-group-sm">
+              <button type="button" class="btn btn-outline-secondary" id="prevWorklistPage">Previous</button>
+              <button type="button" class="btn btn-outline-secondary" id="nextWorklistPage">Next</button>
+            </div>
+          </div>
+          {% endif %}
         </div>
         {% else %}
         <p class="text-muted text-center py-3 mb-0">Nothing is waiting for your approval.</p>
@@ -293,7 +308,7 @@
           <span class="ent-kpi__icon"><i class="bi bi-fuel-pump"></i></span>
           <div class="ent-kpi__meta">
             <div class="ent-kpi__label">Fills</div>
-            <div class="ent-kpi__value">{{ fuel_summary.fills }}</div>
+            <div class="ent-kpi__value" data-counter="{{ fuel_summary.fills }}">{{ fuel_summary.fills }}</div>
           </div>
         </div>
       </div>
@@ -302,7 +317,7 @@
           <span class="ent-kpi__icon"><i class="bi bi-cash-coin"></i></span>
           <div class="ent-kpi__meta">
             <div class="ent-kpi__label">Spend</div>
-            <div class="ent-kpi__value">₱{{ "{:,.0f}".format(fuel_summary.spend) }}</div>
+            <div class="ent-kpi__value" data-counter="{{ fuel_summary.spend }}" data-prefix="₱" data-decimals="0">₱{{ "{:,.0f}".format(fuel_summary.spend) }}</div>
           </div>
         </div>
       </div>
@@ -311,7 +326,7 @@
           <span class="ent-kpi__icon"><i class="bi bi-speedometer2"></i></span>
           <div class="ent-kpi__meta">
             <div class="ent-kpi__label">Avg. km/L</div>
-            <div class="ent-kpi__value">{{ fuel_summary.avg_kmpl if fuel_summary.avg_kmpl is not none else '—' }}</div>
+            <div class="ent-kpi__value" {% if fuel_summary.avg_kmpl is not none %}data-counter="{{ fuel_summary.avg_kmpl }}" data-decimals="1"{% endif %}>{{ fuel_summary.avg_kmpl if fuel_summary.avg_kmpl is not none else '—' }}</div>
           </div>
         </div>
       </div>
@@ -320,7 +335,7 @@
           <span class="ent-kpi__icon"><i class="bi bi-exclamation-triangle"></i></span>
           <div class="ent-kpi__meta">
             <div class="ent-kpi__label">Needs Review</div>
-            <div class="ent-kpi__value {{ 'text-danger' if fuel_summary.needs_review }}">
+            <div class="ent-kpi__value {{ 'text-danger' if fuel_summary.needs_review }}" data-counter="{{ fuel_summary.needs_review }}">
               {{ fuel_summary.needs_review }}</div>
           </div>
         </div>
@@ -364,6 +379,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard-animations.js') }}"></script>
 <script>
 // The Maintenance and Registration figures, and the two tables below,
 // each require a fleet-wide evaluation whose cost grows with the number
@@ -377,17 +393,17 @@
     .then(function (r) { return r.json(); })
     .then(function (data) {
       var mt = document.querySelector('[data-kpi="MAINTENANCE"]');
-      if (mt) { mt.textContent = data.maintenance_count; }
+      if (mt) { window.FMSDashFX.setValue(mt, data.maintenance_count); }
       var rg = document.querySelector('[data-kpi="REGISTRATIONS"]');
-      if (rg) { rg.textContent = data.registration_count; }
+      if (rg) { window.FMSDashFX.setValue(rg, data.registration_count); }
 
       // The two due tiles read from the SAME payload as the KPI cards
       // above, so a tile can never show a different number than the card
       // for the same thing.
       var mt2 = document.querySelector('[data-tile="MAINTENANCE"]');
-      if (mt2) { mt2.textContent = data.maintenance_count; }
+      if (mt2) { window.FMSDashFX.setValue(mt2, data.maintenance_count); }
       var rg2 = document.querySelector('[data-tile="REGISTRATIONS"]');
-      if (rg2) { rg2.textContent = data.registration_count; }
+      if (rg2) { window.FMSDashFX.setValue(rg2, data.registration_count); }
 
       var m = document.getElementById("dueMaintenanceWidget");
       if (m) { m.outerHTML = data.due_maintenance_html || ""; }
@@ -397,7 +413,7 @@
       var g = document.getElementById("dueRegistrationWidget");
       if (g) { g.innerHTML = data.due_registration_html || ""; }
       document.querySelectorAll('[data-tile="REGISTRATIONS"]').forEach(
-        function (b) { b.textContent = data.registration_count; });
+        function (b) { window.FMSDashFX.setValue(b, data.registration_count); });
     })
     .catch(function () {
       // A failure here must not leave spinners turning forever -- show
