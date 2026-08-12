@@ -4,6 +4,7 @@ per-module services / the shared ApprovalEngine."""
 from datetime import date, datetime, timedelta
 import uuid
 
+from decimal import InvalidOperation
 from flask import (Blueprint, render_template, redirect, url_for, flash,
                    request, abort, jsonify, current_app)
 from flask_login import login_required, current_user
@@ -1728,13 +1729,50 @@ def maintenanceinvoice_detail(iid):
                            item=inv, categories=categories, charge_tos=charge_tos)
 
 
+def _invoice_totals_json(inv):
+    """Recalculated totals for the AJAX line editor.
+
+    The browser never computes money itself -- it displays what the
+    server calculated. VAT, discount and rounding rules live in the
+    service, and a second implementation in JavaScript would be a
+    second place for them to drift.
+    """
+    return {
+        "total_parts_cost": f"{inv.total_parts_cost:,.2f}",
+        "total_labor_cost": f"{inv.total_labor_cost:,.2f}",
+        "total_discount": f"{inv.total_discount:,.2f}",
+        "net_amount": f"{inv.net_amount:,.2f}",
+        "total_vat": f"{inv.total_vat:,.2f}",
+        "gross_amount": f"{inv.gross_amount:,.2f}",
+        "total_invoice_amount": f"{inv.total_invoice_amount:,.2f}",
+    }
+
+
+def _invoice_line_json(line):
+    return {
+        "id": line.id,
+        "part_description": line.part_description,
+        "part_number": line.part_number,
+        "specification": line.specification,
+        "uom": line.uom,
+        "quantity": f"{line.quantity:,.2f}",
+        "unit_cost": f"{line.unit_cost:,.2f}",
+        "line_amount": f"{line.line_amount:,.2f}",
+        "vat_amount": f"{line.vat_amount:,.2f}",
+        "total_amount": f"{line.total_amount:,.2f}",
+        "expense_category": line.expense_category,
+        "charged_to": line.charged_to.replace("_", " ").title(),
+    }
+
+
 @bp.route("/invoices/<int:iid>/lines", methods=["POST"])
 @login_required
 @require_permission("maintenanceinvoice.update")
 def maintenanceinvoice_add_line(iid):
     f = request.form
+    wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     try:
-        MaintenanceInvoiceService().add_line(
+        line = MaintenanceInvoiceService().add_line(
             iid, part_number=f.get("part_number") or None,
             part_description=f["part_description"],
             specification=f.get("specification") or None,
@@ -1744,9 +1782,28 @@ def maintenanceinvoice_add_line(iid):
             discount=f.get("discount") or 0,
             expense_category=f["expense_category"],
             charged_to=f["charged_to"])
+        if wants_json:
+            inv = MaintenanceInvoiceService().get_by_id(iid)
+            return jsonify({"ok": True,
+                           "line": _invoice_line_json(line),
+                           "totals": _invoice_totals_json(inv)})
         flash("Line item added.", "success")
     except InvoiceLockedError as e:
+        if wants_json:
+            return jsonify({"ok": False, "error": str(e)}), 409
         flash(str(e), "danger")
+    except (KeyError, ValueError, InvalidOperation) as e:
+        # A bad number or a missing required field must come back as a
+        # usable message next to the form, not a 500 that loses
+        # everything the person had typed.
+        #
+        # InvalidOperation is listed explicitly because Decimal raises
+        # it -- and it is NOT a subclass of ValueError, so catching
+        # ValueError alone silently let a mistyped amount become a 500.
+        if wants_json:
+            return jsonify({"ok": False,
+                           "error": f"Please check the values entered ({e})."}), 400
+        flash("Please check the values entered.", "danger")
     return redirect(url_for("transactions.maintenanceinvoice_detail", iid=iid))
 
 
@@ -1754,10 +1811,17 @@ def maintenanceinvoice_add_line(iid):
 @login_required
 @require_permission("maintenanceinvoice.update")
 def maintenanceinvoice_remove_line(iid, line_id):
+    wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     try:
         MaintenanceInvoiceService().remove_line(line_id)
+        if wants_json:
+            inv = MaintenanceInvoiceService().get_by_id(iid)
+            return jsonify({"ok": True,
+                           "totals": _invoice_totals_json(inv)})
         flash("Line item removed.", "info")
     except InvoiceLockedError as e:
+        if wants_json:
+            return jsonify({"ok": False, "error": str(e)}), 409
         flash(str(e), "danger")
     return redirect(url_for("transactions.maintenanceinvoice_detail", iid=iid))
 

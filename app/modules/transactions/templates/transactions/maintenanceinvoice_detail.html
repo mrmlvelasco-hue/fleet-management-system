@@ -56,11 +56,13 @@
   <div class="card-body">
 
   {% if item.status != 'APPROVED' and current_user.has_permission('maintenanceinvoice.update') %}
-  <form method="post" action="{{ url_for('transactions.maintenanceinvoice_add_line', iid=item.id) }}"
+  <form method="post" id="invLineForm"
+        action="{{ url_for('transactions.maintenanceinvoice_add_line', iid=item.id) }}"
         class="row g-2 align-items-end border rounded p-2 mb-3 bg-body-tertiary">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="col-md-3"><label class="form-label small">Part Name</label>
-      <input type="text" name="part_description" class="form-control form-control-sm" required></div>
+      <input type="text" name="part_description" id="invFirstField"
+             class="form-control form-control-sm" autocomplete="off" required></div>
     <div class="col-md-2"><label class="form-label small">Specification</label>
       <input type="text" name="specification" class="form-control form-control-sm"></div>
     <div class="col-md-1"><label class="form-label small">UOM</label>
@@ -100,9 +102,9 @@
       <th class="text-end">VAT Amt</th><th class="text-end">Total</th>
       <th>Category</th><th>Charged To</th><th></th>
     </tr></thead>
-    <tbody>
+    <tbody id="invLineBody">
     {% for l in item.line_items|sort(attribute='sort_order') %}
-      <tr>
+      <tr data-line-row="{{ l.id }}">
         <td>{{ l.part_description }}{% if l.part_number %}<br><span class="text-muted small">{{ l.part_number }}</span>{% endif %}</td>
         <td>{{ l.specification or '—' }}</td>
         <td>{{ l.uom or '—' }}</td>
@@ -115,7 +117,8 @@
         <td class="small">{{ l.charged_to.replace('_', ' ')|title }}</td>
         <td>
           {% if item.status != 'APPROVED' and current_user.has_permission('maintenanceinvoice.update') %}
-          <form method="post" action="{{ url_for('transactions.maintenanceinvoice_remove_line', iid=item.id, line_id=l.id) }}">
+          <form method="post" class="inv-del-line" data-line-id="{{ l.id }}"
+                action="{{ url_for('transactions.maintenanceinvoice_remove_line', iid=item.id, line_id=l.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-trash"></i></button>
           </form>
@@ -123,7 +126,7 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="11" class="text-center text-muted py-3">No line items yet.</td></tr>
+      <tr id="invNoLinesRow"><td colspan="11" class="text-center text-muted py-3">No line items yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -132,13 +135,13 @@
   <div class="row justify-content-end mt-3">
     <div class="col-md-5">
       <table class="table table-sm mb-0">
-        <tr><td>Total Parts Cost</td><td class="text-end">{{ "{:,.2f}".format(item.total_parts_cost) }}</td></tr>
-        <tr><td>Total Labor Cost</td><td class="text-end">{{ "{:,.2f}".format(item.total_labor_cost) }}</td></tr>
-        <tr><td>Total Discount</td><td class="text-end">{{ "{:,.2f}".format(item.total_discount) }}</td></tr>
-        <tr><td>Net Amount</td><td class="text-end">{{ "{:,.2f}".format(item.net_amount) }}</td></tr>
-        <tr><td>Total VAT</td><td class="text-end">{{ "{:,.2f}".format(item.total_vat) }}</td></tr>
-        <tr><td>Gross Amount</td><td class="text-end">{{ "{:,.2f}".format(item.gross_amount) }}</td></tr>
-        <tr class="fw-bold fs-5"><td>Total Invoice Amount</td><td class="text-end">{{ "{:,.2f}".format(item.total_invoice_amount) }}</td></tr>
+        <tr><td>Total Parts Cost</td><td class="text-end" id="tot_total_parts_cost">{{ "{:,.2f}".format(item.total_parts_cost) }}</td></tr>
+        <tr><td>Total Labor Cost</td><td class="text-end" id="tot_total_labor_cost">{{ "{:,.2f}".format(item.total_labor_cost) }}</td></tr>
+        <tr><td>Total Discount</td><td class="text-end" id="tot_total_discount">{{ "{:,.2f}".format(item.total_discount) }}</td></tr>
+        <tr><td>Net Amount</td><td class="text-end" id="tot_net_amount">{{ "{:,.2f}".format(item.net_amount) }}</td></tr>
+        <tr><td>Total VAT</td><td class="text-end" id="tot_total_vat">{{ "{:,.2f}".format(item.total_vat) }}</td></tr>
+        <tr><td>Gross Amount</td><td class="text-end" id="tot_gross_amount">{{ "{:,.2f}".format(item.gross_amount) }}</td></tr>
+        <tr class="fw-bold fs-5"><td>Total Invoice Amount</td><td class="text-end" id="tot_total_invoice_amount">{{ "{:,.2f}".format(item.total_invoice_amount) }}</td></tr>
       </table>
     </div>
   </div>
@@ -162,4 +165,167 @@
 {% set reference_id = item.id %}
 {% include "layout/_comment_thread.html" %}
 {% include "master_data/_attachment_panel.html" %}
+{% endblock %}
+
+{% block scripts %}
+{% if item.status != 'APPROVED' and current_user.has_permission('maintenanceinvoice.update') %}
+<script>
+// Invoice line encoding without page reloads.
+//
+// Every "Add" used to be a full POST + redirect: the page reloaded,
+// jumped back to the top, lost keyboard focus, and reset the Category
+// and Charged-To choices. Encoding a 20-line invoice meant 20 reloads
+// and 20 scrolls back down to the form.
+//
+// The server still does all the work -- validation, VAT, discount and
+// every total are calculated there and simply displayed here. There is
+// no second copy of the money rules in JavaScript.
+(function () {
+  var form = document.getElementById("invLineForm");
+  if (!form) return;
+  var tbody = document.getElementById("invLineBody");
+  var firstField = document.getElementById("invFirstField");
+
+  function setTotals(totals) {
+    Object.keys(totals).forEach(function (k) {
+      var el = document.getElementById("tot_" + k);
+      if (el) el.textContent = totals[k];
+    });
+  }
+
+  function showError(message) {
+    var box = document.getElementById("invLineError");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "invLineError";
+      box.className = "alert alert-danger py-2 px-3 small mb-2";
+      form.parentNode.insertBefore(box, form);
+    }
+    box.textContent = message;
+    box.scrollIntoView({block: "nearest"});
+  }
+
+  function clearError() {
+    var box = document.getElementById("invLineError");
+    if (box) box.remove();
+  }
+
+  function wireDelete(rowForm) {
+    rowForm.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      if (!window.confirm("Remove this line item?")) return;
+      fetch(rowForm.action, {
+        method: "POST",
+        headers: {"X-Requested-With": "XMLHttpRequest"},
+        body: new FormData(rowForm)
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) { showError(d.error || "Could not remove that line."); return; }
+          var row = rowForm.closest("tr");
+          if (row) row.remove();
+          setTotals(d.totals);
+          if (!tbody.querySelector("tr[data-line-row]")) {
+            var empty = document.createElement("tr");
+            empty.id = "invNoLinesRow";
+            empty.innerHTML = '<td colspan="11" class="text-center text-muted py-3">No line items yet.</td>';
+            tbody.appendChild(empty);
+          }
+        })
+        .catch(function () { showError("Could not reach the server. Please try again."); });
+    });
+  }
+
+  // Existing rows rendered by the server get the same behaviour.
+  document.querySelectorAll("form.inv-del-line").forEach(wireDelete);
+
+  function appendRow(line) {
+    var noRows = document.getElementById("invNoLinesRow");
+    if (noRows) noRows.remove();
+
+    var tr = document.createElement("tr");
+    tr.setAttribute("data-line-row", line.id);
+    tr.className = "table-success";   // brief highlight so the new row is obvious
+    var partCell = line.part_description +
+      (line.part_number ? '<br><span class="text-muted small">' + line.part_number + "</span>" : "");
+    tr.innerHTML =
+      "<td>" + partCell + "</td>" +
+      "<td>" + (line.specification || "—") + "</td>" +
+      "<td>" + (line.uom || "—") + "</td>" +
+      '<td class="text-end">' + line.quantity + "</td>" +
+      '<td class="text-end">' + line.unit_cost + "</td>" +
+      '<td class="text-end">' + line.line_amount + "</td>" +
+      '<td class="text-end">' + line.vat_amount + "</td>" +
+      '<td class="text-end fw-semibold">' + line.total_amount + "</td>" +
+      '<td><span class="badge text-bg-secondary">' + line.expense_category + "</span></td>" +
+      '<td class="small">' + line.charged_to + "</td>" +
+      "<td></td>";
+    tbody.appendChild(tr);
+
+    // Delete control for the row just added.
+    var delForm = document.createElement("form");
+    delForm.method = "post";
+    delForm.className = "inv-del-line";
+    delForm.action = form.action + "/" + line.id + "/delete";
+    var tok = form.querySelector('input[name="csrf_token"]');
+    delForm.innerHTML =
+      '<input type="hidden" name="csrf_token" value="' + (tok ? tok.value : "") + '">' +
+      '<button class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-trash"></i></button>';
+    tr.lastElementChild.appendChild(delForm);
+    wireDelete(delForm);
+
+    setTimeout(function () { tr.classList.remove("table-success"); }, 1200);
+  }
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    clearError();
+    var submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;   // no double-add on a fast double-click
+
+    fetch(form.action, {
+      method: "POST",
+      headers: {"X-Requested-With": "XMLHttpRequest"},
+      body: new FormData(form)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { showError(d.error || "Could not add that line."); return; }
+        appendRow(d.line);
+        setTotals(d.totals);
+
+        // Reset only the per-item fields. Category and Charged To keep
+        // their current values on purpose: consecutive lines on one
+        // invoice are usually the same category charged to the same
+        // place, and re-picking both every time was a large part of the
+        // encoding effort.
+        ["part_number", "part_description", "specification", "uom"].forEach(function (n) {
+          var el = form.querySelector('[name="' + n + '"]');
+          if (el) el.value = "";
+        });
+        var qty = form.querySelector('[name="quantity"]');
+        if (qty) qty.value = "1";
+        ["unit_cost", "discount"].forEach(function (n) {
+          var el = form.querySelector('[name="' + n + '"]');
+          if (el) el.value = "0";
+        });
+
+        // Straight back to the first field, ready to type the next item.
+        if (firstField) firstField.focus();
+      })
+      .catch(function () { showError("Could not reach the server. Please try again."); })
+      .finally(function () { if (submitBtn) submitBtn.disabled = false; });
+  });
+
+  // Enter anywhere in the row adds the line, so a whole invoice can be
+  // encoded from the keyboard without reaching for the mouse.
+  form.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" && ev.target.tagName !== "BUTTON") {
+      ev.preventDefault();
+      form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit"));
+    }
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}
