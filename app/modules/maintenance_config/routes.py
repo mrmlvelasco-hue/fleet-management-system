@@ -175,8 +175,8 @@ def pmschedule_deactivate(sid):
 @login_required
 @require_permission("pmscopetemplate.view")
 def pmscope_list():
-    items = PMScopeTemplateService().list(include_inactive=True)
-    return render_template("maintenance_config/scope_list.html", items=items)
+    rows = PMScopeTemplateService().list_with_counts(include_inactive=True)
+    return render_template("maintenance_config/scope_list.html", rows=rows)
 
 
 def _pmscope_items_from_form(f):

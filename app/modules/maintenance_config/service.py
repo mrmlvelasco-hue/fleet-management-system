@@ -295,5 +295,33 @@ class PMScopeTemplateService:
             q = q.filter_by(is_active=True)
         return q.all()
 
+    def list_with_counts(self, include_inactive=False):
+        """[(template, activity_count)] for the index page.
+
+        Separate from list() because the index only needs each
+        template's activity COUNT, not its activity objects. On a real
+        imported catalogue that difference is not academic: measured on
+        a 4,626-template / 109,879-item VEMS import, eagerly loading the
+        items to render the index took 5.6s and produced 7.1 MB of HTML.
+        One GROUP BY aggregate answers the same question without
+        materialising a single PMScopeItem.
+
+        list() is left exactly as it was, so any caller that genuinely
+        needs the item objects keeps working unchanged.
+        """
+        from sqlalchemy import func
+        counts = dict(
+            db.session.query(PMScopeItem.template_id,
+                            func.count(PMScopeItem.id))
+            .group_by(PMScopeItem.template_id).all())
+
+        q = PMScopeTemplate.query.options(
+            joinedload(PMScopeTemplate.maintenance_type),
+            joinedload(PMScopeTemplate.pm_schedule).joinedload(
+                PMSchedule.vehicle_type))
+        if not include_inactive:
+            q = q.filter_by(is_active=True)
+        return [(t, counts.get(t.id, 0)) for t in q.all()]
+
     def get_by_id(self, template_id):
         return db.session.get(PMScopeTemplate, template_id)
