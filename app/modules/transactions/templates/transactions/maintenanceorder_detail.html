@@ -61,6 +61,18 @@
         <dt class="col-sm-4">Mechanic</dt><dd class="col-sm-8">{{ item.assigned_mechanic or '—' }}</dd>
         <dt class="col-sm-4">Vendor</dt><dd class="col-sm-8">{{ item.vendor.name if item.vendor else '—' }}</dd>
         <dt class="col-sm-4">Est. / Actual Cost</dt><dd class="col-sm-8">{{ item.estimated_cost|peso }} / {{ item.actual_cost|peso }}</dd>
+        <dt class="col-sm-4">Cost Center</dt>
+        <dd class="col-sm-8">
+          {% if item.cost_center %}<span class="font-monospace">{{ item.cost_center }}</span>
+            <span class="text-muted small">({{ item.vehicle.department.name }})</span>
+          {% else %}<span class="text-muted">—</span>
+            <span class="text-muted small">
+              {%- if item.vehicle and not item.vehicle.department_id %}
+              vehicle has no department assigned
+              {%- else %}department has no cost center set{% endif -%}
+            </span>
+          {% endif %}
+        </dd>
         <dt class="col-sm-4">Description</dt><dd class="col-sm-8">{{ item.description or '—' }}</dd>
       </dl>
 

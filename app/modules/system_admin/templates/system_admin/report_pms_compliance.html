@@ -31,6 +31,14 @@
     </select>
   </div>
   <div class="col-auto">
+    <select name="maintenance_type_id" class="form-select form-select-sm">
+      <option value="">All Maintenance Types</option>
+      {% for mt in maintenance_types %}
+      <option value="{{ mt.id }}" {{ 'selected' if filters.maintenance_type_id==mt.id|string }}>{{ mt.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
     <input type="text" name="plate_number" class="form-control form-control-sm"
            placeholder="Plate / Conduction No." value="{{ filters.plate_number or '' }}">
   </div>
@@ -64,7 +72,7 @@
   <table class="table table-sm table-bordered">
     <thead class="table-light">
       <tr>
-        <th>Plate No.</th><th>Branch</th><th>Make</th><th>Model</th>
+        <th>Plate No.</th><th>Branch</th><th>Cost Center</th><th>Make</th><th>Model</th>
         <th>Maintenance Type</th><th>Next Due (km)</th><th>Current Odometer</th>
         <th>Next Due Date</th><th>Status</th>
       </tr>
@@ -74,6 +82,7 @@
       <tr>
         <td>{{ r.vehicle.plate_number or r.vehicle.conduction_number }}</td>
         <td>{{ r.vehicle.branch.name if r.vehicle.branch else '—' }}</td>
+        <td class="font-monospace small">{{ r.vehicle.cost_center or '—' }}</td>
         <td>{{ r.vehicle.brand }}</td>
         <td>{{ r.vehicle.model }}</td>
         <td>{{ r.schedule.maintenance_type.name if r.schedule and r.schedule.maintenance_type else '—' }}</td>

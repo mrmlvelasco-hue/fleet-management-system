@@ -166,6 +166,20 @@ class MaintenanceOrder(db.Model, BaseModel):
         db.Integer, db.ForeignKey("approval_instances.id"), nullable=True)
 
     vehicle = db.relationship("Vehicle")
+
+    @property
+    def cost_center(self):
+        """The cost centre this order's expenses belong to, resolved
+        through its own vehicle's department assignment.
+
+        No cost-centre column on the Maintenance Order itself: the
+        vehicle already carries department_id, so the chain
+        (Order -> Vehicle -> Department -> cost_center) answers this
+        without duplicating the value or asking the user to re-enter
+        something the system already knows. Works identically for PMS
+        and Operational orders, since both are always against a vehicle.
+        """
+        return self.vehicle.cost_center if self.vehicle else None
     maintenance_type = db.relationship("MaintenanceType")
     transaction_type = db.relationship("TransactionType")
     pm_schedule = db.relationship("PMSchedule")

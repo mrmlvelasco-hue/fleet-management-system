@@ -11,13 +11,14 @@
 </div>
 <div class="card"><div class="card-body">
 <table class="table table-striped fms-datatable">
-  <thead><tr><th>Code</th><th>Name</th><th>Branch</th><th>Active</th><th></th></tr></thead>
+  <thead><tr><th>Code</th><th>Name</th><th>Branch</th><th>Cost Center</th><th>Active</th><th></th></tr></thead>
   <tbody>
   {% for item in items %}
     <tr>
       <td>{{ item.code or '—' }}</td>
       <td>{{ item.name or '—' }}</td>
       <td>{{ item.branch.name if item.branch else '—' }}</td>
+      <td class="font-monospace">{{ item.cost_center or '—' }}</td>
       <td>{% if item.is_active %}<span class="badge text-bg-success">Yes</span>
           {% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
       <td class="text-end">

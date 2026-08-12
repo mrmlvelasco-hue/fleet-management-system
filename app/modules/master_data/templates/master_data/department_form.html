@@ -65,6 +65,18 @@
               {% endif %}
             </div>
 
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Cost Center</label>
+              <input type="text" name="cost_center" class="form-control font-monospace"
+                     value="{{ item.cost_center or '' if item else '' }}"
+                     placeholder="e.g. CC-1001">
+              <div class="form-text">
+                Financial allocation code. Vehicle and maintenance costs for
+                any vehicle assigned to this department are reported against
+                this cost center. Leave blank if not tracked.
+              </div>
+            </div>
+
             <div class="col-12">
               <label class="form-label fw-semibold">Description</label>
               <textarea name="description" class="form-control" rows="3"

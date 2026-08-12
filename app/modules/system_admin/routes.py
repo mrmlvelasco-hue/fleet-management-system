@@ -643,6 +643,7 @@ def _report_filters_from_request():
         "date_from": request.args.get("date_from") or None,
         "date_to": request.args.get("date_to") or None,
         "status": request.args.get("status") or None,
+        "maintenance_type_id": request.args.get("maintenance_type_id") or None,
     }
 
 
@@ -675,6 +676,16 @@ def _vehicle_type_choices():
            .order_by(VehicleType.name).all())
 
 
+def _maintenance_type_choices():
+    """Read from the MaintenanceType master rather than a hardcoded
+    list, so a newly configured type (Tire Management, Battery
+    Management, or anything the client adds later) appears in this
+    filter automatically without a code change."""
+    from app.modules.master_data.reference.models import MaintenanceType
+    return (MaintenanceType.query.filter_by(is_active=True)
+           .order_by(MaintenanceType.name).all())
+
+
 @bp.route("/reports/pms-compliance")
 @login_required
 @require_permission("reportpmscompliance.view")
@@ -696,7 +707,8 @@ def report_pms_compliance():
     # URL keeps working exactly as before rather than silently returning
     # nothing.
     has_filters = any(filters.get(k) for k in
-                     ("branch_id", "vehicle_type_id", "status"))
+                     ("branch_id", "vehicle_type_id", "status",
+                      "maintenance_type_id"))
     should_run = request.args.get("generate") == "1" or has_filters
 
     rows = None
@@ -708,10 +720,21 @@ def report_pms_compliance():
                and _vehicle_matches_filters(r["vehicle"], filters)]
         if filters["status"]:
             rows = [r for r in rows if r["status"] == filters["status"]]
+        if filters["maintenance_type_id"]:
+            # A row's maintenance type comes from the PM schedule that
+            # made it due. A vehicle with no applicable schedule has no
+            # maintenance type at all, so it can't match a specific
+            # type filter and is correctly excluded rather than shown
+            # under whichever type happened to be selected.
+            want = int(filters["maintenance_type_id"])
+            rows = [r for r in rows
+                   if r.get("schedule") is not None
+                   and r["schedule"].maintenance_type_id == want]
     return render_template("system_admin/report_pms_compliance.html",
                            rows=rows, filters=filters,
                            branches=_branch_choices(),
                            vehicle_types=_vehicle_type_choices(),
+                           maintenance_types=_maintenance_type_choices(),
                            generated_at=datetime.now())
 
 

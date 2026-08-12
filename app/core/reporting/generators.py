@@ -125,10 +125,20 @@ def generate_pms_compliance_xlsx(filters: dict = None, user=None):
            if _vehicle_matches(r["vehicle"], filters)]
     if filters.get("status"):
         rows = [r for r in rows if r["status"] == filters["status"]]
+    if filters.get("maintenance_type_id"):
+        # Same rule as the on-screen report: a vehicle with no
+        # applicable schedule has no maintenance type and so can't
+        # match a specific type filter. Applied here too, otherwise the
+        # exported file would silently contain rows the person filtered
+        # out on screen.
+        want = int(filters["maintenance_type_id"])
+        rows = [r for r in rows
+               if r.get("schedule") is not None
+               and r["schedule"].maintenance_type_id == want]
 
-    columns = ["Plate No.", "Branch", "Make", "Model", "Maintenance Type",
-              "Next Due (km)", "Current Odometer", "Next Due Date",
-              "Status"]
+    columns = ["Plate No.", "Branch", "Cost Center", "Make", "Model",
+              "Maintenance Type", "Next Due (km)", "Current Odometer",
+              "Next Due Date", "Status"]
     wb, ws = _new_workbook("PMS Compliance / Due Report", "PMS Compliance")
     ws.append(columns)
     _style_header_row(ws, ws.max_row, len(columns))
@@ -136,6 +146,7 @@ def generate_pms_compliance_xlsx(filters: dict = None, user=None):
         v = r["vehicle"]
         ws.append([
             v.plate_number or v.conduction_number, v.branch.name if v.branch else "—",
+            v.cost_center or "—",
             v.brand, v.model,
             r["schedule"].maintenance_type.name if r.get("schedule") and r["schedule"].maintenance_type else "—",
             r.get("next_due_km") or "—", v.current_odometer,

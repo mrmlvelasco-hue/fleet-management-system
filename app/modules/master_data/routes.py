@@ -274,6 +274,7 @@ def department_new():
             DepartmentService().create(
                 code=request.form["code"], name=request.form["name"],
                 branch_id=int(request.form["branch_id"]),
+                cost_center=(request.form.get("cost_center") or "").strip() or None,
                 description=request.form.get("description", ""))
             flash("Department created.", "success")
             return redirect(url_for("master_data.department_list"))
@@ -291,6 +292,7 @@ def department_edit(did):
     if request.method == "POST":
         DepartmentService().update(
             did, name=request.form["name"],
+            cost_center=(request.form.get("cost_center") or "").strip() or None,
             description=request.form.get("description", ""))
         flash("Department updated.", "success")
         return redirect(url_for("master_data.department_list"))

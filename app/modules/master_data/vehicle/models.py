@@ -132,6 +132,18 @@ class Vehicle(db.Model, BaseModel):
     vehicle_type = db.relationship("VehicleType")
     branch = db.relationship("Branch")
     department = db.relationship("Department")
+
+    @property
+    def cost_center(self):
+        """Read through to the assigned department's cost centre.
+
+        Deliberately a property rather than a stored column: a copied
+        value goes stale the moment Finance renumbers a cost centre, and
+        would then disagree with the department record it came from.
+        Returns None when no department is assigned -- a vehicle isn't
+        required to have one.
+        """
+        return self.department.cost_center if self.department else None
     business_unit = db.relationship("BusinessUnit")
     pm_schedule = db.relationship("PMSchedule")
     assigned_driver = db.relationship("Driver")

@@ -22,6 +22,11 @@ class Department(db.Model, BaseModel):
     name = db.Column(db.String(120), nullable=False)
     branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
                           nullable=False)
+    # The financial allocation code for this department. Nullable: not
+    # every organisation tracks cost centres, and every department that
+    # already exists predates this field -- making it required would
+    # make those records unsaveable on the next unrelated edit.
+    cost_center = db.Column(db.String(40), nullable=True, index=True)
     description = db.Column(db.String(255))
     branch = db.relationship("Branch", backref="departments")
 
