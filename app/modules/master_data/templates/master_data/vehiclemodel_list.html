@@ -1,14 +1,27 @@
 {% extends "layout/base.html" %}
 {% block title %}Vehicle Models{% endblock %}
-{% block breadcrumbs %}<li class="breadcrumb-item active">Vehicle Models</li>{% endblock %}
+{% block breadcrumbs %}
+{% if filter_brand %}
+<li class="breadcrumb-item"><a href="{{ url_for('master_data.vehiclemodel_list') }}">Vehicle Models</a></li>
+<li class="breadcrumb-item active">{{ filter_brand.name }}</li>
+{% else %}
+<li class="breadcrumb-item active">Vehicle Models</li>
+{% endif %}
+{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Vehicle Models</h1>
   {% if current_user.has_permission('vehiclemodel.create') %}
-  <a class="btn btn-primary" href="{{ url_for('master_data.vehiclemodel_new') }}">
+  <a class="btn btn-primary" href="{{ url_for('master_data.vehiclemodel_new', brand_id=filter_brand.id if filter_brand else None) }}">
     <i class="bi bi-plus-lg me-1"></i>New Model</a>
   {% endif %}
 </div>
+{% if filter_brand %}
+<div class="alert alert-info py-2 px-3 mb-3 small d-flex justify-content-between align-items-center">
+  <span><i class="bi bi-funnel me-1"></i>Showing models for <strong>{{ filter_brand.name }}</strong> only.</span>
+  <a href="{{ url_for('master_data.vehiclemodel_list') }}">Clear filter &times;</a>
+</div>
+{% endif %}
 <div class="card"><div class="card-body">
 <table class="table table-striped fms-datatable">
   <thead><tr><th>Brand</th><th>Model</th><th>Active</th><th></th></tr></thead>

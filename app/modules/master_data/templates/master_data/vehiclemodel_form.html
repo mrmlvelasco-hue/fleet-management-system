@@ -43,7 +43,7 @@
               <select name="brand_id" class="form-select fms-select2" required>
                 <option value="">— Select brand —</option>
                 {% for b in brands %}
-                <option value="{{ b.id }}">{{ b.name }}</option>
+                <option value="{{ b.id }}" {{ 'selected' if b.id == preselect_brand_id }}>{{ b.name }}</option>
                 {% endfor %}
               </select>
               {% endif %}

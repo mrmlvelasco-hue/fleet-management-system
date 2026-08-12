@@ -631,8 +631,12 @@ def vehiclebrand_deactivate(bid):
 @login_required
 @require_permission("vehiclemodel.view")
 def vehiclemodel_list():
-    items = VehicleModelService().list(include_inactive=True)
-    return render_template("master_data/vehiclemodel_list.html", items=items)
+    brand_id = request.args.get("brand_id", type=int)
+    items = VehicleModelService().list(brand_id=brand_id, include_inactive=True)
+    filter_brand = (db.session.get(VehicleBrand, brand_id)
+                    if brand_id else None)
+    return render_template("master_data/vehiclemodel_list.html",
+                           items=items, filter_brand=filter_brand)
 
 
 @bp.route("/vehicle-models/new", methods=["GET", "POST"])
@@ -640,17 +644,21 @@ def vehiclemodel_list():
 @require_permission("vehiclemodel.create")
 def vehiclemodel_new():
     brands = VehicleBrandService().list()
+    preselect_brand_id = request.args.get("brand_id", type=int)
     if request.method == "POST":
         try:
+            brand_id = int(request.form["brand_id"])
             VehicleModelService().create(
-                brand_id=int(request.form["brand_id"]),
-                name=request.form["name"])
+                brand_id=brand_id, name=request.form["name"])
             flash("Vehicle model created.", "success")
-            return redirect(url_for("master_data.vehiclemodel_list"))
+            return redirect(url_for("master_data.vehiclemodel_list",
+                                    brand_id=brand_id))
         except DuplicateModelError as e:
             flash(str(e), "danger")
+            preselect_brand_id = int(request.form.get("brand_id") or 0) or None
     return render_template("master_data/vehiclemodel_form.html",
-                           item=None, brands=brands, title="New Vehicle Model")
+                           item=None, brands=brands, title="New Vehicle Model",
+                           preselect_brand_id=preselect_brand_id)
 
 
 @bp.route("/vehicle-models/<int:mid>/edit", methods=["GET", "POST"])

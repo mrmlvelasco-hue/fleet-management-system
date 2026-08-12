@@ -18,7 +18,7 @@
       <td>{{ item.name }}</td>
       <td>
         {% if item.models %}
-        <a href="{{ url_for('master_data.vehiclemodel_list') }}" class="small">{{ item.models|length }} model(s)</a>
+        <a href="{{ url_for('master_data.vehiclemodel_list', brand_id=item.id) }}" class="small">{{ item.models|length }} model(s)</a>
         {% else %}<span class="text-muted small">None yet</span>{% endif %}
       </td>
       <td>{% if item.is_active %}<span class="badge text-bg-success">Yes</span>
