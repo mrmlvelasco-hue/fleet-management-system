@@ -195,3 +195,74 @@ def test_parts_section_renders_on_the_order_page(app, db, order):
         f"/transactions/maintenance-orders/{order.id}").get_data(as_text=True)
     assert "Parts to Procure" in html
     assert 'id="moPartForm"' in html
+
+
+# ── Route-level tests ────────────────────────────────────────────────────
+#
+# These exist because a real 500 shipped that the service-level tests
+# above could never have caught: the add-part route called a method
+# (get_by_id) that lives on a DIFFERENT service class in the same
+# module. Every test called the service directly, so the route body was
+# never executed at all. Testing the service is not testing the route.
+
+def _logged_in(app):
+    c = app.test_client()
+    c.post("/login", data={"username": "admin", "password": "Testpass123!"},
+          follow_redirects=True)
+    return c
+
+
+def test_add_part_via_the_route_returns_json(app, db, order):
+    client = _logged_in(app)
+    r = client.post(f"/transactions/maintenance-orders/{order.id}/parts",
+                    data={"part_description": "Labor", "quantity": "1",
+                         "estimated_unit_cost": "2000"},
+                    headers={"X-Requested-With": "XMLHttpRequest"})
+    assert r.status_code == 200, f"route returned {r.status_code}"
+    body = r.get_json()
+    assert body["ok"] is True
+    assert body["part"]["part_description"] == "Labor"
+    assert body["parts_total"] == "2,000.00"
+
+
+def test_add_part_via_the_route_without_ajax_redirects(app, db, order):
+    client = _logged_in(app)
+    r = client.post(f"/transactions/maintenance-orders/{order.id}/parts",
+                    data={"part_description": "Labor", "quantity": "1",
+                         "estimated_unit_cost": "2000"})
+    assert r.status_code == 302
+
+
+def test_remove_part_via_the_route(app, db, order):
+    client = _logged_in(app)
+    add = client.post(f"/transactions/maintenance-orders/{order.id}/parts",
+                      data={"part_description": "Oil", "quantity": "2",
+                           "estimated_unit_cost": "100"},
+                      headers={"X-Requested-With": "XMLHttpRequest"})
+    part_id = add.get_json()["part"]["id"]
+    r = client.post(
+        f"/transactions/maintenance-orders/{order.id}/parts/{part_id}/delete",
+        headers={"X-Requested-With": "XMLHttpRequest"})
+    assert r.status_code == 200
+    assert r.get_json()["parts_total"] == "0.00"
+
+
+def test_add_part_route_rejects_a_non_draft_order(app, db, order):
+    client = _logged_in(app)
+    order.status = "IN_PROGRESS"
+    db.session.commit()
+    r = client.post(f"/transactions/maintenance-orders/{order.id}/parts",
+                    data={"part_description": "Late", "quantity": "1",
+                         "estimated_unit_cost": "10"},
+                    headers={"X-Requested-With": "XMLHttpRequest"})
+    assert r.status_code == 409
+    assert r.get_json()["ok"] is False
+
+
+def test_add_part_route_rejects_bad_numbers_without_a_500(app, db, order):
+    client = _logged_in(app)
+    r = client.post(f"/transactions/maintenance-orders/{order.id}/parts",
+                    data={"part_description": "Oil", "quantity": "abc",
+                         "estimated_unit_cost": "10"},
+                    headers={"X-Requested-With": "XMLHttpRequest"})
+    assert r.status_code == 400, f"got {r.status_code}, expected a clean 400"

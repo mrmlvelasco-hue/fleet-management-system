@@ -489,10 +489,17 @@ class MaintenanceOrderService(BaseTransactionService):
         part = db.session.get(MaintenanceOrderPart, part_id)
         if part is None:
             return None
-        if part.order.status != "DRAFT":
+        order = part.order
+        if order.status != "DRAFT":
             raise InvalidOrderStateError(
                 "Parts can only be removed while the order is DRAFT.")
-        db.session.delete(part)
+        # Remove via the relationship, not db.session.delete(part): the
+        # delete-orphan cascade still removes the row, but this also
+        # keeps the parent's already-loaded parts collection correct.
+        # Symmetric to the same fix in add_part -- without it the
+        # running total recalculated straight afterwards still counted
+        # the part that was just removed.
+        order.parts.remove(part)
         db.session.commit()
         return part
 

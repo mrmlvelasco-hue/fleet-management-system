@@ -2185,7 +2185,7 @@ def maintenanceorder_add_part(oid):
             estimated_unit_cost=f.get("estimated_unit_cost") or 0,
             remarks=f.get("remarks") or None)
         if wants_json:
-            order = MaintenanceOrderService().get_by_id(oid)
+            order = db.session.get(MaintenanceOrder, oid)
             return jsonify({"ok": True, "part": _mo_part_json(part),
                            "parts_total": _mo_parts_total(order)})
         flash("Part added.", "success")
@@ -2210,7 +2210,7 @@ def maintenanceorder_remove_part(oid, part_id):
     try:
         MaintenanceOrderService().remove_part(part_id)
         if wants_json:
-            order = MaintenanceOrderService().get_by_id(oid)
+            order = db.session.get(MaintenanceOrder, oid)
             return jsonify({"ok": True, "parts_total": _mo_parts_total(order)})
         flash("Part removed.", "info")
     except InvalidOrderStateError as e:
