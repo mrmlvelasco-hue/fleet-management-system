@@ -165,6 +165,13 @@ class MaintenanceOrder(db.Model, BaseModel):
     approval_instance_id = db.Column(
         db.Integer, db.ForeignKey("approval_instances.id"), nullable=True)
 
+    # The draft Purchase Request auto-generated from this order's parts
+    # list. Nullable: an order needing no procured parts never generates
+    # one, and orders created before this feature have none.
+    purchase_request_id = db.Column(
+        db.Integer, db.ForeignKey("purchase_requests.id"), nullable=True)
+    purchase_request = db.relationship("PurchaseRequest")
+
     vehicle = db.relationship("Vehicle")
 
     @property
@@ -236,3 +243,39 @@ class MaintenanceChecklistItem(db.Model, BaseModel):
     sort_order = db.Column(db.Integer, default=0, nullable=False)
 
     done_by_user = db.relationship("User")
+
+
+class MaintenanceOrderPart(db.Model, BaseModel):
+    """A part or material the mechanic has determined must be procured
+    for this order.
+
+    This is deliberately NOT an inventory record -- there is no stock
+    level, no warehouse, no reservation. It is a statement of what needs
+    buying, captured once at the point the mechanic actually knows it,
+    and carried straight through to the Purchase Request so the same
+    items never get typed a second time.
+
+    estimated_unit_cost is an estimate by design: the mechanic is
+    stating a requirement, not a settled price. The real price arrives
+    later on the supplier's invoice.
+    """
+    __tablename__ = "maintenance_order_parts"
+
+    order_id = db.Column(db.Integer, db.ForeignKey("maintenance_orders.id"),
+                        nullable=False, index=True)
+    part_number = db.Column(db.String(60), nullable=True)
+    part_description = db.Column(db.String(255), nullable=False)
+    specification = db.Column(db.String(255), nullable=True)
+    uom = db.Column(db.String(20), nullable=True)
+    quantity = db.Column(db.Numeric(12, 2), nullable=False, default=1)
+    estimated_unit_cost = db.Column(db.Numeric(18, 2), nullable=False,
+                                   default=0)
+    remarks = db.Column(db.String(255), nullable=True)
+    sort_order = db.Column(db.Integer, default=0, nullable=False)
+
+    order = db.relationship("MaintenanceOrder", backref=db.backref(
+        "parts", cascade="all, delete-orphan", lazy="selectin"))
+
+    @property
+    def estimated_total(self):
+        return (self.quantity or 0) * (self.estimated_unit_cost or 0)

@@ -2146,3 +2146,75 @@ def fuel_delete_batch(batch_id):
         flash("That batch was not found -- it may already have been "
              "removed.", "warning")
     return redirect(url_for("transactions.fuel_import"))
+
+
+# ── Maintenance Order: parts to procure ────────────────────────────────
+
+def _mo_part_json(part):
+    return {
+        "id": part.id,
+        "part_number": part.part_number,
+        "part_description": part.part_description,
+        "specification": part.specification,
+        "uom": part.uom,
+        "quantity": f"{part.quantity:,.2f}",
+        "estimated_unit_cost": f"{part.estimated_unit_cost:,.2f}",
+        "estimated_total": f"{part.estimated_total:,.2f}",
+        "remarks": part.remarks,
+    }
+
+
+def _mo_parts_total(order):
+    return f"{sum((p.estimated_total for p in order.parts), 0):,.2f}"
+
+
+@bp.route("/maintenance-orders/<int:oid>/parts", methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_add_part(oid):
+    f = request.form
+    wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    try:
+        part = MaintenanceOrderService().add_part(
+            oid,
+            part_description=f.get("part_description", ""),
+            part_number=f.get("part_number") or None,
+            specification=f.get("specification") or None,
+            uom=f.get("uom") or None,
+            quantity=f.get("quantity") or 1,
+            estimated_unit_cost=f.get("estimated_unit_cost") or 0,
+            remarks=f.get("remarks") or None)
+        if wants_json:
+            order = MaintenanceOrderService().get_by_id(oid)
+            return jsonify({"ok": True, "part": _mo_part_json(part),
+                           "parts_total": _mo_parts_total(order)})
+        flash("Part added.", "success")
+    except InvalidOrderStateError as e:
+        if wants_json:
+            return jsonify({"ok": False, "error": str(e)}), 409
+        flash(str(e), "danger")
+    except (KeyError, ValueError, InvalidOperation) as e:
+        if wants_json:
+            return jsonify({"ok": False,
+                           "error": f"Please check the values entered ({e})."}), 400
+        flash("Please check the values entered.", "danger")
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+@bp.route("/maintenance-orders/<int:oid>/parts/<int:part_id>/delete",
+         methods=["POST"])
+@login_required
+@require_permission("maintenanceorder.update")
+def maintenanceorder_remove_part(oid, part_id):
+    wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    try:
+        MaintenanceOrderService().remove_part(part_id)
+        if wants_json:
+            order = MaintenanceOrderService().get_by_id(oid)
+            return jsonify({"ok": True, "parts_total": _mo_parts_total(order)})
+        flash("Part removed.", "info")
+    except InvalidOrderStateError as e:
+        if wants_json:
+            return jsonify({"ok": False, "error": str(e)}), 409
+        flash(str(e), "danger")
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))

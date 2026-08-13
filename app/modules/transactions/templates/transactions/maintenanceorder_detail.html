@@ -208,6 +208,110 @@
   </div>
 </div>
 
+{# ── Parts to Procure ───────────────────────────────────────────────
+   Encoded once here by the mechanic, then carried straight into the
+   Purchase Request on final approval. The whole point is that nobody
+   re-types these items into a second form. #}
+<div class="card mt-3" id="parts-to-procure">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Parts to Procure</span>
+    {% if item.purchase_request_id %}
+    <a class="badge text-bg-success text-decoration-none"
+       href="{{ url_for('transactions.purchaserequest_detail', pid=item.purchase_request_id) }}">
+      <i class="bi bi-link-45deg me-1"></i>PR
+      {{ item.purchase_request.document_number or ('#' ~ item.purchase_request_id) }}
+      &mdash; {{ item.purchase_request.status }}
+    </a>
+    {% elif item.parts %}
+    <span class="badge text-bg-secondary">PR generated on final approval</span>
+    {% endif %}
+  </div>
+  <div class="card-body">
+
+    {% if item.purchase_request_id %}
+    <div class="alert alert-success py-2 px-3 small">
+      <i class="bi bi-check-circle me-1"></i>
+      A draft Purchase Request was created from this parts list. It is
+      <strong>not submitted yet</strong> &mdash; open it to attach quotations,
+      adjust quantities or set a supplier, then submit it from the Purchase
+      Request module.
+    </div>
+    {% endif %}
+
+    {% if item.status == 'DRAFT' and current_user.has_permission('maintenanceorder.update') %}
+    <form method="post" id="moPartForm"
+          action="{{ url_for('transactions.maintenanceorder_add_part', oid=item.id) }}"
+          class="row g-2 align-items-end border rounded p-2 mb-3 bg-body-tertiary">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-md-3"><label class="form-label small">Part Name</label>
+        <input type="text" name="part_description" id="moPartFirstField"
+               class="form-control form-control-sm" autocomplete="off" required></div>
+      <div class="col-md-2"><label class="form-label small">Part No.</label>
+        <input type="text" name="part_number" class="form-control form-control-sm"></div>
+      <div class="col-md-2"><label class="form-label small">Specification</label>
+        <input type="text" name="specification" class="form-control form-control-sm"></div>
+      <div class="col-md-1"><label class="form-label small">UOM</label>
+        <input type="text" name="uom" class="form-control form-control-sm"></div>
+      <div class="col-md-1"><label class="form-label small">Qty</label>
+        <input type="number" step="0.01" min="0" name="quantity" value="1"
+               class="form-control form-control-sm"></div>
+      <div class="col-md-2"><label class="form-label small">Est. Unit Cost</label>
+        <input type="number" step="0.01" min="0" name="estimated_unit_cost" value="0"
+               class="form-control form-control-sm"></div>
+      <div class="col-md-1 text-end">
+        <button class="btn btn-sm btn-primary w-100" type="submit">
+          <i class="bi bi-plus-lg"></i> Add</button>
+      </div>
+      <div class="col-12">
+        <div class="form-text">
+          Estimated cost only &mdash; the real price comes from the supplier
+          invoice later. Press Enter to add and keep typing.
+        </div>
+      </div>
+    </form>
+    {% endif %}
+
+    <table class="table table-sm mb-0" id="moPartsTable">
+      <thead><tr>
+        <th>Part</th><th>Specification</th><th>UOM</th>
+        <th class="text-end">Qty</th><th class="text-end">Est. Unit Cost</th>
+        <th class="text-end">Est. Total</th><th></th>
+      </tr></thead>
+      <tbody id="moPartsBody">
+      {% for p in item.parts|sort(attribute='sort_order') %}
+        <tr data-part-row="{{ p.id }}">
+          <td>{{ p.part_description }}
+            {% if p.part_number %}<br><span class="text-muted small">{{ p.part_number }}</span>{% endif %}</td>
+          <td>{{ p.specification or '—' }}</td>
+          <td>{{ p.uom or '—' }}</td>
+          <td class="text-end">{{ "{:,.2f}".format(p.quantity) }}</td>
+          <td class="text-end">{{ "{:,.2f}".format(p.estimated_unit_cost) }}</td>
+          <td class="text-end fw-semibold">{{ "{:,.2f}".format(p.estimated_total) }}</td>
+          <td class="text-end">
+            {% if item.status == 'DRAFT' and current_user.has_permission('maintenanceorder.update') %}
+            <form method="post" class="mo-del-part"
+                  action="{{ url_for('transactions.maintenanceorder_remove_part', oid=item.id, part_id=p.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-trash"></i></button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr id="moNoPartsRow"><td colspan="7" class="text-center text-muted py-3">
+          No parts recorded. Add any parts or materials that need to be
+          purchased for this job.</td></tr>
+      {% endfor %}
+      </tbody>
+      <tfoot><tr>
+        <th colspan="5" class="text-end">Estimated Total</th>
+        <th class="text-end" id="moPartsTotal">{{ "{:,.2f}".format(item.parts|sum(attribute='estimated_total')) }}</th>
+        <th></th>
+      </tr></tfoot>
+    </table>
+  </div>
+</div>
+
 {% if item.checklist_items %}
 <div class="card mt-3" id="maintenance-checklist">
   <div class="card-header d-flex justify-content-between align-items-center">
@@ -408,4 +512,119 @@
 </div>
 {% include "layout/_requestor_info.html" %}
 {% include "master_data/_attachment_panel.html" %}
+{% endblock %}
+
+{% block scripts %}
+{% if item.status == 'DRAFT' and current_user.has_permission('maintenanceorder.update') %}
+<script>
+// Same no-reload entry as the invoice line editor. A mechanic listing
+// eight parts should not sit through eight page reloads, and should not
+// lose their place in the form each time.
+(function () {
+  var form = document.getElementById("moPartForm");
+  if (!form) return;
+  var tbody = document.getElementById("moPartsBody");
+  var firstField = document.getElementById("moPartFirstField");
+
+  function showError(msg) {
+    var box = document.getElementById("moPartError");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "moPartError";
+      box.className = "alert alert-danger py-2 px-3 small mb-2";
+      form.parentNode.insertBefore(box, form);
+    }
+    box.textContent = msg;
+  }
+  function clearError() {
+    var b = document.getElementById("moPartError");
+    if (b) b.remove();
+  }
+
+  function wireDelete(f) {
+    f.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      if (!window.confirm("Remove this part?")) return;
+      fetch(f.action, {method: "POST",
+                       headers: {"X-Requested-With": "XMLHttpRequest"},
+                       body: new FormData(f)})
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) { showError(d.error || "Could not remove that part."); return; }
+          var row = f.closest("tr");
+          if (row) row.remove();
+          document.getElementById("moPartsTotal").textContent = d.parts_total;
+          if (!tbody.querySelector("tr[data-part-row]")) {
+            var e = document.createElement("tr");
+            e.id = "moNoPartsRow";
+            e.innerHTML = '<td colspan="7" class="text-center text-muted py-3">No parts recorded.</td>';
+            tbody.appendChild(e);
+          }
+        })
+        .catch(function () { showError("Could not reach the server."); });
+    });
+  }
+  document.querySelectorAll("form.mo-del-part").forEach(wireDelete);
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    clearError();
+    var btn = form.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+    fetch(form.action, {method: "POST",
+                        headers: {"X-Requested-With": "XMLHttpRequest"},
+                        body: new FormData(form)})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { showError(d.error || "Could not add that part."); return; }
+        var none = document.getElementById("moNoPartsRow");
+        if (none) none.remove();
+        var p = d.part;
+        var tr = document.createElement("tr");
+        tr.setAttribute("data-part-row", p.id);
+        tr.className = "table-success";
+        tr.innerHTML =
+          "<td>" + p.part_description +
+            (p.part_number ? '<br><span class="text-muted small">' + p.part_number + "</span>" : "") + "</td>" +
+          "<td>" + (p.specification || "—") + "</td>" +
+          "<td>" + (p.uom || "—") + "</td>" +
+          '<td class="text-end">' + p.quantity + "</td>" +
+          '<td class="text-end">' + p.estimated_unit_cost + "</td>" +
+          '<td class="text-end fw-semibold">' + p.estimated_total + "</td>" +
+          '<td class="text-end"></td>';
+        tbody.appendChild(tr);
+
+        var del = document.createElement("form");
+        del.method = "post"; del.className = "mo-del-part";
+        del.action = form.action + "/" + p.id + "/delete";
+        var tok = form.querySelector('input[name="csrf_token"]');
+        del.innerHTML = '<input type="hidden" name="csrf_token" value="' + (tok ? tok.value : "") + '">' +
+          '<button class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-trash"></i></button>';
+        tr.lastElementChild.appendChild(del);
+        wireDelete(del);
+        setTimeout(function () { tr.classList.remove("table-success"); }, 1200);
+
+        document.getElementById("moPartsTotal").textContent = d.parts_total;
+
+        ["part_description", "part_number", "specification", "uom"].forEach(function (n) {
+          var el = form.querySelector('[name="' + n + '"]');
+          if (el) el.value = "";
+        });
+        form.querySelector('[name="quantity"]').value = "1";
+        form.querySelector('[name="estimated_unit_cost"]').value = "0";
+        if (firstField) firstField.focus();
+      })
+      .catch(function () { showError("Could not reach the server."); })
+      .finally(function () { if (btn) btn.disabled = false; });
+  });
+
+  form.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" && ev.target.tagName !== "BUTTON") {
+      ev.preventDefault();
+      form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit"));
+    }
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

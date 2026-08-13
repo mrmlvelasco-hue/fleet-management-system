@@ -62,6 +62,22 @@ class TransactionTypeService:
             db.session.commit()
 
 
+def _part_line_description(part):
+    """One readable PR line from a part, carrying the detail the buyer
+    needs. Part number and specification are folded into the single
+    description field because that is all a PR line has -- dropping them
+    would send someone shopping with less information than the mechanic
+    actually provided."""
+    bits = [part.part_description]
+    if part.part_number:
+        bits.append(f"(P/N {part.part_number})")
+    if part.specification:
+        bits.append(f"- {part.specification}")
+    if part.uom:
+        bits.append(f"[{part.uom}]")
+    return " ".join(bits)[:255]
+
+
 class MaintenanceOrderService(BaseTransactionService):
     model = MaintenanceOrder
     document_type_code = "MO"
@@ -422,3 +438,118 @@ class MaintenanceOrderService(BaseTransactionService):
             db.session.commit()
 
         return order
+
+    # ── Parts to procure, and the Purchase Request they become ──────
+
+    def add_part(self, order_id, *, part_description, quantity=1,
+                estimated_unit_cost=0, part_number=None, specification=None,
+                uom=None, remarks=None):
+        """Record a part the mechanic has determined needs procuring.
+
+        Only while the order is still DRAFT: the parts list is what the
+        approver approves and what the Purchase Request is built from,
+        so it must not change after that decision has been made.
+        """
+        from decimal import Decimal
+        from app.modules.transactions.maintenance_order.models import (
+            MaintenanceOrderPart)
+        order = db.session.get(MaintenanceOrder, order_id)
+        if order is None:
+            raise InvalidOrderStateError("Maintenance Order not found.")
+        if order.status != "DRAFT":
+            raise InvalidOrderStateError(
+                f"Parts can only be added while the order is DRAFT "
+                f"(this one is {order.status}).")
+        if not str(part_description or "").strip():
+            raise InvalidOrderStateError("Part description is required.")
+
+        part = MaintenanceOrderPart(
+            order_id=order.id,
+            part_number=(part_number or None),
+            part_description=part_description.strip(),
+            specification=(specification or None),
+            uom=(uom or None),
+            quantity=Decimal(str(quantity or 1)),
+            estimated_unit_cost=Decimal(str(estimated_unit_cost or 0)),
+            remarks=(remarks or None),
+            sort_order=len(order.parts))
+        # Append to the relationship rather than db.session.add(part):
+        # adding the row alone leaves the parent's already-loaded parts
+        # collection stale, so anything reading order.parts later in the
+        # same session sees an empty list. That mattered concretely --
+        # PR generation checks `if not order.parts` and would have
+        # silently produced nothing.
+        order.parts.append(part)
+        db.session.commit()
+        return part
+
+    def remove_part(self, part_id):
+        from app.modules.transactions.maintenance_order.models import (
+            MaintenanceOrderPart)
+        part = db.session.get(MaintenanceOrderPart, part_id)
+        if part is None:
+            return None
+        if part.order.status != "DRAFT":
+            raise InvalidOrderStateError(
+                "Parts can only be removed while the order is DRAFT.")
+        db.session.delete(part)
+        db.session.commit()
+        return part
+
+    def generate_purchase_request(self, order_id, user):
+        """Create a DRAFT Purchase Request from this order's parts list.
+
+        The whole point is to remove the double encoding: the mechanic
+        already typed each part on the Maintenance Order, so those exact
+        items and descriptions become the PR lines rather than being
+        re-keyed by someone else into a second form.
+
+        Deliberately left as a DRAFT and NOT submitted. The Fleet person
+        still owns that decision -- they may need to attach a quotation,
+        adjust a quantity, name a supplier, or check the budget first.
+        Auto-submitting would take that judgement away and push an
+        unreviewed request into somebody's approval queue.
+
+        Returns None (rather than raising) when the order has no parts:
+        plenty of maintenance work needs no procurement at all, and that
+        is a normal outcome, not an error.
+        """
+        order = db.session.get(MaintenanceOrder, order_id)
+        if order is None:
+            raise InvalidOrderStateError("Maintenance Order not found.")
+        if not order.parts:
+            return None
+        if order.purchase_request_id:
+            # Idempotent: approval events can fire more than once, and a
+            # duplicate PR for the same order would be a real problem to
+            # unpick downstream.
+            return order.purchase_request
+
+        from app.modules.transactions.purchase_request.service import (
+            PurchaseRequestService)
+
+        vehicle_label = "—"
+        if order.vehicle:
+            vehicle_label = (order.vehicle.plate_number
+                            or order.vehicle.conduction_number or "—")
+
+        lines = [{
+            "item_description": _part_line_description(p),
+            "quantity": p.quantity,
+            "unit_cost": p.estimated_unit_cost,
+        } for p in sorted(order.parts, key=lambda x: x.sort_order)]
+
+        pr = PurchaseRequestService().create(
+            description=(f"Parts for {order.document_number or 'Maintenance Order'} "
+                        f"— {vehicle_label}"),
+            justification=(order.description or None),
+            # The cost centre chain established earlier resolves through
+            # the vehicle's department, so the PR lands against the right
+            # department without anyone re-selecting it.
+            department_id=(order.vehicle.department_id
+                          if order.vehicle else None),
+            lines=lines, user=user)
+
+        order.purchase_request_id = pr.id
+        db.session.commit()
+        return pr

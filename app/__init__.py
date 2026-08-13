@@ -58,6 +58,9 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.core import data_quality_service as _dq  # noqa: F401
     from app.modules.transactions.fuel import models as _fuel  # noqa: F401
     from app.modules.history_migration import models as _histmig  # noqa: F401
+    from app.modules.transactions.maintenance_order.auto_pr import (
+        register_auto_pr)
+    register_auto_pr(app)
 
     from app.modules.auth.routes import bp as auth_bp
     from app.modules.main.routes import bp as main_bp
