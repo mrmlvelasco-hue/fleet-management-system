@@ -1,0 +1,100 @@
+{# ── Standard transaction list filter bar ────────────────────────────
+   Included by every transaction list so they all filter the same way
+   and a person moving between screens doesn't have to relearn the
+   controls each time.
+
+   Everything here is SERVER-side. Once a list is paginated, a
+   client-side search box would only ever match rows on the page
+   currently in the browser -- quietly worse than no search at all,
+   because it looks like it's searching everything.
+
+   Each list passes only the parts that apply to it:
+     show_status    - status dropdown (default on)
+     show_branch    - branch dropdown (only where a branch is inferable)
+     show_date      - date range (default on)
+     date_label     - what the date actually means on this screen
+     search_label   - placeholder text for the free-text box
+     extra_filters  - caller-supplied <div class="col-..."> blocks for
+                      anything specific to that module
+#}
+<form method="get" class="card card-body py-3 mb-3">
+  <div class="row g-2 align-items-end">
+
+    <div class="col-md-3">
+      <label class="form-label small mb-1">Search</label>
+      <input type="search" name="q" value="{{ filters.q or '' }}"
+             class="form-control form-control-sm" autocomplete="off"
+             placeholder="{{ search_label or 'Document no. or plate' }}">
+    </div>
+
+    {% if show_status | default(true) %}
+    <div class="col-md-2">
+      <label class="form-label small mb-1">Status</label>
+      <select name="status" class="form-select form-select-sm">
+        <option value="">All Statuses</option>
+        {% for s in status_choices %}
+        <option value="{{ s }}" {{ 'selected' if filters.status == s }}>
+          {{ s.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    {% if show_branch | default(true) %}
+    <div class="col-md-2">
+      <label class="form-label small mb-1">Branch</label>
+      <select name="branch_id" class="form-select form-select-sm">
+        <option value="">All Branches</option>
+        {% for b in branch_choices %}
+        <option value="{{ b.id }}" {{ 'selected' if filters.branch_id == b.id|string }}>
+          {{ b.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    {% if show_date | default(true) %}
+    <div class="col-md-2">
+      <label class="form-label small mb-1">{{ date_label or 'From' }}</label>
+      <input type="date" name="date_from" value="{{ filters.date_from or '' }}"
+             class="form-control form-control-sm">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small mb-1">To</label>
+      <input type="date" name="date_to" value="{{ filters.date_to or '' }}"
+             class="form-control form-control-sm">
+    </div>
+    {% endif %}
+
+    {% block extra_filters %}{% endblock %}
+    {{ extra_filters_html | safe if extra_filters_html }}
+
+    <div class="col-md-1">
+      <label class="form-label small mb-1">Show</label>
+      <select name="per_page" class="form-select form-select-sm">
+        {% for n in [25, 50, 100] %}
+        <option value="{{ n }}" {{ 'selected' if pagination.per_page == n }}>{{ n }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-12 d-flex gap-2 mt-2">
+      <button class="btn btn-sm btn-primary">
+        <i class="bi bi-funnel me-1"></i>Apply Filters</button>
+      {% if filters.has_any %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ request.path }}">
+        Clear</a>
+      {% endif %}
+      <span class="ms-auto text-muted small align-self-center">
+        {% if pagination.total %}
+          Showing {{ (pagination.page - 1) * pagination.per_page + 1 }}&ndash;{{
+            (pagination.page - 1) * pagination.per_page + rows|length }}
+          of {{ "{:,}".format(pagination.total) }}
+          {%- if filters.has_any %} (filtered){% endif %}
+        {% else %}
+          No records match
+        {% endif %}
+      </span>
+    </div>
+  </div>
+</form>

@@ -296,6 +296,103 @@ class BaseTransactionService:
 
         return query.filter(or_(*clauses)) if clauses else query
 
+    # Which date column this module's list is filtered/sorted on. Each
+    # transaction type records its own natural date under a different
+    # name, so the standard filter asks the model rather than assuming.
+    date_field_candidates = ("scheduled_date", "request_date",
+                            "transaction_date", "registration_date",
+                            "trip_date", "created_at")
+
+    def _date_column(self):
+        for name in self.date_field_candidates:
+            col = getattr(self.model, name, None)
+            if col is not None:
+                return col
+        return None
+
+    def list_filtered(self, *, user=None, page=1, per_page=25,
+                     search=None, status=None, branch_id=None,
+                     date_from=None, date_to=None, include_inactive=True,
+                     extra_filters=None):
+        """One page of records matching the standard transaction filters.
+
+        Deliberately built on _visible_query, the same base list() uses,
+        so a filtered listing can never accidentally show something the
+        unfiltered one would have hidden -- access rules live in exactly
+        one place.
+
+        Every filter is optional and is only applied when the model
+        actually has the column, because the transaction models genuinely
+        differ (a Purchase Request has no vehicle; only some carry a
+        branch of their own). Asking for a filter a model doesn't support
+        is ignored rather than raising -- a shared filter bar shouldn't
+        break a screen just because one field doesn't apply there.
+
+        `search` matches the document number OR the vehicle's plate /
+        conduction number, because those are the two things people
+        actually have in hand when looking for a transaction.
+
+        Returns (rows, pagination).
+        """
+        from sqlalchemy import or_
+
+        query = self._visible_query(include_inactive=include_inactive,
+                                   user=user)
+
+        if status and hasattr(self.model, "status"):
+            statuses = status if isinstance(status, (list, tuple)) else [status]
+            query = query.filter(self.model.status.in_(statuses))
+
+        if branch_id:
+            branch_clause = self._branch_scope_clause([int(branch_id)], [])
+            if branch_clause is not None:
+                query = query.filter(branch_clause)
+
+        date_col = self._date_column()
+        if date_col is not None:
+            if date_from:
+                query = query.filter(date_col >= date_from)
+            if date_to:
+                # Inclusive of the whole end day: someone filtering "to
+                # 31 Aug" means through the end of the 31st, not up to
+                # midnight at its start.
+                query = query.filter(date_col <= date_to)
+
+        if search:
+            needle = f"%{str(search).strip()}%"
+            parts = []
+            if hasattr(self.model, "document_number"):
+                parts.append(self.model.document_number.ilike(needle))
+            if hasattr(self.model, "vehicle_id"):
+                from app.modules.master_data.vehicle.models import Vehicle
+                parts.append(self.model.vehicle_id.in_(
+                    db.session.query(Vehicle.id).filter(or_(
+                        Vehicle.plate_number.ilike(needle),
+                        Vehicle.conduction_number.ilike(needle)))))
+            if parts:
+                query = query.filter(or_(*parts))
+
+        if extra_filters:
+            for clause in extra_filters:
+                if clause is not None:
+                    query = query.filter(clause)
+
+        order_col = date_col if date_col is not None else self.model.id
+        pagination = (query.order_by(order_col.desc(), self.model.id.desc())
+                     .paginate(page=page, per_page=per_page,
+                               error_out=False))
+        return pagination.items, pagination
+
+    def status_choices(self):
+        """Distinct statuses actually present for this model, so the
+        filter offers real options rather than a hardcoded list that
+        drifts from what the workflow really produces."""
+        if not hasattr(self.model, "status"):
+            return []
+        rows = (db.session.query(self.model.status)
+               .distinct().order_by(self.model.status).all())
+        return [r[0] for r in rows if r[0]]
+
     def _branch_scope_clause(self, branch_ids, bu_ids):
         """SQL equivalent of _infer_branch_id's attribute walk
         ("vehicle.branch_id", then "branch_id", then

@@ -576,8 +576,16 @@ def vehiclemovement_complete(mid):
 @login_required
 @require_permission("maintenanceorder.view")
 def maintenanceorder_list():
-    items = MaintenanceOrderService().list(user=current_user)
-    return render_template("transactions/maintenanceorder_list.html", items=items)
+    # Classification is specific to Maintenance Orders, so it's passed
+    # as an extra filter rather than added to the shared bar every other
+    # list would then have to ignore.
+    extra = []
+    cls = request.args.get("maintenance_class")
+    if cls:
+        extra.append(MaintenanceOrder.category == cls)
+    ctx = _txn_list_context(MaintenanceOrderService(), extra_filters=extra)
+    ctx["maintenance_class"] = cls or ""
+    return render_template("transactions/maintenanceorder_list.html", **ctx)
 
 
 
@@ -2218,3 +2226,56 @@ def maintenanceorder_remove_part(oid, part_id):
             return jsonify({"ok": False, "error": str(e)}), 409
         flash(str(e), "danger")
     return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+
+
+# ── Standard transaction list filtering ────────────────────────────────
+
+def _txn_filters_from_request():
+    """The standard filter set, parsed once so every transaction list
+    reads its parameters identically."""
+    from datetime import datetime
+
+    def _date(name):
+        raw = request.args.get(name)
+        if not raw:
+            return None
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d").date()
+        except ValueError:
+            # A malformed date in a hand-edited or stale URL must not
+            # 500 the whole list -- it's simply ignored.
+            return None
+
+    f = {
+        "q": request.args.get("q") or None,
+        "status": request.args.get("status") or None,
+        "branch_id": request.args.get("branch_id") or None,
+        "date_from": _date("date_from"),
+        "date_to": _date("date_to"),
+    }
+    f["has_any"] = any(v for k, v in f.items() if k != "has_any")
+    return f
+
+
+def _txn_list_context(service, *, extra_filters=None):
+    """Runs the standard filtered query and returns everything the
+    shared filter bar and pager templates need. Keeps each list route
+    to a couple of lines rather than repeating this in every module."""
+    from app.modules.master_data.org.models import Branch
+
+    filters = _txn_filters_from_request()
+    rows, pagination = service.list_filtered(
+        user=current_user,
+        page=request.args.get("page", 1, type=int),
+        per_page=request.args.get("per_page", 25, type=int),
+        search=filters["q"], status=filters["status"],
+        branch_id=filters["branch_id"],
+        date_from=filters["date_from"], date_to=filters["date_to"],
+        extra_filters=extra_filters)
+    return {
+        "items": rows, "rows": rows, "pagination": pagination,
+        "filters": filters,
+        "status_choices": service.status_choices(),
+        "branch_choices": Branch.query.filter_by(is_active=True)
+                         .order_by(Branch.name).all(),
+    }

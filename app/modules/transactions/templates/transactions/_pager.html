@@ -1,0 +1,26 @@
+{# Shared pager for transaction lists. Windowed page numbers -- a list
+   of 10,000 records at 25/page is 400 pages, and rendering every number
+   would be its own wall of markup. #}
+{% if pagination.pages > 1 %}
+<nav class="d-flex justify-content-center mt-3">
+  <ul class="pagination pagination-sm mb-0">
+    {% set args = request.args.to_dict() %}
+    {% set _ = args.pop('page', None) %}
+    <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+      <a class="page-link" href="{{ url_for(request.endpoint, page=pagination.prev_num, **args) }}">Previous</a>
+    </li>
+    {% for p in pagination.iter_pages(left_edge=1, left_current=2, right_current=3, right_edge=1) %}
+      {% if p %}
+      <li class="page-item {{ 'active' if p == pagination.page }}">
+        <a class="page-link" href="{{ url_for(request.endpoint, page=p, **args) }}">{{ p }}</a>
+      </li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+      {% endif %}
+    {% endfor %}
+    <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+      <a class="page-link" href="{{ url_for(request.endpoint, page=pagination.next_num, **args) }}">Next</a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
