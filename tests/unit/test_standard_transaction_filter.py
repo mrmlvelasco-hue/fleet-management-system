@@ -179,3 +179,150 @@ def test_mo_list_page_renders_the_filter_bar_and_pager(app, db, orders):
     assert 'name="date_from"' in html
     assert 'name="maintenance_class"' in html   # module-specific filter
     assert "pagination" in html
+
+
+# ── Classification filter ────────────────────────────────────────────────
+#
+# Reported: selecting any Classification returned "No records match",
+# and the empty state wrongly read "No maintenance orders yet."
+#
+# Two separate bugs. The filter compared MaintenanceOrder.category --
+# a real column, but NOT the one Classification is derived from, so it
+# matched nothing for every selection. And the module-specific filter
+# wasn't counted in "is anything filtered", so the empty state claimed
+# there were no orders at all rather than none matching the selection.
+
+@pytest.fixture()
+def classified_orders(app, db):
+    from app.modules.master_data.org.service import BranchService
+    from app.modules.master_data.reference.service import VehicleTypeService
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder, TransactionType)
+    from app.modules.user_management.models import User
+
+    sync_permissions(); db.session.commit()
+    _seed_admin("Testpass123!")
+    admin = User.query.filter_by(username="admin").first()
+
+    branch = BranchService().create(code="BR-CLS", name="Class Branch")
+    vt = VehicleTypeService().create(code="LV-CLS", name="Light",
+                                     category="LIGHT")
+    v = VehicleService().create(vehicle_type_id=vt.id, brand="Toyota",
+                                model="Hilux", year=2022,
+                                branch_id=branch.id,
+                                conduction_number="CLS-1")
+
+    tt_prev = TransactionType(code="TT-PM", name="PM Service",
+                              order_category="MAINTENANCE",
+                              maintenance_class="PREVENTIVE")
+    tt_corr = TransactionType(code="TT-CM", name="Repair",
+                              order_category="MAINTENANCE",
+                              maintenance_class="CORRECTIVE")
+    db.session.add_all([tt_prev, tt_corr])
+    db.session.commit()
+
+    rows = [
+        # Operational: decided by order_category alone
+        MaintenanceOrder(vehicle_id=v.id, order_category="OPERATIONAL",
+                         scheduled_date=date.today(), status="DRAFT",
+                         requested_by=admin.id),
+        # Preventive via transaction type
+        MaintenanceOrder(vehicle_id=v.id, order_category="MAINTENANCE",
+                         transaction_type_id=tt_prev.id,
+                         scheduled_date=date.today(), status="DRAFT",
+                         requested_by=admin.id),
+        # Corrective via transaction type
+        MaintenanceOrder(vehicle_id=v.id, order_category="MAINTENANCE",
+                         transaction_type_id=tt_corr.id,
+                         scheduled_date=date.today(), status="DRAFT",
+                         requested_by=admin.id),
+        # No transaction type at all -> preventive by definition
+        MaintenanceOrder(vehicle_id=v.id, order_category="MAINTENANCE",
+                         scheduled_date=date.today(), status="DRAFT",
+                         requested_by=admin.id),
+    ]
+    db.session.add_all(rows)
+    db.session.commit()
+    return rows
+
+
+def test_classification_filter_returns_records_not_nothing(
+        app, db, classified_orders):
+    """The exact reported symptom: every selection returned nothing."""
+    clause = _svc().maintenance_class_clause("PREVENTIVE")
+    rows, pagination = _svc().list_filtered(page=1,
+                                            extra_filters=[clause])
+    assert pagination.total > 0, "classification filter matched nothing"
+
+
+def test_classification_sql_agrees_with_the_displayed_column(
+        app, db, classified_orders):
+    """The column is derived by a Python property; the filter is SQL.
+    If those two ever disagree, the list shows one thing and filters by
+    another -- which is precisely how this bug presented."""
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    everything = MaintenanceOrder.query.all()
+    for wanted in ("PREVENTIVE", "CORRECTIVE", "PREDICTIVE",
+                   "OPERATIONAL", "UNCLASSIFIED"):
+        clause = _svc().maintenance_class_clause(wanted)
+        sql_ids = {o.id for o in MaintenanceOrder.query.filter(clause).all()}
+        prop_ids = {o.id for o in everything
+                   if o.maintenance_class_bucket == wanted}
+        assert sql_ids == prop_ids, (
+            f"{wanted}: SQL returned {sql_ids}, column shows {prop_ids}")
+
+
+def test_operational_is_decided_by_order_category(app, db,
+                                                  classified_orders):
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    clause = _svc().maintenance_class_clause("OPERATIONAL")
+    rows = MaintenanceOrder.query.filter(clause).all()
+    assert all(r.order_category == "OPERATIONAL" for r in rows)
+    assert len(rows) >= 1
+
+
+def test_an_order_with_no_transaction_type_counts_as_preventive(
+        app, db, classified_orders):
+    """Older PM orders predating transaction types. The property says
+    preventive, so the filter must agree."""
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    clause = _svc().maintenance_class_clause("PREVENTIVE")
+    ids = {o.id for o in MaintenanceOrder.query.filter(clause).all()}
+    untyped = [o for o in classified_orders
+              if o.transaction_type_id is None
+              and o.order_category != "OPERATIONAL"]
+    assert untyped, "fixture no longer covers this case"
+    assert untyped[0].id in ids
+
+
+def test_empty_state_says_filtered_not_no_records_at_all(
+        app, db, classified_orders):
+    """The second reported bug: with a classification selected and no
+    matches, the page claimed there were no orders at all -- which
+    reads as broken data rather than a filter with no hits."""
+    client = app.test_client()
+    client.post("/login", data={"username": "admin",
+                                "password": "Testpass123!"},
+                follow_redirects=True)
+    html = client.get(
+        "/transactions/maintenance-orders?maintenance_class=PREDICTIVE"
+    ).get_data(as_text=True)
+    assert "No maintenance orders yet" not in html
+    assert "No maintenance orders match these filters" in html
+
+
+def test_classification_filter_through_the_real_page(app, db,
+                                                     classified_orders):
+    client = app.test_client()
+    client.post("/login", data={"username": "admin",
+                                "password": "Testpass123!"},
+                follow_redirects=True)
+    html = client.get(
+        "/transactions/maintenance-orders?maintenance_class=OPERATIONAL"
+    ).get_data(as_text=True)
+    assert "(filtered)" in html
+    assert "No maintenance orders match these filters" not in html

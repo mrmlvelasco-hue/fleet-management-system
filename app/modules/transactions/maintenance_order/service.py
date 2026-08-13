@@ -439,6 +439,58 @@ class MaintenanceOrderService(BaseTransactionService):
 
         return order
 
+    def maintenance_class_clause(self, wanted):
+        """SQL matching MaintenanceOrder.maintenance_class_bucket.
+
+        The Classification shown in the list is NOT a stored column --
+        it is derived, and the derivation has three branches. Filtering
+        on the unrelated `category` column instead returned nothing at
+        all for every selection, which is exactly what was reported.
+
+        Mirrors maintenance_class_bucket() branch for branch:
+          * order_category == OPERATIONAL            -> OPERATIONAL
+          * transaction_type.maintenance_class set   -> that value
+          * no transaction type recorded at all      -> PREVENTIVE
+            (older PM orders predating transaction types)
+          * otherwise                                -> UNCLASSIFIED
+
+        A test asserts this clause and the property agree on the same
+        real rows, so the two cannot quietly drift apart.
+        """
+        from sqlalchemy import and_, or_, not_
+        from app.modules.transactions.maintenance_order.models import (
+            TransactionType)
+
+        if not wanted:
+            return None
+
+        if wanted == "OPERATIONAL":
+            return MaintenanceOrder.order_category == "OPERATIONAL"
+
+        not_operational = or_(
+            MaintenanceOrder.order_category != "OPERATIONAL",
+            MaintenanceOrder.order_category.is_(None))
+
+        typed = MaintenanceOrder.transaction_type_id.in_(
+            db.session.query(TransactionType.id)
+            .filter(TransactionType.maintenance_class == wanted))
+
+        if wanted == "PREVENTIVE":
+            # An order with no transaction type at all counts as
+            # preventive, matching the property.
+            typed = or_(typed, MaintenanceOrder.transaction_type_id.is_(None))
+
+        if wanted == "UNCLASSIFIED":
+            # Has a transaction type, but that type carries no class.
+            typed = and_(
+                MaintenanceOrder.transaction_type_id.isnot(None),
+                MaintenanceOrder.transaction_type_id.in_(
+                    db.session.query(TransactionType.id)
+                    .filter(or_(TransactionType.maintenance_class.is_(None),
+                               TransactionType.maintenance_class == ""))))
+
+        return and_(not_operational, typed)
+
     # ── Parts to procure, and the Purchase Request they become ──────
 
     def add_part(self, order_id, *, part_description, quantity=1,

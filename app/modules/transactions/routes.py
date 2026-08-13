@@ -579,12 +579,19 @@ def maintenanceorder_list():
     # Classification is specific to Maintenance Orders, so it's passed
     # as an extra filter rather than added to the shared bar every other
     # list would then have to ignore.
-    extra = []
+    svc = MaintenanceOrderService()
     cls = request.args.get("maintenance_class")
-    if cls:
-        extra.append(MaintenanceOrder.category == cls)
-    ctx = _txn_list_context(MaintenanceOrderService(), extra_filters=extra)
+    # Classification is derived, not a stored column -- the service owns
+    # the SQL for it so it stays in step with the property that renders
+    # the column.
+    extra = [svc.maintenance_class_clause(cls)] if cls else []
+    ctx = _txn_list_context(svc, extra_filters=extra)
     ctx["maintenance_class"] = cls or ""
+    # Module-specific filters must count toward "is anything filtered",
+    # or the empty state wrongly reads "no orders yet" when the real
+    # answer is "none match what you selected".
+    if cls:
+        ctx["filters"]["has_any"] = True
     return render_template("transactions/maintenanceorder_list.html", **ctx)
 
 
