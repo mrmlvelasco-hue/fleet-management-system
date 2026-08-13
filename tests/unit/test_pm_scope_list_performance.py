@@ -127,3 +127,109 @@ def test_detail_page_still_shows_every_activity(
     ).get_data(as_text=True)
     assert "A-000" in html
     assert "A-022" in html
+
+
+# ── Server-side pagination ───────────────────────────────────────────────
+
+@pytest.fixture()
+def many_templates(app, db):
+    """30 templates -- more than one page at the default 25/page."""
+    from app.modules.master_data.reference.service import MaintenanceTypeService
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+    mt = MaintenanceTypeService().create(code="PM-PAGE", name="PM Page",
+                                         category="PREVENTIVE")
+    other = MaintenanceTypeService().create(code="PM-OTHER", name="PM Other",
+                                            category="CORRECTIVE")
+    for i in range(30):
+        PMScopeTemplateService().create(
+            maintenance_type_id=(other.id if i < 5 else mt.id),
+            name=f"Toyota Vios {i:03d} km Package",
+            items=[{"activity_code": "A-001",
+                    "activity_description": "Work", "sort_order": 1}])
+    return mt, other
+
+
+def test_first_page_returns_only_one_page_of_rows(app, db, many_templates):
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+    rows, pagination = PMScopeTemplateService().list_paginated(
+        page=1, per_page=25, include_inactive=True)
+    assert len(rows) == 25
+    assert pagination.total >= 30
+    assert pagination.pages >= 2
+
+
+def test_second_page_returns_different_rows(app, db, many_templates):
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+    p1, _ = PMScopeTemplateService().list_paginated(
+        page=1, per_page=25, include_inactive=True)
+    p2, _ = PMScopeTemplateService().list_paginated(
+        page=2, per_page=25, include_inactive=True)
+    ids1 = {t.id for t, _n in p1}
+    ids2 = {t.id for t, _n in p2}
+    assert not (ids1 & ids2), "pages overlap"
+
+
+def test_search_is_server_side_and_narrows_the_total(app, db, many_templates):
+    """The critical part: search must filter the whole dataset, not
+    just the page currently in the browser."""
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+    _rows, unfiltered = PMScopeTemplateService().list_paginated(
+        page=1, include_inactive=True)
+    rows, filtered = PMScopeTemplateService().list_paginated(
+        page=1, search="Vios 001", include_inactive=True)
+    assert filtered.total < unfiltered.total
+    assert all("Vios 001" in t.name for t, _n in rows)
+
+
+def test_maintenance_type_filter_is_applied_server_side(
+        app, db, many_templates):
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+    _mt, other = many_templates
+    rows, pagination = PMScopeTemplateService().list_paginated(
+        page=1, maintenance_type_id=other.id, include_inactive=True)
+    assert pagination.total == 5
+    assert all(t.maintenance_type_id == other.id for t, _n in rows)
+
+
+def test_activity_counts_are_correct_on_a_paginated_page(
+        app, db, many_templates):
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+    rows, _p = PMScopeTemplateService().list_paginated(
+        page=1, include_inactive=True)
+    assert all(n == 1 for _t, n in rows)
+
+
+def test_a_page_beyond_the_end_returns_empty_rather_than_erroring(
+        app, db, many_templates):
+    """A stale bookmark or a hand-edited page number must not 500."""
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+    rows, pagination = PMScopeTemplateService().list_paginated(
+        page=9999, include_inactive=True)
+    assert rows == []
+    assert pagination.total >= 30
+
+
+def test_index_page_renders_pager_and_result_summary(
+        app, db, many_templates):
+    html = _client(app, db).get(
+        "/admin/pm-scope-templates").get_data(as_text=True)
+    assert "templates" in html
+    assert 'name="q"' in html          # server-side search box
+    assert "pagination" in html         # pager markup
+
+
+def test_search_from_the_url_filters_the_rendered_page(
+        app, db, many_templates):
+    html = _client(app, db).get(
+        "/admin/pm-scope-templates?q=Vios+001").get_data(as_text=True)
+    assert "Vios 001" in html
+    assert "(filtered)" in html
+
+
+def test_no_match_shows_an_honest_empty_state(app, db, many_templates):
+    """"No templates match that search" is materially different from
+    "no scope templates yet" -- one means try again, the other means
+    go create some."""
+    html = _client(app, db).get(
+        "/admin/pm-scope-templates?q=zzzznomatch").get_data(as_text=True)
+    assert "No templates match that search" in html

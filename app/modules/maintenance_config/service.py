@@ -323,5 +323,57 @@ class PMScopeTemplateService:
             q = q.filter_by(is_active=True)
         return [(t, counts.get(t.id, 0)) for t in q.all()]
 
+    def list_paginated(self, page=1, per_page=25, search=None,
+                      maintenance_type_id=None, include_inactive=False):
+        """One page of templates, with each one's activity count.
+
+        Server-side rather than letting DataTables page in the browser:
+        the whole point is to stop sending 4,626 rows of HTML at all.
+        Even after the count fix above, rendering every row still
+        produced 5.3 MB per page load and left the browser to index all
+        of it.
+
+        Search and the maintenance-type filter are therefore ALSO
+        server-side, and that is not optional -- once only one page
+        exists in the DOM, a client-side search box would only ever
+        match rows on the page you happen to be looking at, which is
+        worse than having no search at all.
+
+        Returns (rows, pagination) where rows is [(template, count)].
+        """
+        from sqlalchemy import func
+
+        q = PMScopeTemplate.query.options(
+            joinedload(PMScopeTemplate.maintenance_type),
+            joinedload(PMScopeTemplate.pm_schedule).joinedload(
+                PMSchedule.vehicle_type))
+        if not include_inactive:
+            q = q.filter_by(is_active=True)
+        if maintenance_type_id:
+            q = q.filter(
+                PMScopeTemplate.maintenance_type_id == int(maintenance_type_id))
+        if search:
+            like = f"%{search.strip()}%"
+            q = q.filter(PMScopeTemplate.name.ilike(like))
+
+        pagination = (q.order_by(PMScopeTemplate.name)
+                     .paginate(page=page, per_page=per_page,
+                               error_out=False))
+
+        # Counts for THIS PAGE only -- a GROUP BY across all 109,879
+        # items would undo most of the benefit of paging in the first
+        # place.
+        page_ids = [t.id for t in pagination.items]
+        counts = {}
+        if page_ids:
+            counts = dict(
+                db.session.query(PMScopeItem.template_id,
+                                func.count(PMScopeItem.id))
+                .filter(PMScopeItem.template_id.in_(page_ids))
+                .group_by(PMScopeItem.template_id).all())
+
+        rows = [(t, counts.get(t.id, 0)) for t in pagination.items]
+        return rows, pagination
+
     def get_by_id(self, template_id):
         return db.session.get(PMScopeTemplate, template_id)

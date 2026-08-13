@@ -14,9 +14,55 @@
   {% endif %}
 </div>
 <div class="card"><div class="card-body">
-<table class="table table-striped fms-datatable">
+
+{# Search and filter are server-side on purpose. With only one page of
+   rows in the DOM, a client-side search box would only ever match the
+   page you happen to be on -- worse than no search at all. #}
+<form method="get" class="row g-2 align-items-end mb-3">
+  <div class="col-md-4">
+    <label class="form-label small mb-1">Search by name</label>
+    <input type="search" name="q" value="{{ search }}" autocomplete="off"
+           class="form-control form-control-sm"
+           placeholder="e.g. Toyota Vios 5,000 km">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label small mb-1">Maintenance Type</label>
+    <select name="maintenance_type_id" class="form-select form-select-sm">
+      <option value="">All Maintenance Types</option>
+      {% for mt in maintenance_types %}
+      <option value="{{ mt.id }}" {{ 'selected' if maintenance_type_id == mt.id|string }}>{{ mt.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2">
+    <label class="form-label small mb-1">Per page</label>
+    <select name="per_page" class="form-select form-select-sm">
+      {% for n in [25, 50, 100] %}
+      <option value="{{ n }}" {{ 'selected' if pagination.per_page == n }}>{{ n }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3">
+    <button class="btn btn-sm btn-primary"><i class="bi bi-search me-1"></i>Search</button>
+    {% if search or maintenance_type_id %}
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('maintenance_config.pmscope_list') }}">Clear</a>
+    {% endif %}
+  </div>
+</form>
+
+<table class="table table-striped">
   <thead><tr><th>Name</th><th>Maintenance Type</th><th>Linked PM Template</th><th>Activities</th><th>Active</th><th></th></tr></thead>
   <tbody>
+  {% if not rows %}
+    <tr><td colspan="6" class="text-center text-muted py-4">
+      {% if search or maintenance_type_id %}
+        No templates match that search.
+      {% else %}
+        No scope templates yet.
+      {% endif %}
+    </td></tr>
+  {% endif %}
   {% for t, activity_count in rows %}
     <tr>
       <td>{{ t.name }}</td>
@@ -48,6 +94,42 @@
   {% endfor %}
   </tbody>
 </table>
+
+{% if pagination.total %}
+<div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+  <span class="text-muted small">
+    Showing {{ (pagination.page - 1) * pagination.per_page + 1 }}&ndash;{{
+      (pagination.page - 1) * pagination.per_page + rows|length }}
+    of {{ "{:,}".format(pagination.total) }} template{{ '' if pagination.total == 1 else 's' }}
+    {%- if search or maintenance_type_id %} (filtered){% endif %}
+  </span>
+  {% if pagination.pages > 1 %}
+  <nav>
+    <ul class="pagination pagination-sm mb-0">
+      {% set args = {'q': search or None, 'maintenance_type_id': maintenance_type_id or None, 'per_page': pagination.per_page} %}
+      <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+        <a class="page-link" href="{{ url_for('maintenance_config.pmscope_list', page=pagination.prev_num, **args) }}">Previous</a>
+      </li>
+      {# Bootstrap's own window: first, last, and a few either side of
+         the current page -- 4,626 templates at 25/page is 186 pages,
+         and rendering every number would be its own wall of markup. #}
+      {% for p in pagination.iter_pages(left_edge=1, left_current=2, right_current=3, right_edge=1) %}
+        {% if p %}
+        <li class="page-item {{ 'active' if p == pagination.page }}">
+          <a class="page-link" href="{{ url_for('maintenance_config.pmscope_list', page=p, **args) }}">{{ p }}</a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+        {% endif %}
+      {% endfor %}
+      <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+        <a class="page-link" href="{{ url_for('maintenance_config.pmscope_list', page=pagination.next_num, **args) }}">Next</a>
+      </li>
+    </ul>
+  </nav>
+  {% endif %}
+</div>
+{% endif %}
 </div></div>
 {% endblock %}
 {% block scripts %}<script>document.querySelectorAll("form.fms-confirm").forEach(function(f){f.addEventListener("submit",function(e){e.preventDefault();Swal.fire({title:f.dataset.confirm,icon:"warning",showCancelButton:true,confirmButtonText:"Yes"}).then(function(r){if(r.isConfirmed)f.submit();});});});</script>{% endblock %}

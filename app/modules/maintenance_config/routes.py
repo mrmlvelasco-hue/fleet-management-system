@@ -175,8 +175,20 @@ def pmschedule_deactivate(sid):
 @login_required
 @require_permission("pmscopetemplate.view")
 def pmscope_list():
-    rows = PMScopeTemplateService().list_with_counts(include_inactive=True)
-    return render_template("maintenance_config/scope_list.html", rows=rows)
+    rows, pagination = PMScopeTemplateService().list_paginated(
+        page=request.args.get("page", 1, type=int),
+        per_page=request.args.get("per_page", 25, type=int),
+        search=request.args.get("q") or None,
+        maintenance_type_id=request.args.get("maintenance_type_id") or None,
+        include_inactive=True)
+    from app.modules.master_data.reference.models import MaintenanceType
+    return render_template(
+        "maintenance_config/scope_list.html", rows=rows,
+        pagination=pagination,
+        search=request.args.get("q") or "",
+        maintenance_type_id=request.args.get("maintenance_type_id") or "",
+        maintenance_types=MaintenanceType.query.filter_by(is_active=True)
+                         .order_by(MaintenanceType.name).all())
 
 
 def _pmscope_items_from_form(f):
