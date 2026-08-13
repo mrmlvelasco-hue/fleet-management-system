@@ -651,3 +651,114 @@ window.applyMoneyFormatting = function () {
     };
   }
 })();
+
+/* ── Standard confirmation dialog ──────────────────────────────────────
+   One confirmation style for the whole application.
+
+   Before this, three different things were in use: SweetAlert2 in some
+   places, a raw browser confirm() in others (which renders as an
+   unstyled OS dialog showing the site's IP address and cannot be
+   themed), and inline onclick="return confirm(...)" attributes
+   elsewhere. Same product, three visual languages, and the browser one
+   looked broken next to the rest.
+
+   Two ways to use it:
+
+     1. Declaratively -- add data-confirm="Your question?" to any form
+        or link. Nothing else required; the handler below intercepts it.
+     2. Programmatically -- window.fmsConfirm("Question?").then(ok => …)
+        for cases that need to run code rather than submit a form.
+
+   Destructive actions (delete/remove/cancel wording, or an explicit
+   data-confirm-danger) get a red confirm button, because "Remove this
+   part?" and "Submit for approval?" should not look identical at the
+   moment someone is clicking without fully reading.
+*/
+(function () {
+  "use strict";
+
+  var DESTRUCTIVE = /\b(delete|remove|deactivate|cancel|discard|reject|clear|undo|reset)\b/i;
+
+  function looksDestructive(message, explicit) {
+    if (explicit === "true") return true;
+    if (explicit === "false") return false;
+    return DESTRUCTIVE.test(message || "");
+  }
+
+  window.fmsConfirm = function (message, options) {
+    options = options || {};
+    var danger = looksDestructive(message, options.danger);
+
+    if (!window.Swal) {
+      // SweetAlert2 blocked or failed to load. A plain confirm is ugly
+      // but it still asks the question -- silently proceeding with a
+      // destructive action because a stylesheet didn't load would be
+      // far worse.
+      return Promise.resolve(window.confirm(message));
+    }
+    return Swal.fire({
+      title: options.title || (danger ? "Please confirm" : "Confirm"),
+      text: message,
+      icon: options.icon || (danger ? "warning" : "question"),
+      showCancelButton: true,
+      confirmButtonText: options.confirmText || (danger ? "Yes, continue" : "Confirm"),
+      cancelButtonText: options.cancelText || "Cancel",
+      confirmButtonColor: danger ? "#dc3545" : "#0d6efd",
+      cancelButtonColor: "#6c757d",
+      reverseButtons: true,      // Cancel on the left, so the destructive
+                                 // button isn't where Cancel usually sits
+      focusCancel: danger        // Enter shouldn't confirm a deletion
+    }).then(function (result) { return !!result.isConfirmed; });
+  };
+
+  // Declarative: data-confirm="..." on a form or link.
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (!form.matches || !form.matches("[data-confirm]")) return;
+    if (form.__fmsConfirmed) { form.__fmsConfirmed = false; return; }
+    e.preventDefault();
+    window.fmsConfirm(form.getAttribute("data-confirm"),
+                      {danger: form.getAttribute("data-confirm-danger")})
+      .then(function (ok) {
+        if (!ok) return;
+        form.__fmsConfirmed = true;
+        // requestSubmit keeps native validation and the submitter
+        // button's value, which form.submit() would silently discard.
+        if (form.requestSubmit) { form.requestSubmit(); }
+        else { form.submit(); }
+      });
+  }, true);
+
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest) return;
+
+    // A submit button carrying its own data-confirm. This is a distinct
+    // case from the form: a form can have several submit buttons with
+    // different formaction targets (Save / Test / Run Backup), and only
+    // one of them may warrant a confirmation. Putting data-confirm on
+    // the form would prompt for all of them.
+    var btn = e.target.closest("button[data-confirm], input[type=submit][data-confirm]");
+    if (btn) {
+      if (btn.__fmsConfirmed) { btn.__fmsConfirmed = false; return; }
+      e.preventDefault();
+      e.stopPropagation();
+      window.fmsConfirm(btn.getAttribute("data-confirm"),
+                        {danger: btn.getAttribute("data-confirm-danger")})
+        .then(function (ok) {
+          if (!ok) return;
+          btn.__fmsConfirmed = true;
+          // Re-click the button itself rather than submitting the form,
+          // so its formaction and name/value still apply.
+          btn.click();
+        });
+      return;
+    }
+
+    var link = e.target.closest("a[data-confirm]");
+    if (!link) return;
+    e.preventDefault();
+    window.fmsConfirm(link.getAttribute("data-confirm"),
+                      {danger: link.getAttribute("data-confirm-danger")})
+      .then(function (ok) { if (ok) { window.location.href = link.href; } });
+  }, true);
+})();

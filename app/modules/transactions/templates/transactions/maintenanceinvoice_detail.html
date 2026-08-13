@@ -213,12 +213,13 @@
   function wireDelete(rowForm) {
     rowForm.addEventListener("submit", function (ev) {
       ev.preventDefault();
-      if (!window.confirm("Remove this line item?")) return;
-      fetch(rowForm.action, {
-        method: "POST",
-        headers: {"X-Requested-With": "XMLHttpRequest"},
-        body: new FormData(rowForm)
-      })
+      window.fmsConfirm("Remove this line item?").then(function (ok) {
+        if (!ok) return;
+        fetch(rowForm.action, {
+          method: "POST",
+          headers: {"X-Requested-With": "XMLHttpRequest"},
+          body: new FormData(rowForm)
+        })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (!d.ok) { showError(d.error || "Could not remove that line."); return; }
@@ -233,6 +234,7 @@
           }
         })
         .catch(function () { showError("Could not reach the server. Please try again."); });
+      });
     });
   }
 

@@ -23,7 +23,7 @@
       </button>
       <button class="btn btn-outline-success" type="submit"
               formaction="{{ url_for('system_admin.backup_config_run') }}"
-              onclick="return confirm('Run a backup now?');">
+              data-confirm="Run a database backup now? This may take a few minutes on a large database." data-confirm-danger="false">
         <i class="bi bi-download me-1"></i>Run Backup Now
       </button>
       <button class="btn btn-primary px-4" type="submit">

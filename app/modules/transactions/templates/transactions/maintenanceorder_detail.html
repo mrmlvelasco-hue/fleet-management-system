@@ -544,10 +544,11 @@
   function wireDelete(f) {
     f.addEventListener("submit", function (ev) {
       ev.preventDefault();
-      if (!window.confirm("Remove this part?")) return;
-      fetch(f.action, {method: "POST",
-                       headers: {"X-Requested-With": "XMLHttpRequest"},
-                       body: new FormData(f)})
+      window.fmsConfirm("Remove this part from the list?").then(function (ok) {
+        if (!ok) return;
+        fetch(f.action, {method: "POST",
+                         headers: {"X-Requested-With": "XMLHttpRequest"},
+                         body: new FormData(f)})
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (!d.ok) { showError(d.error || "Could not remove that part."); return; }
@@ -562,6 +563,7 @@
           }
         })
         .catch(function () { showError("Could not reach the server."); });
+      });
     });
   }
   document.querySelectorAll("form.mo-del-part").forEach(wireDelete);
