@@ -200,6 +200,24 @@ class BaseTransactionService:
     list_eager_load = []
 
     def list(self, include_inactive: bool = True, user=None):
+        """Every record this user may see, newest first.
+
+        Kept for callers that genuinely want the whole set. Visibility
+        is applied IN SQL (see _apply_visibility_filter) rather than by
+        loading everything and filtering in Python, which is what this
+        used to do -- on a large transaction table that meant loading
+        every row and, worse, running one extra comment-participant
+        query PER ROW.
+        """
+        query = self._visible_query(include_inactive=include_inactive,
+                                   user=user)
+        return query.order_by(self.model.id.desc()).all()
+
+    def _visible_query(self, include_inactive: bool = True, user=None):
+        """The base query for this model with visibility already applied
+        as SQL. Shared by list() and by any paginated/filtered listing,
+        so both enforce exactly the same access rules.
+        """
         query = db.session.query(self.model)
         if self.list_eager_load:
             query = query.options(
@@ -207,10 +225,116 @@ class BaseTransactionService:
                  for rel in self.list_eager_load])
         if not include_inactive:
             query = query.filter(self.model.is_active.is_(True))
-        records = query.order_by(self.model.id.desc()).all()
+        return self._apply_visibility_filter(query, user)
+
+    def _apply_visibility_filter(self, query, user):
+        """Translate the _visible_to rules into a SQL WHERE clause.
+
+        Every rule from _visible_to is preserved exactly:
+
+          * No user -> no filtering at all.
+          * A user with no UserOrgScope rows is not yet opted into
+            org-scoping and still sees everything (the same rollout
+            safety rule as before -- turning scoping on must not
+            silently hide every existing record from everyone).
+          * A user holding a GLOBAL or COMPANY scope sees everything.
+          * Otherwise: the record's own requester sees it, OR anyone
+            who is part of its comment thread sees it, OR the record's
+            inferred branch falls inside the user's scoped branches.
+
+        The comment-participant rule becomes a single EXISTS subquery
+        instead of one query per record, which is the change that makes
+        this viable at scale.
+        """
         if user is None:
-            return records
-        return [r for r in records if self._visible_to(r, user)]
+            return query
+
+        from sqlalchemy import or_, and_
+        from app.modules.user_management.org_scope_service import (
+            UserOrgScopeService)
+
+        scopes = UserOrgScopeService().list_for_user(user.id)
+        if not scopes:
+            return query   # not opted into org-scoping
+        if any(sc.scope_type in ("GLOBAL", "COMPANY") for sc in scopes):
+            return query
+
+        branch_ids = [sc.branch_id for sc in scopes
+                     if sc.scope_type == "BRANCH" and sc.branch_id is not None]
+        bu_ids = [sc.business_unit_id for sc in scopes
+                 if sc.scope_type == "BUSINESS_UNIT"
+                 and sc.business_unit_id is not None]
+
+        clauses = []
+
+        # The requester always sees their own record.
+        if hasattr(self.model, "requested_by"):
+            clauses.append(self.model.requested_by == user.id)
+
+        # Anyone in the document's comment thread sees it -- one EXISTS
+        # rather than a query per row.
+        from app.core.comments.models import DocumentComment
+        participant = (
+            db.session.query(DocumentComment.id)
+            .filter(DocumentComment.reference_table == self.reference_table,
+                    DocumentComment.reference_id == self.model.id,
+                    or_(DocumentComment.author_id == user.id,
+                        DocumentComment.recipient_id == user.id))
+            .exists())
+        clauses.append(participant)
+
+        branch_clause = self._branch_scope_clause(branch_ids, bu_ids)
+        if branch_clause is not None:
+            clauses.append(branch_clause)
+
+        # A record whose branch can't be inferred at all has no org
+        # context to restrict on, and _visible_to treated that as
+        # visible -- preserved here rather than silently hiding it.
+        no_context = self._no_org_context_clause()
+        if no_context is not None:
+            clauses.append(no_context)
+
+        return query.filter(or_(*clauses)) if clauses else query
+
+    def _branch_scope_clause(self, branch_ids, bu_ids):
+        """SQL equivalent of _infer_branch_id's attribute walk
+        ("vehicle.branch_id", then "branch_id", then
+        "department.branch_id") against the user's scoped branches."""
+        if not branch_ids:
+            return None
+        from sqlalchemy import or_
+        parts = []
+        if hasattr(self.model, "branch_id"):
+            parts.append(self.model.branch_id.in_(branch_ids))
+        if hasattr(self.model, "vehicle_id"):
+            from app.modules.master_data.vehicle.models import Vehicle
+            parts.append(self.model.vehicle_id.in_(
+                db.session.query(Vehicle.id)
+                .filter(Vehicle.branch_id.in_(branch_ids))))
+        if hasattr(self.model, "department_id"):
+            from app.modules.master_data.org.models import Department
+            parts.append(self.model.department_id.in_(
+                db.session.query(Department.id)
+                .filter(Department.branch_id.in_(branch_ids))))
+        if not parts:
+            return None
+        return or_(*parts)
+
+    def _no_org_context_clause(self):
+        """True for records with no inferable branch at all. _visible_to
+        returned True for these (covers() short-circuits on a null
+        branch), so they must stay visible."""
+        from sqlalchemy import and_
+        parts = []
+        if hasattr(self.model, "vehicle_id"):
+            parts.append(self.model.vehicle_id.is_(None))
+        if hasattr(self.model, "branch_id"):
+            parts.append(self.model.branch_id.is_(None))
+        if hasattr(self.model, "department_id"):
+            parts.append(self.model.department_id.is_(None))
+        if not parts:
+            return None
+        return and_(*parts)
 
     def get_visible(self, record_id: int, user):
         """Like get(), but returns None if `user` doesn't have visibility
