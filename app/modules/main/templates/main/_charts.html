@@ -17,7 +17,7 @@
 <div class="row g-3" id="fmsChartsRow">
   <div class="col-lg-6">
     <div class="card h-100 chart-observer-card"><div class="card-body">
-      <h6 class="card-title mb-3">Fleet by Status</h6>
+      <div class="d-flex justify-content-between align-items-start mb-3 gap-2"><h6 class="card-title mb-0">Fleet by Status</h6><select class="form-select form-select-sm chart-type-picker w-auto d-inline-block" data-for="chartFleetByStatus" aria-label="Chart type"><option value="bar">Bar</option><option value="pie">Pie</option><option value="doughnut">Donut</option><option value="line">Line</option><option value="area">Area</option></select></div>
       <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
         <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
         <canvas id="chartFleetByStatus"></canvas>
@@ -26,7 +26,7 @@
   </div>
   <div class="col-lg-6">
     <div class="card h-100 chart-observer-card"><div class="card-body">
-      <h6 class="card-title mb-3">Fleet by Branch</h6>
+      <div class="d-flex justify-content-between align-items-start mb-3 gap-2"><h6 class="card-title mb-0">Fleet by Branch</h6><select class="form-select form-select-sm chart-type-picker w-auto d-inline-block" data-for="chartFleetByBranch" aria-label="Chart type"><option value="bar">Bar</option><option value="pie">Pie</option><option value="doughnut">Donut</option><option value="line">Line</option><option value="area">Area</option></select></div>
       <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
         <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
         <canvas id="chartFleetByBranch"></canvas>
@@ -35,7 +35,7 @@
   </div>
   <div class="col-lg-6">
     <div class="card h-100 chart-observer-card"><div class="card-body">
-      <h6 class="card-title mb-3">PM Compliance</h6>
+      <div class="d-flex justify-content-between align-items-start mb-3 gap-2"><h6 class="card-title mb-0">PM Compliance</h6><select class="form-select form-select-sm chart-type-picker w-auto d-inline-block" data-for="chartPmCompliance" aria-label="Chart type"><option value="bar">Bar</option><option value="pie">Pie</option><option value="doughnut">Donut</option><option value="line">Line</option><option value="area">Area</option></select></div>
       <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
         <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
         <canvas id="chartPmCompliance"></canvas>
@@ -45,12 +45,15 @@
   {% if not compact %}
   <div class="col-lg-6">
     <div class="card h-100 chart-observer-card"><div class="card-body">
-      <h6 class="card-title mb-3">
-        Maintenance Orders by Type
-        {# Scope stated on the chart itself: a count that silently covers
-           only part of the history is misleading without it. #}
-        <span class="text-muted small fw-normal" id="moTypeScope"></span>
-      </h6>
+      <div class="d-flex justify-content-between align-items-start mb-3 gap-2">
+        <h6 class="card-title mb-0">
+          Maintenance Orders by Type
+          {# Scope stated on the chart itself: a count that silently covers
+             only part of the history is misleading without it. #}
+          <span class="text-muted small fw-normal" id="moTypeScope"></span>
+        </h6>
+        <select class="form-select form-select-sm chart-type-picker w-auto d-inline-block" data-for="chartMoByType" aria-label="Chart type"><option value="bar">Bar</option><option value="pie">Pie</option><option value="doughnut">Donut</option><option value="line">Line</option><option value="area">Area</option></select>
+      </div>
       <div class="fms-chart-box {{ 'fms-chart-box--compact' if compact }}">
         <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
         <canvas id="chartMoByType"></canvas>
@@ -60,7 +63,7 @@
   {% endif %}
   <div class="col-12">
     <div class="card chart-observer-card"><div class="card-body">
-      <h6 class="card-title mb-3">Maintenance Cost Trend (last 6 months)</h6>
+      <div class="d-flex justify-content-between align-items-start mb-3 gap-2"><h6 class="card-title mb-0">Maintenance Cost Trend (last 6 months)</h6><select class="form-select form-select-sm chart-type-picker w-auto d-inline-block" data-for="chartCostTrend" aria-label="Chart type"><option value="bar">Bar</option><option value="pie">Pie</option><option value="doughnut">Donut</option><option value="line">Line</option><option value="area">Area</option></select></div>
       <div class="fms-chart-box fms-chart-box--tall {{ 'fms-chart-box--compact' if compact }}">
         <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
         <canvas id="chartCostTrend"></canvas>
@@ -178,123 +181,144 @@ document.addEventListener("DOMContentLoaded", function () {
     window.requestAnimationFrame(step);
   }
 
-  function donut(ctx, payload, hideLegend) {
-    return new Chart(ctx, {
-      type: "doughnut",
-      data: {
-        labels: payload.labels,
-        datasets: [{
-          data: payload.data,
-          backgroundColor: payload.colors,
-          borderRadius: 8,
-          borderWidth: 2,
-          borderColor: "#ffffff",
-          spacing: 3
-        }]
+  // ── One type-aware builder ─────────────────────────────────────
+  // Replaces the previous fixed donut/bar/line functions so a chart's
+  // type can be changed after it has already been drawn. Chart.js
+  // can't mutate an existing chart's type in place, so switching
+  // destroys the instance and rebuilds it from the SAME already-fetched
+  // payload -- the report is never re-run and the server is not asked
+  // for the data again.
+  var CHART_STATE = {};        // canvasId -> {payload, opts}
+  var CHART_INSTANCES = {};    // canvasId -> Chart
+
+  var ARC_TYPES = ["pie", "doughnut"];
+  var STORE_KEY = "fmsChartType:";
+
+  function savedType(canvasId, fallback) {
+    try {
+      return window.localStorage.getItem(STORE_KEY + canvasId) || fallback;
+    } catch (e) {
+      return fallback;   // private mode / storage disabled
+    }
+  }
+
+  function rememberType(canvasId, type) {
+    try { window.localStorage.setItem(STORE_KEY + canvasId, type); }
+    catch (e) { /* preference simply isn't remembered; not worth failing over */ }
+  }
+
+  function buildChart(canvas, payload, type, opts) {
+    opts = opts || {};
+    if (CHART_INSTANCES[canvas.id]) {
+      CHART_INSTANCES[canvas.id].destroy();
+    }
+
+    var isArc = ARC_TYPES.indexOf(type) !== -1;
+    var isArea = type === "area";
+    var chartType = isArea ? "line" : type;
+
+    var dataset = {data: payload.data};
+    if (isArc) {
+      dataset.backgroundColor = payload.colors;
+      dataset.borderRadius = 8;
+      dataset.borderWidth = 2;
+      dataset.borderColor = "#ffffff";
+      dataset.spacing = 3;
+    } else if (chartType === "line") {
+      // A single accent colour reads better as a line than the
+      // per-category palette, which only means something on arcs/bars.
+      dataset.label = opts.seriesLabel || "";
+      dataset.borderColor = "#065A82";
+      dataset.backgroundColor = "rgba(6,90,130,.12)";
+      dataset.fill = isArea;
+      dataset.tension = 0.3;
+    } else {
+      dataset.backgroundColor = payload.colors;
+      dataset.borderRadius = 6;
+      dataset.borderSkipped = false;
+    }
+
+    var scales = isArc ? {} : {
+      x: {
+        grid: {display: chartType === "line"},
+        ticks: {font: {size: legendFontSize()},
+                maxRotation: isMobile() ? 45 : 0, autoSkip: true,
+                maxTicksLimit: opts.maxTicks}
       },
+      y: {
+        beginAtZero: true,
+        ticks: {font: {size: legendFontSize()}, callback: opts.yCallback}
+      }
+    };
+
+    var config = {
+      type: chartType,
+      data: {labels: payload.labels, datasets: [dataset]},
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: "72%",
-        animation: { animateRotate: true, animateScale: true,
-                    duration: 1200, easing: "easeOutQuart" },
+        indexAxis: (!isArc && opts.horizontal && chartType === "bar") ? "y" : "x",
+        animation: isArc
+          ? {animateRotate: true, animateScale: true, duration: 1200, easing: "easeOutQuart"}
+          : {duration: 1200, easing: "easeOutQuart"},
         plugins: {
           legend: {
-            display: !hideLegend,
+            // Arcs need a legend to identify slices; a single-series
+            // bar or line is already labelled by its axis.
+            display: isArc && !opts.hideLegend,
             position: "bottom",
-            labels: { boxWidth: legendBoxSize(), font: { size: legendFontSize() } }
+            labels: {boxWidth: legendBoxSize(), font: {size: legendFontSize()}}
           }
         }
       }
-    });
+    };
+    if (isArc) { config.options.cutout = type === "doughnut" ? "72%" : 0; }
+    else { config.options.scales = scales; }
+
+    CHART_INSTANCES[canvas.id] = new Chart(canvas, config);
+    return CHART_INSTANCES[canvas.id];
   }
 
-  function bar(ctx, payload, horizontal) {
-    return new Chart(ctx, {
-      type: "bar",
-      data: {
-        labels: payload.labels,
-        datasets: [{
-          data: payload.data,
-          backgroundColor: payload.colors,
-          borderRadius: 6,
-          borderSkipped: false
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        indexAxis: horizontal ? "y" : "x",
-        animation: { duration: 1200, easing: "easeOutQuart" },
-        plugins: { legend: { display: false } },
-        scales: {
-          x: {
-            grid: { display: false },
-            ticks: { font: { size: legendFontSize() }, maxRotation: isMobile() ? 45 : 0, autoSkip: true }
-          },
-          y: {
-            beginAtZero: true,
-            ticks: { font: { size: legendFontSize() } }
-          }
-        }
-      }
-    });
+  function drawChart(canvas, payload, defaultType, opts) {
+    CHART_STATE[canvas.id] = {payload: payload, opts: opts || {},
+                             defaultType: defaultType};
+    var type = savedType(canvas.id, defaultType);
+    var picker = document.querySelector('.chart-type-picker[data-for="' + canvas.id + '"]');
+    if (picker) picker.value = type;
+    buildChart(canvas, payload, type, opts);
   }
 
-  function line(ctx, payload) {
-    return new Chart(ctx, {
-      type: "line",
-      data: {
-        labels: payload.labels,
-        datasets: [{
-          label: "Actual Cost",
-          data: payload.data,
-          borderColor: "#065A82",
-          backgroundColor: "rgba(6,90,130,.12)",
-          fill: true,
-          tension: 0.3
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: { duration: 1400, easing: "easeOutQuad" },
-        plugins: { legend: { display: false } },
-        scales: {
-          x: {
-            ticks: { font: { size: legendFontSize() }, maxRotation: isMobile() ? 60 : 0, autoSkip: true, maxTicksLimit: isSmallPhone() ? 4 : (isMobile() ? 6 : 12) }
-          },
-          y: {
-            beginAtZero: true,
-            ticks: {
-              font: { size: legendFontSize() },
-              callback: function (v) {
-                return isMobile()
-                  ? "₱" + (v >= 1000 ? (v / 1000) + "k" : v)
-                  : "₱" + v.toLocaleString();
-              }
-            }
-          }
-        }
-      }
+  // Switching type re-draws from the payload already in memory -- no
+  // refetch, no page reload, and the choice is remembered for next time.
+  document.querySelectorAll(".chart-type-picker").forEach(function (sel) {
+    sel.addEventListener("change", function () {
+      var canvasId = sel.getAttribute("data-for");
+      var st = CHART_STATE[canvasId];
+      var canvas = document.getElementById(canvasId);
+      if (!st || !canvas) return;
+      rememberType(canvasId, sel.value);
+      buildChart(canvas, st.payload, sel.value, st.opts);
     });
-  }
+  });
 
   fetch("{{ url_for('main.dashboard_charts') }}")
     .then(function (r) { return r.json(); })
     .then(function (d) {
       function renderFleetByStatus(canvas) {
-        if (d.fleet_by_status && d.fleet_by_status.labels.length) donut(canvas, d.fleet_by_status);
+        if (d.fleet_by_status && d.fleet_by_status.labels.length)
+          drawChart(canvas, d.fleet_by_status, "doughnut", {});
       }
       function renderFleetByBranch(canvas) {
-        if (d.fleet_by_branch && d.fleet_by_branch.labels.length) bar(canvas, d.fleet_by_branch, true);
+        if (d.fleet_by_branch && d.fleet_by_branch.labels.length)
+          drawChart(canvas, d.fleet_by_branch, "bar", {horizontal: true});
       }
       function renderPmCompliance(canvas) {
-        if (d.pm_compliance && d.pm_compliance.labels.length) donut(canvas, d.pm_compliance);
+        if (d.pm_compliance && d.pm_compliance.labels.length)
+          drawChart(canvas, d.pm_compliance, "doughnut", {});
       }
       function renderMoByType(canvas) {
         if (!d.mo_by_type || !d.mo_by_type.labels.length) return;
-        bar(canvas, d.mo_by_type, false);
+        drawChart(canvas, d.mo_by_type, "bar", {});
         var moScope = document.getElementById("moTypeScope");
         if (moScope) {
           var totalMo = d.mo_by_type.data.reduce(function (a, b) { return a + b; }, 0);
@@ -309,7 +333,7 @@ document.addEventListener("DOMContentLoaded", function () {
         // further down the page -- one fetch, two views of the same
         // numbers, so they can never disagree with each other.
         if (!d.mo_by_type || !d.mo_by_type.labels.length) return;
-        bar(canvas, d.mo_by_type, false);
+        drawChart(canvas, d.mo_by_type, "bar", {});
         var caption = document.getElementById("mmScopeCaption");
         if (caption) {
           var totalMo = d.mo_by_type.data.reduce(function (a, b) { return a + b; }, 0);
@@ -319,12 +343,19 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       }
       function renderCostTrend(canvas) {
-        if (d.maintenance_cost_trend) line(canvas, d.maintenance_cost_trend);
+        if (d.maintenance_cost_trend)
+          drawChart(canvas, d.maintenance_cost_trend, "line", {
+            seriesLabel: "Actual Cost",
+            maxTicks: isSmallPhone() ? 4 : (isMobile() ? 6 : 12),
+            yCallback: function (v) {
+              return isMobile() ? "\u20b1" + (v >= 1000 ? (v / 1000) + "k" : v)
+                                : "\u20b1" + v.toLocaleString();
+            }});
       }
       function renderRegistrationStatus(canvas) {
         if (!d.registration_status) return;
         var r = d.registration_status;
-        donut(canvas, r, true);
+        drawChart(canvas, r, "doughnut", {hideLegend: true});
         var totalEl = document.getElementById("regTotal");
         if (totalEl) animateCounter(totalEl, r.total, 1200);
         var legend = document.getElementById("regLegend");

@@ -9,21 +9,28 @@ JS parses without error.
 """
 
 
-def test_charts_partial_configures_animation_on_every_chart_type():
-    """Static check: donut, bar, and line each declare a real animation
-    block, not just one chart type."""
+def test_charts_partial_configures_animation_for_every_chart_type():
+    """The three separate donut/bar/line builders were later merged into
+    one type-aware builder so charts can change type on demand. The
+    animation config moved with them: one branch for arc charts
+    (rotate/scale) and one for everything else, both with a real
+    duration and easing.
+    """
     html = open("app/modules/main/templates/main/_charts.html").read()
-    assert html.count("animation:") == 3
+    assert "animation: isArc" in html
+    assert html.count("easing: \"easeOutQuart\"") >= 2
+    assert "duration: 1200" in html
 
 
-def test_donut_animation_uses_arc_specific_options():
+def test_arc_charts_use_arc_specific_animation_options():
     """animateRotate/animateScale are the Chart.js-documented options
-    specific to arc-based charts (doughnut/pie) -- confirms the donut
-    chart uses them, not just a generic duration."""
+    specific to arc-based charts (doughnut/pie). After the builders were
+    merged, these must apply on the isArc branch and NOT to bar/line."""
     html = open("app/modules/main/templates/main/_charts.html").read()
-    donut_fn = html[html.index("function donut"):html.index("function bar")]
-    assert "animateRotate" in donut_fn
-    assert "animateScale" in donut_fn
+    arc_branch = html[html.index("animation: isArc"):
+                     html.index("animation: isArc") + 250]
+    assert "animateRotate" in arc_branch
+    assert "animateScale" in arc_branch
 
 
 def test_no_global_animation_override_disables_charts():
