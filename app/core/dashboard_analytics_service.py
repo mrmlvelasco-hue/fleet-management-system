@@ -251,15 +251,42 @@ class DashboardAnalyticsService:
             "years": years,
         }
 
-    def all_charts(self, user=None) -> dict:
+    # Each chart's data, keyed by the name the front end asks for.
+    # Values are the bound method, not the result -- so a caller wanting
+    # one chart pays for one chart.
+    def _chart_builders(self, user=None):
         return {
-            "fleet_by_status": self.fleet_by_status(user=user),
-            "fleet_by_branch": self.fleet_by_branch(user=user),
-            "maintenance_cost_trend": self.maintenance_cost_trend(user=user),
-            "pm_compliance": self.pm_compliance(user=user),
-            "mo_by_type": self.maintenance_orders_by_type(user=user),
-            "registration_status": self.registration_status(user=user),
+            "fleet_by_status": lambda: self.fleet_by_status(user=user),
+            "fleet_by_branch": lambda: self.fleet_by_branch(user=user),
+            "maintenance_cost_trend": lambda: self.maintenance_cost_trend(user=user),
+            "pm_compliance": lambda: self.pm_compliance(user=user),
+            "mo_by_type": lambda: self.maintenance_orders_by_type(user=user),
+            "registration_status": lambda: self.registration_status(user=user),
         }
+
+    def all_charts(self, user=None, only=None) -> dict:
+        """Chart payloads. `only` limits it to the named charts.
+
+        Why this matters: these six have wildly different costs.
+        registration_status and mo_by_type are simple aggregates
+        (milliseconds); pm_compliance runs the full fleet-wide PM due
+        calculation, evaluating every vehicle against every applicable
+        schedule.
+
+        Returned as one combined payload, the cheap charts could not
+        render until the most expensive one had finished -- so
+        "Vehicle Registration Status" and "Maintenance Management",
+        which are individually among the fastest, appeared to take as
+        long as the slowest thing on the page. Letting the front end
+        request charts individually means each one appears as soon as
+        its OWN data is ready.
+        """
+        builders = self._chart_builders(user=user)
+        if only:
+            wanted = [k for k in only if k in builders]
+        else:
+            wanted = list(builders)
+        return {k: builders[k]() for k in wanted}
 
     @request_cached("chart_approval_workflow")
     def approval_workflow_counts(self, user=None) -> dict:

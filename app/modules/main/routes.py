@@ -4,7 +4,7 @@ inbox; the "Vehicles Due for Maintenance" widget surfaces PM due/overdue
 vehicles, also org-scope aware."""
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, render_template, url_for
+from flask import Blueprint, jsonify, render_template, url_for, request
 from flask_login import login_required, current_user
 
 from app.core.approval.task_service import ApprovalTaskService
@@ -336,7 +336,15 @@ def dashboard_charts():
     fleet, and that cost must not sit in front of the page's first
     paint."""
     from app.core.dashboard_analytics_service import DashboardAnalyticsService
-    return jsonify(DashboardAnalyticsService().all_charts(user=current_user))
+    # ?only=a,b limits the payload to those charts. The dashboard asks
+    # for each chart as it scrolls into view, so a cheap chart never
+    # waits behind the fleet-wide PM due calculation that pm_compliance
+    # runs. Omitting the parameter returns everything, so any existing
+    # caller (and the standalone Analytics page) is unaffected.
+    only = request.args.get("only")
+    names = [n.strip() for n in only.split(",") if n.strip()] if only else None
+    return jsonify(DashboardAnalyticsService().all_charts(
+        user=current_user, only=names))
 
 
 @bp.route("/dashboard/widgets")

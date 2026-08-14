@@ -301,8 +301,31 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 
-  fetch("{{ url_for('main.dashboard_charts') }}")
-    .then(function (r) { return r.json(); })
+  // Which payload key each canvas needs. Used to request one chart's
+  // data at a time rather than waiting for all six.
+  var CHART_DATA_KEY = {
+    chartFleetByStatus: "fleet_by_status",
+    chartFleetByBranch: "fleet_by_branch",
+    chartPmCompliance: "pm_compliance",
+    chartMoByType: "mo_by_type",
+    chartMaintenanceManagement: "mo_by_type",
+    chartCostTrend: "maintenance_cost_trend",
+    chartRegistrationStatus: "registration_status"
+  };
+  var CHARTS_URL = "{{ url_for('main.dashboard_charts') }}";
+  var fetchedKeys = {};   // key -> Promise, so two canvases sharing a
+                          // key (MO by Type / Maintenance Management)
+                          // don't request the same data twice.
+
+  function fetchChartData(key) {
+    if (!fetchedKeys[key]) {
+      fetchedKeys[key] = fetch(CHARTS_URL + "?only=" + encodeURIComponent(key))
+        .then(function (r) { return r.json(); });
+    }
+    return fetchedKeys[key];
+  }
+
+  Promise.resolve({})
     .then(function (d) {
       function renderFleetByStatus(canvas) {
         if (d.fleet_by_status && d.fleet_by_status.labels.length)
@@ -390,9 +413,24 @@ document.addEventListener("DOMContentLoaded", function () {
         var handler = renderMap[canvas.id];
         if (!handler || canvas.__fxRendered) return;
         canvas.__fxRendered = true;
+        var key = CHART_DATA_KEY[canvas.id];
         var box = canvas.closest(".fms-chart-box");
-        handler(canvas);
-        if (box) removeSpinner(box);
+        if (!key) { handler(canvas); if (box) removeSpinner(box); return; }
+        // Each chart waits only on its OWN data.
+        fetchChartData(key)
+          .then(function (payload) {
+            Object.keys(payload).forEach(function (k) { d[k] = payload[k]; });
+            handler(canvas);
+            if (box) removeSpinner(box);
+          })
+          .catch(function () {
+            if (box) removeSpinner(box);
+            var el = document.getElementById("fmsChartsLoading");
+            if (el) {
+              el.classList.remove("d-none");
+              el.textContent = "Could not load charts. Please refresh.";
+            }
+          });
       }
 
       // Lazy render: a card's chart only initialises once the card is

@@ -154,6 +154,41 @@ class PMScheduleService:
             q = q.filter_by(is_active=True)
         return q.all()
 
+    def list_paginated(self, page=1, per_page=25, search=None,
+                      maintenance_type_id=None, include_inactive=True):
+        """One page of PM schedules, with server-side search.
+
+        Same reasoning as the PM Scope Template list: a real VEMS import
+        produces thousands of these, and rendering every row produced a
+        5.4 MB page the browser then had to parse and index. Search must
+        be server-side too -- with one page in the DOM, a client-side box
+        would only match the visible page while appearing to search
+        everything.
+        """
+        q = PMSchedule.query.options(
+            joinedload(PMSchedule.vehicle_brand),
+            joinedload(PMSchedule.vehicle_model_ref),
+            joinedload(PMSchedule.vehicle_type),
+            joinedload(PMSchedule.maintenance_type))
+        if not include_inactive:
+            q = q.filter_by(is_active=True)
+        if maintenance_type_id:
+            q = q.filter(
+                PMSchedule.maintenance_type_id == int(maintenance_type_id))
+        if search:
+            like = f"%{str(search).strip()}%"
+            from sqlalchemy import or_
+            q = q.filter(or_(
+                PMSchedule.profile_description.ilike(like),
+                PMSchedule.profile_code.ilike(like),
+                PMSchedule.vehicle_make.ilike(like),
+                PMSchedule.vehicle_model.ilike(like)))
+        pagination = (q.order_by(PMSchedule.profile_code,
+                                PMSchedule.sequence_position)
+                     .paginate(page=page, per_page=per_page,
+                               error_out=False))
+        return pagination.items, pagination
+
     def get_by_id(self, schedule_id):
         return db.session.get(PMSchedule, schedule_id)
 

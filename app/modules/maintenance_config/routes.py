@@ -43,8 +43,19 @@ for _code, _desc in [
 @login_required
 @require_permission("pmschedule.view")
 def pmschedule_list():
-    items = PMScheduleService().list(include_inactive=True)
-    return render_template("maintenance_config/schedule_list.html", items=items)
+    items, pagination = PMScheduleService().list_paginated(
+        page=request.args.get("page", 1, type=int),
+        per_page=request.args.get("per_page", 25, type=int),
+        search=request.args.get("q") or None,
+        maintenance_type_id=request.args.get("maintenance_type_id") or None,
+        include_inactive=True)
+    from app.modules.master_data.reference.models import MaintenanceType
+    return render_template(
+        "maintenance_config/schedule_list.html", items=items,
+        pagination=pagination, search=request.args.get("q") or "",
+        maintenance_type_id=request.args.get("maintenance_type_id") or "",
+        maintenance_types=MaintenanceType.query.filter_by(is_active=True)
+                         .order_by(MaintenanceType.name).all())
 
 
 # ── PMS Profiles (PMS-2: grouped view of packages sharing a profile_code) ──

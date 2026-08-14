@@ -14,12 +14,57 @@
   {% endif %}
 </div>
 <div class="card"><div class="card-body">
-<table class="table table-striped fms-datatable">
+{# Server-side search: with one page in the DOM a client-side box would
+   only match the visible page while appearing to search everything. #}
+<form method="get" class="row g-2 align-items-end mb-3">
+  <div class="col-md-4">
+    <label class="form-label small mb-1">Search</label>
+    <input type="search" name="q" value="{{ search }}" autocomplete="off"
+           class="form-control form-control-sm"
+           placeholder="Profile code, description, make or model">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label small mb-1">Maintenance Type</label>
+    <select name="maintenance_type_id" class="form-select form-select-sm">
+      <option value="">All Maintenance Types</option>
+      {% for mt in maintenance_types %}
+      <option value="{{ mt.id }}" {{ 'selected' if maintenance_type_id == mt.id|string }}>{{ mt.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-2">
+    <label class="form-label small mb-1">Show</label>
+    <select name="per_page" class="form-select form-select-sm">
+      {% for n in [25, 50, 100] %}
+      <option value="{{ n }}" {{ 'selected' if pagination.per_page == n }}>{{ n }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-md-3">
+    <button class="btn btn-sm btn-primary"><i class="bi bi-search me-1"></i>Search</button>
+    {% if search or maintenance_type_id %}
+    <a class="btn btn-sm btn-outline-secondary"
+       href="{{ url_for('maintenance_config.pmschedule_list') }}">Clear</a>
+    {% endif %}
+    <span class="ms-2 text-muted small">
+      {% if pagination.total %}{{ "{:,}".format(pagination.total) }} template{{ '' if pagination.total == 1 else 's' }}
+      {%- if search or maintenance_type_id %} (filtered){% endif %}
+      {% else %}No matches{% endif %}
+    </span>
+  </div>
+</form>
+<table class="table table-striped">
   <thead><tr>
     <th>Profile</th><th>Make / Model</th><th>Vehicle Type</th><th>Maintenance Type</th><th>Trigger</th>
     <th>Interval KM</th><th>Interval Days</th><th>Priority</th><th>Active</th><th></th>
   </tr></thead>
   <tbody>
+  {% if not items %}
+    <tr><td colspan="8" class="text-center text-muted py-4">
+      {% if search or maintenance_type_id %}No PM templates match that search.
+      {% else %}No PM templates yet.{% endif %}
+    </td></tr>
+  {% endif %}
   {% for s in items %}
     <tr>
       <td>{% if s.profile_code %}<code>{{ s.profile_code }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
@@ -59,6 +104,7 @@
   {% endfor %}
   </tbody>
 </table>
+{% include "transactions/_pager.html" %}
 </div></div>
 {% endblock %}
 {% block scripts %}<script>document.querySelectorAll("form.fms-confirm").forEach(function(f){f.addEventListener("submit",function(e){e.preventDefault();Swal.fire({title:f.dataset.confirm,icon:"warning",showCancelButton:true,confirmButtonText:"Yes"}).then(function(r){if(r.isConfirmed)f.submit();});});});</script>{% endblock %}
