@@ -367,3 +367,36 @@ def dashboard_widgets():
         "due_registration_html": render_template(
             "main/_due_registration.html", due_registrations=due_registrations),
     })
+
+
+@bp.route("/dashboard/cost-trend-grouped")
+@login_required
+def dashboard_cost_trend_grouped():
+    """Maintenance cost trend split by branch, or by department within
+    one branch.
+
+    Its own endpoint rather than part of /dashboard/charts because it
+    takes parameters the others don't and is re-fetched whenever the
+    person changes the grouping -- folding it into the combined payload
+    would mean recomputing every other chart on each change.
+    """
+    from app.core.dashboard_analytics_service import DashboardAnalyticsService
+    from app.modules.master_data.org.models import Branch
+
+    group_by = request.args.get("group_by", "BRANCH")
+    branch_id = request.args.get("branch_id") or None
+    months = request.args.get("months", 6, type=int)
+
+    payload = DashboardAnalyticsService().maintenance_cost_trend_grouped(
+        months=months, user=current_user, group_by=group_by,
+        branch_id=branch_id)
+
+    # Only branches this person can actually see, so the drill-down
+    # can't be used to reach a branch the rest of the dashboard hides.
+    visible = DashboardAnalyticsService()._visible_branch_ids(current_user)
+    bq = Branch.query.filter_by(is_active=True)
+    if visible is not None:
+        bq = bq.filter(Branch.id.in_(visible))
+    payload["branches"] = [{"id": b.id, "name": b.name}
+                          for b in bq.order_by(Branch.name).all()]
+    return jsonify(payload)

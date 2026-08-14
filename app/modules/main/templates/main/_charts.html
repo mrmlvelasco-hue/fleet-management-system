@@ -61,6 +61,40 @@
     </div></div>
   </div>
   {% endif %}
+
+  <div class="col-12">
+    <div class="card chart-observer-card"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-start mb-3 gap-2 flex-wrap">
+        <h6 class="card-title mb-0">Maintenance Cost Trend by Branch
+          <span class="text-muted small fw-normal" id="costGroupScope"></span>
+        </h6>
+        <div class="d-flex gap-2 align-items-center">
+          <select id="costGroupBy" class="form-select form-select-sm w-auto"
+                  aria-label="Group cost trend by">
+            <option value="BRANCH">By Branch</option>
+            <option value="DEPARTMENT">By Department</option>
+          </select>
+          {# Only shown at department level: department codes repeat
+             across branches, so that breakdown is only meaningful
+             inside one branch. #}
+          <select id="costBranch" class="form-select form-select-sm w-auto d-none"
+                  aria-label="Branch to break down"></select>
+          <select class="form-select form-select-sm chart-type-picker w-auto"
+                  data-for="chartCostByGroup" aria-label="Chart type">
+            <option value="line">Line</option>
+            <option value="area">Area</option>
+            <option value="bar">Bar</option>
+          </select>
+        </div>
+      </div>
+      <div class="fms-chart-box fms-chart-box--tall {{ 'fms-chart-box--compact' if compact }}">
+        <div class="fms-chart-spinner"><div class="spinner-border text-primary spinner-border-sm" role="status"></div></div>
+        <canvas id="chartCostByGroup"></canvas>
+      </div>
+      <div id="costGroupMsg" class="text-muted small text-center d-none py-2"></div>
+    </div></div>
+  </div>
+
   <div class="col-12">
     <div class="card chart-observer-card"><div class="card-body">
       <div class="d-flex justify-content-between align-items-start mb-3 gap-2"><h6 class="card-title mb-0">Maintenance Cost Trend (last 6 months)</h6><select class="form-select form-select-sm chart-type-picker w-auto d-inline-block" data-for="chartCostTrend" aria-label="Chart type"><option value="bar">Bar</option><option value="pie">Pie</option><option value="doughnut">Donut</option><option value="line">Line</option><option value="area">Area</option></select></div>
@@ -288,15 +322,166 @@ document.addEventListener("DOMContentLoaded", function () {
     buildChart(canvas, payload, type, opts);
   }
 
+  // ── Grouped cost trend (multi-series) ──────────────────────────
+  // The other charts are single-series; this one draws a line per
+  // branch (or per department), so it needs its own builder rather
+  // than bending buildChart's single-dataset shape.
+  var GROUPED_URL = "{{ url_for('main.dashboard_cost_trend_grouped') }}";
+  var groupedState = null;
+
+  function buildGroupedChart(canvas, payload, type) {
+    if (CHART_INSTANCES[canvas.id]) CHART_INSTANCES[canvas.id].destroy();
+    var isArea = type === "area";
+    var chartType = isArea ? "line" : (type || "line");
+    var datasets = payload.datasets.map(function (ds) {
+      return {
+        label: ds.label,
+        data: ds.data,
+        borderColor: ds.color,
+        backgroundColor: chartType === "bar"
+          ? ds.color
+          : (isArea ? ds.color + "33" : "transparent"),
+        fill: isArea,
+        tension: 0.3,
+        borderWidth: 2,
+        pointRadius: 3
+      };
+    });
+    CHART_INSTANCES[canvas.id] = new Chart(canvas, {
+      type: chartType,
+      data: {labels: payload.labels, datasets: datasets},
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: {duration: 900, easing: "easeOutQuart"},
+        interaction: {mode: "index", intersect: false},
+        plugins: {
+          // A legend is essential here, unlike the single-series
+          // charts -- without it the lines are unidentifiable.
+          legend: {display: true, position: "bottom",
+                   labels: {boxWidth: legendBoxSize(),
+                            font: {size: legendFontSize()}}},
+          tooltip: {callbacks: {label: function (ctx) {
+            return ctx.dataset.label + ": \u20b1" +
+                   Number(ctx.parsed.y).toLocaleString();
+          }}}
+        },
+        scales: {
+          x: {ticks: {font: {size: legendFontSize()},
+                      maxRotation: isMobile() ? 60 : 0, autoSkip: true}},
+          y: {beginAtZero: true,
+              stacked: chartType === "bar",
+              ticks: {font: {size: legendFontSize()},
+                      callback: function (v) {
+                        return isMobile()
+                          ? "\u20b1" + (v >= 1000 ? (v / 1000) + "k" : v)
+                          : "\u20b1" + Number(v).toLocaleString();
+                      }}}
+        }
+      }
+    });
+  }
+
+  function loadGroupedCost() {
+    var canvas = document.getElementById("chartCostByGroup");
+    if (!canvas) return;
+    var groupSel = document.getElementById("costGroupBy");
+    var branchSel = document.getElementById("costBranch");
+    var msg = document.getElementById("costGroupMsg");
+    var scope = document.getElementById("costGroupScope");
+    var box = canvas.closest(".fms-chart-box");
+
+    var params = "?group_by=" + encodeURIComponent(groupSel.value);
+    if (groupSel.value === "DEPARTMENT" && branchSel.value) {
+      params += "&branch_id=" + encodeURIComponent(branchSel.value);
+    }
+
+    fetch(GROUPED_URL + params)
+      .then(function (r) { return r.json(); })
+      .then(function (payload) {
+        if (box) removeSpinner(box);
+
+        // Populate the branch list once, from what this person may see.
+        if (branchSel.options.length === 0 && payload.branches) {
+          payload.branches.forEach(function (b) {
+            var o = document.createElement("option");
+            o.value = b.id; o.textContent = b.name;
+            branchSel.appendChild(o);
+          });
+        }
+
+        if (payload.error) {
+          // Asking for departments without a branch is refused rather
+          // than guessed at -- show why instead of an empty chart.
+          msg.textContent = payload.error;
+          msg.classList.remove("d-none");
+          canvas.style.display = "none";
+          return;
+        }
+        if (!payload.datasets || !payload.datasets.length) {
+          msg.textContent = "No completed maintenance costs in this period.";
+          msg.classList.remove("d-none");
+          canvas.style.display = "none";
+          if (scope) scope.textContent = "";
+          return;
+        }
+        msg.classList.add("d-none");
+        canvas.style.display = "";
+        groupedState = payload;
+        var picker = document.querySelector(
+          '.chart-type-picker[data-for="chartCostByGroup"]');
+        var type = savedType("chartCostByGroup", "line");
+        if (picker) picker.value = type;
+        buildGroupedChart(canvas, payload, type);
+        if (scope) {
+          // "branch" pluralises to "branches", "department" to
+          // "departments" -- one -es and one -s, so they can't share a
+          // suffix (that produced "2 departmentes").
+          var n = payload.datasets.length;
+          var noun = payload.group_by === "DEPARTMENT"
+            ? (n === 1 ? "department" : "departments")
+            : (n === 1 ? "branch" : "branches");
+          scope.textContent = "\u2014 " + n + " " + noun;
+        }
+      })
+      .catch(function () {
+        if (box) removeSpinner(box);
+        msg.textContent = "Could not load this chart. Please refresh.";
+        msg.classList.remove("d-none");
+      });
+  }
+
+  (function wireGroupedControls() {
+    var groupSel = document.getElementById("costGroupBy");
+    var branchSel = document.getElementById("costBranch");
+    if (!groupSel) return;
+    groupSel.addEventListener("change", function () {
+      var dept = groupSel.value === "DEPARTMENT";
+      branchSel.classList.toggle("d-none", !dept);
+      // Default to the first branch so choosing "By Department" shows
+      // something immediately rather than an error telling the person
+      // to pick a branch they haven't been offered yet.
+      if (dept && !branchSel.value && branchSel.options.length) {
+        branchSel.selectedIndex = 0;
+      }
+      loadGroupedCost();
+    });
+    branchSel.addEventListener("change", loadGroupedCost);
+  })();
+
   // Switching type re-draws from the payload already in memory -- no
   // refetch, no page reload, and the choice is remembered for next time.
   document.querySelectorAll(".chart-type-picker").forEach(function (sel) {
     sel.addEventListener("change", function () {
       var canvasId = sel.getAttribute("data-for");
-      var st = CHART_STATE[canvasId];
       var canvas = document.getElementById(canvasId);
-      if (!st || !canvas) return;
+      if (!canvas) return;
       rememberType(canvasId, sel.value);
+      if (canvasId === "chartCostByGroup") {
+        if (groupedState) buildGroupedChart(canvas, groupedState, sel.value);
+        return;
+      }
+      var st = CHART_STATE[canvasId];
+      if (!st) return;
       buildChart(canvas, st.payload, sel.value, st.opts);
     });
   });
@@ -449,6 +634,26 @@ document.addEventListener("DOMContentLoaded", function () {
             });
           }, { threshold: 0.15 })
         : null;
+
+      // This chart has its own endpoint and controls, so it loads
+      // itself rather than going through renderMap.
+      var groupedCanvas = document.getElementById("chartCostByGroup");
+      if (groupedCanvas && observer) {
+        var groupedCard = groupedCanvas.closest(".chart-observer-card");
+        if (groupedCard) {
+          var go = new IntersectionObserver(function (entries, obs) {
+            entries.forEach(function (e) {
+              if (!e.isIntersecting) return;
+              e.target.classList.add("fx-in-view");
+              loadGroupedCost();
+              obs.unobserve(e.target);
+            });
+          }, {threshold: 0.15});
+          go.observe(groupedCard);
+        }
+      } else if (groupedCanvas) {
+        loadGroupedCost();
+      }
 
       var targets = document.querySelectorAll(
         ".chart-observer-card, #chartRegistrationStatus, #chartMaintenanceManagement");

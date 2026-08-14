@@ -142,6 +142,122 @@ class DashboardAnalyticsService:
         data = [round(totals.get((yr, mo), 0), 2) for yr, mo in month_keys]
         return {"labels": labels, "data": data}
 
+    def maintenance_cost_trend_grouped(self, months: int = 6, user=None,
+                                      group_by: str = "BRANCH",
+                                      branch_id=None) -> dict:
+        """Maintenance cost per month, split into one series per branch
+        -- or per department when drilling into a single branch.
+
+        Deliberately a SEPARATE method from maintenance_cost_trend()
+        rather than a parameter on it: that one returns a single series
+        and is consumed by an existing chart. Widening its return shape
+        would have meant changing every caller, and a mistake there
+        would break a working chart to add a new one.
+
+        group_by:
+          BRANCH      -- one line per branch (the overview)
+          DEPARTMENT  -- one line per department. Only meaningful within
+                        one branch, since department codes repeat across
+                        branches and mixing them would silently merge
+                        two different departments that share a code.
+                        branch_id is therefore required for this.
+
+        Cost is attributed through the VEHICLE's branch/department, the
+        same chain the Cost Center uses -- so this chart and the cost
+        centre on a Maintenance Order can never disagree about which
+        department an expense belongs to.
+
+        Months with no spend return 0 rather than being omitted, so
+        every series has a value at every point and the lines stay
+        aligned across the x-axis.
+        """
+        from app.modules.transactions.maintenance_order.models import (
+            MaintenanceOrder)
+        from app.modules.master_data.vehicle.models import Vehicle
+        from app.modules.master_data.org.models import Branch, Department
+
+        today = date.today()
+        month_keys = []
+        y, m = today.year, today.month
+        for _ in range(months):
+            month_keys.append((y, m))
+            m -= 1
+            if m == 0:
+                m, y = 12, y - 1
+        month_keys.reverse()
+        start = date(month_keys[0][0], month_keys[0][1], 1)
+
+        group_by = (group_by or "BRANCH").upper()
+        if group_by == "DEPARTMENT":
+            if not branch_id:
+                # Refused rather than silently returning cross-branch
+                # departments merged by code -- that would look like
+                # real data and be wrong.
+                return {"labels": [], "datasets": [], "group_by": "DEPARTMENT",
+                       "error": "Select a branch to break down by department."}
+            group_col = Department.name
+            group_id_col = Department.id
+        else:
+            group_col = Branch.name
+            group_id_col = Branch.id
+
+        q = (db.session.query(
+                group_id_col, group_col,
+                extract("year", MaintenanceOrder.completed_date),
+                extract("month", MaintenanceOrder.completed_date),
+                func.coalesce(func.sum(MaintenanceOrder.actual_cost), 0))
+            .join(Vehicle, Vehicle.id == MaintenanceOrder.vehicle_id)
+            .filter(MaintenanceOrder.status == "COMPLETED",
+                   MaintenanceOrder.completed_date >= start))
+
+        if group_by == "DEPARTMENT":
+            q = (q.join(Department, Department.id == Vehicle.department_id)
+                .filter(Vehicle.branch_id == int(branch_id)))
+        else:
+            q = q.join(Branch, Branch.id == Vehicle.branch_id)
+
+        visible = self._visible_branch_ids(user)
+        if visible is not None:
+            q = q.filter(Vehicle.branch_id.in_(visible))
+
+        q = q.group_by(group_id_col, group_col,
+                      extract("year", MaintenanceOrder.completed_date),
+                      extract("month", MaintenanceOrder.completed_date))
+
+        totals = {}
+        names = {}
+        for gid, gname, yr, mo, total in q.all():
+            names[gid] = gname
+            totals[(gid, int(yr), int(mo))] = float(total)
+
+        labels = [date(yr, mo, 1).strftime("%b %Y") for yr, mo in month_keys]
+        # A distinct ordering for multi-series lines. The standard
+        # PALETTE opens with two dark blues (#065A82, #1C7293) which are
+        # fine as adjacent bars but nearly indistinguishable as two
+        # overlapping trend lines -- confirmed visually before changing
+        # it. This reorders for maximum separation between the FIRST few
+        # series, which is what a branch comparison actually shows.
+        palette = ["#065A82", "#B0392D", "#2E9CA8", "#E8A33D",
+                  "#6B4E8F", "#3E7CB1", "#8592A3", "#1C7293"]
+        datasets = []
+        # Largest spender first, so the most significant line is the one
+        # at the top of the legend rather than whichever id sorted first.
+        ordered = sorted(
+            names.items(),
+            key=lambda kv: -sum(totals.get((kv[0], yr, mo), 0)
+                               for yr, mo in month_keys))
+        for i, (gid, gname) in enumerate(ordered):
+            datasets.append({
+                "label": gname,
+                "data": [round(totals.get((gid, yr, mo), 0), 2)
+                        for yr, mo in month_keys],
+                "color": palette[i % len(palette)],
+            })
+
+        return {"labels": labels, "datasets": datasets,
+               "group_by": group_by,
+               "branch_id": int(branch_id) if branch_id else None}
+
     @request_cached("chart_pm_compliance")
     def pm_compliance(self, user=None) -> dict:
         """Reuses the SAME due-calculation the dashboard's due-list and

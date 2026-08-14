@@ -15,6 +15,9 @@
   <a class="btn btn-primary" href="{{ url_for('master_data.vehiclemodel_new', brand_id=filter_brand.id if filter_brand else None) }}">
     <i class="bi bi-plus-lg me-1"></i>New Model</a>
   {% endif %}
+  <a class="btn btn-outline-success" href="{{ url_for('master_data.master_data_export', key='vehicle-models') }}">
+    <i class="bi bi-file-earmark-excel me-1"></i>Export</a>
+
 </div>
 {% if filter_brand %}
 <div class="alert alert-info py-2 px-3 mb-3 small d-flex justify-content-between align-items-center">

@@ -1739,3 +1739,51 @@ def attachment_view(att_id):
         return redirect(request.referrer or url_for("main.dashboard"))
     return send_from_directory(upload_dir, att.filename, as_attachment=False,
                                mimetype=att.mime_type)
+
+
+# ── Master data configuration exports ──────────────────────────────────
+
+# Which permission guards each export. An export is a full dump of a
+# module, so it must require the same permission as viewing that module
+# rather than one blanket "can export" right that would let someone pull
+# data they can't see on screen.
+_EXPORT_PERMISSIONS = {
+    "pm-scope-templates": "pmscopetemplate.view",
+    "pm-schedules": "pmschedule.view",
+    "vehicles": "vehicle.view",
+    "branches": "branch.view",
+    "departments": "department.view",
+    "vehicle-types": "vehicletype.view",
+    "maintenance-types": "maintenancetype.view",
+    "drivers": "driver.view",
+    "vendors": "vendor.view",
+    "vehicle-brands": "vehiclebrand.view",
+    "vehicle-models": "vehiclemodel.view",
+}
+
+
+@bp.route("/exports/<key>.xlsx")
+@login_required
+def master_data_export(key):
+    """Export one master data module's configuration to Excel.
+
+    Exists so someone reviewing how the system is set up -- typically
+    the client checking PM scope configuration -- can see the whole
+    thing at once instead of paging through a screen.
+    """
+    from flask import send_file, abort
+    from io import BytesIO
+    from app.core.reporting.master_data_exports import (
+        generate_master_data_xlsx, MASTER_DATA_EXPORTS)
+
+    if key not in MASTER_DATA_EXPORTS:
+        abort(404)
+    required = _EXPORT_PERMISSIONS.get(key)
+    if required and not current_user.has_permission(required):
+        abort(403)
+
+    data, filename = generate_master_data_xlsx(key)
+    return send_file(
+        BytesIO(data), as_attachment=True, download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument"
+                ".spreadsheetml.sheet")
