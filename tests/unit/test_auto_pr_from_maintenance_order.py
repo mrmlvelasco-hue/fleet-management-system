@@ -266,3 +266,93 @@ def test_add_part_route_rejects_bad_numbers_without_a_500(app, db, order):
                          "estimated_unit_cost": "10"},
                     headers={"X-Requested-With": "XMLHttpRequest"})
     assert r.status_code == 400, f"got {r.status_code}, expected a clean 400"
+
+
+# ── Manual generation for orders that missed the automatic hook ──────────
+#
+# Reported: an approved order showed its parts list and the "PR
+# generated on final approval" badge, but no PR. Automatic generation
+# fires on the approval EVENT, so it only ever covers orders approved
+# AFTER the feature was installed -- an order approved before then had
+# no way to get its PR at all, leaving the parts list stranded and the
+# duplication this feature removes back in play.
+
+def test_pr_requester_is_the_orders_requester_not_the_approver(
+        app, db, order):
+    """The PR must name the person who stated the requirement, not
+    whoever happened to click approve."""
+    from app.modules.user_management.models import User
+    admin = User.query.filter_by(username="admin").first()
+    _svc().add_part(order.id, part_description="4L Oil", quantity=1,
+                    estimated_unit_cost=4520)
+    pr = _svc().generate_purchase_request(order.id, user=order.requester)
+    assert pr.requested_by == order.requested_by
+    assert pr.requested_by == admin.id
+
+
+def test_generate_button_offered_for_an_approved_order_without_a_pr(
+        app, db, order):
+    _svc().add_part(order.id, part_description="4L Oil", quantity=1,
+                    estimated_unit_cost=4520)
+    order.status = "APPROVED"
+    db.session.commit()
+    client = _logged_in(app)
+    html = client.get(
+        f"/transactions/maintenance-orders/{order.id}").get_data(as_text=True)
+    assert "Generate Purchase Request" in html
+
+
+def test_generate_button_not_offered_while_still_draft(app, db, order):
+    """A draft order will get its PR automatically on approval --
+    offering the button there would create it early, before anyone has
+    approved the parts list."""
+    _svc().add_part(order.id, part_description="4L Oil", quantity=1,
+                    estimated_unit_cost=4520)
+    client = _logged_in(app)
+    html = client.get(
+        f"/transactions/maintenance-orders/{order.id}").get_data(as_text=True)
+    assert "Generate Purchase Request" not in html
+
+
+def test_manual_generation_creates_the_pr(app, db, order):
+    _svc().add_part(order.id, part_description="4L Oil",
+                    part_number="OIL0001", specification="5W40", uom="GAL",
+                    quantity=1, estimated_unit_cost=4520)
+    order.status = "APPROVED"
+    db.session.commit()
+    client = _logged_in(app)
+    client.post(f"/transactions/maintenance-orders/{order.id}/generate-pr",
+                follow_redirects=True)
+    db.session.refresh(order)
+    assert order.purchase_request_id is not None
+    pr = order.purchase_request
+    assert pr.status == "DRAFT"
+    assert "OIL0001" in pr.lines[0].item_description
+
+
+def test_manual_generation_is_idempotent(app, db, order):
+    _svc().add_part(order.id, part_description="4L Oil", quantity=1,
+                    estimated_unit_cost=4520)
+    order.status = "APPROVED"
+    db.session.commit()
+    client = _logged_in(app)
+    client.post(f"/transactions/maintenance-orders/{order.id}/generate-pr",
+                follow_redirects=True)
+    db.session.refresh(order)
+    first = order.purchase_request_id
+    client.post(f"/transactions/maintenance-orders/{order.id}/generate-pr",
+                follow_redirects=True)
+    db.session.refresh(order)
+    assert order.purchase_request_id == first
+
+
+def test_manual_generation_refuses_when_there_are_no_parts(app, db, order):
+    order.status = "APPROVED"
+    db.session.commit()
+    client = _logged_in(app)
+    r = client.post(
+        f"/transactions/maintenance-orders/{order.id}/generate-pr",
+        follow_redirects=True)
+    assert r.status_code == 200
+    db.session.refresh(order)
+    assert order.purchase_request_id is None

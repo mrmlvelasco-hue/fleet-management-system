@@ -2286,3 +2286,48 @@ def _txn_list_context(service, *, extra_filters=None):
         "branch_choices": Branch.query.filter_by(is_active=True)
                          .order_by(Branch.name).all(),
     }
+
+
+@bp.route("/maintenance-orders/<int:oid>/generate-pr", methods=["POST"])
+@login_required
+@require_permission("purchaserequest.create")
+def maintenanceorder_generate_pr(oid):
+    """Generate the draft Purchase Request for an order that has parts
+    but no PR yet.
+
+    The automatic generation fires on the approval EVENT, so it only
+    ever covers orders approved after that feature was installed. An
+    order approved before then -- or one where generation failed and
+    was logged rather than blocking the approval -- would otherwise be
+    stuck with a parts list and no way to raise its PR without
+    re-keying everything by hand, which is the exact duplication this
+    was built to remove.
+
+    Attributed to the order's own requester, not whoever clicks this,
+    so the PR names the person who actually stated the requirement.
+    """
+    order = db.session.get(MaintenanceOrder, oid)
+    if order is None:
+        abort(404)
+    if order.purchase_request_id:
+        flash("This order already has a Purchase Request.", "info")
+        return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+    if not order.parts:
+        flash("Add at least one part to procure before generating a "
+             "Purchase Request.", "warning")
+        return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))
+    try:
+        pr = MaintenanceOrderService().generate_purchase_request(
+            oid, user=order.requester)
+        if pr:
+            flash(f"Draft Purchase Request created. Review and submit it "
+                 f"from the Purchase Request module.", "success")
+        else:
+            flash("Nothing to generate for this order.", "info")
+    except Exception as exc:
+        current_app.logger.exception(
+            "Manual PR generation failed for maintenance order %s", oid)
+        db.session.rollback()
+        flash("Could not generate the Purchase Request. Please check the "
+             "parts list and try again.", "danger")
+    return redirect(url_for("transactions.maintenanceorder_detail", oid=oid))

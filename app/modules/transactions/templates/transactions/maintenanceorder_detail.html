@@ -222,6 +222,23 @@
       {{ item.purchase_request.document_number or ('#' ~ item.purchase_request_id) }}
       &mdash; {{ item.purchase_request.status }}
     </a>
+    {% elif item.parts and item.status not in ['DRAFT', 'CANCELLED'] %}
+    {# Past draft with parts but still no PR: either this order was
+       approved before auto-generation existed, or generation failed and
+       was logged rather than blocking the approval. Offer the button
+       rather than leaving the parts list stranded. #}
+    {% if current_user.has_permission('purchaserequest.create') %}
+    <form method="post" class="d-inline"
+          action="{{ url_for('transactions.maintenanceorder_generate_pr', oid=item.id) }}"
+          data-confirm="Create a draft Purchase Request from this parts list?"
+          data-confirm-danger="false">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-sm btn-outline-primary">
+        <i class="bi bi-file-earmark-plus me-1"></i>Generate Purchase Request</button>
+    </form>
+    {% else %}
+    <span class="badge text-bg-secondary">No Purchase Request yet</span>
+    {% endif %}
     {% elif item.parts %}
     <span class="badge text-bg-secondary">PR generated on final approval</span>
     {% endif %}
