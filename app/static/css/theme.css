@@ -446,3 +446,32 @@ body.dark-mode .fms-sidebar { background: #0b131b; border-right-color: #1b2836; 
   #fms-wrapper, main { width: 100% !important; margin: 0 !important; padding: 0 !important; }
   body { background: #fff !important; }
 }
+
+/* --------------------------------------------------------------------------
+   15. Shell shrink fix — flex item min-width
+   --------------------------------------------------------------------------
+   The main column next to the sidebar is a FLEX ITEM of #fms-wrapper.
+   Flex items default to `min-width: auto`, which means they refuse to
+   shrink below their content's intrinsic width. A wide table therefore
+   pushed the whole column wider than the screen, and on a phone the
+   browser responded by widening the LAYOUT VIEWPORT to fit -- measured
+   at 929px on Trip Tickets and 780px on Maintenance Orders against a
+   390px device.
+
+   The consequence is not a scrollbar. The entire page renders zoomed
+   out: text at roughly half size, and fixed-position overlays laid out
+   in that wider space, which is what put the appearance bottom sheet
+   physically off-screen.
+
+   theme.css already carried `.fms-main { min-width: 0 }` for exactly
+   this, but base.html builds that column from Bootstrap utilities
+   (`flex-grow-1 d-flex flex-column min-vh-100`) and never applies
+   `.fms-main` -- so the fix existed and was simply never reaching the
+   element. Targeting the real child closes that gap.
+
+   Verified in Chromium at 390x844: Trip Tickets 929px -> 390px.
+   -------------------------------------------------------------------------- */
+#fms-wrapper > .flex-grow-1,
+.fms-app > .flex-grow-1 {
+  min-width: 0;
+}

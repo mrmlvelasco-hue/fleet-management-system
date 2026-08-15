@@ -108,6 +108,60 @@
     });
   });
 
+  // Sidebar appearance picker.
+  //
+  // The skin is already correct on first paint -- the server renders
+  // data-sidebar-skin into <html> -- so this only handles CHANGING it.
+  // The attribute is swapped immediately and the save happens in the
+  // background, because waiting for a round-trip before showing the
+  // new colour makes a purely visual choice feel sluggish.
+  //
+  // If the save fails the attribute is put back, rather than leaving
+  // someone looking at a skin that won't survive their next page load.
+  document.querySelectorAll("[data-skin-code]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var code = btn.getAttribute("data-skin-code");
+      var root = document.documentElement;
+      var previous = root.getAttribute("data-sidebar-skin");
+      if (code === previous) return;
+
+      root.setAttribute("data-sidebar-skin", code);
+      // Every swatch in BOTH pickers (desktop dropdown and mobile
+      // sheet) is updated, not just the one clicked -- they render the
+      // same choice and must not disagree.
+      document.querySelectorAll("[data-skin-code]").forEach(function (other) {
+        var on = other.getAttribute("data-skin-code") === code;
+        other.classList.toggle("is-selected", on);
+        other.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+
+      var token = document.querySelector('meta[name="csrf-token"]');
+      fetch("/preferences/sidebar-skin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+          "X-CSRFToken": token ? token.getAttribute("content") : ""
+        },
+        body: JSON.stringify({ skin: code })
+      }).then(function (r) {
+        if (!r.ok) throw new Error("save failed");
+      }).catch(function () {
+        root.setAttribute("data-sidebar-skin", previous);
+        document.querySelectorAll("[data-skin-code]").forEach(function (o) {
+          var on = o.getAttribute("data-skin-code") === previous;
+          o.classList.toggle("is-selected", on);
+          o.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        if (window.Swal) {
+          Swal.fire({ icon: "error", title: "Couldn't save that",
+                      text: "Your sidebar appearance was not changed.",
+                      timer: 2600, showConfirmButton: false });
+        }
+      });
+    });
+  });
+
   // Auto-init DataTables and Select2 when jQuery is present
   if (window.jQuery) {
     jQuery(function ($) {

@@ -305,6 +305,28 @@ def _seed_system_parameters() -> None:
         ("REQUIRE_DRIVER_FROM_MASTER", "YES", "STRING", "TRIP_TICKET",
          "YES = driver must come from Driver Master; NO = manual entry"),
         ("COMPANY_NAME", "My Company", "STRING", "GENERAL", "Company name"),
+
+        # ── Maintenance / Auto Purchase Request ───────────────────────
+        # These two were READ by auto_pr.py from the day that feature
+        # shipped, but were never seeded -- so the rows didn't exist,
+        # get() always returned its default, and there was no way to
+        # see or change the setting from System Administration at all.
+        # The behaviour was correct; the switch was simply invisible.
+        ("AUTO_PR_FROM_MO", "YES", "STRING", "MAINTENANCE",
+         "YES = automatically create a draft Purchase Request from the "
+         "parts list when a corrective/operational Maintenance Order is "
+         "fully approved."),
+        ("AUTO_PR_FROM_PMS", "YES", "STRING", "MAINTENANCE",
+         "YES = automatically create a draft Purchase Request from the "
+         "parts list when a preventive (PMS) Maintenance Order is fully "
+         "approved. Separate from AUTO_PR_FROM_MO so scheduled and "
+         "unscheduled work can be automated independently."),
+
+        # ── Appearance ────────────────────────────────────────────────
+        ("SIDEBAR_SKIN_DEFAULT", "classic", "STRING", "APPEARANCE",
+         "House style for the sidebar, used for anyone who hasn't "
+         "chosen their own. One of: classic, soft-dark, soft-light, "
+         "soft-crimson. An unrecognised value falls back to classic."),
     ]
     for code, value, data_type, group, desc in defaults:
         if not SystemParameter.query.filter_by(code=code).first():

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-bs-theme="light">
+<html lang="en" data-bs-theme="light" data-sidebar-skin="{{ sidebar_skin | default('classic') }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -26,6 +26,11 @@
   <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/theme-enterprise.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/theme-exec.css') }}" rel="stylesheet">
+  <!-- Sidebar skins: last, so a skin's tokens win over the base theme.
+       The chosen skin is on <html> above, rendered server-side, so the
+       correct sidebar is present in the first paint rather than being
+       swapped in by JS afterwards. -->
+  <link href="{{ url_for('static', filename='css/sidebar-skins.css') }}" rel="stylesheet">
   {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -60,6 +65,30 @@
   {% include "layout/_flash.html" %}
   {% block auth_content %}{% endblock %}
 </main>
+{% endif %}
+{% if current_user.is_authenticated %}
+{# Mobile bottom sheet for the sidebar appearance picker.
+
+   A DIRECT CHILD OF <body> on purpose. Bootstrap's Offcanvas inserts
+   its backdrop into the offcanvas element's PARENT node, not into
+   <body> -- so while this lived inside the app wrapper, the backdrop
+   was injected into that same wrapper and could land over the sheet's
+   own controls. In a real mobile browser that meant tapping a swatch
+   did nothing at all: the tap was being swallowed by the backdrop.
+   Hoisting it to body level puts both the sheet and its backdrop in
+   the root stacking context, where the sheet reliably sits above. #}
+<div class="offcanvas offcanvas-bottom fms-skin-sheet d-md-none"
+     tabindex="-1" id="skinSheet" aria-labelledby="skinSheetTitle">
+  <div class="offcanvas-body">
+    <div class="fms-skin-sheet__grab" aria-hidden="true"></div>
+    <h6 class="fms-skin-menu__title mb-0" id="skinSheetTitle">
+      Sidebar appearance</h6>
+    <p class="fms-skin-menu__sub">Applies to your account only.</p>
+    {% with layout = 'rows' %}
+      {% include "layout/_skin_swatches.html" %}
+    {% endwith %}
+  </div>
+</div>
 {% endif %}
 <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/jquery/jquery-3.7.1.min.js') }}"></script>

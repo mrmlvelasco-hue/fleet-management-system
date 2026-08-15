@@ -1,0 +1,544 @@
+/* ==========================================================================
+   FMS — Sidebar Skins
+
+   Four interchangeable looks for the sidebar, selected per user and
+   rendered by the server as data-sidebar-skin on <html>. Nothing here
+   touches layout, widths, the collapse rail, or the mobile drawer
+   mechanics -- those live in theme.css and stay identical across every
+   skin, so switching appearance can never change how the navigation
+   BEHAVES, only how it looks.
+
+   Structure
+   ---------
+     1. Shared ergonomics  (applies to every skin, including Classic)
+     2. Soft Dark          (navy, neumorphic depth)  -- recommended
+     3. Soft Light         (light neumorphic, teal accent)
+     4. Soft Crimson       (light neumorphic, crimson -- the original)
+     5. Dark-mode variants
+     6. Mobile overrides
+     7. Reduced motion
+
+   On dark mode
+   ------------
+   Skin and dark mode are independent choices, so all eight combinations
+   have to look deliberate. The agreed rule: a LIGHT skin maps onto a
+   dark surface when dark mode is on, keeping its own accent colour.
+   Leaving a bright sidebar against a dark application would read as a
+   bug rather than a preference.
+
+   On neumorphism generally
+   ------------------------
+   The style depends on very low contrast between a surface and its own
+   shadows -- that is the entire effect. Taken literally it fails WCAG
+   AA for body text, so the idle text colours below are deliberately
+   darker than a pure neumorphic palette would use. Soft Crimson is the
+   faithful reproduction of the original and is the weakest of the four
+   on contrast; it is offered because it was asked for, with the darker
+   text applied so it clears 4.5:1.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Shared ergonomics — every skin, Classic included
+   -------------------------------------------------------------------------- */
+
+/* 44px is the documented minimum touch target on both iOS and Android.
+   The nav rows were ~38px, which is comfortably clickable with a mouse
+   and genuinely fiddly with a thumb. Applied as a MINIMUM so the rows
+   keep their existing padding on desktop and only grow where they were
+   too small. */
+.fms-nav-link {
+  min-height: 44px;
+}
+
+/* The group headers are tap targets too, and were smaller than the
+   links beneath them. */
+.sidebar-group-toggle {
+  min-height: 44px;
+}
+
+
+/* ==========================================================================
+   2. SOFT DARK — navy with neumorphic depth
+   ========================================================================== */
+
+[data-sidebar-skin="soft-dark"] {
+  --skin-surface:      #1a2332;
+  --skin-shadow-dark:  #101822;
+  --skin-shadow-light: #26344a;
+  --skin-text:         #b9ccd4;
+  --skin-text-bright:  #f1faee;
+  --skin-icon:         #7f97a5;
+  --skin-icon-bright:  #a8dadc;
+  --skin-muted:        #6f8494;
+  --skin-accent:       #2d8b8b;
+  --skin-accent-deep:  #1f6668;
+  --skin-divider:      #2b3a4f;
+}
+
+[data-sidebar-skin="soft-light"] {
+  --skin-surface:      #eef4f5;
+  --skin-shadow-dark:  #c4d3d7;
+  --skin-shadow-light: #ffffff;
+  --skin-text:         #47585e;
+  --skin-text-bright:  #131c21;
+  --skin-icon:         #5f7278;
+  --skin-icon-bright:  #237273;
+  --skin-muted:        #5f7278;
+  --skin-accent:       #2d8b8b;
+  --skin-accent-deep:  #237273;
+  --skin-divider:      #c4d3d7;
+}
+
+[data-sidebar-skin="soft-crimson"] {
+  --skin-surface:      #eef0f3;
+  --skin-shadow-dark:  #c9ced6;
+  --skin-shadow-light: #ffffff;
+  /* Darker than the source design's #7b818c, which sat at 3.43:1 on
+     this background -- below the 4.5:1 AA minimum for body text. */
+  --skin-text:         #525864;
+  --skin-text-bright:  #2b3140;
+  --skin-icon:         #6b7280;
+  --skin-icon-bright:  #a30601;
+  --skin-muted:        #616773;
+  --skin-accent:       #a30601;
+  --skin-accent-deep:  #b81a13;
+  --skin-divider:      #c9ced6;
+}
+
+
+/* --------------------------------------------------------------------------
+   Shared neumorphic treatment — applies to all three "soft" skins.
+   Written once against the custom properties above so a new skin is a
+   token block, not another copy of this whole section.
+   -------------------------------------------------------------------------- */
+
+[data-sidebar-skin="soft-dark"] .fms-sidebar,
+[data-sidebar-skin="soft-light"] .fms-sidebar,
+[data-sidebar-skin="soft-crimson"] .fms-sidebar {
+  background: var(--skin-surface);
+  color: var(--skin-text);
+  border-right: 0;
+  /* The floating-card treatment. Deliberately inset from the viewport
+     so both halves of the shadow are actually visible -- see the mobile
+     section, where this is removed because the drawer is flush. */
+  box-shadow:
+    10px 0 24px var(--skin-shadow-dark),
+    -6px 0 18px var(--skin-shadow-light);
+}
+
+[data-sidebar-skin="soft-dark"] .fms-sidebar__brand,
+[data-sidebar-skin="soft-light"] .fms-sidebar__brand,
+[data-sidebar-skin="soft-crimson"] .fms-sidebar__brand {
+  border-bottom: 1px solid var(--skin-divider);
+  color: var(--skin-text-bright);
+}
+
+/* Raised brand mark */
+[data-sidebar-skin="soft-dark"] .fms-sidebar__mark,
+[data-sidebar-skin="soft-light"] .fms-sidebar__mark,
+[data-sidebar-skin="soft-crimson"] .fms-sidebar__mark {
+  background: var(--skin-surface);
+  color: var(--skin-accent);
+  border-radius: 13px;
+  box-shadow:
+    5px 6px 12px var(--skin-shadow-dark),
+    -5px -6px 12px var(--skin-shadow-light);
+  transition: transform .35s cubic-bezier(.22, 1, .36, 1),
+              box-shadow .35s cubic-bezier(.22, 1, .36, 1);
+}
+
+[data-sidebar-skin="soft-dark"] .fms-sidebar__brand:hover .fms-sidebar__mark,
+[data-sidebar-skin="soft-light"] .fms-sidebar__brand:hover .fms-sidebar__mark,
+[data-sidebar-skin="soft-crimson"] .fms-sidebar__brand:hover .fms-sidebar__mark {
+  transform: scale(1.035);
+}
+
+/* Pressed-in on click — the tactile half of the effect. */
+[data-sidebar-skin="soft-dark"] .fms-sidebar__brand:active .fms-sidebar__mark,
+[data-sidebar-skin="soft-light"] .fms-sidebar__brand:active .fms-sidebar__mark,
+[data-sidebar-skin="soft-crimson"] .fms-sidebar__brand:active .fms-sidebar__mark {
+  transform: scale(.96);
+  box-shadow:
+    inset 3px 3px 6px var(--skin-shadow-dark),
+    inset -3px -3px 6px var(--skin-shadow-light);
+}
+
+[data-sidebar-skin="soft-dark"] .fms-sidebar__wordmark,
+[data-sidebar-skin="soft-light"] .fms-sidebar__wordmark,
+[data-sidebar-skin="soft-crimson"] .fms-sidebar__wordmark {
+  /* theme-enterprise.css sets `.fms-sidebar__wordmark { color: white }`
+     explicitly, so styling the parent .fms-sidebar__brand is not
+     enough -- an explicit colour on the child beats inheritance
+     outright. On the two light skins that left the product name as
+     white-on-near-white: measured at 1.15:1, i.e. invisible. Caught
+     by reading computed styles in a real browser, not by any test. */
+  color: var(--skin-text-bright);
+}
+
+[data-sidebar-skin="soft-dark"] .fms-sidebar__wordmark small,
+[data-sidebar-skin="soft-light"] .fms-sidebar__wordmark small,
+[data-sidebar-skin="soft-crimson"] .fms-sidebar__wordmark small {
+  color: var(--skin-accent);
+}
+
+/* Section headers */
+[data-sidebar-skin="soft-dark"] .sidebar-section,
+[data-sidebar-skin="soft-light"] .sidebar-section,
+[data-sidebar-skin="soft-crimson"] .sidebar-section,
+[data-sidebar-skin="soft-dark"] .fms-nav-label,
+[data-sidebar-skin="soft-light"] .fms-nav-label,
+[data-sidebar-skin="soft-crimson"] .fms-nav-label {
+  color: var(--skin-muted);
+}
+
+/* Nav rows */
+[data-sidebar-skin="soft-dark"] .fms-nav-link,
+[data-sidebar-skin="soft-light"] .fms-nav-link,
+[data-sidebar-skin="soft-crimson"] .fms-nav-link {
+  color: var(--skin-text);
+  border-radius: 15px;
+  margin-bottom: 4px;
+  transition: color .16s cubic-bezier(.22, 1, .36, 1),
+              background .16s cubic-bezier(.22, 1, .36, 1),
+              box-shadow .16s cubic-bezier(.22, 1, .36, 1);
+}
+
+[data-sidebar-skin="soft-dark"] .fms-nav-link__icon,
+[data-sidebar-skin="soft-light"] .fms-nav-link__icon,
+[data-sidebar-skin="soft-crimson"] .fms-nav-link__icon {
+  color: var(--skin-icon);
+}
+
+/* Hover: pressed INTO the surface, rather than a filled block. */
+[data-sidebar-skin="soft-dark"] .fms-nav-link:not(.is-active):hover,
+[data-sidebar-skin="soft-light"] .fms-nav-link:not(.is-active):hover,
+[data-sidebar-skin="soft-crimson"] .fms-nav-link:not(.is-active):hover {
+  color: var(--skin-text-bright);
+  background: var(--skin-surface);
+  box-shadow:
+    inset 3px 3px 7px var(--skin-shadow-dark),
+    inset -3px -3px 7px var(--skin-shadow-light);
+}
+
+[data-sidebar-skin="soft-dark"] .fms-nav-link:not(.is-active):hover .fms-nav-link__icon,
+[data-sidebar-skin="soft-light"] .fms-nav-link:not(.is-active):hover .fms-nav-link__icon,
+[data-sidebar-skin="soft-crimson"] .fms-nav-link:not(.is-active):hover .fms-nav-link__icon {
+  color: var(--skin-icon-bright);
+}
+
+/* Active: a raised gradient pill. */
+[data-sidebar-skin="soft-dark"] .fms-nav-link.is-active,
+[data-sidebar-skin="soft-light"] .fms-nav-link.is-active,
+[data-sidebar-skin="soft-crimson"] .fms-nav-link.is-active {
+  color: #fff;
+  background: linear-gradient(145deg, var(--skin-accent),
+                              var(--skin-accent-deep));
+  box-shadow:
+    4px 4px 12px rgba(0, 0, 0, .22),
+    inset -1px -1px 2px rgba(255, 255, 255, .16);
+}
+
+[data-sidebar-skin="soft-dark"] .fms-nav-link.is-active .fms-nav-link__icon,
+[data-sidebar-skin="soft-light"] .fms-nav-link.is-active .fms-nav-link__icon,
+[data-sidebar-skin="soft-crimson"] .fms-nav-link.is-active .fms-nav-link__icon {
+  color: #fff;
+}
+
+/* The Classic skin's left accent bar would sit outside the rounded
+   pill and read as a stray mark, so it is removed here. The gradient
+   fill already carries "this is the current page". */
+[data-sidebar-skin="soft-dark"] .fms-nav-link.is-active::before,
+[data-sidebar-skin="soft-light"] .fms-nav-link.is-active::before,
+[data-sidebar-skin="soft-crimson"] .fms-nav-link.is-active::before {
+  display: none;
+}
+
+[data-sidebar-skin="soft-dark"] .fms-nav-link:active,
+[data-sidebar-skin="soft-light"] .fms-nav-link:active,
+[data-sidebar-skin="soft-crimson"] .fms-nav-link:active {
+  transform: scale(.985);
+}
+
+/* Group toggles pick up the same treatment as the rows they head. */
+[data-sidebar-skin="soft-dark"] .sidebar-group-toggle:hover,
+[data-sidebar-skin="soft-light"] .sidebar-group-toggle:hover,
+[data-sidebar-skin="soft-crimson"] .sidebar-group-toggle:hover {
+  color: var(--skin-text-bright);
+  border-radius: 12px;
+  box-shadow:
+    inset 2px 2px 5px var(--skin-shadow-dark),
+    inset -2px -2px 5px var(--skin-shadow-light);
+}
+
+[data-sidebar-skin="soft-dark"] .fms-nav-link__badge,
+[data-sidebar-skin="soft-light"] .fms-nav-link__badge,
+[data-sidebar-skin="soft-crimson"] .fms-nav-link__badge {
+  background: var(--skin-accent);
+  color: #fff;
+}
+
+
+/* ==========================================================================
+   5. DARK-MODE VARIANTS
+
+   COMPOUND selectors, not descendant ones. Both data-bs-theme and
+   data-sidebar-skin are set on the SAME element (<html>), so
+   `[data-bs-theme="dark"] [data-sidebar-skin="x"]` -- with a space --
+   can never match: it asks for a skinned DESCENDANT of a dark element.
+   Written that way first, this whole section silently did nothing, and
+   the test asserting it existed passed the entire time because it only
+   grepped for the selector text. Caught by measuring contrast in a
+   real browser and noticing the dark numbers were identical to light.
+
+   The body.dark-mode alias is deliberately absent here: that class sits
+   on <body>, below <html>, so it cannot form a compound selector with
+   the skin attribute at all. app.js sets data-bs-theme, which is what
+   this keys off.
+   A light skin keeps its ACCENT but moves onto a dark surface, so the
+   sidebar never sits as a bright strip against a dark application.
+   ========================================================================== */
+
+[data-bs-theme="dark"][data-sidebar-skin="soft-light"] {
+  --skin-surface:      #10191f;
+  --skin-shadow-dark:  #080e12;
+  --skin-shadow-light: #1c2a33;
+  --skin-text:         #b3c6cc;
+  --skin-text-bright:  #eef6f7;
+  --skin-icon:         #7c9198;
+  --skin-icon-bright:  #a8dadc;
+  --skin-muted:        #6b8189;
+  --skin-accent:       #2d8b8b;
+  --skin-accent-deep:  #1c5c5e;
+  --skin-divider:      #1e2c35;
+}
+
+[data-bs-theme="dark"][data-sidebar-skin="soft-crimson"] {
+  --skin-surface:      #17151a;
+  --skin-shadow-dark:  #0d0c10;
+  --skin-shadow-light: #241f28;
+  --skin-text:         #c3bcc6;
+  --skin-text-bright:  #f4f0f5;
+  --skin-icon:         #8d8592;
+  --skin-icon-bright:  #e06a63;
+  --skin-muted:        #857d8b;
+  --skin-accent:       #a30601;
+  --skin-accent-deep:  #7d0603;
+  --skin-divider:      #2a2430;
+}
+
+/* Soft Dark is already dark; it only needs to sink slightly further so
+   it stays distinguishable from the darkened page around it. */
+[data-bs-theme="dark"][data-sidebar-skin="soft-dark"] {
+  --skin-surface:      #0b131b;
+  --skin-shadow-dark:  #05090d;
+  --skin-shadow-light: #16222e;
+  --skin-divider:      #1b2836;
+}
+
+/* theme.css sets a flat dark background on .fms-sidebar in dark mode.
+   That rule is more specific than the skin's own background, so the
+   skins would lose their surface colour the moment dark mode was
+   switched on. Restated here to hand control back to the skin. */
+[data-bs-theme="dark"][data-sidebar-skin="soft-dark"] .fms-sidebar,
+[data-bs-theme="dark"][data-sidebar-skin="soft-light"] .fms-sidebar,
+[data-bs-theme="dark"][data-sidebar-skin="soft-crimson"] .fms-sidebar {
+  background: var(--skin-surface);
+  border-right-color: transparent;
+}
+
+
+/* ==========================================================================
+   6. MOBILE
+   Below 860px the sidebar is an off-canvas drawer: position:fixed,
+   flush to the left edge of the viewport, sliding in from -100%.
+
+   The floating-card treatment is wrong there for two concrete reasons:
+     * the left half of the outer shadow renders off-screen, so the
+       effect is half-missing rather than subtle;
+     * rounded left corners against the screen edge read as a
+       rendering glitch, not as a design.
+
+   There is also no hover on touch, so the pressed-in idle state never
+   fires -- on a phone the skins differ by surface colour and active
+   pill alone. Nothing to fix, but worth stating rather than pretending
+   the effect carries over intact.
+   ========================================================================== */
+
+@media (max-width: 860px) {
+  [data-sidebar-skin="soft-dark"] .fms-sidebar,
+  [data-sidebar-skin="soft-light"] .fms-sidebar,
+  [data-sidebar-skin="soft-crimson"] .fms-sidebar {
+    border-radius: 0;
+    /* A single shadow cast to the RIGHT, over the content the drawer
+       is covering -- the only side where a shadow is visible at all. */
+    box-shadow: 6px 0 22px rgba(0, 0, 0, .32);
+  }
+
+  /* Roomier rows for thumbs. The desktop rule sets a minimum; this
+     raises it, since a phone has neither hover feedback nor a precise
+     pointer to compensate for a small target. */
+  .fms-nav-link,
+  .sidebar-group-toggle {
+    min-height: 48px;
+  }
+
+  /* Touch devices fire :hover on tap and then LEAVE it applied until
+     the next tap elsewhere, which would strand rows looking pressed-in
+     after navigating. Restricted to devices that actually hover. */
+  @media (hover: none) {
+    [data-sidebar-skin="soft-dark"] .fms-nav-link:not(.is-active):hover,
+    [data-sidebar-skin="soft-light"] .fms-nav-link:not(.is-active):hover,
+    [data-sidebar-skin="soft-crimson"] .fms-nav-link:not(.is-active):hover {
+      background: transparent;
+      box-shadow: none;
+      color: var(--skin-text);
+    }
+  }
+}
+
+
+/* ==========================================================================
+   7. REDUCED MOTION
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-sidebar-skin] .fms-nav-link,
+  [data-sidebar-skin] .fms-sidebar__mark {
+    transition: none !important;
+  }
+  [data-sidebar-skin] .fms-nav-link:active,
+  [data-sidebar-skin] .fms-sidebar__brand:active .fms-sidebar__mark {
+    transform: none !important;
+  }
+}
+
+
+/* ==========================================================================
+   8. THE PICKER ITSELF
+   Rendered twice (desktop dropdown, mobile bottom sheet) from one
+   partial, so these rules cover both via the --grid / --rows modifier.
+   ========================================================================== */
+
+.fms-skin-menu { min-width: 330px; border-radius: 14px; }
+.fms-skin-menu__title {
+  font-family: var(--font-head); font-weight: 700; font-size: .84rem;
+}
+.fms-skin-menu__sub {
+  font-size: .72rem; color: var(--n-500); margin: 2px 0 12px;
+}
+
+.skin-picker--grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.skin-picker--rows { display: flex; flex-direction: column; gap: 9px; }
+
+.skin-swatch {
+  position: relative;
+  background: var(--n-0);
+  border: 2px solid var(--n-200);
+  border-radius: 11px;
+  padding: 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.skin-swatch:hover { border-color: var(--od-teal-400); }
+.skin-swatch.is-selected {
+  border-color: var(--od-teal);
+  box-shadow: 0 0 0 3px rgba(45, 139, 139, .16);
+}
+
+/* Rows layout: mini on the left, text beside it, tick on the right. */
+.skin-picker--rows .skin-swatch {
+  display: flex; align-items: center; gap: 12px;
+  text-align: left; padding: 10px; border-radius: 13px;
+  min-height: 60px;              /* comfortably over the 44px minimum */
+}
+.skin-picker--rows .skin-swatch.is-selected { background: #f2f9f9; }
+
+/* The miniature sidebar. data-sidebar-skin on this element makes it
+   inherit that skin's own custom properties, so the swatch is driven
+   by the same tokens as the real thing. */
+.skin-swatch__mini {
+  display: flex; flex-direction: column; gap: 4px;
+  height: 66px; border-radius: 8px; padding: 7px; overflow: hidden;
+  background: var(--skin-surface, var(--od-navy));
+}
+.skin-picker--rows .skin-swatch__mini {
+  width: 66px; height: 44px; flex: 0 0 auto; gap: 3px;
+}
+.skin-swatch__row {
+  height: 11px; border-radius: 4px;
+  background: var(--skin-shadow-light, #33465f);
+  opacity: .55;
+}
+.skin-picker--rows .skin-swatch__row { height: 8px; }
+.skin-swatch__row.is-on {
+  opacity: 1;
+  background: linear-gradient(145deg, var(--skin-accent, var(--od-teal)),
+                              var(--skin-accent-deep, var(--od-teal-700)));
+}
+/* Classic has no --skin-* tokens (it IS the untouched theme), so the
+   fallbacks above render its swatch from the base palette. */
+
+.skin-swatch__text { display: block; }
+.skin-picker--grid .skin-swatch__text { margin-top: 7px; }
+.skin-swatch__label {
+  display: block; font-size: .72rem; font-weight: 600; color: var(--n-800);
+}
+.skin-picker--rows .skin-swatch__label { font-size: .84rem; }
+.skin-swatch__desc { display: none; font-size: .68rem; color: var(--n-500); }
+.skin-picker--rows .skin-swatch__desc { display: block; margin-top: 1px; }
+
+.skin-swatch__tick {
+  position: absolute; top: -7px; right: -7px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--od-teal); color: #fff;
+  display: none; place-items: center; font-size: .68rem;
+}
+.skin-swatch.is-selected .skin-swatch__tick { display: grid; }
+.skin-picker--rows .skin-swatch__tick {
+  position: static; margin-left: auto; display: grid;
+  background: transparent; color: transparent;
+  border: 2px solid var(--n-300); width: 22px; height: 22px;
+}
+.skin-picker--rows .skin-swatch.is-selected .skin-swatch__tick {
+  background: var(--od-teal); border-color: var(--od-teal); color: #fff;
+}
+
+/* Bottom sheet.
+   Bootstrap 5.3 renders offcanvas-bottom as
+   `height: var(--bs-offcanvas-height)` with a 30vh default, plus its
+   own `max-height: 100%`. Overriding `height` directly is a
+   same-specificity cascade fight that this file lost in a real browser
+   -- measured at 253px on an 844px viewport, which showed only two of
+   the four options and buried the rest in a cramped internal scroll.
+   Setting the custom property instead means Bootstrap's own
+   declaration resolves to `auto`, so there is nothing to out-specify.
+   The doubled `.offcanvas` selector likewise ensures max-height wins.
+   Both are deliberate, not belt-and-braces: each one on its own was
+   verified insufficient. */
+.offcanvas.fms-skin-sheet {
+  --bs-offcanvas-height: auto;
+  height: auto;
+  /* Tall enough for every skin we currently offer without scrolling,
+     capped so the sheet can never swallow the whole screen if more
+     are added later. */
+  max-height: 82vh;
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -12px 34px rgba(15, 23, 32, .22);
+}
+.fms-skin-sheet .offcanvas-body { padding: 14px 16px 26px; }
+.fms-skin-sheet__grab {
+  width: 38px; height: 4px; border-radius: 3px;
+  background: var(--n-200); margin: 0 auto 13px;
+}
+
+[data-bs-theme="dark"] .skin-swatch,
+body.dark-mode .skin-swatch { background: #16212b; border-color: #223140; }
+[data-bs-theme="dark"] .skin-picker--rows .skin-swatch.is-selected,
+body.dark-mode .skin-picker--rows .skin-swatch.is-selected {
+  background: rgba(45, 139, 139, .14);
+}
+[data-bs-theme="dark"] .skin-swatch__label,
+body.dark-mode .skin-swatch__label { color: var(--od-cream); }

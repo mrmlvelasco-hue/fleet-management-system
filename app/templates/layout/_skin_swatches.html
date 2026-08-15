@@ -1,0 +1,39 @@
+{# ── Sidebar appearance swatches ──────────────────────────────────────
+   Included TWICE: once inside the desktop dropdown, once inside the
+   mobile bottom sheet. Kept as one partial so the two never drift
+   apart -- a skin added to the registry appears in both automatically.
+
+   `layout` is passed by the caller: "grid" (desktop, 2x2 swatches) or
+   "rows" (mobile, full-width rows with large tap targets).
+
+   Each button carries data-skin-code; app.js reads it, applies the skin
+   to <html> immediately, then persists it. aria-pressed marks the
+   current choice for screen readers and is what the tests assert on.
+#}
+<div class="skin-picker skin-picker--{{ layout | default('grid') }}">
+  {% for skin in sidebar_skins %}
+  <button type="button"
+          class="skin-swatch{{ ' is-selected' if skin.code == sidebar_skin }}"
+          data-skin-code="{{ skin.code }}"
+          aria-pressed="{{ 'true' if skin.code == sidebar_skin else 'false' }}"
+          title="{{ skin.label }} — {{ skin.description }}">
+    {# A miniature of the sidebar itself: surface, three idle rows and
+       one active row. Built from the same custom properties the real
+       skin uses, so a swatch can never show a colour the sidebar
+       doesn't actually have. #}
+    <span class="skin-swatch__mini" data-sidebar-skin="{{ skin.code }}">
+      <span class="skin-swatch__row"></span>
+      <span class="skin-swatch__row is-on"></span>
+      <span class="skin-swatch__row"></span>
+      <span class="skin-swatch__row"></span>
+    </span>
+    <span class="skin-swatch__text">
+      <span class="skin-swatch__label">{{ skin.label }}</span>
+      <span class="skin-swatch__desc">{{ skin.description }}</span>
+    </span>
+    <span class="skin-swatch__tick" aria-hidden="true">
+      <i class="bi bi-check-lg"></i>
+    </span>
+  </button>
+  {% endfor %}
+</div>

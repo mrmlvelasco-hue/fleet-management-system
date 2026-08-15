@@ -400,3 +400,35 @@ def dashboard_cost_trend_grouped():
     payload["branches"] = [{"id": b.id, "name": b.name}
                           for b in bq.order_by(Branch.name).all()]
     return jsonify(payload)
+
+
+# ── Personal appearance preferences ─────────────────────────────────
+
+@bp.route("/preferences/sidebar-skin", methods=["POST"])
+@login_required
+def set_sidebar_skin():
+    """Save this person's sidebar appearance.
+
+    Deliberately requires no permission beyond being signed in: a skin
+    changes nothing but the look of one's own chrome, and gating a
+    purely personal cosmetic choice behind an admin-granted permission
+    would mean most users could see the picker but never use it.
+
+    Returns JSON so the picker can apply the change without a reload.
+    """
+    from app.core.appearance.skin_service import (
+        SidebarSkinService, InvalidSkinError)
+
+    payload = request.get_json(silent=True) or {}
+    code = payload.get("skin")
+    # An empty string from a form-style caller means "clear it", which
+    # is a legitimate action, not an invalid code.
+    if code == "":
+        code = None
+    try:
+        resolved = SidebarSkinService().set_for_user(current_user, code)
+    except InvalidSkinError:
+        # 400 with a message rather than letting a ValueError become a
+        # 500 -- this endpoint is reachable from any browser session.
+        return jsonify(error="That is not a sidebar appearance we offer."), 400
+    return jsonify(skin=resolved)

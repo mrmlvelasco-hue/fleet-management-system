@@ -7,6 +7,33 @@
     <button class="fms-iconbtn" id="darkModeToggle" type="button" title="Toggle dark mode">
       <i class="bi bi-moon"></i>
     </button>
+
+    {# ── Sidebar appearance ──────────────────────────────────────────
+       Two presentations of the same partial. A dropdown is fine with a
+       mouse but awkward with a thumb near the top of a phone screen,
+       so on mobile the same swatches open as a bottom sheet, within
+       easy reach and with full-width tap targets. #}
+    <div class="dropdown d-none d-md-block">
+      <button class="fms-iconbtn" type="button" id="skinPicker"
+              data-bs-toggle="dropdown" data-bs-auto-close="outside"
+              aria-expanded="false" title="Sidebar appearance">
+        <i class="bi bi-palette"></i>
+      </button>
+      <div class="dropdown-menu dropdown-menu-end p-3 fms-skin-menu"
+           aria-labelledby="skinPicker">
+        <h6 class="fms-skin-menu__title mb-0">Sidebar appearance</h6>
+        <p class="fms-skin-menu__sub">Applies to your account only.</p>
+        {% with layout = 'grid' %}
+          {% include "layout/_skin_swatches.html" %}
+        {% endwith %}
+      </div>
+    </div>
+
+    <button class="fms-iconbtn d-md-none" type="button"
+            data-bs-toggle="offcanvas" data-bs-target="#skinSheet"
+            aria-controls="skinSheet" title="Sidebar appearance">
+      <i class="bi bi-palette"></i>
+    </button>
     <button class="fms-iconbtn position-relative" type="button"
             id="notifBell" title="Notifications" data-bs-toggle="dropdown">
       <i class="bi bi-bell"></i>

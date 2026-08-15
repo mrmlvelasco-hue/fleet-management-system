@@ -107,6 +107,33 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.cli import register_cli
     register_cli(app)
 
+    @app.context_processor
+    def inject_sidebar_skin():
+        """Resolve the sidebar appearance once per request and hand it
+        to every template.
+
+        Done server-side on purpose. If the skin were applied by JS
+        after the page painted, every single page load would briefly
+        show the default sidebar and then repaint -- a visible flicker
+        on each navigation. Rendering the attribute into the markup
+        means the correct sidebar is there in the very first paint.
+
+        Never raises: the login page and the error pages render this
+        same shell with no authenticated user.
+        """
+        from flask_login import current_user as _cu
+        from app.core.appearance.skin_service import (
+            SidebarSkinService, DEFAULT_SKIN)
+        svc = SidebarSkinService()
+        try:
+            user = _cu if getattr(_cu, "is_authenticated", False) else None
+            return {"sidebar_skin": svc.resolve(user),
+                    "sidebar_skins": svc.list_skins()}
+        except Exception:
+            app.logger.exception("Sidebar skin resolution failed")
+            return {"sidebar_skin": DEFAULT_SKIN,
+                    "sidebar_skins": svc.list_skins()}
+
     from flask import (render_template, request, jsonify, redirect,
                        url_for, flash)
     import uuid, logging

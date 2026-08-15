@@ -78,6 +78,15 @@ class User(db.Model, BaseModel, UserMixin):
     # ships — the clock starts the next time each of them changes their
     # password.
     password_changed_at = db.Column(db.DateTime, nullable=True)
+    # Which sidebar appearance this person chose for themselves.
+    # NULL means "no personal choice", which resolves to the
+    # company-wide SIDEBAR_SKIN_DEFAULT parameter -- deliberately not
+    # the same as storing "classic", because a user who has simply
+    # never expressed a preference should follow the house style if
+    # the client later changes it, whereas someone who explicitly
+    # picked Classic should stay on Classic. See
+    # app/core/appearance/skin_service.py.
+    sidebar_skin = db.Column(db.String(30), nullable=True)
     roles = db.relationship("Role", secondary=user_roles, backref="users")
     branch = db.relationship("Branch", foreign_keys=[branch_id])
     department = db.relationship("Department")
