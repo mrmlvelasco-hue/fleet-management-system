@@ -162,6 +162,29 @@
     });
   });
 
+  // Row action menus inside scrollable tables.
+  //
+  // `.table-responsive` puts overflow on the wrapper so a wide table
+  // scrolls sideways instead of widening the page. An overflow container
+  // clips its children, though, so the three-dot row menu gets cut off
+  // at the table's edge -- and on a list with one or two rows the
+  // wrapper is barely taller than a row, so everything below the first
+  // menu item disappears. That is why a single-result list appeared to
+  // offer only "View Details": Edit was rendered, just clipped.
+  //
+  // Lifting the overflow only WHILE a menu is open keeps horizontal
+  // scrolling intact the rest of the time. Bootstrap fires these events
+  // on the toggle, and they bubble, so one pair of listeners on the
+  // document covers every table in the app -- including any added later.
+  document.addEventListener("show.bs.dropdown", function (e) {
+    var wrap = e.target.closest(".table-responsive");
+    if (wrap) wrap.classList.add("has-open-dropdown");
+  });
+  document.addEventListener("hide.bs.dropdown", function (e) {
+    var wrap = e.target.closest(".table-responsive");
+    if (wrap) wrap.classList.remove("has-open-dropdown");
+  });
+
   // Auto-init DataTables and Select2 when jQuery is present
   if (window.jQuery) {
     jQuery(function ($) {

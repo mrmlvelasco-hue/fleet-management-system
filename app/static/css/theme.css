@@ -475,3 +475,68 @@ body.dark-mode .fms-sidebar { background: #0b131b; border-right-color: #1b2836; 
 .fms-app > .flex-grow-1 {
   min-width: 0;
 }
+
+/* --------------------------------------------------------------------------
+   16. Page header action alignment
+   --------------------------------------------------------------------------
+   Page headers are `d-flex justify-content-between` with the title first
+   and the actions after. That works with TWO children. The moment a
+   third appears -- which is what happens on every list that gained an
+   "Export to Excel" button -- space-between distributes the free space
+   BETWEEN all three, so the middle group (New <thing> / More Actions)
+   drifts into the centre of the page while Export sits far right. It
+   reads as a broken layout, and it affects roughly twenty list screens.
+
+   Giving the element straight after the title `margin-left: auto`
+   consumes all the free space at that point, so every action after it
+   packs together on the right. Auto margins are resolved before
+   justify-content, so this wins without having to restructure twenty
+   templates.
+
+   A no-op on headers that already have exactly two children.
+   -------------------------------------------------------------------------- */
+.d-flex.justify-content-between > h1 + *,
+.d-flex.justify-content-between > .h3 + * {
+  margin-left: auto;
+}
+
+/* --------------------------------------------------------------------------
+   17. Row action dropdowns inside scrollable tables
+   --------------------------------------------------------------------------
+   `.table-responsive` sets overflow on the wrapper, which is what lets a
+   wide table scroll sideways instead of stretching the page. But an
+   overflow container CLIPS its children, so the three-dot row menu is
+   cut off at the edge of the table -- and when the table has only one or
+   two rows the wrapper is barely taller than a single row, so the menu
+   loses everything below the first item. That is why a one-result list
+   showed "View Details" and nothing else: Edit was rendered, just
+   clipped out of view.
+
+   Handled in JS rather than CSS (see app.js) by lifting the overflow
+   while a menu is open -- `:has()` would work in current browsers but
+   silently does nothing in older ones, and this must not depend on that.
+   The class below is what the JS toggles.
+   -------------------------------------------------------------------------- */
+.table-responsive.has-open-dropdown {
+  overflow: visible;
+}
+
+/* The other half of the same problem, and the more damaging one.
+   theme-enterprise.css carries `.table { border-radius: 14px;
+   overflow: hidden; }` -- the overflow is there PURELY so the radius
+   clips the corner cells, but it also clips every row action menu in
+   the application, on every table, whether or not the table scrolls.
+   On a one-row list the table is barely taller than the row, so the
+   menu lost everything below its first item.
+
+   Rounding the corner CELLS instead achieves the same visual with no
+   clipping at all, so this is fixed at the source rather than worked
+   around per screen. `table.table` (element + class) outranks the
+   `.table` rule regardless of stylesheet order. */
+table.table {
+  overflow: visible;
+}
+table.table > thead > tr:first-child > th:first-child { border-top-left-radius: 14px; }
+table.table > thead > tr:first-child > th:last-child { border-top-right-radius: 14px; }
+table.table > tbody > tr:last-child > td:first-child { border-bottom-left-radius: 14px; }
+table.table > tbody > tr:last-child > td:last-child { border-bottom-right-radius: 14px; }

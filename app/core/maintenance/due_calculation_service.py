@@ -495,16 +495,25 @@ class PMDueCalculationService:
         prefetch = _Prefetch()
 
         results = []
-        # DISPOSED vehicles are still real, non-deleted records
-        # (is_active stays True — disposal is a business status, not a
-        # soft-delete) but no longer need maintenance at all.
+        # ACTIVE only.
+        #
+        # This excluded DISPOSED alone, which let INACTIVE and IN_REPAIR
+        # units through. Scheduling preventive maintenance on a vehicle
+        # that is already off the road produces an order nobody can act
+        # on -- and because a second open PM order for the same vehicle
+        # is refused, it can also block the real one later.
+        #
+        # is_active is a different axis (the soft-delete flag) and is
+        # still required: disposal is a business STATUS, not a delete,
+        # so neither check implies the other.
+        #
         # branch/vehicle_type are eager-loaded because the dashboard
         # template renders them per row.
         vehicles = (Vehicle.query
                    .options(joinedload(Vehicle.branch),
                            joinedload(Vehicle.vehicle_type))
                    .filter_by(is_active=True)
-                   .filter(Vehicle.status != "DISPOSED").all())
+                   .filter(Vehicle.status == "ACTIVE").all())
         for vehicle in vehicles:
             schedules = prefetch.applicable_schedules(vehicle)
             seen_types = set()

@@ -1161,8 +1161,9 @@ def maintenanceorder_complete(oid):
 @login_required
 @require_permission("tiretxn.view")
 def tiretxn_list():
-    items = TireTransactionService().list(user=current_user)
-    return render_template("transactions/tiretxn_list.html", items=items)
+    return render_template(
+        "transactions/tiretxn_list.html",
+        **_txn_list_context(TireTransactionService()))
 
 
 @bp.route("/tire-transactions/new", methods=["GET", "POST"])
@@ -1279,8 +1280,9 @@ def tiretxn_print(tid):
 @login_required
 @require_permission("batterytxn.view")
 def batterytxn_list():
-    items = BatteryTransactionService().list(user=current_user)
-    return render_template("transactions/batterytxn_list.html", items=items)
+    return render_template(
+        "transactions/batterytxn_list.html",
+        **_txn_list_context(BatteryTransactionService()))
 
 
 @bp.route("/battery-transactions/new", methods=["GET", "POST"])
@@ -1397,8 +1399,9 @@ def batterytxn_print(bid):
 @login_required
 @require_permission("purchaserequest.view")
 def purchaserequest_list():
-    items = PurchaseRequestService().list(user=current_user)
-    return render_template("transactions/purchaserequest_list.html", items=items)
+    return render_template(
+        "transactions/purchaserequest_list.html",
+        **_txn_list_context(PurchaseRequestService()))
 
 
 @bp.route("/purchase-requests/new", methods=["GET", "POST"])
@@ -1537,9 +1540,9 @@ def purchaserequest_mark_received(pid):
 @login_required
 @require_permission("vehicleregistration.view")
 def vehicleregistration_list():
-    items = VehicleRegistrationService().list(user=current_user)
-    return render_template("transactions/vehicleregistration_list.html",
-                           items=items)
+    return render_template(
+        "transactions/vehicleregistration_list.html",
+        **_txn_list_context(VehicleRegistrationService()))
 
 
 @bp.route("/vehicle-registrations/new", methods=["GET", "POST"])

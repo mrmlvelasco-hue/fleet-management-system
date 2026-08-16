@@ -217,10 +217,18 @@ class RegistrationDueCalculationService:
                     ["COMPLETED", "CANCELLED"])).all()}
 
         results = []
-        # Same DISPOSED exclusion as Maintenance PMS — a disposed vehicle
-        # has no LTO registration to renew.
+        # ACTIVE only.
+        #
+        # This previously excluded DISPOSED alone, which let INACTIVE and
+        # IN_REPAIR units through. Sending someone to the LTO to renew a
+        # vehicle that is off the road produces work nobody can act on
+        # and inflates the due counts the dashboard is judged by.
+        #
+        # is_active is a separate axis -- the soft-delete flag -- and is
+        # still required: a deleted record stays out whatever its
+        # business status says.
         query = Vehicle.query.filter_by(is_active=True).filter(
-            Vehicle.status != "DISPOSED")
+            Vehicle.status == "ACTIVE")
         for vehicle in query.all():
             if vehicle.id in open_vehicle_ids:
                 continue  # renewal already raised — not actionable again

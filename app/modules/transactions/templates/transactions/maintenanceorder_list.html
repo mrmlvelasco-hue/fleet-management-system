@@ -28,6 +28,11 @@
 {# fms-datatable deliberately dropped: with one page in the DOM its
    client-side search would only match the visible page, contradicting
    the server-side filter bar above. #}
+{# .table-responsive so the table scrolls SIDEWAYS rather than widening
+   the page -- this list forced a ~1017px layout viewport on a 390px
+   phone, which renders the whole document zoomed out. Row menus still
+   escape the container; see .has-open-dropdown in theme.css. #}
+<div class="table-responsive">
 <table class="table table-striped">
   <thead><tr>
     <th>Doc No.</th><th>Vehicle</th><th>Type</th><th>Classification</th><th>Category</th>
@@ -72,6 +77,7 @@
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% include "transactions/_pager.html" %}
 </div></div>
 {% endblock %}
