@@ -42,6 +42,9 @@ class VehicleRegistrationService(BaseTransactionService):
     model = VehicleRegistration
     document_type_code = "VR"
     reference_table = "vehicle_registrations"
+    date_fields = (("registration_date", "Registration Date"),
+                   ("expiry_date", "Expiry Date"),
+                   ("created_at", "Created Date"))
 
     def get_finance_params(self) -> dict:
         """VAT rate and % assured value for registration computations.

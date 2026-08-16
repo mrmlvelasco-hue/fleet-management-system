@@ -9,11 +9,26 @@
     <i class="bi bi-plus-lg me-1"></i>New Movement</a>
   {% endif %}
 </div>
+{% with search_label = "Doc no., plate or conduction",
+        show_status = true, show_branch = true, show_date = true,
+        date_label = "From" %}
+  {% include "transactions/_filter_bar.html" %}
+{% endwith %}
+
 <div class="card"><div class="card-body">
-<table class="table table-striped fms-datatable">
+{# .table-responsive: without it a nine-column table widens the
+   whole page on a phone -- the browser then lays the document
+   out at ~929px instead of 390px and everything renders zoomed
+   out. Scrolling the TABLE is correct; scrolling the page is not. #}
+<div class="table-responsive">
+{# fms-datatable deliberately dropped: the list is paginated
+   server-side now, and DataTables' own search box would only
+   ever match the rows already on the current page -- quietly
+   worse than no search, because it looks like it searches all. #}
+<table class="table table-striped">
   <thead><tr>
     <th>Doc No.</th><th>Vehicle</th><th>Type</th><th>From</th><th>To</th>
-    <th>Date</th><th>Status</th><th>Requested By</th><th></th>
+    <th>Date</th><th>Status</th><th>Requested By</th><th>Created</th><th></th>
   </tr></thead>
   <tbody>
   {% for m in items %}
@@ -26,6 +41,8 @@
       <td>{{ m.movement_date }}</td>
       <td><span class="badge text-bg-{{ 'success' if m.status=='COMPLETED' else 'info' if m.status=='IN_TRANSIT' else 'danger' if m.status=='CANCELLED' else 'secondary' }}">{{ m.status }}</span></td>
       <td>{{ m.requester.full_name if m.requester else '—' }}</td>
+      <td class="text-nowrap small text-muted">
+        {{ m.created_at.strftime('%Y-%m-%d') if m.created_at else '—' }}</td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.vehiclemovement_detail', mid=m.id) }}">
           <i class="bi bi-eye"></i></a>
@@ -34,5 +51,7 @@
   {% endfor %}
   </tbody>
 </table>
+</div>
+{% include "transactions/_pager.html" %}
 </div></div>
 {% endblock %}

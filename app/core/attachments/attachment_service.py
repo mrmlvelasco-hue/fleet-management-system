@@ -51,7 +51,7 @@ class AttachmentService:
             self._max_bytes = DEFAULT_MAX_MB * 1024 * 1024
 
     def upload(self, file, reference_table: str, reference_id: int,
-               user=None) -> Attachment:
+               user=None, document_type=None) -> Attachment:
         """Save a file and create an Attachment row. Raises AttachmentError.
 
         The file's bytes are stored directly in the `file_data` column of
@@ -71,6 +71,15 @@ class AttachmentService:
         """
         if not file or not file.filename:
             raise AttachmentError("No file provided.")
+        # Validated against Lookup Maintenance rather than trusted: the
+        # value arrives from a form field, so anything can be posted.
+        # An empty selection is legitimate (the type is optional) and is
+        # normalised to None rather than stored as "".
+        document_type = (document_type or "").strip() or None
+        if document_type is not None \
+                and not self.is_valid_document_type(document_type):
+            raise AttachmentError(
+                "That is not a document type this system recognises.")
         if not _allowed(file.filename, self._allowed):
             raise AttachmentError(
                 f"File type not allowed. Permitted: "
@@ -101,10 +110,23 @@ class AttachmentService:
             file_size=len(content),
             mime_type=file.content_type,
             file_data=content,
+            document_type=document_type,
             uploaded_by=user.id if user else None)
         db.session.add(att)
         db.session.commit()
         return att
+
+    DOCUMENT_TYPE_LOOKUP = "ATTACHMENT_DOC_TYPE"
+
+    def document_types(self):
+        """The document types on offer, from Lookup Maintenance."""
+        from app.modules.system_admin.services.lookup_service import (
+            LookupService)
+        return LookupService().get_by_type_with_fallback(
+            self.DOCUMENT_TYPE_LOOKUP)
+
+    def is_valid_document_type(self, code) -> bool:
+        return any(row.code == code for row in self.document_types())
 
     def list_for(self, reference_table: str,
                  reference_id: int) -> list:

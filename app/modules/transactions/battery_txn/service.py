@@ -21,6 +21,8 @@ class BatteryTransactionService(BaseTransactionService):
     model = BatteryTransaction
     document_type_code = "BAT"
     reference_table = "battery_transactions"
+    date_fields = (("transaction_date", "Transaction Date"),
+                   ("created_at", "Created Date"))
 
     def _document_requires_approval(self) -> bool:
         from app.modules.document_config.repository import DocumentTypeRepository

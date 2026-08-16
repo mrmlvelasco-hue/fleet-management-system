@@ -41,3 +41,15 @@ class Attachment(db.Model, BaseModel):
     # lost or needs to be re-uploaded.
     file_data = db.Column(
         db.LargeBinary().with_variant(LONGBLOB, "mysql"), nullable=True)
+    # What KIND of document this is -- OR, CR, insurance policy, and so
+    # on. A Lookup code (ATTACHMENT_DOC_TYPE), not an enum, so the
+    # client can add types through Lookup Maintenance without a code
+    # release, per "no values shall be hardcoded".
+    #
+    # Nullable on purpose, and deliberately not backfilled: every
+    # attachment uploaded before this column existed has no type and
+    # must keep working exactly as it did. Untyped files still appear
+    # in reports, just under a general heading rather than a labelled
+    # one -- they are not hidden for lacking a classification nobody
+    # was ever asked to supply.
+    document_type = db.Column(db.String(80), nullable=True, index=True)

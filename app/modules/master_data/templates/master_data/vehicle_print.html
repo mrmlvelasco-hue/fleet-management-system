@@ -40,6 +40,157 @@
       h6.section { page-break-after: avoid; break-after: avoid; }
       table.info, table.grid, .gallery-item { page-break-inside: avoid; break-inside: avoid; }
     }
+      @page {
+  size: A4 portrait;
+  margin: 12mm 15mm;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  margin: 0 auto;
+  max-width: 900px;
+  color: #1f2937;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Action Bar Styling */
+.no-print {
+  text-align: right;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+
+.no-print button {
+  background-color: #0d6efd;
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* Typography & Headers */
+.letterhead { text-align: center; border-bottom: 2px solid #1f2937; padding-bottom: 8px; margin-bottom: 16px; }
+.letterhead h1 { font-size: 16px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 0.03em; }
+.doc-title { text-align: center; font-size: 14px; font-weight: 700; margin: 12px 0; letter-spacing: 0.05em; }
+
+h6.section {
+  text-transform: uppercase;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #4b5563;
+  border-bottom: 1.5px solid #d1d5db;
+  padding-bottom: 3px;
+  margin: 16px 0 8px;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+
+/* Refined Data Tables */
+table.info, table.grid {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+
+table.info td, table.grid th, table.grid td {
+  padding: 5px 8px;
+  border: 1px solid #d1d5db;
+  vertical-align: middle;
+}
+
+table.info td.label {
+  font-weight: 600;
+  width: 20%;
+  background: #f8fafc;
+  color: #374151;
+}
+
+table.grid th {
+  background: #f1f5f9;
+  font-weight: 600;
+  color: #374151;
+  text-align: left;
+}
+
+/* Alignment Helper Classes */
+.text-end { text-align: right !important; }
+.text-center { text-align: center !important; }
+
+/* Status Badge Enhancements */
+.status-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #fff;
+}
+.status-ACTIVE, .status-COMPLETED { background: #15803d; }
+.status-IN_PROGRESS { background: #1d4ed8; }
+.status-INACTIVE, .status-CANCELLED { background: #6b7280; }
+.status-PENDING_APPROVAL, .status-DRAFT { background: #c2410c; }
+
+/* ── Attachment lightbox ───────────────────────────────────────────
+   The OR and CR are attached here as scans, and they are frequently
+   needed on their own -- an LTO transaction wants the CR, not a
+   fourteen-page vehicle profile with the CR somewhere inside it.
+   Clicking an attachment opens it full size with its own Print and
+   Save-as-PDF, and printing from there emits ONLY that document. */
+.lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, .88);
+  z-index: 9999;
+  padding: 24px;
+  overflow: auto;
+  text-align: center;
+}
+.lightbox.is-open { display: block; }
+.lightbox__bar {
+  display: flex; gap: 8px; justify-content: center; align-items: center;
+  margin-bottom: 14px; flex-wrap: wrap;
+}
+.lightbox__bar button, .lightbox__bar a {
+  background: #0d6efd; color: #fff; border: 0; padding: 8px 16px;
+  border-radius: 4px; font-weight: 500; cursor: pointer;
+  font-size: 13px; text-decoration: none; display: inline-block;
+}
+.lightbox__bar .secondary { background: #4b5563; }
+.lightbox__name {
+  color: #e5e7eb; font-size: 12px; width: 100%; margin-bottom: 4px;
+  word-break: break-word;
+}
+.lightbox__img {
+  max-width: 100%; background: #fff; padding: 8px; border-radius: 4px;
+}
+.gallery-item img, .gallery-item .file-icon { cursor: zoom-in; }
+
+@media print {
+  /* Printing while the lightbox is open must produce the SCAN ALONE.
+     Without this the browser would print the whole profile underneath
+     it, which is exactly the thing that makes people photocopy the
+     original instead. */
+  body.printing-attachment > *:not(.lightbox) { display: none !important; }
+  body.printing-attachment .lightbox {
+    display: block !important; position: static; background: none;
+    padding: 0; overflow: visible;
+  }
+  body.printing-attachment .lightbox__bar { display: none !important; }
+  body.printing-attachment .lightbox__img {
+    max-width: 100%; max-height: 100vh; padding: 0;
+  }
+  @page { size: auto; }
+}
   </style>
 </head>
 <body>
@@ -57,8 +208,12 @@
   <table class="info">
     <tr><td class="label">Plate / Conduction No.</td><td>{{ item.plate_number or item.conduction_number }}</td>
         <td class="label">Make / Model</td><td>{{ item.brand }} {{ item.model }} {{ item.variant or '' }} ({{ item.year }})</td></tr>
-    <tr><td class="label">Branch</td><td>{{ item.branch.name if item.branch else '—' }}</td>
-        <td class="label">Status</td><td>{{ item.status }}</td></tr>
+    <tr>
+  <td class="label">Branch</td>
+  <td>{{ item.branch.name if item.branch else '—' }}</td>
+  <td class="label">Status</td>
+  <td><span class="status-pill status-{{ item.status }}">{{ item.status }}</span></td>
+</tr>
     <tr><td class="label">Assigned Driver</td>
         <td colspan="3">{{ item.assigned_driver.full_name if item.assigned_driver else '—' }}</td></tr>
     <tr><td class="label">Fuel Type</td><td>{{ item.fuel_type or '—' }}</td>
@@ -78,15 +233,49 @@
     <tr><td class="label">Chassis Number</td><td colspan="3">{{ item.chassis_number or '—' }}</td></tr>
   </table>
 
-  <h6 class="section">Attached Files & Documents ({{ attachments|length }})</h6>
+  {# Attachments grouped by document type so the OR and CR are findable
+     under their own headings instead of buried in one gallery labelled
+     only by filename. Untyped files (everything uploaded before the
+     type existed) fall into a general group at the end rather than
+     being hidden. #}
+  {% set doc_type_labels = attachment_doc_types | default({}) %}
+  {% set ns = namespace(groups=[]) %}
+  {% set typed = attachments | selectattr('document_type') | list %}
+  {% set untyped = attachments | rejectattr('document_type') | list %}
+  {% for code in typed | map(attribute='document_type') | unique | list %}
+    {% set _ = ns.groups.append({
+         'label': doc_type_labels.get(code, code),
+         'files': typed | selectattr('document_type', 'equalto', code) | list }) %}
+  {% endfor %}
+  {% if untyped %}
+    {# NB: key is 'files', not 'items' -- group.items would resolve to
+     the dict's own .items METHOD in Jinja, not to this value. #}
+    {% set _ = ns.groups.append({'label': 'Other Attachments',
+                                 'files': untyped}) %}
+  {% endif %}
+
+  <h6 class="section">Attached Files &amp; Documents ({{ attachments|length }})</h6>
   {% if attachments %}
+  {% for group in ns.groups %}
+  <div style="font-weight:600; font-size:11px; color:#374151; margin:10px 0 4px;">
+    {{ group.label }} ({{ group.files|length }})</div>
   <div class="gallery">
-    {% for att in attachments %}
+    {% for att in group.files %}
     <div class="gallery-item">
       {% if (att.mime_type or "").startswith("image/") %}
-      <img src="{{ url_for('master_data.attachment_view', att_id=att.id) }}" alt="{{ att.original_filename }}">
+      {# Click to open full size with its own Print / Save-as-PDF. #}
+      <img src="{{ url_for('master_data.attachment_view', att_id=att.id) }}"
+           alt="{{ att.original_filename }}"
+           data-full="{{ url_for('master_data.attachment_view', att_id=att.id) }}"
+           data-name="{{ att.original_filename }}"
+           onclick="openAttachment(this)">
       {% else %}
-      <div class="file-icon">📄</div>
+      {# Not an image (PDF, docx...) -- the browser's own viewer already
+         prints these properly, so it opens in a new tab rather than in
+         a lightbox that could only show an icon. #}
+      <a class="file-icon" style="text-decoration:none;"
+         href="{{ url_for('master_data.attachment_view', att_id=att.id) }}"
+         target="_blank">📄</a>
       {% endif %}
       <div class="file-name">{{ att.original_filename }}</div>
       <a class="view-btn" href="{{ url_for('master_data.attachment_view', att_id=att.id) }}" target="_blank">
@@ -94,6 +283,7 @@
     </div>
     {% endfor %}
   </div>
+  {% endfor %}
   {% else %}
   <p style="color:#888;">No files attached for this vehicle.</p>
   {% endif %}
@@ -131,5 +321,47 @@
   <div class="footer-note">
     Generated {{ generated_at.strftime('%B %d, %Y %I:%M %p') }} — Fleet Management System
   </div>
+
+  <!-- Full-size attachment viewer. Built into this page rather than a
+       separate route so it works from the printed profile with no extra
+       navigation, and so Save-as-PDF uses the same browser print dialog
+       people already use for the profile itself. -->
+  <div class="lightbox" id="attachmentLightbox" onclick="closeAttachment(event)">
+    <div class="lightbox__bar">
+      <span class="lightbox__name" id="lightboxName"></span>
+      <button onclick="printAttachment(event)">Print / Save as PDF</button>
+      <a class="secondary" id="lightboxOpen" href="#" target="_blank">Open in new tab</a>
+      <button class="secondary" onclick="closeAttachment(event)">Close</button>
+    </div>
+    <img class="lightbox__img" id="lightboxImg" alt="">
+  </div>
+
+  <script>
+    function openAttachment(el) {
+      document.getElementById('lightboxImg').src = el.dataset.full;
+      document.getElementById('lightboxName').textContent = el.dataset.name;
+      document.getElementById('lightboxOpen').href = el.dataset.full;
+      document.getElementById('attachmentLightbox').classList.add('is-open');
+    }
+    function closeAttachment(e) {
+      // Clicking the image itself must NOT close the viewer -- only the
+      // backdrop or an explicit Close.
+      if (e && e.target && e.target.id === 'lightboxImg') return;
+      document.getElementById('attachmentLightbox').classList.remove('is-open');
+    }
+    function printAttachment(e) {
+      e.stopPropagation();
+      // The flag is what the print stylesheet keys off to suppress the
+      // rest of the profile; it is removed again afterwards so the
+      // normal "Print / Save as PDF" at the top still prints the whole
+      // document.
+      document.body.classList.add('printing-attachment');
+      window.print();
+      document.body.classList.remove('printing-attachment');
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeAttachment();
+    });
+  </script>
 </body>
 </html>

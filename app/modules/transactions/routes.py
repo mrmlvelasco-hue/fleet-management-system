@@ -117,8 +117,9 @@ def _print_report_context(item):
 @login_required
 @require_permission("tripticket.view")
 def tripticket_list():
-    items = TripTicketService().list(user=current_user)
-    return render_template("transactions/tripticket_list.html", items=items)
+    return render_template(
+        "transactions/tripticket_list.html",
+        **_txn_list_context(TripTicketService()))
 
 
 @bp.route("/trip-tickets/new", methods=["GET", "POST"])
@@ -262,8 +263,9 @@ def tripticket_complete(tid):
 @login_required
 @require_permission("atd.view")
 def atd_list():
-    items = ATDService().list(user=current_user)
-    return render_template("transactions/atd_list.html", items=items)
+    return render_template(
+        "transactions/atd_list.html",
+        **_txn_list_context(ATDService()))
 
 
 @bp.route("/atd/new", methods=["GET", "POST"])
@@ -428,8 +430,9 @@ def atd_activate(aid):
 @login_required
 @require_permission("vehiclemovement.view")
 def vehiclemovement_list():
-    items = VehicleMovementService().list(user=current_user)
-    return render_template("transactions/vehiclemovement_list.html", items=items)
+    return render_template(
+        "transactions/vehiclemovement_list.html",
+        **_txn_list_context(VehicleMovementService()))
 
 
 @bp.route("/vehicle-movements/new", methods=["GET", "POST"])
@@ -2259,6 +2262,10 @@ def _txn_filters_from_request():
         "branch_id": request.args.get("branch_id") or None,
         "date_from": _date("date_from"),
         "date_to": _date("date_to"),
+        # Which date column the range applies to. Validated by the
+        # service against its own declared columns, so an unrecognised
+        # value from a stale bookmark falls back rather than raising.
+        "date_field": request.args.get("date_field") or None,
     }
     f["has_any"] = any(v for k, v in f.items() if k != "has_any")
     return f
@@ -2278,10 +2285,17 @@ def _txn_list_context(service, *, extra_filters=None):
         search=filters["q"], status=filters["status"],
         branch_id=filters["branch_id"],
         date_from=filters["date_from"], date_to=filters["date_to"],
+        date_field=filters["date_field"],
         extra_filters=extra_filters)
+    # Echo back the field the service actually USED, not what was asked
+    # for -- otherwise a bad value in the URL would leave the dropdown
+    # showing a column the results were never filtered on.
+    filters["date_field"] = service._resolve_date_field(
+        filters["date_field"])
     return {
         "items": rows, "rows": rows, "pagination": pagination,
         "filters": filters,
+        "date_field_choices": service.date_field_choices(),
         "status_choices": service.status_choices(),
         "branch_choices": Branch.query.filter_by(is_active=True)
                          .order_by(Branch.name).all(),

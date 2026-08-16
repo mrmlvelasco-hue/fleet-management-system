@@ -55,6 +55,48 @@ class VehicleActivityHistoryService:
                 "cost": mo.actual_cost, "odometer": mo.odometer_at_service,
             })
 
+        # Purchase Requests raised off this vehicle's orders.
+        #
+        # Reached by walking the ORDER, because the link lives there
+        # (maintenance_orders.purchase_request_id) -- PurchaseRequest
+        # itself has no vehicle_id at all. That covers every PR the
+        # auto-generation produces, which is the case that matters. A PR
+        # raised standalone has no vehicle anywhere on it and cannot
+        # appear here until one is added.
+        #
+        # Deliberately NOT filtered to COMPLETED orders, unlike every
+        # other row above. A PR is created the moment an order is
+        # approved, long before the work finishes; holding it back until
+        # completion would hide committed money for exactly as long as
+        # the job takes, which is precisely when someone is asking where
+        # the parts have got to.
+        seen_pr_ids = set()
+        for mo in (MaintenanceOrder.query
+                  .filter(MaintenanceOrder.vehicle_id == vehicle.id,
+                          MaintenanceOrder.purchase_request_id.isnot(None))
+                  .all()):
+            pr = mo.purchase_request
+            if pr is None or pr.id in seen_pr_ids:
+                continue
+            seen_pr_ids.add(pr.id)
+            rows.append({
+                "date": (pr.created_at.date()
+                        if getattr(pr, "created_at", None) is not None
+                        else (mo.completed_date or mo.scheduled_date)),
+                "activity_type": "Purchase Request",
+                "outlet": vehicle.branch.name if vehicle.branch else "—",
+                "assigned_to": (pr.requester.full_name
+                               if getattr(pr, "requester", None) else None),
+                # Both numbers, so "what is this and why was it raised"
+                # is answerable straight off the timeline.
+                "description": (
+                    f"{pr.document_number or '(draft PR)'} — "
+                    f"{pr.description or 'Parts procurement'} "
+                    f"(from {mo.document_number or 'Maintenance Order'})"),
+                "cost": pr.amount,
+                "odometer": mo.odometer_at_service,
+            })
+
         from app.modules.transactions.tire_txn.models import TireTransaction
         for tx in (TireTransaction.query
                   .filter_by(vehicle_id=vehicle.id, status="COMPLETED",

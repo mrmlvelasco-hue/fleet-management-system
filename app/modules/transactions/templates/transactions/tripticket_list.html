@@ -9,11 +9,26 @@
     <i class="bi bi-plus-lg me-1"></i>New Trip Ticket</a>
   {% endif %}
 </div>
+{% with search_label = "Doc no., plate or conduction",
+        show_status = true, show_branch = true, show_date = true,
+        date_label = "From" %}
+  {% include "transactions/_filter_bar.html" %}
+{% endwith %}
+
 <div class="card"><div class="card-body">
-<table class="table table-striped fms-datatable">
+{# .table-responsive: without it a nine-column table widens the
+   whole page on a phone -- the browser then lays the document
+   out at ~929px instead of 390px and everything renders zoomed
+   out. Scrolling the TABLE is correct; scrolling the page is not. #}
+<div class="table-responsive">
+{# fms-datatable deliberately dropped: the list is paginated
+   server-side now, and DataTables' own search box would only
+   ever match the rows already on the current page -- quietly
+   worse than no search, because it looks like it searches all. #}
+<table class="table table-striped">
   <thead><tr>
     <th>Doc No.</th><th>Vehicle</th><th>Driver</th><th>Destination</th>
-    <th>Departure</th><th>Status</th><th>Approval</th><th>Requested By</th><th></th>
+    <th>Departure</th><th>Status</th><th>Approval</th><th>Requested By</th><th>Created</th><th></th>
   </tr></thead>
   <tbody>
   {% for t in items %}
@@ -26,6 +41,8 @@
       <td><span class="badge text-bg-{{ 'success' if t.status=='COMPLETED' else 'info' if t.status=='RELEASED' else 'danger' if t.status=='CANCELLED' else 'secondary' }}">{{ t.status }}</span></td>
       <td>{% if t.approval_instance %}<span class="badge text-bg-{{ 'success' if t.approval_instance.status=='APPROVED' else 'warning' if t.approval_instance.status=='PENDING' else 'danger' }}">{{ t.approval_instance.status }}</span>{% else %}—{% endif %}</td>
       <td>{{ t.requester.full_name if t.requester else '—' }}</td>
+      <td class="text-nowrap small text-muted">
+        {{ t.created_at.strftime('%Y-%m-%d') if t.created_at else '—' }}</td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info" href="{{ url_for('transactions.tripticket_detail', tid=t.id) }}">
           <i class="bi bi-eye"></i></a>
@@ -34,5 +51,7 @@
   {% endfor %}
   </tbody>
 </table>
+</div>
+{% include "transactions/_pager.html" %}
 </div></div>
 {% endblock %}

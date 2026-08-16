@@ -7,9 +7,25 @@ recipe: create a DRAFT record, submit it through the generic ApprovalEngine
 status (DRAFT/RELEASED/COMPLETED/etc.) in sync — the approval workflow
 status itself lives entirely on the ApprovalInstance.
 """
+from datetime import date as _date_cls, datetime as _datetime_cls
+
 from app.extensions import db
 from app.core.approval.engine import ApprovalEngine
 from sqlalchemy.orm import joinedload
+
+
+def _as_date(value):
+    """Coerce whatever arrived as the end of a range to a plain date.
+
+    The filter bar submits a string, tests pass a date, and a caller may
+    pass a datetime -- all three have to end up comparable so the
+    end-of-day arithmetic below behaves identically for each.
+    """
+    if isinstance(value, _datetime_cls):
+        return value.date()
+    if isinstance(value, _date_cls):
+        return value
+    return _datetime_cls.strptime(str(value)[:10], "%Y-%m-%d").date()
 
 
 class NotVisibleError(Exception):
@@ -296,24 +312,68 @@ class BaseTransactionService:
 
         return query.filter(or_(*clauses)) if clauses else query
 
-    # Which date column this module's list is filtered/sorted on. Each
-    # transaction type records its own natural date under a different
-    # name, so the standard filter asks the model rather than assuming.
+    # Which date columns this module's list can be filtered and sorted
+    # on. The FIRST entry is the default and must be the date the list
+    # template actually displays.
+    #
+    # Declared per module rather than guessed. This used to be an ordered
+    # candidate list walked with getattr, and for Trip Ticket, ATD and
+    # Vehicle Movement every candidate missed, so it fell through to
+    # `created_at` -- the filter ranged and sorted on when the row was
+    # typed while the column beside it showed the departure / valid-from
+    # / movement date. Nothing raised and nothing looked wrong; the
+    # numbers simply didn't tie out against a report. A wrong answer
+    # delivered confidently is worse than an error, so the guess is gone.
+    #
+    # `created_at` is offered everywhere: it is the one date every
+    # document has, and for the three modules that display no created
+    # date of their own it is the only way to ask "what was entered last
+    # week".
+    date_fields = (("created_at", "Created Date"),)
+
+    #: Legacy fallback, kept only for any service that hasn't declared
+    #: date_fields yet. New modules should declare instead.
     date_field_candidates = ("scheduled_date", "request_date",
                             "transaction_date", "registration_date",
                             "trip_date", "created_at")
 
-    def _date_column(self):
+    def date_field_choices(self):
+        """(code, label) pairs for the filter bar's date-column picker,
+        skipping anything the model doesn't actually have so a shared
+        declaration can't offer a column that would then be ignored."""
+        return [(code, label) for code, label in self.date_fields
+                if getattr(self.model, code, None) is not None]
+
+    def default_date_field(self):
+        choices = self.date_field_choices()
+        if choices:
+            return choices[0][0]
         for name in self.date_field_candidates:
-            col = getattr(self.model, name, None)
-            if col is not None:
-                return col
+            if getattr(self.model, name, None) is not None:
+                return name
         return None
+
+    def _resolve_date_field(self, requested):
+        """The column to filter on, given what the query string asked
+        for. An unrecognised value falls back to the default rather than
+        raising -- this arrives straight off a URL, so anyone can put
+        anything in it, and a stale bookmark shouldn't 500."""
+        valid = {code for code, _ in self.date_field_choices()}
+        if requested in valid:
+            return requested
+        return self.default_date_field()
+
+    def _date_column(self, field=None):
+        name = self._resolve_date_field(field) if field is not None \
+            else self.default_date_field()
+        if name is None:
+            return None
+        return getattr(self.model, name, None)
 
     def list_filtered(self, *, user=None, page=1, per_page=25,
                      search=None, status=None, branch_id=None,
-                     date_from=None, date_to=None, include_inactive=True,
-                     extra_filters=None):
+                     date_from=None, date_to=None, date_field=None,
+                     include_inactive=True, extra_filters=None):
         """One page of records matching the standard transaction filters.
 
         Deliberately built on _visible_query, the same base list() uses,
@@ -332,6 +392,10 @@ class BaseTransactionService:
         conduction number, because those are the two things people
         actually have in hand when looking for a transaction.
 
+        `date_field` picks WHICH date column the range applies to and
+        the results are sorted by; see date_fields. Unrecognised values
+        fall back to the module's default rather than raising.
+
         Returns (rows, pagination).
         """
         from sqlalchemy import or_
@@ -348,15 +412,28 @@ class BaseTransactionService:
             if branch_clause is not None:
                 query = query.filter(branch_clause)
 
-        date_col = self._date_column()
+        date_col = self._date_column(date_field)
         if date_col is not None:
             if date_from:
                 query = query.filter(date_col >= date_from)
             if date_to:
-                # Inclusive of the whole end day: someone filtering "to
-                # 31 Aug" means through the end of the 31st, not up to
-                # midnight at its start.
-                query = query.filter(date_col <= date_to)
+                # Inclusive of the whole end day.
+                #
+                # `col <= date_to` only achieves that for a plain DATE
+                # column. Against a DATETIME it compares to MIDNIGHT at
+                # the START of that day, so a trip departing 08:00 on
+                # the 31st was silently excluded from a range ending on
+                # the 31st. This stayed hidden because the only list
+                # converted so far (Maintenance Orders) filters on
+                # scheduled_date, which is a Date -- while every column
+                # the remaining eight lists use is a DateTime.
+                #
+                # `< date_to + 1 day` is correct for both types and
+                # avoids depending on a time component that a Date
+                # column doesn't have.
+                from datetime import timedelta
+                query = query.filter(
+                    date_col < _as_date(date_to) + timedelta(days=1))
 
         if search:
             needle = f"%{str(search).strip()}%"

@@ -82,6 +82,9 @@ class MaintenanceOrderService(BaseTransactionService):
     model = MaintenanceOrder
     document_type_code = "MO"
     reference_table = "maintenance_orders"
+    date_fields = (("scheduled_date", "Scheduled Date"),
+                   ("completed_date", "Completed Date"),
+                   ("created_at", "Created Date"))
     # Matches exactly what maintenanceorder_list.html accesses per row
     # (o.vehicle, o.maintenance_type, o.transaction_type) -- without
     # this, a list of N orders triggered up to 3*N extra lazy-load

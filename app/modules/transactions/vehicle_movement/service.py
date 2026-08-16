@@ -20,6 +20,8 @@ class VehicleMovementService(BaseTransactionService):
     model = VehicleMovement
     document_type_code = "VM"
     reference_table = "vehicle_movements"
+    date_fields = (("movement_date", "Movement Date"),
+                   ("created_at", "Created Date"))
 
     def create(self, *, vehicle_id, movement_type, from_location,
                to_location, movement_date, user, remarks=None,

@@ -27,6 +27,95 @@
     </div>
   </div>
 
+  {% set veh = order.vehicle %}
+
+  {# ── What you are invoicing ───────────────────────────────────────
+     Shown on the ENTRY form, not just the saved detail page. This is
+     the screen where someone is holding a vendor's paper invoice and
+     keying it in, so confirming it is going against the right order
+     and the right vehicle has to happen BEFORE saving, not after.
+
+     Guarded throughout: a detail panel that 500s on unexpected data is
+     worse than one showing a dash. #}
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card border-primary-subtle h-100">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+          <span class="fw-semibold"><i class="bi bi-tools me-1"></i>Maintenance Order</span>
+          <a class="btn btn-sm btn-outline-primary"
+             href="{{ url_for('transactions.maintenanceorder_detail', oid=order.id) }}"
+             target="_blank">{{ order.document_number or 'Open' }}</a>
+        </div>
+        <div class="card-body py-2">
+          <dl class="row mb-0 small">
+            <dt class="col-sm-5">MO Number</dt>
+            <dd class="col-sm-7"><strong>{{ order.document_number or '—' }}</strong></dd>
+            <dt class="col-sm-5">Type</dt>
+            <dd class="col-sm-7">
+              {{ order.maintenance_type.name if order.maintenance_type
+                 else (order.transaction_type.name if order.transaction_type else '—') }}
+              {% if order.category %}<span class="badge text-bg-light">{{ order.category|title }}</span>{% endif %}
+            </dd>
+            <dt class="col-sm-5">Scheduled</dt>
+            <dd class="col-sm-7">{{ order.scheduled_date or '—' }}</dd>
+            <dt class="col-sm-5">Completed</dt>
+            <dd class="col-sm-7">{{ order.completed_date or '—' }}</dd>
+            <dt class="col-sm-5">Odometer at Service</dt>
+            <dd class="col-sm-7">
+              {% if order.odometer_at_service is not none %}
+                {{ "{:,}".format(order.odometer_at_service) }} km
+              {% else %}—{% endif %}
+            </dd>
+            <dt class="col-sm-5">Work Description</dt>
+            <dd class="col-sm-7">{{ order.description or '—' }}</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card border-primary-subtle h-100">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+          <span class="fw-semibold"><i class="bi bi-truck me-1"></i>Vehicle</span>
+          {% if veh %}
+          <a class="btn btn-sm btn-outline-primary"
+             href="{{ url_for('master_data.vehicle_detail', vid=veh.id) }}"
+             target="_blank">View Vehicle</a>
+          {% endif %}
+        </div>
+        <div class="card-body py-2">
+          {% if veh %}
+          <dl class="row mb-0 small">
+            <dt class="col-sm-5">Plate Number</dt>
+            <dd class="col-sm-7"><strong>{{ veh.plate_number or '—' }}</strong></dd>
+            {# Both shown rather than one falling back to the other: a
+               new unit carries a conduction number before LTO issues a
+               plate, and the vendor's paperwork may quote either. #}
+            <dt class="col-sm-5">Conduction No.</dt>
+            <dd class="col-sm-7">{{ veh.conduction_number or '—' }}</dd>
+            <dt class="col-sm-5">Make &amp; Model</dt>
+            <dd class="col-sm-7">
+              {{ veh.brand or '—' }} {{ veh.model or '' }}
+              {%- if veh.year %} ({{ veh.year }}){% endif %}</dd>
+            <dt class="col-sm-5">Branch</dt>
+            <dd class="col-sm-7">{{ veh.branch.name if veh.branch else '—' }}</dd>
+            <dt class="col-sm-5">Assigned To</dt>
+            <dd class="col-sm-7">
+              {{ veh.assigned_driver.full_name if veh.assigned_driver else '—' }}</dd>
+            <dt class="col-sm-5">Current Odometer</dt>
+            <dd class="col-sm-7">
+              {% if veh.current_odometer is not none %}
+                {{ "{:,}".format(veh.current_odometer) }} km
+              {% else %}—{% endif %}</dd>
+          </dl>
+          {% else %}
+          <p class="text-muted mb-0 small">No vehicle on this order.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="row g-4">
     <!-- Main Form Area -->
     <div class="col-lg-8">

@@ -14,6 +14,9 @@ class ATDService(BaseTransactionService):
     model = AuthorityToDrive
     document_type_code = "ATD"
     reference_table = "authority_to_drives"
+    date_fields = (("valid_from", "Valid From"),
+                   ("valid_to", "Valid To"),
+                   ("created_at", "Created Date"))
 
     def create(self, *, vehicle_id, driver_id, purpose, valid_from, valid_to,
                user, maintenance_order_id=None, odometer_out=None):

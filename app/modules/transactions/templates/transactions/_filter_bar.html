@@ -54,6 +54,26 @@
     {% endif %}
 
     {% if show_date | default(true) %}
+    {# Which date column the range applies to.
+
+       Previously the column was inferred from an ordered candidate
+       list, and for Trip Ticket, ATD and Vehicle Movement every
+       candidate missed -- so the range silently applied to created_at
+       while the table beside it showed a completely different date.
+       Now each module declares its own columns and the person chooses,
+       which also makes "what was ENTERED last week" answerable on the
+       three screens that display no created date of their own. #}
+    {% if date_field_choices and date_field_choices|length > 1 %}
+    <div class="col-md-2">
+      <label class="form-label small mb-1">Date Type</label>
+      <select name="date_field" class="form-select form-select-sm">
+        {% for code, label in date_field_choices %}
+        <option value="{{ code }}" {{ 'selected' if filters.date_field == code }}>
+          {{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
     <div class="col-md-2">
       <label class="form-label small mb-1">{{ date_label or 'From' }}</label>
       <input type="date" name="date_from" value="{{ filters.date_from or '' }}"

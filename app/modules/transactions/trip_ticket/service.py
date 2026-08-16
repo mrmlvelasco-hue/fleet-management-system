@@ -21,6 +21,9 @@ class TripTicketService(BaseTransactionService):
     model = TripTicket
     document_type_code = "TT"
     reference_table = "trip_tickets"
+    date_fields = (("departure_datetime", "Departure Date"),
+                   ("return_datetime", "Return Date"),
+                   ("created_at", "Created Date"))
 
     def create(self, *, vehicle_id, destination, purpose, departure_datetime,
                odometer_out, user, driver_id=None, driver_name_manual=None,

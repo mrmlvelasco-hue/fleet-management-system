@@ -78,6 +78,25 @@ for _code, _desc, _order in [
 ]:
     lookup_registry.register("TRANSMISSION", _code, _desc, _order)
 
+# Attachment document types. The OR and CR are the two people actually
+# come looking for on a vehicle -- both arrive as scans, and before this
+# nothing recorded which file was which, so the report could only show
+# an undifferentiated gallery labelled by filename.
+#
+# Registered as a Lookup rather than an enum so the client can add types
+# (deed of sale, LTO inspection report, gate pass) through Lookup
+# Maintenance without a code release.
+for _code, _desc, _order in [
+    ("OR", "OR — Official Receipt", 1),
+    ("CR", "CR — Certificate of Registration", 2),
+    ("INSURANCE", "Insurance Policy", 3),
+    ("DEED_OF_SALE", "Deed of Sale", 4),
+    ("INSPECTION", "LTO Inspection Report", 5),
+    ("PHOTO", "Vehicle Photo", 6),
+    ("OTHER", "Other Document", 99),
+]:
+    lookup_registry.register("ATTACHMENT_DOC_TYPE", _code, _desc, _order)
+
 # Assignment Classification for the Vehicle Assignment Memo. Inherited
 # from the legacy system, so the four values below seed the starting set
 # -- but they live in Lookup Maintenance from here on, so entitlement
@@ -948,8 +967,16 @@ def vehicle_print(vid):
     utilization = activity_svc.get_utilization_summary(item, activity_rows)
     outlet_history = activity_svc.get_outlet_history(item)
 
+    # Code -> human label, so the report can head each group with
+    # "CR — Certificate of Registration" rather than the bare code.
+    # Read from Lookup Maintenance, so a type the client adds later
+    # gets a proper heading with no template change.
+    doc_type_labels = {row.code: row.description
+                       for row in AttachmentService().document_types()}
+
     return render_template("master_data/vehicle_print.html", item=item,
                            company=company, attachments=attachments,
+                           attachment_doc_types=doc_type_labels,
                            mo_history=mo_history,
                            activity_rows=activity_rows,
                            utilization=utilization,
@@ -1654,12 +1681,15 @@ def attachment_upload():
         return jsonify(ok=False, error="Invalid reference ID."), 400
 
     try:
-        att = AttachmentService().upload(file, ref_table, ref_id, user=current_user)
+        att = AttachmentService().upload(
+            file, ref_table, ref_id, user=current_user,
+            document_type=request.form.get("document_type"))
         db.session.commit()
         return jsonify(ok=True, id=att.id,
                        filename=att.original_filename,
                        size=att.file_size,
                        mime_type=att.mime_type,
+                       document_type=att.document_type,
                        is_image=bool(att.mime_type and
                                     att.mime_type.startswith("image/")),
                        view_url=url_for("master_data.attachment_view",

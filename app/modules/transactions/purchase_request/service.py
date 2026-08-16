@@ -22,6 +22,8 @@ class PurchaseRequestService(BaseTransactionService):
     model = PurchaseRequest
     document_type_code = "PR"
     reference_table = "purchase_requests"
+    date_fields = (("created_at", "Created Date"),
+                   ("needed_by_date", "Needed By"))
 
     def create(self, *, description, user, lines, department_id=None,
                vendor_id=None, justification=None, needed_by_date=None):

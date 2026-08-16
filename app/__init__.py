@@ -105,6 +105,30 @@ def create_app(config_name: str | None = None) -> Flask:
     register_vehicle_assignment_hooks()
 
     from app.cli import register_cli
+    @app.context_processor
+    def inject_attachment_doc_types():
+        """Document types for the attachment upload picker.
+
+        A context processor rather than a per-route variable because the
+        attachment panel is included from well over a dozen templates
+        (vehicle, driver, branch, vendor, every transaction detail...).
+        Threading the same list through every one of those routes would
+        mean the picker silently rendering empty on whichever one got
+        missed -- and an empty dropdown looks like a broken feature, not
+        an unconfigured one.
+
+        Never raises: this runs on every render, including error pages
+        and the login screen, where the lookup table may not even be
+        reachable yet.
+        """
+        try:
+            from app.core.attachments.attachment_service import (
+                AttachmentService)
+            return {"attachment_doc_types": AttachmentService().document_types()}
+        except Exception:
+            app.logger.exception("Attachment document types unavailable")
+            return {"attachment_doc_types": []}
+
     register_cli(app)
 
     @app.context_processor
