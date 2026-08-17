@@ -65,27 +65,20 @@ def test_sidebar_active_section_expands_for_a_page_inside_it(app, db):
     assert "collapse show" in html[idx - 30:idx]
 
 
-def test_sidebar_unrelated_section_stays_expanded(app, db):
-    """Every group stays open regardless of which page is active.
+def test_sidebar_unrelated_section_stays_collapsed(app, db):
+    """A group unrelated to the current page renders collapsed.
 
-    This test previously asserted the OPPOSITE -- that a group unrelated
-    to the current page renders collapsed -- and directly contradicted
-    tests/integration/test_sidebar_navigation.py, which pins "every
-    group stays open" as an explicit client request. Both were in the
-    tree at once, so whichever behaviour shipped, one suite failed.
-
-    Resolved in favour of always-expanded, because two other artifacts
-    agree with it: the client request recorded in the integration test,
-    and app.css's own comment ("no Bootstrap accordion linkage"). The
-    template had also carried data-bs-parent, which makes opening one
-    group actively CLOSE another -- the specific thing the client asked
-    us not to do.
+    The sidebar is an accordion, confirmed by the client. This test and
+    tests/integration/test_sidebar_navigation.py briefly contradicted
+    each other -- one pinning "always expanded", the other "active
+    only" -- so one suite failed whichever way the template behaved.
+    Both now pin the accordion.
     """
     client = _client(app, db)
     html = client.get("/transactions/fuel").get_data(as_text=True)
     idx = html.find('id="sbGroupMasterData"')
     assert idx != -1
-    assert "collapse show" in html[idx - 30:idx]
+    assert "collapse show" not in html[idx - 30:idx]
 
 
 def test_fuel_tile_avg_kmpl_never_shows_a_fabricated_value(app, db):

@@ -7,17 +7,58 @@
    scrolls independently of the page, rather than the page needing to
    scroll to reach a lower module). These rules only add what theme.css
    doesn't know about: our section-group toggle buttons and the
-   whole-sidebar icon-only collapse mode. All three groups default to
-   expanded — opening/collapsing one never affects the others (no
-   Bootstrap accordion linkage), and a person's manual collapse choice
-   persists via cookie across page loads. */
+   whole-sidebar icon-only collapse mode. The groups behave as an
+   ACCORDION: only the group matching the current page is expanded, and
+   opening one closes the others (Bootstrap data-bs-parent linkage in
+   sidebar.html). An earlier revision of this comment claimed the
+   opposite and was used to justify removing that linkage -- corrected
+   here so the next change is not misled the same way. A person's manual
+   collapse choice still persists via cookie across page loads. */
 .fms-sidebar {
   width: var(--sidebar-w, 264px);
   flex-shrink: 0;
   transition: width .15s ease;
 }
-#fms-wrapper.sidebar-collapsed .fms-sidebar { width: 64px; }
-#fms-wrapper.sidebar-collapsed .sidebar-label { display: none; }
+/* Icon-rail mode.
+   Keyed on `is-collapsed`, which is the class app.js actually toggles.
+   These rules previously used `.sidebar-collapsed` -- a name nothing in
+   the app ever sets -- so the burger button appeared to do nothing:
+   the class flipped, but no rule read it, the sidebar stayed full
+   width and every label stayed visible. theme.css narrowed the GRID
+   COLUMN to 76px on the same event, so the sidebar was also overflowing
+   its own track. */
+#fms-wrapper.is-collapsed .fms-sidebar,
+.fms-app.is-collapsed .fms-sidebar { width: 76px; }
+#fms-wrapper.is-collapsed .sidebar-label,
+.fms-app.is-collapsed .sidebar-label { display: none !important; }
+
+/* With the labels gone the rows must centre on their icon rather than
+   keeping the left padding that made room for text. */
+#fms-wrapper.is-collapsed .fms-nav-link,
+.fms-app.is-collapsed .fms-nav-link {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+}
+#fms-wrapper.is-collapsed .fms-sidebar__brand,
+.fms-app.is-collapsed .fms-sidebar__brand { justify-content: center; padding: 0; }
+#fms-wrapper.is-collapsed .fms-sidebar__wordmark,
+.fms-app.is-collapsed .fms-sidebar__wordmark { display: none; }
+
+/* Section headers collapse to nothing rather than leaving empty bars. */
+#fms-wrapper.is-collapsed .sidebar-group-toggle,
+.fms-app.is-collapsed .sidebar-group-toggle {
+  height: 0; padding: 0; margin: 0; overflow: hidden; border: 0;
+  min-height: 0;
+}
+/* Groups stay open in rail mode: their headers are hidden, so a
+   collapsed group would make its icons unreachable with no way to
+   expand it again. */
+#fms-wrapper.is-collapsed .sidebar-group .collapse,
+.fms-app.is-collapsed .sidebar-group .collapse { display: block !important; height: auto !important; }
+#fms-wrapper.is-collapsed .fms-nav-link__badge,
+.fms-app.is-collapsed .fms-nav-link__badge { display: none; }
 .sidebar-section { color: #6f8494; letter-spacing: .05em; }
 .sidebar-group { border-top: 1px solid rgba(255,255,255,.06); padding-top: .25rem; }
 .sidebar-group-toggle {
@@ -30,6 +71,6 @@
 .sidebar-group-toggle:hover { color: var(--od-cream, #f1faee); }
 .sidebar-chevron { transition: transform .15s ease; font-size: .75rem; }
 .sidebar-group-toggle[aria-expanded="false"] .sidebar-chevron { transform: rotate(-90deg); }
-#fms-wrapper.sidebar-collapsed .sidebar-group-toggle { pointer-events: none; }
+#fms-wrapper.is-collapsed .sidebar-group-toggle { pointer-events: none; }
 .fms-topnav { background: var(--bs-body-bg); }
 .kpi-card .bi { font-size: 1.8rem; opacity: .6; }
