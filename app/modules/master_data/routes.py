@@ -1695,6 +1695,14 @@ def attachment_upload():
                        size=att.file_size,
                        mime_type=att.mime_type,
                        document_type=att.document_type,
+                       # Surfaced at the moment of upload, while the
+                       # person still has the document in hand and can
+                       # rescan -- not after they have trusted an
+                       # extraction taken from a 82 DPI thumbnail.
+                       scan_warning=(getattr(att, "scan_quality", None) or {})
+                                    .get("message"),
+                       estimated_dpi=(getattr(att, "scan_quality", None) or {})
+                                     .get("estimated_dpi"),
                        is_image=bool(att.mime_type and
                                     att.mime_type.startswith("image/")),
                        view_url=url_for("master_data.attachment_view",
@@ -1731,12 +1739,13 @@ def attachment_download(att_id):
     if att is None or not att.is_active:
         flash("Attachment not found.", "warning")
         return redirect(url_for("main.dashboard"))
-    if att.file_data is not None:
+    data = AttachmentService().get_bytes(att)
+    if data is not None:
         # Authoritative copy, from the shared database -- works no
         # matter which machine originally handled the upload.
         from flask import Response
         return Response(
-            att.file_data, mimetype=att.mime_type or "application/octet-stream",
+            data, mimetype=att.mime_type or "application/octet-stream",
             headers={"Content-Disposition":
                     f'attachment; filename="{att.original_filename}"'})
     # Fallback for attachments uploaded before file_data existed, still
@@ -1762,9 +1771,10 @@ def attachment_view(att_id):
     if att is None or not att.is_active:
         flash("Attachment not found.", "warning")
         return redirect(url_for("main.dashboard"))
-    if att.file_data is not None:
+    data = AttachmentService().get_bytes(att)
+    if data is not None:
         from flask import Response
-        return Response(att.file_data,
+        return Response(data,
                         mimetype=att.mime_type or "application/octet-stream")
     upload_dir = os.path.join(current_app.instance_path, "uploads",
                               att.reference_table)

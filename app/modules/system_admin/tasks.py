@@ -109,8 +109,9 @@ def _resolve_comment_attachments(comment_id: int) -> list:
     attachments = AttachmentService().list_for("document_comments", comment_id)
     out = []
     for att in attachments:
-        if att.file_data is not None:
-            out.append({"data": att.file_data, "filename": att.original_filename,
+        data = AttachmentService().get_bytes(att)
+        if data is not None:
+            out.append({"data": data, "filename": att.original_filename,
                        "mime_type": att.mime_type})
         else:
             filepath = os.path.join(current_app.instance_path, "uploads",

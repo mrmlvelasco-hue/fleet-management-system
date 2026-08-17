@@ -114,7 +114,56 @@ class AttachmentService:
             uploaded_by=user.id if user else None)
         db.session.add(att)
         db.session.commit()
+        # Attached rather than returned separately so every caller of
+        # upload() can surface it without changing signature.
+        att.scan_quality = self.assess_scan_quality(content,
+                                                   file.content_type)
         return att
+
+    def get_bytes(self, attachment):
+        """The bytes of an attachment, or None.
+
+        THE storage boundary. Every caller that needs file content goes
+        through here rather than reading Attachment.file_data, so where
+        the bytes actually live stays a decision this service owns.
+
+        That matters because production is not yet chosen. BLOBs in the
+        database are convenient on-premise; in the cloud, object storage
+        is roughly an order of magnitude cheaper per GB, is excluded
+        from database snapshots, and can be reclaimed -- managed
+        database storage often cannot be shrunk once grown. Keeping the
+        access point single means that decision is one method later,
+        not an audit of sixteen call sites under contract pressure.
+
+        Falls back to the local disk copy for rows uploaded before
+        file_data existed. Returns None rather than raising: callers
+        render a placeholder, and a 500 on a document viewer is worse
+        than a gap.
+        """
+        if attachment is None:
+            return None
+        data = getattr(attachment, "file_data", None)
+        if data is not None:
+            return data
+        # Legacy rows: bytes may only exist on the disk of whichever
+        # machine handled the original upload.
+        try:
+            import os
+            path = os.path.join(_get_upload_dir(attachment.reference_table),
+                               attachment.filename)
+            if os.path.exists(path):
+                with open(path, "rb") as fh:
+                    return fh.read()
+        except Exception:
+            pass
+        return None
+
+    def assess_scan_quality(self, content, mime_type=None):
+        """Resolution assessment for an uploaded image; see
+        core/attachments/scan_quality.py for the measurements behind
+        the threshold."""
+        from app.core.attachments.scan_quality import assess_scan
+        return assess_scan(content, mime_type=mime_type)
 
     DOCUMENT_TYPE_LOOKUP = "ATTACHMENT_DOC_TYPE"
 

@@ -51,6 +51,20 @@ def _build_engine_options(uri: str) -> dict:
 class BaseConfig:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Hard ceiling on a request body, enforced by Werkzeug BEFORE the
+    # request is read into memory.
+    #
+    # AttachmentService already enforces ATTACHMENT_MAX_SIZE_MB (default
+    # 10MB) with a readable message, but that check only runs AFTER
+    # Flask has buffered the entire upload -- so a 200MB file was fully
+    # received and held in memory before anything rejected it. This
+    # stops it at the door.
+    #
+    # Set well above the per-file attachment cap so the service's own
+    # message, which names the real limit, is what people normally see;
+    # this is the backstop, not the policy.
+    MAX_CONTENT_LENGTH = 32 * 1024 * 1024
+
     SQLALCHEMY_DATABASE_URI = _build_database_uri()
     # Without this, SQLAlchemy uses its bare defaults (pool_size=5,
     # max_overflow=10, no recycle, no pre-ping) -- fine for one person

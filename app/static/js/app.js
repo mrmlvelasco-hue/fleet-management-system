@@ -508,6 +508,22 @@
             errorBox.classList.remove("d-none");
             return;
           }
+          // Low-resolution scans upload successfully -- this is
+          // advice, not an error -- but the person needs it NOW, while
+          // the document is still in front of them and rescanning is
+          // cheap. Measured on real CR scans: at ~82 DPI, automatic
+          // extraction recovers under half the fields and misreads
+          // engine and chassis numbers.
+          if (data.scan_warning && window.Swal) {
+            Swal.fire({icon: "info", title: "Low-resolution scan",
+                       text: data.scan_warning,
+                       confirmButtonText: "Got it"});
+          } else if (data.scan_warning) {
+            errorBox.textContent = data.scan_warning;
+            errorBox.classList.remove("d-none", "alert-danger");
+            errorBox.classList.add("alert-info");
+          }
+
           var emptyRow = list.querySelector("li.text-muted");
           if (emptyRow) emptyRow.remove();
           list.insertAdjacentHTML("beforeend", renderAttachmentRow(data));
