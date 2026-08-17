@@ -38,6 +38,7 @@ def seed_all(admin_password):
     _seed_lookups()
     _seed_transaction_types()
     _seed_email_templates()
+    _seed_print_templates()
     _seed_notification_rules()
     _seed_reports()
     _seed_atr_numbering()
@@ -374,6 +375,28 @@ def _seed_dashboard_widgets() -> None:
                 code=code, label=label, icon=icon,
                 sort_order=sort, default_visible=True))
     db.session.flush()
+
+
+from app.modules.system_admin.services.print_template_service import (
+    PRINT_TEMPLATE_DEFAULTS)
+
+def _seed_print_templates() -> None:
+    """Default bodies for printed documents.
+
+    Seeded, not hardcoded: the Oath of Undertaking is company policy
+    text, and the clauses change as policy changes. The fleet manager
+    edits it under System Administration without a code release.
+
+    Only INSERTS what is missing -- re-running seed must never overwrite
+    wording the client has since edited.
+    """
+    from app.modules.system_admin.models import PrintTemplate
+    for code, (name, desc, body, paper) in PRINT_TEMPLATE_DEFAULTS.items():
+        if PrintTemplate.query.filter_by(code=code).first() is None:
+            db.session.add(PrintTemplate(code=code, name=name,
+                                        description=desc, body_html=body,
+                                        paper_size=paper))
+    db.session.commit()
 
 
 def _seed_email_templates() -> None:

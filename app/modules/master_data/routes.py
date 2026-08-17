@@ -92,7 +92,12 @@ for _code, _desc, _order in [
     ("INSURANCE", "Insurance Policy", 3),
     ("DEED_OF_SALE", "Deed of Sale", 4),
     ("INSPECTION", "LTO Inspection Report", 5),
-    ("PHOTO", "Vehicle Photo", 6),
+    # Front and back get their own codes: the Vehicle Assignment Memo's
+    # Conforme page shows them side by side and labelled, which a
+    # generic PHOTO type cannot distinguish.
+    ("PHOTO_FRONT", "Vehicle Photo — Front", 6),
+    ("PHOTO_BACK", "Vehicle Photo — Back", 7),
+    ("PHOTO", "Vehicle Photo (other)", 8),
     ("OTHER", "Other Document", 99),
 ]:
     lookup_registry.register("ATTACHMENT_DOC_TYPE", _code, _desc, _order)

@@ -1,0 +1,86 @@
+{% extends "layout/base.html" %}
+{% block title %}{{ tpl.name }}{% endblock %}
+{% block breadcrumbs %}
+<li class="breadcrumb-item">
+  <a href="{{ url_for('system_admin.printtemplate_list') }}">Print Templates</a></li>
+<li class="breadcrumb-item active">{{ tpl.name }}</li>
+{% endblock %}
+{% block content %}
+<form method="post">
+  {{ csrf_field() if csrf_field is defined }}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">{{ tpl.name }}</h1>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary"
+         href="{{ url_for('system_admin.printtemplate_list') }}">Cancel</a>
+      <button class="btn btn-primary" type="submit">
+        <i class="bi bi-save me-1"></i>Save Template</button>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="fw-semibold mb-3">Paper</h6>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label small mb-1">Paper Size</label>
+            <select name="paper_size" class="form-select">
+              {% for size in paper_sizes %}
+              <option value="{{ size }}" {{ 'selected' if tpl.paper_size == size }}>
+                {{ size|title }}</option>
+              {% endfor %}
+            </select>
+            {# Paper lives on the template, not in the stylesheet: the
+               same undertaking is filed on Legal in one office and A4
+               in another. #}
+            <div class="form-text">Drives the printed page size and PDF export.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small mb-1">Orientation</label>
+            <select name="orientation" class="form-select">
+              <option value="PORTRAIT" {{ 'selected' if tpl.orientation != 'LANDSCAPE' }}>Portrait</option>
+              <option value="LANDSCAPE" {{ 'selected' if tpl.orientation == 'LANDSCAPE' }}>Landscape</option>
+            </select>
+          </div>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="card-body">
+        <h6 class="fw-semibold mb-1">Body</h6>
+        <p class="text-muted small">
+          HTML is allowed. Use the tokens listed alongside — they are
+          replaced with real values when the document is printed.
+        </p>
+        <textarea name="body_html" class="form-control font-monospace"
+                  rows="26" spellcheck="false">{{ tpl.body_html }}</textarea>
+      </div></div>
+    </div>
+
+    <div class="col-lg-4">
+      {# The token legend. The fleet manager edits this text, so the
+         placeholders have to be discoverable rather than folklore --
+         the same reasoning as the PM parameter legend. #}
+      <div class="card border-0 bg-light sticky-top">
+        <div class="card-body">
+          <h6 class="fw-semibold small text-uppercase text-muted mb-2">
+            <i class="bi bi-braces me-1"></i>Available Tokens</h6>
+          <p class="text-muted" style="font-size:.76rem;">
+            Type a token anywhere in the body. Anything unrecognised is
+            left exactly as written, so a typo shows up on the paper
+            rather than silently printing a blank.
+          </p>
+          <dl class="mb-0" style="font-size:.76rem;">
+            {% for token, meaning in tokens %}
+            <dt class="font-monospace text-primary">{{ token }}</dt>
+            <dd class="text-muted mb-2">{{ meaning }}</dd>
+            {% endfor %}
+          </dl>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

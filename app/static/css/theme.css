@@ -540,3 +540,45 @@ table.table > thead > tr:first-child > th:first-child { border-top-left-radius: 
 table.table > thead > tr:first-child > th:last-child { border-top-right-radius: 14px; }
 table.table > tbody > tr:last-child > td:first-child { border-bottom-left-radius: 14px; }
 table.table > tbody > tr:last-child > td:last-child { border-bottom-right-radius: 14px; }
+
+/* --------------------------------------------------------------------------
+   18. Sticky side panels vs. the top bar
+   --------------------------------------------------------------------------
+   Bootstrap's .sticky-top is `top: 0; z-index: 1020`. The app's own top
+   bar is `position: sticky; top: 0; z-index: 20`. So any sticky side
+   panel -- the "Order Workflow Tips" card on Maintenance Order, and the
+   equivalent on 42 other forms including Vehicle -- wins the stacking
+   contest and is painted OVER the header, covering the notification
+   bell, the appearance picker and the user menu once the page scrolls.
+   It also slides up underneath where the header sits, so its own top
+   lines are hidden behind it.
+
+   Two things are wrong and both need fixing: the panel must stop BELOW
+   the header rather than at viewport top, and it must sit UNDER it in
+   the stack. Scoped to the app shell so a sticky element inside a modal
+   or offcanvas (which legitimately sit above the header) is unaffected.
+
+   Fixed globally rather than per-template: 42 templates carry this, and
+   patching them one at a time guarantees the next new form repeats it.
+   -------------------------------------------------------------------------- */
+#fms-wrapper .sticky-top,
+#fms-wrapper [class*="sticky-"][class*="-top"] {
+  /* 1rem of breathing room below the header, matching the inline
+     `top: 1rem` these panels already ask for. */
+  top: calc(var(--topbar-h) + 1rem);
+  z-index: 10;
+}
+
+/* The panels set `style="top: 1rem"` inline, which outranks any
+   stylesheet rule. Neutralised here so the offset above actually
+   applies without having to edit every template. */
+#fms-wrapper .sticky-top[style*="top"] {
+  top: calc(var(--topbar-h) + 1rem) !important;
+}
+
+@media (max-width: 991.98px) {
+  /* Below lg the tips card stacks under the form instead of beside it,
+     so stickiness only creates a panel that follows the reader around
+     for no benefit. */
+  #fms-wrapper .sticky-top { position: static; }
+}

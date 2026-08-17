@@ -4,8 +4,13 @@
   <meta charset="utf-8">
   <title>Vehicle Assignment Memo — {{ item.document_number or item.id }}</title>
   <style>
+    {# Paper comes from the Print Template, not from this stylesheet:
+       the same undertaking is filed on Legal in one office and A4 in
+       another, and hardcoding it would need a code change to switch. #}
     @page {
-      size: A4 portrait;
+      size: {{ {'A4':'A4','LETTER':'Letter','LEGAL':'Legal'}.get(
+                 oath_template.paper_size if oath_template else 'A4', 'A4') }}
+             {{ 'landscape' if oath_template and oath_template.orientation == 'LANDSCAPE' else 'portrait' }};
       margin: 15mm;
     }
 
@@ -229,8 +234,32 @@
       background-color: #fff;
     }
 
+    /* Each appended section starts on its own sheet -- the memo, the
+       undertaking and the conforme are signed separately and are often
+       filed apart. */
+    .page-break { page-break-before: always; break-before: page; }
+
+    .oath-body { font-size: 11px; line-height: 1.5; }
+    .oath-body ol { padding-left: 18px; margin: 10px 0; }
+    .oath-body li { margin-bottom: 7px; text-align: justify; }
+    .oath-body p { text-align: justify; }
+
+    .photo-row { display: flex; gap: 20px; margin-bottom: 18px; }
+    .photo-cell { flex: 1; text-align: center; }
+    .photo-cap { font-size: 10.5px; text-decoration: underline;
+                margin-bottom: 6px; color: #334155; }
+    .photo-cell img { width: 100%; height: 190px; object-fit: contain;
+                     border: 1px solid #0f172a; background: #fff; }
+    .photo-empty { height: 190px; border: 1px dashed #cbd5e1;
+                  display: flex; align-items: center; justify-content: center;
+                  color: #94a3b8; font-size: 10.5px; background: #f8fafc; }
+    table.conforme td.label { width: 16%; }
+
     @media print {
       .no-print { display: none !important; }
+      .photo-row, table.conforme, .oath-body li {
+        page-break-inside: avoid; break-inside: avoid;
+      }
       body { margin: 0; }
       table.info, table.approval, .checkbox-row {
         page-break-inside: avoid;
@@ -381,5 +410,89 @@
 
   <div class="remarks-header">REMARKS:</div>
   <div class="remarks-box">{{ item.description or '' }}</div>
+
+  {% if oath_body %}
+  {# ── Page 2: the undertaking itself ─────────────────────────────
+     Body text comes from the Print Template, already token-resolved by
+     the route, so the clauses can be changed under System
+     Administration without touching this file. #}
+  <div class="page-break"></div>
+  <div class="doc-header">
+    <div class="doc-title">OATH OF UNDERTAKING</div>
+  </div>
+  <div class="oath-body">{{ oath_body|safe }}</div>
+
+  {# ── Page 3: Conforme ───────────────────────────────────────────
+     The assignee signs here, against their own details and photographs
+     of the vehicle as handed over -- which is what makes the condition
+     of the unit at issue evidenced rather than asserted. #}
+  <div class="page-break"></div>
+  <div class="photo-row">
+    <div class="photo-cell">
+      <div class="photo-cap">VehicleAttachment_Front</div>
+      {% if photo_front %}
+      <img src="{{ url_for('master_data.attachment_view', att_id=photo_front.id) }}"
+           alt="Vehicle front">
+      {% else %}
+      <div class="photo-empty">No front photo on file</div>
+      {% endif %}
+    </div>
+    <div class="photo-cell">
+      <div class="photo-cap">VehicleAttachment_Back</div>
+      {% if photo_back %}
+      <img src="{{ url_for('master_data.attachment_view', att_id=photo_back.id) }}"
+           alt="Vehicle back">
+      {% else %}
+      <div class="photo-empty">No back photo on file</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <table class="info conforme">
+    <tr>
+      <td class="label">CONFORME</td>
+      <td class="value" colspan="3" style="text-align:center;">
+        <strong>{{ (item.driver.full_name if item.driver else '')|upper }}</strong>
+        <div style="font-size:10px;color:#64748b;">Print Name and Sign</div>
+      </td>
+    </tr>
+    <tr>
+      <td class="label">Employee No.</td>
+      <td class="value">{{ item.driver.employee_number if item.driver else '—' }}</td>
+      <td class="label">Plate No.</td>
+      <td class="value">{{ item.vehicle.plate_number or item.vehicle.conduction_number }}</td>
+    </tr>
+    <tr>
+      <td class="label">Location</td>
+      <td class="value">{{ item.vehicle.branch.name if item.vehicle.branch else '—' }}</td>
+      <td class="label">Vehicle</td>
+      <td class="value">{{ item.vehicle.brand }} {{ item.vehicle.model }} / {{ item.vehicle.year }}</td>
+    </tr>
+    <tr>
+      <td class="label">Position</td>
+      <td class="value">
+        {{ (item.driver.position or item.driver.job_title) if item.driver else '—' }}</td>
+      <td class="label">Body Color</td>
+      <td class="value">{{ item.vehicle.color or '—' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Address</td>
+      <td class="value">{{ item.driver.complete_address if item.driver else '—' }}</td>
+      <td class="label">Km Reading</td>
+      <td class="value">
+        {{ "{:,}".format(item.odometer_at_service|int) if item.odometer_at_service is not none else '—' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Contact No.</td>
+      <td class="value">{{ item.driver.phone if item.driver else '—' }}</td>
+      <td class="label">VAM No.</td>
+      <td class="value">{{ item.document_number or '(draft)' }}</td>
+    </tr>
+  </table>
+
+  <div class="signature-block">
+    <div class="signature-line">Date Signed</div>
+  </div>
+  {% endif %}
 </body>
 </html>

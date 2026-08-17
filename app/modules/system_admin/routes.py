@@ -107,6 +107,53 @@ def sysparam_edit(param_id):
     return render_template("system_admin/sysparam_edit.html", param=param)
 
 
+# ── Print Templates ────────────────────────────────────────────────────────
+
+@bp.route("/print-templates")
+@login_required
+@require_permission("sysparam.view")
+def printtemplate_list():
+    """Editable bodies for printed documents (the Oath of Undertaking).
+
+    Gated on the System Parameters permission rather than a new one:
+    this is the same class of configuration, and inventing a permission
+    nobody has been granted would leave the screen unreachable until an
+    administrator noticed.
+    """
+    from app.modules.system_admin.services.print_template_service import (
+        PrintTemplateService)
+    return render_template("system_admin/printtemplate_list.html",
+                           templates=PrintTemplateService().list())
+
+
+@bp.route("/print-templates/<int:tpl_id>/edit", methods=["GET", "POST"])
+@login_required
+@require_permission("sysparam.update")
+def printtemplate_edit(tpl_id):
+    from app.modules.system_admin.services.print_template_service import (
+        PrintTemplateService, InvalidPaperSizeError)
+    from app.modules.system_admin.models import PrintTemplate
+    svc = PrintTemplateService()
+    tpl = db.session.get(PrintTemplate, tpl_id)
+    if tpl is None:
+        flash("Print template not found.", "warning")
+        return redirect(url_for("system_admin.printtemplate_list"))
+    if request.method == "POST":
+        try:
+            svc.update(tpl.id, body_html=request.form.get("body_html"),
+                      paper_size=request.form.get("paper_size"),
+                      orientation=request.form.get("orientation"))
+        except InvalidPaperSizeError as exc:
+            flash(str(exc), "danger")
+            return redirect(url_for("system_admin.printtemplate_edit",
+                                   tpl_id=tpl.id))
+        flash(f"'{tpl.name}' updated.", "success")
+        return redirect(url_for("system_admin.printtemplate_list"))
+    return render_template("system_admin/printtemplate_edit.html",
+                           tpl=tpl, tokens=svc.available_tokens(),
+                           paper_sizes=PrintTemplate.PAPER_SIZES)
+
+
 # ── Lookup Maintenance ─────────────────────────────────────────────────────
 
 @bp.route("/lookups")

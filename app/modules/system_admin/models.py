@@ -67,6 +67,36 @@ class EmailTemplate(db.Model, BaseModel):
     body_text = db.Column(db.Text, nullable=False, default="")
 
 
+class PrintTemplate(db.Model, BaseModel):
+    """An editable body for a printed document.
+
+    Deliberately its own table rather than a row in email_templates:
+    the Oath of Undertaking is a signed legal undertaking, and burying
+    it behind a screen labelled "Email Templates" would make it hard to
+    find and easy to mistake for correspondence.
+
+    body_html is authored by the fleet manager and may contain {TOKENS}
+    resolved at print time against the document being printed -- the
+    same idea as PM work-description tokens, so the concept is already
+    familiar.
+
+    paper_size travels with the template because the right paper is a
+    property of the DOCUMENT, not of the stylesheet: an undertaking
+    filed on Legal in one office and A4 in another is a real difference,
+    and hardcoding it would force a code change to switch.
+    """
+    __tablename__ = "print_templates"
+
+    PAPER_SIZES = ("A4", "LETTER", "LEGAL")
+
+    code = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.String(255), nullable=True)
+    body_html = db.Column(db.Text, nullable=False, default="")
+    paper_size = db.Column(db.String(10), nullable=False, default="A4")
+    orientation = db.Column(db.String(10), nullable=False, default="PORTRAIT")
+
+
 class NotificationRule(db.Model, BaseModel):
     __tablename__ = "notification_rules"
     event_code = db.Column(db.String(80), nullable=False, index=True)

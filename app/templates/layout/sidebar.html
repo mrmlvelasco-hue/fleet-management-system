@@ -79,6 +79,8 @@
           {% if current_user.has_permission('sysparam.view') %}
           <li><a href="{{ url_for('system_admin.sysparam_list') }}" class="fms-nav-link {{ 'is-active' if ep.startswith('system_admin.sysparam_') }}">
             <i class="fms-nav-link__icon bi bi-sliders"></i><span class="sidebar-label">System Parameters</span></a></li>
+          <li><a href="{{ url_for('system_admin.printtemplate_list') }}" class="fms-nav-link {{ 'is-active' if ep.startswith('system_admin.printtemplate_') }}">
+            <i class="fms-nav-link__icon bi bi-file-earmark-text"></i><span class="sidebar-label">Print Templates</span></a></li>
           {% endif %}
           {% if current_user.has_permission('lookup.view') %}
           <li><a href="{{ url_for('system_admin.lookup_list') }}" class="fms-nav-link {{ 'is-active' if ep.startswith('system_admin.lookup_') }}">

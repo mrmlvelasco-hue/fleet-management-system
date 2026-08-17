@@ -944,10 +944,36 @@ def maintenanceorder_print_vam(oid):
     except Exception:
         pass
 
+    # The Oath of Undertaking is issued WITH the memo -- the assignee
+    # signs both. `?oath=0` prints the memo alone, for a reprint filed
+    # after the undertaking has already been signed once.
+    from app.modules.system_admin.services.print_template_service import (
+        PrintTemplateService)
+    tpl_svc = PrintTemplateService()
+    include_oath = request.args.get("oath", "1") != "0"
+    oath_tpl = tpl_svc.get("OATH_OF_UNDERTAKING") if include_oath else None
+    oath_body = (tpl_svc.render(oath_tpl.body_html, order=item)
+                if oath_tpl else None)
+
+    # Front/back photos for the Conforme page, by document type rather
+    # than by filename, so a rename cannot silently blank the page.
+    from app.core.models.attachment import Attachment
+    def _photo(doc_type):
+        if not item.vehicle_id:
+            return None
+        return (Attachment.query
+               .filter_by(reference_table="vehicles",
+                         reference_id=item.vehicle_id,
+                         document_type=doc_type, is_active=True)
+               .order_by(Attachment.created_at.desc()).first())
+
     return render_template("transactions/maintenanceorder_print_vam.html",
                            item=item, company=company,
                            endorsed_by=endorsed_by, approved_by=approved_by,
                            latest_reg=latest_reg,
+                           oath_template=oath_tpl, oath_body=oath_body,
+                           photo_front=_photo("PHOTO_FRONT"),
+                           photo_back=_photo("PHOTO_BACK"),
                            generated_at=datetime.now())
 
 
