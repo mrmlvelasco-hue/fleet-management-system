@@ -185,4 +185,5 @@ def test_vam_print_shows_fallback_text_for_a_driver_with_no_photo(
     html = client.get(
         f"/transactions/maintenance-orders/{order.id}/print-vam"
     ).get_data(as_text=True)
-    assert "No Photo on File" in html
+    # Wording comes from the client's own VAM template revision.
+    assert "No Photo Available" in html

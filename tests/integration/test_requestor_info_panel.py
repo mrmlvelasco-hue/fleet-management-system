@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from datetime import date, datetime
 
 from app.core.security.password import hash_password
@@ -38,7 +39,8 @@ def test_tripticket_detail_shows_requestor_info(client, db):
     driver = DriverService().create(
         employee_number="EMP-REQ1", first_name="Nora", last_name="Villar",
         license_number="LIC-REQ1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
 
     requester = User(username="req_creator", email="req_creator@x.com",
                      password_hash=hash_password("pw123456"),

@@ -80,7 +80,13 @@ def test_battery_transaction_full_approval_flow_via_http(client, db):
     client.post("/login", data={"username": "batt_flow_approver",
                                 "password": "pw123456"})
     approver_view = client.get(f"/transactions/battery-transactions/{txn.id}")
-    assert b">Approve<" in approver_view.data
+    # The label sits on its own line inside the button, and reads
+    # "Final Approve" at the last level, so a `>Approve<` match is both
+    # whitespace-sensitive and wrong for the final step.
+    import re as _re
+    assert _re.search(r'>\s*(Final\s+)?Approve\s*</button>',
+                      approver_view.get_data(as_text=True)), \
+        "no Approve button for an eligible approver"
     assert b">Reject<" in approver_view.data
 
     resp = client.post(f"/transactions/battery-transactions/{txn.id}/approve",

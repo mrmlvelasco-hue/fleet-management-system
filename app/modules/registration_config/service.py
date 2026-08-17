@@ -217,18 +217,25 @@ class RegistrationDueCalculationService:
                     ["COMPLETED", "CANCELLED"])).all()}
 
         results = []
-        # ACTIVE only.
+        # ACTIVE and IN_REPAIR.
         #
-        # This previously excluded DISPOSED alone, which let INACTIVE and
-        # IN_REPAIR units through. Sending someone to the LTO to renew a
-        # vehicle that is off the road produces work nobody can act on
-        # and inflates the due counts the dashboard is judged by.
+        # This excluded DISPOSED alone, which also let INACTIVE through --
+        # a unit taken out of service is not one to schedule work on.
+        # IN_REPAIR is deliberately KEPT: a vehicle in the shop is
+        # precisely one that maintenance and registration still apply
+        # to, and dropping it would hide work that is actively in hand.
         #
-        # is_active is a separate axis -- the soft-delete flag -- and is
-        # still required: a deleted record stays out whatever its
-        # business status says.
+        # is_active is a different axis (the soft-delete flag) and is
+        # still required: disposal is a business STATUS, not a delete,
+        # so neither check implies the other.
+        #
+        # The eligible set is imported rather than restated so this and
+        # the PM calculation can never disagree about which vehicles
+        # count as due-able.
+        from app.core.maintenance.due_calculation_service import (
+            DUE_ELIGIBLE_STATUSES)
         query = Vehicle.query.filter_by(is_active=True).filter(
-            Vehicle.status == "ACTIVE")
+            Vehicle.status.in_(DUE_ELIGIBLE_STATUSES))
         for vehicle in query.all():
             if vehicle.id in open_vehicle_ids:
                 continue  # renewal already raised — not actionable again

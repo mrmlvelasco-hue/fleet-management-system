@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from app.core.security.password import hash_password
 from app.modules.user_management.models import User, Role, Permission
 
@@ -107,7 +108,8 @@ def test_tripticket_full_flow_still_works_with_ajax_selects(client, db):
     driver = DriverService().create(
         employee_number="EMP-SS1", first_name="Ana", last_name="Reyes",
         license_number="LIC-SS1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
     DocumentTypeService().create(code="TT", name="Trip Ticket",
                                  requires_approval=False, auto_numbering=True)
 

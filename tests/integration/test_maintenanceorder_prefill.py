@@ -94,9 +94,15 @@ def test_dashboard_due_vehicle_link_points_to_prefilled_mo_form(client, db, env)
     _login(client, db, codes=["maintenanceorder.view", "maintenanceorder.create",
                               "vehicle.view"])
 
-    resp = client.get("/")
+    # The due widgets are computed asynchronously: the dashboard route
+    # sets them to None and the browser fetches /dashboard/widgets after
+    # first paint, so queries that scale with FLEET SIZE never delay the
+    # page. The rendered markup therefore lives in that endpoint's JSON
+    # rather than in the dashboard HTML.
+    resp = client.get("/dashboard/widgets")
     assert resp.status_code == 200
-    assert f"/transactions/maintenance-orders/new?vehicle_id={vehicle.id}".encode() in resp.data
+    assert (f"/transactions/maintenance-orders/new?vehicle_id={vehicle.id}"
+            in resp.get_json()["due_maintenance_html"])
 
 
 def test_dashboard_due_vehicle_link_falls_back_without_mo_create_permission(client, db, env):
@@ -108,7 +114,13 @@ def test_dashboard_due_vehicle_link_falls_back_without_mo_create_permission(clie
     db.session.commit()
     _login(client, db, codes=["vehicle.view"])  # no maintenanceorder.create
 
-    resp = client.get("/")
+    # The due widgets are computed asynchronously: the dashboard route
+    # sets them to None and the browser fetches /dashboard/widgets after
+    # first paint, so queries that scale with FLEET SIZE never delay the
+    # page. The rendered markup therefore lives in that endpoint's JSON
+    # rather than in the dashboard HTML.
+    resp = client.get("/dashboard/widgets")
     assert resp.status_code == 200
-    assert f"/master/vehicles/{vehicle.id}".encode() in resp.data
-    assert b"/transactions/maintenance-orders/new" not in resp.data
+    html = resp.get_json()["due_maintenance_html"]
+    assert f"/master/vehicles/{vehicle.id}" in html
+    assert "/transactions/maintenance-orders/new" not in html

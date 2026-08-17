@@ -227,6 +227,14 @@ class _Prefetch:
         return 0, None
 
 
+#: Vehicle statuses that still attract preventive maintenance and LTO
+#: registration. DISPOSED and INACTIVE are out -- a unit retired or taken
+#: out of service needs neither. IN_REPAIR stays in: a vehicle in the shop
+#: is exactly one that maintenance and registration still apply to.
+#: Shared so the PM and Registration due calculations cannot drift apart.
+DUE_ELIGIBLE_STATUSES = ("ACTIVE", "IN_REPAIR")
+
+
 class PMDueCalculationService:
     def __init__(self):
         params = SystemParameterService()
@@ -495,13 +503,13 @@ class PMDueCalculationService:
         prefetch = _Prefetch()
 
         results = []
-        # ACTIVE only.
+        # ACTIVE and IN_REPAIR.
         #
-        # This excluded DISPOSED alone, which let INACTIVE and IN_REPAIR
-        # units through. Scheduling preventive maintenance on a vehicle
-        # that is already off the road produces an order nobody can act
-        # on -- and because a second open PM order for the same vehicle
-        # is refused, it can also block the real one later.
+        # This excluded DISPOSED alone, which also let INACTIVE through --
+        # a unit taken out of service is not one to schedule work on.
+        # IN_REPAIR is deliberately KEPT: a vehicle in the shop is
+        # precisely one that maintenance and registration still apply
+        # to, and dropping it would hide work that is actively in hand.
         #
         # is_active is a different axis (the soft-delete flag) and is
         # still required: disposal is a business STATUS, not a delete,
@@ -513,7 +521,7 @@ class PMDueCalculationService:
                    .options(joinedload(Vehicle.branch),
                            joinedload(Vehicle.vehicle_type))
                    .filter_by(is_active=True)
-                   .filter(Vehicle.status == "ACTIVE").all())
+                   .filter(Vehicle.status.in_(DUE_ELIGIBLE_STATUSES)).all())
         for vehicle in vehicles:
             schedules = prefetch.applicable_schedules(vehicle)
             seen_types = set()

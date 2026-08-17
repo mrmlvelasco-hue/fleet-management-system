@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from datetime import date
 
 from app.core.security.password import hash_password
@@ -43,7 +44,9 @@ def test_create_employee_assignee_without_license(client, db):
     resp = client.post("/master/drivers/new", data={
         "employee_number": "EMP-ASSIGNEEUI1", "assignee_type": "EMPLOYEE",
         "first_name": "Maria", "last_name": "Santos", "branch_id": str(branch.id),
-    }, follow_redirects=True)
+        "photo": tiny_jpeg_file(),
+    }, follow_redirects=True,
+       content_type="multipart/form-data")
     assert resp.status_code == 200
 
     from app.modules.master_data.driver.models import Driver
@@ -60,7 +63,9 @@ def test_create_driver_type_still_requires_license(client, db):
     resp = client.post("/master/drivers/new", data={
         "employee_number": "EMP-ASSIGNEEUI2", "assignee_type": "DRIVER",
         "first_name": "Juan", "last_name": "Cruz", "branch_id": str(branch.id),
-    }, follow_redirects=True)
+        "photo": tiny_jpeg_file(),
+    }, follow_redirects=True,
+       content_type="multipart/form-data")
     assert resp.status_code == 200
     assert b"required" in resp.data.lower() or b"license" in resp.data.lower()
 
@@ -75,7 +80,8 @@ def test_add_emergency_contact_via_form(client, db):
     client.post("/master/drivers/new", data={
         "employee_number": "EMP-ASSIGNEEUI3", "assignee_type": "EMPLOYEE",
         "first_name": "Test", "last_name": "Person", "branch_id": str(branch.id),
-    })
+        "photo": tiny_jpeg_file(),
+    }, content_type="multipart/form-data")
     from app.modules.master_data.driver.models import Driver
     person = Driver.query.filter_by(employee_number="EMP-ASSIGNEEUI3").first()
 

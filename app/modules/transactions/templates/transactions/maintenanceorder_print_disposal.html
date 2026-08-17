@@ -4,22 +4,179 @@
   <meta charset="utf-8">
   <title>Asset Disposal Report — {{ item.disposal_reference_number }}</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; color: #111; font-size: 13px; }
-    .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
-    .letterhead h1 { font-size: 18px; margin: 0; }
-    .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
-    table.info { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    table.info td { padding: 8px 10px; border: 1px solid #999; }
-    table.info td.label { font-weight: bold; width: 25%; background: #f2f2f2; }
-    .retired-banner { text-align: center; border: 2px solid #dc3545; border-radius: 6px;
-                     padding: 10px; margin: 20px 0; color: #dc3545; font-weight: bold;
-                     font-size: 14px; letter-spacing: .05em; }
-    .signature-row { display: flex; justify-content: space-between; margin-top: 60px; }
-    .signature-block { text-align: center; width: 30%; }
-    .signature-line { border-top: 1px solid #333; margin-top: 40px; padding-top: 4px; }
-    .no-print { text-align: center; margin-bottom: 20px; }
-    .footer-note { text-align: center; color: #888; font-size: 10px; margin-top: 30px; }
-    @media print { .no-print { display: none; } }
+    @page {
+      size: A4 portrait;
+      margin: 15mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      margin: 0 auto;
+      max-width: 850px;
+      color: #1e293b;
+      font-size: 11.5px;
+      line-height: 1.4;
+      position: relative;
+    }
+
+    /* Print Controls */
+    .no-print {
+      text-align: right;
+      margin-bottom: 20px;
+      padding: 10px;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+
+    .no-print button {
+      background-color: #0f172a;
+      color: #ffffff;
+      border: none;
+      padding: 7px 16px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .no-print button:hover {
+      background-color: #334155;
+    }
+
+    /* Header & Letterhead */
+    .letterhead {
+      text-align: center;
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+    }
+
+    .letterhead h1 {
+      font-size: 17px;
+      font-weight: 800;
+      margin: 0 0 4px;
+      color: #0f172a;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+
+    .letterhead div {
+      font-size: 11px;
+      color: #475569;
+    }
+
+    .doc-title {
+      text-align: center;
+      font-size: 15px;
+      font-weight: 800;
+      margin: 14px 0 18px;
+      letter-spacing: 0.05em;
+      color: #0f172a;
+    }
+
+    /* Section Headers */
+    h6.section {
+      text-transform: uppercase;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: #334155;
+      border-bottom: 1.5px solid #cbd5e1;
+      padding-bottom: 3px;
+      margin: 16px 0 8px;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+
+    /* Info Table */
+    table.info {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+    }
+
+    table.info td {
+      padding: 6px 10px;
+      border: 1px solid #cbd5e1;
+      vertical-align: middle;
+      font-size: 11.5px;
+    }
+
+    table.info td.label {
+      font-weight: 600;
+      width: 25%;
+      background: #f8fafc;
+      color: #334155;
+    }
+
+    /* Retired Status Banner */
+    .retired-banner {
+      text-align: center;
+      border: 1.5px solid #dc2626;
+      background-color: #fef2f2;
+      border-radius: 6px;
+      padding: 10px;
+      margin: 20px 0;
+      color: #991b1b;
+      font-weight: 800;
+      font-size: 12.5px;
+      letter-spacing: 0.06em;
+    }
+
+    /* Remarks Box */
+    .remarks-box {
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      min-height: 60px;
+      padding: 8px 10px;
+      background-color: #ffffff;
+      font-size: 11px;
+      line-height: 1.4;
+      margin-bottom: 16px;
+    }
+
+    /* Signatures Section */
+    .signature-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      margin-top: 45px;
+    }
+
+    .signature-block {
+      text-align: center;
+      flex: 1;
+    }
+
+    .signature-line {
+      border-top: 1px solid #0f172a;
+      margin-top: 35px;
+      padding-top: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #334155;
+    }
+
+    .footer-note {
+      text-align: center;
+      color: #94a3b8;
+      font-size: 9.5px;
+      margin-top: 35px;
+    }
+
+    @media print {
+      .no-print { display: none !important; }
+      body { margin: 0; }
+      table.info, .signature-row, .retired-banner {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+    }
   </style>
 </head>
 <body>
@@ -31,30 +188,58 @@
     <h1>{{ company.company_name if company else 'Company Name' }}</h1>
     <div>{{ company.address_line1 if company else '' }}{% if company and company.city %}, {{ company.city }}{% endif %}</div>
   </div>
+
   <div class="doc-title">ASSET DISPOSAL REPORT</div>
 
   <table class="info">
-    <tr><td class="label">ADR No.</td><td>{{ item.disposal_reference_number }}</td></tr>
-    <tr><td class="label">Vehicle</td><td>{{ item.vehicle.brand }} {{ item.vehicle.model }} {{ item.vehicle.variant or '' }}
-        ({{ item.vehicle.plate_number or item.vehicle.conduction_number }})</td></tr>
-    <tr><td class="label">Disposal Reason</td><td>{{ item.transaction_type.name if item.transaction_type else '—' }}</td></tr>
-    <tr><td class="label">Disposal Date</td><td>{{ item.completed_date or item.scheduled_date }}</td></tr>
-    <tr><td class="label">Reference MO</td><td>{{ item.document_number or '(draft)' }}</td></tr>
+    <tr>
+      <td class="label">ADR No.</td>
+      <td><strong>{{ item.disposal_reference_number }}</strong></td>
+    </tr>
+    <tr>
+      <td class="label">Vehicle</td>
+      <td>
+        {{ item.vehicle.brand }} {{ item.vehicle.model }} {{ item.vehicle.variant or '' }}
+        (<strong>{{ item.vehicle.plate_number or item.vehicle.conduction_number }}</strong>)
+      </td>
+    </tr>
+    <tr>
+      <td class="label">Disposal Reason</td>
+      <td>{{ item.transaction_type.name if item.transaction_type else '—' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Disposal Date</td>
+      <td>{{ item.completed_date or item.scheduled_date }}</td>
+    </tr>
+    <tr>
+      <td class="label">Reference MO</td>
+      <td>{{ item.document_number or '(draft)' }}</td>
+    </tr>
     {% if item.disposal_value %}
-    <tr><td class="label">Disposal Value</td><td>{{ '%.2f'|format(item.disposal_value) }}</td></tr>
+    <tr>
+      <td class="label">Disposal Value</td>
+      <td>₱{{ '%.2f'|format(item.disposal_value) }}</td>
+    </tr>
     {% endif %}
     {% if item.disposal_recipient %}
-    <tr><td class="label">Recipient</td><td>{{ item.disposal_recipient }}</td></tr>
+    <tr>
+      <td class="label">Recipient</td>
+      <td>{{ item.disposal_recipient }}</td>
+    </tr>
     {% endif %}
-    <tr><td class="label">Branch (at disposal)</td><td>{{ item.vehicle.branch.name if item.vehicle.branch else '—' }}</td></tr>
+    <tr>
+      <td class="label">Branch (at disposal)</td>
+      <td>{{ item.vehicle.branch.name if item.vehicle.branch else '—' }}</td>
+    </tr>
   </table>
 
-  <div class="retired-banner">THIS VEHICLE HAS BEEN RETIRED FROM ACTIVE FLEET SERVICE</div>
+  <div class="retired-banner">
+    THIS VEHICLE HAS BEEN RETIRED FROM ACTIVE FLEET SERVICE
+  </div>
 
   {% if item.description %}
-  <table class="info">
-    <tr><td class="label">Remarks</td><td>{{ item.description }}</td></tr>
-  </table>
+  <h6 class="section">Remarks</h6>
+  <div class="remarks-box">{{ item.description }}</div>
   {% endif %}
 
   <div class="signature-row">

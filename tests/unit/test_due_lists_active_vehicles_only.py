@@ -1,12 +1,14 @@
-"""Due for Maintenance / Due for Registration: ACTIVE vehicles only.
+"""Due for Maintenance / Due for Registration: which statuses qualify.
 
 Both due calculations previously included every vehicle that wasn't
-DISPOSED, which let INACTIVE and IN_REPAIR units through. That produces
-work nobody can act on: raising a PM order or an LTO renewal against a
-unit that is off the road wastes the approver's time and inflates the
-due counts the dashboard is judged by.
+DISPOSED, which let INACTIVE units through -- a vehicle taken out of
+service is not one to raise a PM order or an LTO renewal against.
 
-DISPOSED was already excluded. This narrows it to ACTIVE only.
+IN_REPAIR is deliberately IN. A vehicle sitting in the shop is exactly
+one that maintenance and registration still apply to; excluding it
+would hide work that is actively in hand. (An earlier pass had it
+excluded; the client corrected that, and these tests now pin the
+intended behaviour so it cannot drift back.)
 """
 import pytest
 from datetime import date, timedelta
@@ -68,10 +70,10 @@ def test_registration_due_excludes_inactive_vehicles(app, db, fleet):
     assert fleet["INACTIVE"].plate_number not in _registration_due_plates()
 
 
-def test_registration_due_excludes_in_repair_vehicles(app, db, fleet):
-    """A unit off the road for repair isn't one someone should be sent
-    to the LTO for."""
-    assert fleet["IN_REPAIR"].plate_number not in _registration_due_plates()
+def test_registration_due_includes_in_repair_vehicles(app, db, fleet):
+    """A vehicle in the shop still has an LTO expiry date, and its
+    registration still has to be renewed on time."""
+    assert fleet["IN_REPAIR"].plate_number in _registration_due_plates()
 
 
 def test_registration_due_still_excludes_disposed(app, db, fleet):
@@ -100,20 +102,23 @@ def _pm_due_plates():
     return out
 
 
-def test_pm_due_never_includes_non_active_vehicles(app, db, fleet):
-    """Whatever the PM schedules happen to produce, no vehicle that is
-    not ACTIVE may appear."""
+def test_pm_due_never_includes_retired_or_out_of_service_vehicles(
+        app, db, fleet):
+    """Whatever the PM schedules happen to produce, a DISPOSED or
+    INACTIVE vehicle may never appear."""
     plates = _pm_due_plates()
-    for status in ("INACTIVE", "IN_REPAIR", "DISPOSED"):
+    for status in ("INACTIVE", "DISPOSED"):
         assert fleet[status].plate_number not in plates, (
             f"{status} vehicle appeared in the PM due list")
 
 
-def test_pm_due_query_filters_on_active_status(app, db, fleet):
-    """Asserted at the source too: the PM path builds its vehicle query
-    separately from the registration one, so a fix to either does not
-    imply the other."""
+def test_both_calculations_share_one_eligible_status_set(app, db):
+    """The PM and Registration paths build their vehicle queries
+    separately, so without a shared constant a change to one silently
+    leaves the other behind."""
+    from app.core.maintenance.due_calculation_service import (
+        DUE_ELIGIBLE_STATUSES)
+    assert set(DUE_ELIGIBLE_STATUSES) == {"ACTIVE", "IN_REPAIR"}
     from pathlib import Path
-    import app.core.maintenance.due_calculation_service as mod
-    src = Path(mod.__file__).read_text()
-    assert 'Vehicle.status == "ACTIVE"' in src
+    import app.modules.registration_config.service as reg
+    assert "DUE_ELIGIBLE_STATUSES" in Path(reg.__file__).read_text()

@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from datetime import date, datetime
 
 from app.core.security.password import hash_password
@@ -45,7 +46,8 @@ def test_direct_url_access_to_out_of_scope_record_returns_403(client, db):
     driver = DriverService().create(
         employee_number="EMP-UISCOPE1", first_name="Rico", last_name="Bautista",
         license_number="LIC-UISCOPE1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch_other.id)
+        license_type="PROFESSIONAL", branch_id=branch_other.id,
+                           photo_file=tiny_jpeg_file())
 
     other_requester = User(username="other_branch_requester",
                            email="other_branch_requester@x.com",
@@ -86,7 +88,8 @@ def test_direct_url_access_to_own_submission_always_works(client, db):
     driver = DriverService().create(
         employee_number="EMP-UISCOPE2", first_name="Wendy", last_name="Torres",
         license_number="LIC-UISCOPE2", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch_other.id)
+        license_type="PROFESSIONAL", branch_id=branch_other.id,
+                           photo_file=tiny_jpeg_file())
 
     DocumentTypeService().create(code="TT2", name="Trip Ticket 2",
                                  requires_approval=False, auto_numbering=True)

@@ -2,40 +2,238 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>MO {{ item.document_number }}</title>
+  <title>MO {{ item.document_number or 'DRAFT' }}</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; color: #111; font-size: 13px; position: relative; }
-    .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
-    .letterhead h1 { font-size: 18px; margin: 0; }
-    .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
-    .qr-block { position: absolute; top: 40px; right: 40px; text-align: center; }
-    .qr-block canvas { width: 80px; height: 80px; }
-    .qr-block .url { font-size: 9px; color: #666; max-width: 90px; word-break: break-all; }
-    .watermark {
-      position: fixed; top: 40%; left: 10%; font-size: 90px; font-weight: bold;
-      color: rgba(200, 0, 0, 0.12); transform: rotate(-30deg); z-index: -1; pointer-events: none;
+    @page {
+      size: A4 portrait;
+      margin: 12mm 15mm;
     }
-    h6.section { text-transform: uppercase; font-size: 11px; letter-spacing: .05em; color: #555;
-                border-bottom: 1px solid #ccc; padding-bottom: 3px; margin: 18px 0 8px; }
-    table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-    table.info td { padding: 5px 8px; border: 1px solid #999; }
-    table.info td.label { font-weight: bold; width: 28%; background: #f2f2f2; }
-    table.grid { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-    table.grid th, table.grid td { padding: 5px 7px; border: 1px solid #999; text-align: left; }
-    table.grid th { background: #f2f2f2; }
-    table.grid td.num, table.grid th.num { text-align: right; }
-    .remarks-box { border: 1px solid #999; min-height: 60px; padding: 8px; }
-    .signatures { display: flex; justify-content: space-between; margin-top: 40px; flex-wrap: wrap; }
-    .sig-block { text-align: center; width: 30%; margin-bottom: 20px; }
-    .sig-line { border-top: 1px solid #333; margin-top: 45px; padding-top: 4px; }
-    .sig-name { font-weight: bold; margin-top: 4px; }
-    .sig-date { font-size: 11px; color: #555; }
-    .no-print { text-align: center; margin-bottom: 20px; }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      margin: 0 auto;
+      max-width: 880px;
+      color: #1e293b;
+      font-size: 11.5px;
+      line-height: 1.4;
+      position: relative;
+    }
+
+    /* Print Controls */
+    .no-print {
+      text-align: right;
+      margin-bottom: 16px;
+      padding: 10px;
+      background-color: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+
+    .no-print button {
+      background-color: #0f172a;
+      color: #ffffff;
+      border: none;
+      padding: 7px 16px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .no-print button:hover {
+      background-color: #334155;
+    }
+
+    /* Watermark */
+    .watermark {
+      position: fixed;
+      top: 40%;
+      left: 15%;
+      font-size: 85px;
+      font-weight: 900;
+      color: rgba(220, 38, 38, 0.08);
+      transform: rotate(-30deg);
+      z-index: -1;
+      pointer-events: none;
+      letter-spacing: 0.05em;
+    }
+
+    /* Header & Letterhead */
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+    }
+
+    .letterhead {
+      flex: 1;
+      text-align: center;
+    }
+
+    .letterhead h1 {
+      font-size: 17px;
+      font-weight: 800;
+      margin: 0 0 4px;
+      color: #0f172a;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+
+    .letterhead div {
+      font-size: 11px;
+      color: #475569;
+    }
+
+    .qr-block {
+      text-align: center;
+      width: 75px;
+      flex-shrink: 0;
+    }
+
+    .qr-block canvas {
+      width: 65px;
+      height: 65px;
+    }
+
+    .qr-block .url {
+      font-size: 8px;
+      color: #64748b;
+      margin-top: 2px;
+      line-height: 1.1;
+    }
+
+    .doc-title {
+      text-align: center;
+      font-size: 15px;
+      font-weight: 800;
+      margin: 12px 0 16px;
+      letter-spacing: 0.04em;
+      color: #0f172a;
+    }
+
+    /* Section Headers */
+    h6.section {
+      text-transform: uppercase;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: #334155;
+      border-bottom: 1.5px solid #cbd5e1;
+      padding-bottom: 3px;
+      margin: 16px 0 8px;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+
+    /* Tables */
+    table.info, table.grid {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+
+    table.info td, table.grid th, table.grid td {
+      padding: 5px 8px;
+      border: 1px solid #cbd5e1;
+      vertical-align: middle;
+      font-size: 11px;
+    }
+
+    table.info td.label {
+      font-weight: 600;
+      width: 22%;
+      background: #f8fafc;
+      color: #334155;
+    }
+
+    table.grid th {
+      background: #f1f5f9;
+      font-weight: 600;
+      color: #334155;
+      text-align: left;
+    }
+
+    table.grid td.num, table.grid th.num, table.info td.num {
+      text-align: right !important;
+    }
+
+    .remarks-box {
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      min-height: 48px;
+      padding: 8px;
+      background-color: #ffffff;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    /* Status Badges */
+    .status-pill {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: #fff;
+    }
+    .status-COMPLETED { background: #15803d; }
+    .status-IN_PROGRESS { background: #1d4ed8; }
+    .status-CANCELLED { background: #6b7280; }
+    .status-PENDING_APPROVAL, .status-DRAFT { background: #c2410c; }
+
+    /* Signatures Section */
+    .signatures {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 28px;
+      flex-wrap: wrap;
+    }
+
+    .sig-block {
+      text-align: center;
+      flex: 1;
+      min-width: 130px;
+    }
+
+    .sig-line {
+      border-top: 1px solid #0f172a;
+      margin-top: 40px;
+      padding-top: 4px;
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #334155;
+    }
+
+    .sig-name {
+      font-weight: 700;
+      font-size: 11px;
+      margin-top: 2px;
+      color: #0f172a;
+    }
+
+    .sig-date {
+      font-size: 10px;
+      color: #64748b;
+    }
+
+    /* Print Specific Tweaks */
     @media print {
-      .no-print { display: none; }
+      .no-print { display: none !important; }
+      body { margin: 0; }
       h6.section { page-break-after: avoid; break-after: avoid; }
       table.info, table.grid, .signatures, .remarks-box {
-        page-break-inside: avoid; break-inside: avoid;
+        page-break-inside: avoid;
+        break-inside: avoid;
       }
     }
   </style>
@@ -48,49 +246,70 @@
   {% if item.status in ['DRAFT'] %}<div class="watermark">DRAFT</div>{% endif %}
   {% if item.status == 'CANCELLED' %}<div class="watermark">CANCELLED</div>{% endif %}
 
-  <div class="qr-block">
-    <canvas id="qrCanvas"></canvas>
-    <div class="url">Scan for online record</div>
+  <div class="header-container">
+    <div style="width: 75px;"></div> {# Spacer for center balancing #}
+    <div class="letterhead">
+      <h1>{{ company.company_name if company else 'Company Name' }}</h1>
+      <div>{{ company.address_line1 if company else '' }} {{ company.city if company else '' }}</div>
+    </div>
+    <div class="qr-block">
+      <canvas id="qrCanvas"></canvas>
+      <div class="url">Scan Record</div>
+    </div>
   </div>
 
-  <div class="letterhead">
-    <h1>{{ company.company_name if company else 'Company Name' }}</h1>
-    <div>{{ company.address_line1 if company else '' }} {{ company.city if company else '' }}</div>
-  </div>
   <div class="doc-title">MAINTENANCE ORDER — {{ item.document_number or 'DRAFT' }}</div>
 
   <h6 class="section">Work Order Information</h6>
   <table class="info">
-    <tr><td class="label">Maintenance Type</td><td>{{ item.maintenance_type.name }} ({{ item.category }})</td>
-        <td class="label">Status</td><td>{{ item.status }}</td></tr>
-    <tr><td class="label">Scheduled Date</td><td>{{ item.scheduled_date }}</td>
-        <td class="label">Completed Date</td><td>{{ item.completed_date or '—' }}</td></tr>
-    <tr><td class="label">Last Completed WO</td>
-        <td colspan="3">{{ last_completed.document_number ~ ' (' ~ last_completed.completed_date|string ~ ')' if last_completed else 'None on record' }}</td></tr>
+    <tr>
+      <td class="label">Maintenance Type</td>
+      <td>{{ item.maintenance_type.name }} ({{ item.category }})</td>
+      <td class="label">Status</td>
+      <td><span class="status-pill status-{{ item.status }}">{{ item.status }}</span></td>
+    </tr>
+    <tr>
+      <td class="label">Scheduled Date</td>
+      <td>{{ item.scheduled_date }}</td>
+      <td class="label">Completed Date</td>
+      <td>{{ item.completed_date or '—' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Last Completed WO</td>
+      <td colspan="3">
+        {{ last_completed.document_number ~ ' (' ~ last_completed.completed_date|string ~ ')' if last_completed else 'None on record' }}
+      </td>
+    </tr>
   </table>
 
   <h6 class="section">Vehicle Information</h6>
   <table class="info">
-    <tr><td class="label">Plate Number</td><td>{{ item.vehicle.plate_number or item.vehicle.conduction_number }}</td>
-        <td class="label">Brand / Model</td><td>{{ item.vehicle.brand }} {{ item.vehicle.model }}</td></tr>
-    <tr><td class="label">Odometer</td><td>{{ "{:,}".format(item.vehicle.current_odometer) if item.vehicle.current_odometer else (item.odometer_at_service or '—') }}</td>
-        <td class="label">Branch / Sales Office</td><td>{{ item.vehicle.branch.name if item.vehicle.branch else '—' }}</td></tr>
-    <tr><td class="label">Current Assignee</td>
-        <td>{{ item.vehicle.assigned_driver.full_name if item.vehicle.assigned_driver else '—' }}</td>
-        <td class="label">Assignee Position</td>
-        <td>{{ item.vehicle.assigned_driver.job_title if item.vehicle.assigned_driver and item.vehicle.assigned_driver.job_title else '—' }}</td></tr>
-    <tr><td class="label">Assigned Mechanic</td><td>{{ item.assigned_mechanic or '—' }}</td>
-        <td class="label">Vendor</td><td>{{ item.vendor.name if item.vendor else '—' }}</td></tr>
+    <tr>
+      <td class="label">Plate Number</td>
+      <td><strong>{{ item.vehicle.plate_number or item.vehicle.conduction_number }}</strong></td>
+      <td class="label">Brand / Model</td>
+      <td>{{ item.vehicle.brand }} {{ item.vehicle.model }}</td>
+    </tr>
+    <tr>
+      <td class="label">Odometer</td>
+      <td>{{ "{:,}".format(item.vehicle.current_odometer|int) if item.vehicle.current_odometer else (item.odometer_at_service or '—') }} km</td>
+      <td class="label">Branch / Sales Office</td>
+      <td>{{ item.vehicle.branch.name if item.vehicle.branch else '—' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Current Assignee</td>
+      <td>{{ item.vehicle.assigned_driver.full_name if item.vehicle.assigned_driver else '—' }}</td>
+      <td class="label">Assignee Position</td>
+      <td>{{ item.vehicle.assigned_driver.job_title if item.vehicle.assigned_driver and item.vehicle.assigned_driver.job_title else '—' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Assigned Mechanic</td>
+      <td>{{ item.assigned_mechanic or '—' }}</td>
+      <td class="label">Vendor</td>
+      <td>{{ item.vendor.name if item.vendor else '—' }}</td>
+    </tr>
   </table>
 
-  {# The PM package's own Work Order template is shown as its OWN
-     section, directly after Vehicle Information, because it carries the
-     PM milestone kilometrage ("65,000 km servicing of ...") that
-     identifies which service this is. Previously it only appeared as a
-     fallback when the order had no description of its own, so as soon as
-     anyone typed a description the PM KM disappeared from the printout.
-     Tokens are resolved against this vehicle, so no separate pm2-pm9
-     legend is needed on the page. #}
   {% if item.pm_schedule and item.pm_schedule.work_description_template %}
   <h6 class="section">Work Order Template (PM)</h6>
   <div class="remarks-box">{{ item.pm_schedule.work_description_template|pm_tokens(item.vehicle) }}</div>
@@ -104,10 +323,22 @@
   {% if item.checklist_items %}
   <h6 class="section">Checklist</h6>
   <table class="grid">
-    <tr><th>Code</th><th>Activity</th><th style="width:60px;">Done</th></tr>
-    {% for ci in item.checklist_items %}
-    <tr><td>{{ ci.activity_code }}</td><td>{{ ci.activity_description|pm_tokens(item.vehicle) }}</td><td>{{ '✓' if ci.is_done else '—' }}</td></tr>
-    {% endfor %}
+    <thead>
+      <tr>
+        <th style="width: 15%;">Code</th>
+        <th>Activity</th>
+        <th style="width: 60px; text-align: center;">Done</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ci in item.checklist_items %}
+      <tr>
+        <td>{{ ci.activity_code }}</td>
+        <td>{{ ci.activity_description|pm_tokens(item.vehicle) }}</td>
+        <td style="text-align: center;">{{ '✓' if ci.is_done else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
   </table>
   {% endif %}
 
@@ -116,42 +347,81 @@
   {% for inv in active_invoices|sort(attribute='id') %}
   <h6 class="section">Invoice: {{ inv.invoice_number }} — {{ inv.vendor.name }}</h6>
   <table class="grid">
-    <tr><th>Part / Description</th><th>Spec</th><th class="num">Qty</th>
-      <th class="num">Unit Cost</th><th>Category</th><th class="num">Total</th></tr>
-    {% for l in inv.line_items|sort(attribute='sort_order') %}
-    <tr><td>{{ l.part_description }}</td><td>{{ l.specification or '—' }}</td>
-        <td class="num">{{ l.quantity }}</td><td class="num">{{ "{:,.2f}".format(l.unit_cost) }}</td>
+    <thead>
+      <tr>
+        <th>Part / Description</th>
+        <th>Spec</th>
+        <th class="num" style="width: 60px;">Qty</th>
+        <th class="num" style="width: 90px;">Unit Cost</th>
+        <th>Category</th>
+        <th class="num" style="width: 100px;">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in inv.line_items|sort(attribute='sort_order') %}
+      <tr>
+        <td>{{ l.part_description }}</td>
+        <td>{{ l.specification or '—' }}</td>
+        <td class="num">{{ l.quantity }}</td>
+        <td class="num">₱{{ "{:,.2f}".format(l.unit_cost|float) }}</td>
         <td>{{ l.expense_category }}</td>
-        <td class="num">{{ "{:,.2f}".format(l.total_amount) }}</td></tr>
-    {% endfor %}
-    <tr><td colspan="5" style="text-align:right"><strong>Invoice Total</strong></td>
-        <td class="num"><strong>{{ "{:,.2f}".format(inv.total_invoice_amount) }}</strong></td></tr>
+        <td class="num">₱{{ "{:,.2f}".format(l.total_amount|float) }}</td>
+      </tr>
+      {% endfor %}
+      <tr>
+        <td colspan="5" class="num"><strong>Invoice Total</strong></td>
+        <td class="num"><strong>₱{{ "{:,.2f}".format(inv.total_invoice_amount|float) }}</strong></td>
+      </tr>
+    </tbody>
   </table>
   {% endfor %}
 
   <h6 class="section">Invoice Summary (All Invoices Combined)</h6>
   <table class="info">
-    <tr><td class="label">Total Parts Cost</td><td class="num">{{ "{:,.2f}".format(item.invoices|sum(attribute='total_parts_cost')) }}</td>
-        <td class="label">Total Labor Cost</td><td class="num">{{ "{:,.2f}".format(item.invoices|sum(attribute='total_labor_cost')) }}</td></tr>
-    <tr><td class="label">Total VAT</td><td class="num">{{ "{:,.2f}".format(item.invoices|sum(attribute='total_vat')) }}</td>
-        <td class="label">Total Invoice Amount</td><td class="num"><strong>{{ "{:,.2f}".format(item.invoices|sum(attribute='total_invoice_amount')) }}</strong></td></tr>
+    <tr>
+      <td class="label">Total Parts Cost</td>
+      <td class="num">₱{{ "{:,.2f}".format((item.invoices|sum(attribute='total_parts_cost'))|float) }}</td>
+      <td class="label">Total Labor Cost</td>
+      <td class="num">₱{{ "{:,.2f}".format((item.invoices|sum(attribute='total_labor_cost'))|float) }}</td>
+    </tr>
+    <tr>
+      <td class="label">Total VAT</td>
+      <td class="num">₱{{ "{:,.2f}".format((item.invoices|sum(attribute='total_vat'))|float) }}</td>
+      <td class="label">Total Invoice Amount</td>
+      <td class="num"><strong>₱{{ "{:,.2f}".format((item.invoices|sum(attribute='total_invoice_amount'))|float) }}</strong></td>
+    </tr>
   </table>
   {% else %}
   <h6 class="section">Cost Summary</h6>
   <table class="info">
-    <tr><td class="label">Estimated Cost</td><td>{{ item.estimated_cost if item.estimated_cost else '—' }}</td>
-        <td class="label">Actual Cost</td><td>{{ item.actual_cost if item.actual_cost else '—' }}</td></tr>
+    <tr>
+      <td class="label">Estimated Cost</td>
+      <td>{{ ('₱' ~ "{:,.2f}".format(item.estimated_cost|float)) if item.estimated_cost else '—' }}</td>
+      <td class="label">Actual Cost</td>
+      <td>{{ ('₱' ~ "{:,.2f}".format(item.actual_cost|float)) if item.actual_cost else '—' }}</td>
+    </tr>
   </table>
   {% endif %}
 
   {% if attachments %}
   <h6 class="section">Attachments</h6>
   <table class="grid">
-    <tr><th>File Name</th><th>Uploaded By</th><th>Date</th></tr>
-    {% for a in attachments %}
-    <tr><td>{{ a.original_filename }}</td><td>{{ lookup_user(a.created_by).full_name if lookup_user(a.created_by) else '—' }}</td>
-        <td>{{ a.created_at.strftime('%Y-%m-%d') if a.created_at else '—' }}</td></tr>
-    {% endfor %}
+    <thead>
+      <tr>
+        <th>File Name</th>
+        <th>Uploaded By</th>
+        <th style="width: 120px;">Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in attachments %}
+      <tr>
+        <td>{{ a.original_filename }}</td>
+        <td>{{ lookup_user(a.created_by).full_name if lookup_user(a.created_by) else '—' }}</td>
+        <td>{{ a.created_at.strftime('%Y-%m-%d') if a.created_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
   </table>
   {% endif %}
 
@@ -178,22 +448,23 @@
       <div class="sig-line">Mechanic's Signature</div>
     </div>
   </div>
-</body>
-<script src="{{ url_for("static", filename="vendor/qrcode-generator/qrcode.min.js") }}"></script>
-<script>
-  var qr = qrcode(0, 'M');
-  qr.addData(window.location.origin + "{{ url_for('transactions.maintenanceorder_detail', oid=item.id) }}");
-  qr.make();
-  var canvas = document.getElementById('qrCanvas');
-  var ctx = canvas.getContext('2d');
-  var size = qr.getModuleCount();
-  var cell = 4;
-  canvas.width = canvas.height = size * cell;
-  for (var row = 0; row < size; row++) {
-    for (var col = 0; col < size; col++) {
-      ctx.fillStyle = qr.isDark(row, col) ? '#000' : '#fff';
-      ctx.fillRect(col * cell, row * cell, cell, cell);
+
+  <script src="{{ url_for("static", filename="vendor/qrcode-generator/qrcode.min.js") }}"></script>
+  <script>
+    var qr = qrcode(0, 'M');
+    qr.addData(window.location.origin + "{{ url_for('transactions.maintenanceorder_detail', oid=item.id) }}");
+    qr.make();
+    var canvas = document.getElementById('qrCanvas');
+    var ctx = canvas.getContext('2d');
+    var size = qr.getModuleCount();
+    var cell = 3;
+    canvas.width = canvas.height = size * cell;
+    for (var row = 0; row < size; row++) {
+      for (var col = 0; col < size; col++) {
+        ctx.fillStyle = qr.isDark(row, col) ? '#0f172a' : '#ffffff';
+        ctx.fillRect(col * cell, row * cell, cell, cell);
+      }
     }
-  }
-</script>
+  </script>
+</body>
 </html>

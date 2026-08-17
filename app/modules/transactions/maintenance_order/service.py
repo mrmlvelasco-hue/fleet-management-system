@@ -6,6 +6,7 @@ Preventive orders require every checklist item completed before the order
 can be marked COMPLETED; Corrective orders have no checklist requirement
 (unscheduled/reactive repair work)."""
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.exc import IntegrityError
 
@@ -384,6 +385,19 @@ class MaintenanceOrderService(BaseTransactionService):
                     f"{len(incomplete)} checklist item(s) still incomplete; "
                     "all items must be done before completing a Preventive "
                     "Maintenance order.")
+        # Coerce to Decimal rather than storing whatever the form sent.
+        # The route passes request.form values straight through, so this
+        # arrives as a STRING, and SQLAlchemy does not coerce a Numeric
+        # column until flush -- so anything reading order.actual_cost in
+        # the same request gets a str. The print template formats it as
+        # money ("{:,.2f}"), which raised
+        #   ValueError: Unknown format code 'f' for object of type 'str'
+        # and 500'd the printout immediately after completing an order.
+        if actual_cost is not None and not isinstance(actual_cost, Decimal):
+            try:
+                actual_cost = Decimal(str(actual_cost))
+            except (InvalidOperation, ValueError):
+                actual_cost = None
         order.actual_cost = actual_cost
         order.completed_date = completed_date
         order.status = "COMPLETED"

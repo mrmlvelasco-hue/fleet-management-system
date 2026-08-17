@@ -1,6 +1,7 @@
 from datetime import date
 
 import pytest
+from tests.conftest import tiny_jpeg_file
 
 from app.core.security.password import hash_password
 from app.modules.user_management.models import User, Role, Permission
@@ -40,7 +41,8 @@ def env(db):
     driver = DriverService().create(
         employee_number="EMP-MOSCOPEUI1", first_name="Test", last_name="Assignee",
         license_number="LIC-MOSCOPEUI1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id, job_title="Manager")
+        license_type="PROFESSIONAL", branch_id=branch.id, job_title="Manager",
+                           photo_file=tiny_jpeg_file())
     vehicle = VehicleService().create(
         vehicle_type_id=vt.id, brand="Ford", model="Escape", year=2024,
         branch_id=branch.id, conduction_number="MOSCOPEUI-000",

@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from datetime import date, datetime
 
 from app.core.security.password import hash_password
@@ -24,7 +25,8 @@ def test_cancel_button_only_shown_to_the_requester_not_other_approvers(client, d
     driver = DriverService().create(
         employee_number="EMP-CANCELUI1", first_name="Rey", last_name="Santos",
         license_number="LIC-CANCELUI1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
     DocumentTypeService().create(code="TT", name="Trip Ticket",
                                  requires_approval=False, auto_numbering=True)
     from app.modules.document_config.models import DocumentType

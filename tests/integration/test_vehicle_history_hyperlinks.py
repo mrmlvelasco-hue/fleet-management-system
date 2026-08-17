@@ -99,5 +99,12 @@ def test_maintenance_history_shows_category_badge(client, db, env):
 
     resp = client.get(f"/master/vehicles/{vehicle.id}")
     assert resp.status_code == 200
-    assert b">PM<" in resp.data
-    assert b">CM<" in resp.data
+    # The badge text sits on its own line inside the span, so a
+    # `>PM<` match is whitespace-sensitive and brittle. Match the
+    # rendered badge instead.
+    import re as _re
+    html = resp.get_data(as_text=True)
+    assert _re.search(r'<span class="badge[^"]*">\s*PM\s*</span>', html), \
+        "no PM category badge in the maintenance history"
+    assert _re.search(r'<span class="badge[^"]*">\s*CM\s*</span>', html), \
+        "no CM category badge in the maintenance history"

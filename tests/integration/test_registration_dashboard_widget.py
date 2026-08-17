@@ -45,11 +45,20 @@ def test_dashboard_shows_due_registration_widget(client, db):
     db.session.commit()
 
     _login(client, db, codes=["vehicle.view", "vehicleregistration.create"])
-    resp = client.get("/")
+    # The due widgets are computed asynchronously: the dashboard route
+    # sets them to None and the browser fetches /dashboard/widgets after
+    # first paint, so queries that scale with FLEET SIZE never delay the
+    # page. The rendered markup therefore lives in that endpoint's JSON
+    # rather than in the dashboard HTML.
+    resp = client.get("/dashboard/widgets")
     assert resp.status_code == 200
-    assert b"Vehicles Due for Registration Renewal" in resp.data
-    assert b"REGDASH-000" in resp.data
-    assert b"OVERDUE" in resp.data
+    html = resp.get_json()["due_registration_html"]
+    assert "REGDASH-000" in html
+    # The partial renders a human label ("Overdue"), not the raw status
+    # enum, and marks it with the danger badge variant.
+    assert "Overdue" in html
+    assert "ent-badge--danger" in html
+    assert resp.get_json()["registration_count"] == 1
 
 
 def test_dashboard_registration_link_prefills_new_form(client, db):
@@ -67,8 +76,14 @@ def test_dashboard_registration_link_prefills_new_form(client, db):
     db.session.commit()
 
     _login(client, db, codes=["vehicle.view", "vehicleregistration.create"])
-    resp = client.get("/")
-    assert f"/transactions/vehicle-registrations/new?vehicle_id={vehicle.id}".encode() in resp.data
+    # The due widgets are computed asynchronously: the dashboard route
+    # sets them to None and the browser fetches /dashboard/widgets after
+    # first paint, so queries that scale with FLEET SIZE never delay the
+    # page. The rendered markup therefore lives in that endpoint's JSON
+    # rather than in the dashboard HTML.
+    resp = client.get("/dashboard/widgets")
+    assert (f"/transactions/vehicle-registrations/new?vehicle_id={vehicle.id}"
+            in resp.get_json()["due_registration_html"])
 
     prefilled = client.get(
         f"/transactions/vehicle-registrations/new?vehicle_id={vehicle.id}"

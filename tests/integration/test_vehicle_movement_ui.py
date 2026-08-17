@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from datetime import date
 
 from app.core.security.password import hash_password
@@ -44,7 +45,8 @@ def test_create_vehicle_movement_defaults_driver_and_shows_on_detail(client, db)
     driver = DriverService().create(
         employee_number="EMP-VMUI1", first_name="Nora", last_name="Lopez",
         license_number="LIC-VMUI1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
     vehicle = VehicleService().create(
         vehicle_type_id=vt.id, brand="Isuzu", model="Elf", year=2024,
         branch_id=branch.id, conduction_number="VMUI-000",

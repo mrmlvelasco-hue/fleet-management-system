@@ -1,6 +1,7 @@
 from datetime import date
 
 import pytest
+from tests.conftest import tiny_jpeg_file
 
 from app.core.security.password import hash_password
 from app.modules.user_management.models import User, Role, Permission
@@ -39,7 +40,8 @@ def env(db):
         employee_number="EMP-REGPRINT1", first_name="Liza", last_name="Cruz",
         license_number="LIC-REGPRINT1", license_expiry=date(2030, 1, 1),
         license_type="PROFESSIONAL", branch_id=branch.id,
-        job_title="Area Sales Manager")
+        job_title="Area Sales Manager",
+                           photo_file=tiny_jpeg_file())
     return branch, vt, driver
 
 

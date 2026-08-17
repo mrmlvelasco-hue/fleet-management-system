@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from datetime import date
 
 from app.core.security.password import hash_password
@@ -54,7 +55,8 @@ def test_driver_search(client, db):
     DriverService().create(employee_number="EMP-API1", first_name="Juan",
                            last_name="Cruz", license_number="LIC-API1",
                            license_expiry=date(2030, 1, 1),
-                           license_type="PROFESSIONAL", branch_id=branch.id)
+                           license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
     resp = client.get("/api/search/drivers?q=Cruz")
     assert resp.status_code == 200
     data = resp.get_json()

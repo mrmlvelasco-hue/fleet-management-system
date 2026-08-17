@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from datetime import date
 
 from app.core.security.password import hash_password
@@ -35,7 +36,8 @@ def _seed_vehicle_and_driver(db):
     driver = DriverService().create(
         employee_number="EMP-INT1", first_name="Ana", last_name="Reyes",
         license_number="LIC-INT1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
     DocumentTypeService().create(code="TT", name="Trip Ticket",
                                  requires_approval=False, auto_numbering=True)
     return vehicle, driver

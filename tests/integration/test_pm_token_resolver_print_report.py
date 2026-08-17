@@ -1,6 +1,7 @@
 from datetime import date
 
 import pytest
+from tests.conftest import tiny_jpeg_file
 
 from app.core.security.password import hash_password
 from app.modules.user_management.models import User, Role, Permission
@@ -42,7 +43,8 @@ def test_reported_scenario_checklist_tokens_resolve_on_print(client, db):
     driver = DriverService().create(
         employee_number="EMP-TOKENBUG1", first_name="Juan", last_name="Dela Cruz",
         license_number="LIC-TOKENBUG1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
     vehicle = VehicleService().create(
         vehicle_type_id=vt.id, brand="Honda", model="HR-V", year=2024,
         branch_id=branch.id, conduction_number="TOKENBUG-000",

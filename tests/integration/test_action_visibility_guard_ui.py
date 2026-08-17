@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from datetime import date, datetime
 
 from app.core.security.password import hash_password
@@ -48,7 +49,8 @@ def test_cancel_action_on_out_of_scope_record_does_not_crash(client, db):
     driver = DriverService().create(
         employee_number="EMP-ACTUI1", first_name="Zeny", last_name="Ocampo",
         license_number="LIC-ACTUI1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch_other.id)
+        license_type="PROFESSIONAL", branch_id=branch_other.id,
+                           photo_file=tiny_jpeg_file())
     other_requester = User(username="actui_other", email="actui_other@x.com",
                            password_hash="x")
     db.session.add(other_requester)

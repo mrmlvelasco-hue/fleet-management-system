@@ -2,29 +2,228 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Asset Transfer Report — {{ item.transfer_reference_number }}</title>
+  <title>Transfer Order — {{ item.document_number or 'DRAFT' }}</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; color: #111; font-size: 13px; }
-    .letterhead { text-align: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
-    .letterhead h1 { font-size: 18px; margin: 0; }
-    .doc-title { text-align: center; font-size: 16px; font-weight: bold; margin: 20px 0; text-decoration: underline; }
-    table.info { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    table.info td { padding: 8px 10px; border: 1px solid #999; }
-    table.info td.label { font-weight: bold; width: 25%; background: #f2f2f2; }
-    .transfer-flow { display: flex; align-items: center; justify-content: center; gap: 24px;
-                    margin: 24px 0; }
-    .transfer-box { border: 2px solid #333; border-radius: 6px; padding: 14px 24px;
-                   text-align: center; min-width: 220px; }
-    .transfer-box .label { font-size: 10px; text-transform: uppercase; color: #666;
-                          letter-spacing: .05em; margin-bottom: 4px; }
-    .transfer-box .value { font-weight: bold; font-size: 14px; }
-    .transfer-arrow { font-size: 28px; color: #333; }
-    .signature-row { display: flex; justify-content: space-between; margin-top: 60px; }
-    .signature-block { text-align: center; width: 30%; }
-    .signature-line { border-top: 1px solid #333; margin-top: 40px; padding-top: 4px; }
-    .no-print { text-align: center; margin-bottom: 20px; }
-    .footer-note { text-align: center; color: #888; font-size: 10px; margin-top: 30px; }
-    @media print { .no-print { display: none; } }
+    @page {
+      size: A4 portrait;
+      margin: 12mm 15mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      margin: 0 auto;
+      max-width: 880px;
+      color: #1e293b;
+      font-size: 11.5px;
+      line-height: 1.4;
+      position: relative;
+    }
+
+    /* Print Controls */
+    .no-print {
+      text-align: right;
+      margin-bottom: 16px;
+      padding: 10px;
+      background-color: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+
+    .no-print button {
+      background-color: #0f172a;
+      color: #ffffff;
+      border: none;
+      padding: 7px 16px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .no-print button:hover {
+      background-color: #334155;
+    }
+
+    /* Watermark */
+    .watermark {
+      position: fixed;
+      top: 40%;
+      left: 15%;
+      font-size: 85px;
+      font-weight: 900;
+      color: rgba(220, 38, 38, 0.08);
+      transform: rotate(-30deg);
+      z-index: -1;
+      pointer-events: none;
+      letter-spacing: 0.05em;
+    }
+
+    /* Header & Letterhead */
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+    }
+
+    .letterhead {
+      flex: 1;
+      text-align: center;
+    }
+
+    .letterhead h1 {
+      font-size: 17px;
+      font-weight: 800;
+      margin: 0 0 4px;
+      color: #0f172a;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+
+    .letterhead div {
+      font-size: 11px;
+      color: #475569;
+    }
+
+    .qr-block {
+      text-align: center;
+      width: 75px;
+      flex-shrink: 0;
+    }
+
+    .qr-block canvas {
+      width: 65px;
+      height: 65px;
+    }
+
+    .qr-block .url {
+      font-size: 8px;
+      color: #64748b;
+      margin-top: 2px;
+      line-height: 1.1;
+    }
+
+    .doc-title {
+      text-align: center;
+      font-size: 15px;
+      font-weight: 800;
+      margin: 12px 0 16px;
+      letter-spacing: 0.04em;
+      color: #0f172a;
+    }
+
+    /* Section Headers */
+    h6.section {
+      text-transform: uppercase;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: #334155;
+      border-bottom: 1.5px solid #cbd5e1;
+      padding-bottom: 3px;
+      margin: 16px 0 8px;
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+
+    /* Tables */
+    table.info {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+
+    table.info td {
+      padding: 6px 10px;
+      border: 1px solid #cbd5e1;
+      vertical-align: middle;
+      font-size: 11px;
+    }
+
+    table.info td.label {
+      font-weight: 600;
+      width: 22%;
+      background: #f8fafc;
+      color: #334155;
+    }
+
+    .remarks-box {
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      min-height: 48px;
+      padding: 8px 10px;
+      background-color: #ffffff;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    /* Status Badges */
+    .status-pill {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: #fff;
+    }
+    .status-COMPLETED, .status-TRANSFERRED { background: #15803d; }
+    .status-IN_TRANSIT, .status-IN_PROGRESS { background: #1d4ed8; }
+    .status-CANCELLED { background: #6b7280; }
+    .status-PENDING, .status-DRAFT { background: #c2410c; }
+
+    /* Signatures Section */
+    .signatures {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 28px;
+      flex-wrap: wrap;
+    }
+
+    .sig-block {
+      text-align: center;
+      flex: 1;
+      min-width: 130px;
+    }
+
+    .sig-line {
+      border-top: 1px solid #0f172a;
+      margin-top: 40px;
+      padding-top: 4px;
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #334155;
+    }
+
+    .sig-name {
+      font-weight: 700;
+      font-size: 11px;
+      margin-top: 2px;
+      color: #0f172a;
+    }
+
+    .sig-date {
+      font-size: 10px;
+      color: #64748b;
+    }
+
+    @media print {
+      .no-print { display: none !important; }
+      body { margin: 0; }
+      h6.section { page-break-after: avoid; break-after: avoid; }
+      table.info, .signatures, .remarks-box {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+    }
   </style>
 </head>
 <body>
@@ -32,52 +231,111 @@
     <button onclick="window.print()">Print / Save as PDF</button>
   </div>
 
-  <div class="letterhead">
-    <h1>{{ company.company_name if company else 'Company Name' }}</h1>
-    <div>{{ company.address_line1 if company else '' }}{% if company and company.city %}, {{ company.city }}{% endif %}</div>
-  </div>
-  <div class="doc-title">ASSET TRANSFER REPORT</div>
+  {% if item.status in ['DRAFT'] %}<div class="watermark">DRAFT</div>{% endif %}
+  {% if item.status == 'CANCELLED' %}<div class="watermark">CANCELLED</div>{% endif %}
 
+  <div class="header-container">
+    <div style="width: 75px;"></div>
+    <div class="letterhead">
+      <h1>{{ company.company_name if company else 'Company Name' }}</h1>
+      <div>{{ company.address_line1 if company else '' }} {{ company.city if company else '' }}</div>
+    </div>
+    <div class="qr-block">
+      <canvas id="qrCanvas"></canvas>
+      <div class="url">Scan Record</div>
+    </div>
+  </div>
+
+  <div class="doc-title">VEHICLE TRANSFER ORDER — {{ item.document_number or 'DRAFT' }}</div>
+
+  <h6 class="section">Transfer Information</h6>
   <table class="info">
-    <tr><td class="label">ATR No.</td><td>{{ item.transfer_reference_number or '(not yet generated — complete this order first)' }}</td></tr>
-    <tr><td class="label">Vehicle</td><td>{{ item.vehicle.brand }} {{ item.vehicle.model }} {{ item.vehicle.variant or '' }}
-        ({{ item.vehicle.plate_number or item.vehicle.conduction_number }})</td></tr>
-    <tr><td class="label">Transfer Date</td><td>{{ item.completed_date or item.scheduled_date }}</td></tr>
-    <tr><td class="label">Reference MO</td><td>{{ item.document_number or '(draft)' }}</td></tr>
+    {# ATR No. -- the transfer's own reference number, generated on
+       completion. The redesigned layout dropped it; it is the number
+       people quote when tracing a transfer, so it is restored here
+       with the same "not yet generated" wording as before. #}
+    <tr>
+      <td class="label">ATR No.</td>
+      <td><strong>{{ item.transfer_reference_number
+                     or '(not yet generated — complete this order first)' }}</strong></td>
+      <td class="label">Reference MO</td>
+      <td>{{ item.document_number or '(draft)' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Status</td>
+      <td><span class="status-pill status-{{ item.status }}">{{ item.status }}</span></td>
+      <td class="label">Transfer Date</td>
+      <td>{{ item.completed_date or item.scheduled_date or '—' }}</td>
+    </tr>
+    <tr>
+      {# origin_branch / destination_branch are the relationship names on
+         MaintenanceOrder. `from_branch` / `to_branch` do not exist, so
+         Jinja resolved them to Undefined and BOTH branches printed as a
+         dash -- silently blank on a document that exists to record where
+         a vehicle went. Falling back to the vehicle's own branch for the
+         origin matches the behaviour the previous version had. #}
+      <td class="label">Origin Branch</td>
+      <td>{{ item.origin_branch.name if item.origin_branch
+             else (item.vehicle.branch.name if item.vehicle.branch else '—') }}</td>
+      <td class="label">Destination Branch</td>
+      <td>{{ item.destination_branch.name if item.destination_branch else '—' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Reason / Purpose</td>
+      <td colspan="3">{{ item.description or '—' }}</td>
+    </tr>
   </table>
 
-  <div class="transfer-flow">
-    <div class="transfer-box">
-      <div class="label">From</div>
-      <div class="value">{{ item.origin_branch.name if item.origin_branch else (item.vehicle.branch.name if item.vehicle.branch else '—') }}</div>
-    </div>
-    <div class="transfer-arrow">&rarr;</div>
-    <div class="transfer-box">
-      <div class="label">To</div>
-      <div class="value">{{ item.destination_branch.name if item.destination_branch else '—' }}</div>
-    </div>
-  </div>
-
-  {% if item.description %}
+  <h6 class="section">Vehicle Information</h6>
   <table class="info">
-    <tr><td class="label">Remarks</td><td>{{ item.description }}</td></tr>
+    <tr>
+      <td class="label">Plate / Conduction</td>
+      <td><strong>{{ item.vehicle.plate_number or item.vehicle.conduction_number }}</strong></td>
+      <td class="label">Brand / Model</td>
+      <td>{{ item.vehicle.brand }} {{ item.vehicle.model }}</td>
+    </tr>
+    <tr>
+      <td class="label">Odometer at Transfer</td>
+      <td>{{ "{:,}".format(item.odometer_at_service|int) if item.odometer_at_service else '—' }} km</td>
+      <td class="label">Assigned Driver</td>
+      <td>{{ item.vehicle.assigned_driver.full_name if item.vehicle.assigned_driver else '—' }}</td>
+    </tr>
   </table>
-  {% endif %}
 
-  <div class="signature-row">
-    <div class="signature-block">
-      <div class="signature-line">Released By</div>
+  <h6 class="section">Remarks / Handover Notes</h6>
+  <div class="remarks-box"></div>
+
+  <h6 class="section">Signatures</h6>
+  <div class="signatures">
+    <div class="sig-block">
+      <div class="sig-line">Prepared By</div>
+      <div class="sig-name">{{ item.requester.full_name if item.requester else '' }}</div>
+      <div class="sig-date">{{ item.created_at.strftime('%Y-%m-%d') if item.created_at else '' }}</div>
     </div>
-    <div class="signature-block">
-      <div class="signature-line">Received By</div>
+    <div class="sig-block">
+      <div class="sig-line">Released By (Origin)</div>
     </div>
-    <div class="signature-block">
-      <div class="signature-line">Approved By</div>
+    <div class="sig-block">
+      <div class="sig-line">Received By (Destination)</div>
     </div>
   </div>
 
-  <div class="footer-note">
-    Generated {{ generated_at.strftime('%B %d, %Y %I:%M %p') }} — Fleet Management System
-  </div>
+  <script src="{{ url_for("static", filename="vendor/qrcode-generator/qrcode.min.js") }}"></script>
+  <script>
+    var qr = qrcode(0, 'M');
+    qr.addData(window.location.origin + "{{ url_for('transactions.maintenanceorder_detail', oid=item.id) }}");
+    qr.make();
+    var canvas = document.getElementById('qrCanvas');
+    var ctx = canvas.getContext('2d');
+    var size = qr.getModuleCount();
+    var cell = 3;
+    canvas.width = canvas.height = size * cell;
+    for (var row = 0; row < size; row++) {
+      for (var col = 0; col < size; col++) {
+        ctx.fillStyle = qr.isDark(row, col) ? '#0f172a' : '#ffffff';
+        ctx.fillRect(col * cell, row * cell, cell, cell);
+      }
+    }
+  </script>
 </body>
 </html>

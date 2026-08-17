@@ -8,6 +8,24 @@ from app.modules.master_data.reference.service import VehicleTypeService
 from app.modules.master_data.vehicle.service import VehicleService
 
 
+
+def _kpi_value(html, label):
+    """The rendered value of a named KPI card.
+
+    The KPI markup was renamed (fms-kpi-card__value -> ent-kpi__value)
+    and gained data-counter attributes for the count-up animation, so a
+    literal string match on the old markup is both stale and brittle.
+    Locating the card by its LABEL and reading the value that follows
+    survives further cosmetic churn.
+    """
+    import re
+    i = html.find(label)
+    assert i != -1, f"no {label!r} KPI card on the dashboard"
+    m = re.search(r'<div class="ent-kpi__value"[^>]*>\s*([^<]*?)\s*</div>',
+                  html[i:])
+    assert m, f"no value rendered for the {label!r} KPI card"
+    return m.group(1).strip()
+
 def _login(client, db, *, codes=()):
     role = Role(name="DashUIRole")
     for code in codes:
@@ -38,7 +56,7 @@ def test_dashboard_shows_real_fleet_count_not_placeholder(client, db):
     assert resp.status_code == 200
     assert b"Fleet" in resp.data
     # No longer showing the raw placeholder dash for the count
-    assert b'<div class="fms-kpi-card__value">\xe2\x80\x94</div>' not in resp.data
+    assert _kpi_value(resp.get_data(as_text=True), "Fleet") != "\u2014"
 
 
 def test_dashboard_fleet_count_respects_org_scope(client, db):
@@ -59,7 +77,7 @@ def test_dashboard_fleet_count_respects_org_scope(client, db):
     resp = client.get("/")
     assert resp.status_code == 200
     # Fleet card should show 1 (only their branch's vehicle), not 2
-    assert b'<div class="fms-kpi-card__value">1</div>' in resp.data
+    assert _kpi_value(resp.get_data(as_text=True), "Fleet") == "1"
 
 
 def test_hidden_widget_does_not_render(client, db):

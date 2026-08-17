@@ -28,21 +28,32 @@
 
   {% for group in groups %}
   <h3 class="h6 fw-bold mt-4 mb-2">{{ group.branch_code }} — {{ group.branch_name }}</h3>
-  <div class="table-responsive">
-    <table class="table table-sm table-bordered mb-4 vehicle-register-table">
+  <div class="table-responsive shadow-sm border rounded mb-4">
+    <table class="table table-sm table-bordered table-hover mb-0 vehicle-register-table">
       <thead>
         <tr>
-          <th>Plate No.</th><th>Assignee</th><th>Make</th><th>Model</th>
-          <th>Variant</th><th>Year</th><th>Displacement</th><th>Fuel</th>
-          <th>Transmission</th><th>BodyColor</th><th>Type</th>
-          <th>FARNumber</th><th>MVFileNo</th><th>CRNumber</th>
-          <th>EngineNumber</th><th>ChassisNumber</th>
+          <th class="sticky-col">Plate No.</th>
+          <th>Assignee</th>
+          <th>Make</th>
+          <th>Model</th>
+          <th>Variant</th>
+          <th>Year</th>
+          <th>Displacement</th>
+          <th>Fuel</th>
+          <th>Transmission</th>
+          <th>BodyColor</th>
+          <th>Type</th>
+          <th>FARNumber</th>
+          <th>MVFileNo</th>
+          <th>CRNumber</th>
+          <th>EngineNumber</th>
+          <th>ChassisNumber</th>
         </tr>
       </thead>
       <tbody>
         {% for v in group.vehicles %}
         <tr>
-          <td>{{ v.plate_number }}</td>
+          <td class="fw-semibold sticky-col">{{ v.plate_number }}</td>
           <td>{{ v.assignee }}</td>
           <td>{{ v.make }}</td>
           <td>{{ v.model }}</td>
@@ -67,10 +78,102 @@
 </div>
 
 <style>
-  .vehicle-register-table { font-size: 0.8rem; white-space: nowrap; }
+  /* --- UI Screen Adjustments --- */
+  .table-responsive {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  /* Custom visible horizontal scrollbar for UI */
+  .table-responsive::-webkit-scrollbar {
+    height: 10px;
+  }
+  .table-responsive::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+  }
+  .table-responsive::-webkit-scrollbar-thumb {
+    background: #94a3b8;
+    border-radius: 4px;
+  }
+  .table-responsive::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+  }
+
+  .vehicle-register-table {
+    font-size: 0.72rem;
+    min-width: 1450px; /* Forces full width rendering to allow horizontal scrolling without clipping */
+    margin-bottom: 0;
+  }
+
+  .vehicle-register-table th {
+    background-color: #f8fafc;
+    color: #334155;
+    white-space: nowrap;
+    padding: 6px 8px;
+    font-weight: 700;
+  }
+
+  .vehicle-register-table td {
+    padding: 5px 8px;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  /* Freeze Plate Number column on horizontal scroll */
+  .sticky-col {
+    position: sticky;
+    left: 0;
+    background-color: #ffffff !important;
+    z-index: 1;
+    box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+  }
+  .vehicle-register-table th.sticky-col {
+    background-color: #f8fafc !important;
+    z-index: 2;
+  }
+
+  /* --- Print & PDF Landscape Optimization --- */
   @media print {
-    .no-print { display: none !important; }
-    .report-sheet { font-size: 10px; }
+    @page {
+      size: A4 landscape;
+      margin: 6mm;
+    }
+
+    body {
+      background: #ffffff !important;
+      color: #000000 !important;
+    }
+
+    .no-print {
+      display: none !important;
+    }
+
+    .table-responsive {
+      overflow: visible !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+
+    .vehicle-register-table {
+      font-size: 6.5pt !important;
+      min-width: 100% !important;
+      width: 100% !important;
+      table-layout: auto !important;
+    }
+
+    .vehicle-register-table th,
+    .vehicle-register-table td {
+      padding: 3px 4px !important;
+      white-space: normal !important;
+      word-break: break-all !important;
+    }
+
+    .sticky-col {
+      position: static !important;
+      box-shadow: none !important;
+    }
   }
 </style>
 {% endblock %}

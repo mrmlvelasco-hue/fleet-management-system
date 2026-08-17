@@ -30,10 +30,13 @@ def test_vehicle_form_has_new_field_sections(client, db):
     _login(client, db, codes=["vehicle.view", "vehicle.create"])
     resp = client.get("/master/vehicles/new")
     assert resp.status_code == 200
-    assert b"Identifiers" in resp.data
-    assert b"Classification" in resp.data
-    assert b"Financials" in resp.data
-    assert b"Insurance" in resp.data
+    # Section headings were renamed ("Identifiers" -> "Basic Vehicle
+    # Information", "Financials" -> "Financial Details"). The headings
+    # are cosmetic; the FIELDS below are the actual contract, so those
+    # are asserted first and the headings only loosely.
+    for heading in (b"Basic Vehicle Information", b"Technical Specifications",
+                    b"Financial Details", b"Insurance Coverage"):
+        assert heading in resp.data, heading
     assert b'name="far_number"' in resp.data
     assert b'name="ctpl_from_date"' in resp.data
     assert b'name="assignment"' in resp.data
@@ -97,7 +100,10 @@ def test_clone_button_appears_on_edit_and_prefills_form(client, db):
         plate_number="CLONE-UI-1", color="Blue", supplier="Test Supplier")
 
     edit_resp = client.get(f"/master/vehicles/{vehicle.id}/edit")
-    assert b">Clone<" in edit_resp.data
+    # The button carries an icon, so the label is not flush against the
+    # tag. The clone ROUTE is the real contract.
+    assert b"Clone" in edit_resp.data
+    assert b"/clone" in edit_resp.data
 
     clone_resp = client.get(f"/master/vehicles/{vehicle.id}/clone")
     assert clone_resp.status_code == 200

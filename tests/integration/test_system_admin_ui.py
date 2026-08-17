@@ -107,3 +107,4 @@ def test_end_to_end_approval_creates_notification(app, db):
 
     assert InAppNotification.query.filter_by(
         user_id=submitter.id, event_code="submitted").count() == 1
+

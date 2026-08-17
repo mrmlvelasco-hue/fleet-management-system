@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from datetime import date
 
 from app.core.security.password import hash_password
@@ -42,7 +43,8 @@ def test_create_vehicle_with_assigned_driver(client, db):
     driver = DriverService().create(
         employee_number="EMP-ASSIGN1", first_name="Liza", last_name="Reyes",
         license_number="LIC-ASSIGN1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
 
     resp = client.post("/master/vehicles/new", data={
         "vehicle_type_id": str(vt.id), "brand": "ToyotaAssign",
@@ -66,7 +68,8 @@ def test_vehicle_detail_shows_assigned_driver(client, db):
     driver = DriverService().create(
         employee_number="EMP-ASSIGN2", first_name="Tomas", last_name="Cruz",
         license_number="LIC-ASSIGN2", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
     from app.modules.master_data.vehicle.service import VehicleService
     vehicle = VehicleService().create(
         vehicle_type_id=vt.id, brand="Honda", model="City", year=2024,
@@ -85,11 +88,13 @@ def test_only_active_drivers_appear_in_search(client, db):
     active_driver = DriverService().create(
         employee_number="EMP-ACTIVE", first_name="Ana", last_name="Santos",
         license_number="LIC-ACTIVE", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
     inactive_driver = DriverService().create(
         employee_number="EMP-INACTIVE", first_name="Boy", last_name="Garcia",
         license_number="LIC-INACTIVE", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
     inactive_driver.is_active = False
     from app.extensions import db as _db
     _db.session.commit()

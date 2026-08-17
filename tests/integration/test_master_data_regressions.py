@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from app.core.security.password import hash_password
 from app.modules.user_management.models import User, Role, Permission
 from app.modules.master_data.org.service import BranchService
@@ -53,7 +54,8 @@ def test_driver_detail_renders(client, db):
         license_number="LIC-100",
         license_expiry=__import__("datetime").date(2030, 1, 1),
         license_type="PROFESSIONAL",
-        branch_id=BranchService().create(code="BR1", name="Branch 1").id)
+        branch_id=BranchService().create(code="BR1", name="Branch 1").id,
+                           photo_file=tiny_jpeg_file())
     resp = client.get(f"/master/drivers/{driver.id}")
     assert resp.status_code == 200
     assert b"Test" in resp.data

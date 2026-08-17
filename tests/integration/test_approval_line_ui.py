@@ -70,9 +70,17 @@ def test_eligible_approver_sees_action_buttons(client, db, env):
     client.post("/login", data={"username": "apline_l1", "password": "pw123456"})
     resp = client.get(f"/transactions/maintenance-orders/{order.id}")
     assert resp.status_code == 200
-    assert b">Approve<" in resp.data
-    assert b">Reject<" in resp.data
-    assert b">Return<" in resp.data
+    # The labels sit on their own line inside the button, and the
+    # approve button reads "Final Approve" at the last level, so a
+    # `>Approve<` match is both whitespace-sensitive and wrong for the
+    # final step. Match the rendered button text instead.
+    import re as _re
+    html = resp.get_data(as_text=True)
+    assert _re.search(r'>\s*(Final\s+)?Approve\s*</button>', html), \
+        "no Approve button for an eligible approver"
+    for label in ("Reject", "Return"):
+        assert _re.search(r'>\s*' + label + r'\s*</button>', html), \
+            f"no {label} button for an eligible approver"
 
 
 def test_ineligible_user_does_not_see_action_buttons(client, db, env):

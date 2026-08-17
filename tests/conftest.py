@@ -33,8 +33,20 @@ def app():
         _db.session.remove()
         _db.drop_all()
     # Clear approval-engine event subscribers registered during the test.
+    #
+    # register_notification_hooks() guards itself with a module-level
+    # _HOOKS_REGISTERED flag so a re-created app cannot subscribe the
+    # same lambda twice (which would send every notification 2x, 3x...).
+    # That flag has to be reset here too: clearing the list without
+    # clearing the flag leaves the module believing it is still
+    # subscribed when it is not, so from the SECOND test in a process
+    # onwards no approval event ever reached the Notification Engine.
+    # The symptom was a notification test that passed alone and failed
+    # inside its own file.
     from app.core.approval import engine as _engine
     _engine._subscribers.clear()
+    from app.modules.system_admin.services import notification_engine as _ne
+    _ne._HOOKS_REGISTERED = False
 
 
 @pytest.fixture()

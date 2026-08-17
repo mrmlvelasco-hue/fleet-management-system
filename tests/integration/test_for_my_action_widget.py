@@ -1,3 +1,4 @@
+from tests.conftest import tiny_jpeg_file
 from datetime import date, datetime
 
 from app.core.security.password import hash_password
@@ -33,7 +34,7 @@ def test_dashboard_shows_no_pending_items_message_when_empty(client, db):
     _login(client, db, username="nobody_pending")
     resp = client.get("/")
     assert resp.status_code == 200
-    assert b"Nothing waiting for your action" in resp.data
+    assert b"Nothing is waiting for your approval." in resp.data
 
 
 def test_dashboard_shows_pending_task_with_clickable_link(client, db):
@@ -47,7 +48,8 @@ def test_dashboard_shows_pending_task_with_clickable_link(client, db):
     driver = DriverService().create(
         employee_number="EMP-DASH1", first_name="Ana", last_name="Reyes",
         license_number="LIC-DASH1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch.id)
+        license_type="PROFESSIONAL", branch_id=branch.id,
+                           photo_file=tiny_jpeg_file())
     requester = User(username="dash_requester", email="dashreq@x.com",
                      password_hash="x", first_name="Rico", last_name="Santos")
     db.session.add(requester)
@@ -93,7 +95,8 @@ def test_dashboard_does_not_show_task_outside_users_scope(client, db):
     driver = DriverService().create(
         employee_number="EMP-SCOPE1", first_name="Ben", last_name="Cruz",
         license_number="LIC-SCOPE1", license_expiry=date(2030, 1, 1),
-        license_type="PROFESSIONAL", branch_id=branch_other.id)
+        license_type="PROFESSIONAL", branch_id=branch_other.id,
+                           photo_file=tiny_jpeg_file())
     requester = User(username="scope_requester", email="scopereq@x.com",
                      password_hash="x")
     db.session.add(requester)
@@ -120,5 +123,5 @@ def test_dashboard_does_not_show_task_outside_users_scope(client, db):
 
     resp = client.get("/")
     assert resp.status_code == 200
-    assert b"Nothing waiting for your action" in resp.data
+    assert b"Nothing is waiting for your approval." in resp.data
     assert trip.document_number.encode() not in resp.data

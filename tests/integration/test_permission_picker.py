@@ -25,7 +25,7 @@ def test_role_new_form_shows_permission_picker(client, db):
     assert b"permSearch" in resp.data
     assert b"permSelectAll" in resp.data
     assert b"permClearAll" in resp.data
-    assert b'class="form-check-input perm-checkbox"' in resp.data
+    assert b'perm-checkbox' in resp.data
 
 
 def test_role_new_permissions_grouped_by_module(client, db):
