@@ -95,12 +95,22 @@ def test_extract_reports_when_ocr_is_unavailable(app, client, db, admin,
     """Deployment target is undecided, so an image without tesseract is a
     real scenario. It must say so rather than look broken."""
     import app.core.extraction.ocr as ocr_mod
-    monkeypatch.setattr(ocr_mod, "ocr_available", lambda: False)
+    # The route calls diagnose(), not ocr_available(), because it needs
+    # the REASON rather than a yes/no -- patching the boolean alone
+    # would leave the route reporting success.
+    monkeypatch.setattr(ocr_mod, "diagnose", lambda: {
+        "ok": False, "command": None, "version": None, "source": None,
+        "interpreter": "/fake/python", "platform": "Linux",
+        "in_container": True,
+        "reason": "The pytesseract package is not available here."})
     _login(client)
     body = client.post(
         f"/master/attachments/{cr_attachment.id}/extract").get_json()
     assert body["trusted"] == {}
     assert "not available" in body["message"].lower()
+    # The interpreter is reported so whoever is fixing it knows WHICH
+    # Python is complaining -- a dev machine has several in play.
+    assert body["interpreter"] == "/fake/python"
 
 
 # ── Applying ────────────────────────────────────────────────────────
