@@ -77,7 +77,10 @@ def assess_scan(content: bytes, mime_type: str = None) -> dict:
             f"numbers reliably \u2014 at this resolution it typically "
             f"recovers under half the fields, and can misread the ones "
             f"it does find. The file is saved and viewable; if you plan "
-            f"to extract details from it, rescan at 300 DPI, greyscale, "
-            f"with the whole document flat in the frame."
+            f"to extract details from it, rescan at 300 DPI in BLACK AND "
+            f"WHITE, with the whole document flat in the frame. Black and "
+            f"white matters more than it sounds: highlighter and coloured "
+            f"stamps wash out in greyscale and take the text under them "
+            f"with it."
         )
     return result
