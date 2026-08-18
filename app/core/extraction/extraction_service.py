@@ -31,6 +31,19 @@ class UnconfirmedFieldsError(Exception):
 
 class ExtractionService:
 
+    @staticmethod
+    def _writable_columns(model_instance):
+        """Real mapped columns, excluding identity and audit fields that
+        extraction has no business touching."""
+        from sqlalchemy import inspect as _inspect
+        reserved = {"id", "created_at", "updated_at", "created_by",
+                    "updated_by", "is_active"}
+        try:
+            cols = {c.key for c in _inspect(type(model_instance)).columns}
+        except Exception:
+            return set()
+        return cols - reserved
+
     def apply(self, vehicle, fields, selected, confirmed=None,
               user=None):
         """Write the selected fields onto the vehicle.
@@ -60,10 +73,12 @@ class ExtractionService:
             item = fields.get(name)
             if item is None or not item.value:
                 continue
-            if not hasattr(vehicle, name):
-                # A parser field with no matching column would otherwise
-                # fail silently; skipping is right, but it is a bug in
-                # the parser rather than user error.
+            if name not in self._writable_columns(vehicle):
+                # hasattr() is NOT a safe test here: the payload arrives
+                # from the browser, and "__class__" passes hasattr on
+                # any object -- setattr on it would blow up, and other
+                # dunder names could do worse. Only real mapped columns
+                # are ever written.
                 continue
             value = item.value
             # `year` is an integer column; everything else the CR gives

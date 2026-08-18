@@ -29,8 +29,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # curl is used by the compose healthcheck; netcat lets the entrypoint
 # wait for MySQL to accept connections before running migrations.
+#
+# tesseract-ocr and poppler-utils power text extraction from scanned
+# Certificates of Registration. They are runtime binaries, not Python
+# packages, so they must be installed in the image -- pytesseract is
+# only a wrapper and does nothing without the tesseract executable.
+#
+# The application degrades gracefully if they are absent (extraction
+# simply reports that it is unavailable and everything falls back to
+# manual entry), so an older image will not break -- it just will not
+# extract. Roughly 120MB of image size; worth it against a fleet's worth
+# of manual typing.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl netcat-openbsd \
+        tesseract-ocr tesseract-ocr-eng poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /wheels /wheels

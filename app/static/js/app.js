@@ -185,6 +185,108 @@
     if (wrap) wrap.classList.remove("has-open-dropdown");
   });
 
+  // "Extract" on a scanned CR/OR: read it, then let the person choose.
+  //
+  // Nothing is written until they tick a field and press Apply, and a
+  // field the system could not verify cannot be applied without an
+  // explicit confirmation -- the value is offered, never assumed. A
+  // half-right chassis number silently filled into a form is exactly
+  // the failure this flow exists to prevent.
+  document.querySelectorAll(".extract-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var attId = btn.dataset.attachmentId;
+      var vehicleId = btn.dataset.vehicleId;
+      var original = btn.innerHTML;
+      // OCR takes a few seconds; say so rather than look frozen.
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Reading…';
+
+      fetch("/master/attachments/" + attId + "/extract", {
+        method: "POST",
+        headers: {"X-CSRFToken": (document.querySelector('meta[name="csrf-token"]') || {}).content || ""}
+      }).then(function (r) { return r.json(); })
+        .then(function (data) { showExtractionReview(data, vehicleId); })
+        .catch(function () {
+          if (window.Swal) Swal.fire({icon: "error",
+            title: "Could not read that document",
+            text: "Please enter the details manually."});
+        })
+        .finally(function () { btn.disabled = false; btn.innerHTML = original; });
+    });
+  });
+
+  window.showExtractionReview = function (data, vehicleId) {
+    var trusted = data.trusted || {}, unverified = data.unverified || {};
+    if (!Object.keys(trusted).length && !Object.keys(unverified).length) {
+      if (window.Swal) Swal.fire({icon: "info", title: "Nothing readable",
+                                  text: data.message});
+      return;
+    }
+    function rows(group, verified) {
+      return Object.keys(group).map(function (name) {
+        var f = group[name];
+        var label = name.replace(/_/g, " ");
+        return '<tr>' +
+          '<td><input type="checkbox" class="form-check-input xf-pick" ' +
+              'data-field="' + name + '" ' + (verified ? "checked" : "") + '></td>' +
+          '<td class="text-capitalize small">' + label + '</td>' +
+          '<td class="font-monospace small">' + (f.value || "") + '</td>' +
+          '<td><span class="badge text-bg-' +
+              (verified ? "success" : "warning") + '">' + f.confidence + '</span></td>' +
+          '<td class="small text-muted">' + (f.note || "") +
+            (verified ? "" :
+              '<div class="form-check mt-1"><input class="form-check-input xf-confirm" ' +
+              'type="checkbox" data-field="' + name + '" id="cf-' + name + '">' +
+              '<label class="form-check-label small" for="cf-' + name + '">' +
+              "I've checked this against the document</label></div>") +
+          '</td></tr>';
+      }).join("");
+    }
+    var html =
+      '<p class="small text-muted">' + (data.message || "") + '</p>' +
+      '<div class="table-responsive"><table class="table table-sm align-middle">' +
+      '<thead><tr><th></th><th>Field</th><th>Read as</th><th>Confidence</th>' +
+      '<th>Notes</th></tr></thead><tbody>' +
+      rows(trusted, true) + rows(unverified, false) +
+      '</tbody></table></div>';
+
+    if (!window.Swal) { return; }
+    Swal.fire({
+      title: "Details read from the scan", html: html, width: "56rem",
+      showCancelButton: true, confirmButtonText: "Apply selected",
+      cancelButtonText: "Cancel",
+      preConfirm: function () {
+        var all = Object.assign({}, trusted, unverified);
+        var selected = [], confirmed = [];
+        document.querySelectorAll(".xf-pick:checked").forEach(function (c) {
+          selected.push(c.dataset.field); });
+        document.querySelectorAll(".xf-confirm:checked").forEach(function (c) {
+          confirmed.push(c.dataset.field); });
+        var unchecked = selected.filter(function (n) {
+          return all[n] && all[n].needs_review && confirmed.indexOf(n) === -1; });
+        if (unchecked.length) {
+          Swal.showValidationMessage(
+            "Please confirm you have checked: " + unchecked.join(", "));
+          return false;
+        }
+        return fetch("/master/vehicles/" + vehicleId + "/apply-extraction", {
+          method: "POST",
+          headers: {"Content-Type": "application/json",
+                    "X-CSRFToken": (document.querySelector('meta[name="csrf-token"]') || {}).content || ""},
+          body: JSON.stringify({fields: all, selected: selected,
+                                confirmed: confirmed})
+        }).then(function (r) { return r.json(); });
+      }
+    }).then(function (res) {
+      if (res.isConfirmed && res.value && res.value.ok) {
+        Swal.fire({icon: "success", title: "Applied",
+                   text: Object.keys(res.value.applied || {}).length +
+                         " field(s) updated. Review them before saving."})
+            .then(function () { window.location.reload(); });
+      }
+    });
+  };
+
   // Auto-init DataTables and Select2 when jQuery is present
   if (window.jQuery) {
     jQuery(function ($) {

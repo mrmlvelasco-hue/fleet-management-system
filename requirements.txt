@@ -17,3 +17,12 @@ python-dateutil>=2.9
 openpyxl
 PyJWT>=2.7
 gunicorn>=21.2
+
+# Text extraction from scanned vehicle documents (Certificate of
+# Registration). pytesseract is a thin wrapper around the tesseract
+# BINARY, which the Dockerfile installs; without it the feature reports
+# itself unavailable rather than failing. Pillow is already required
+# transitively but pinned here since extraction depends on it directly.
+pytesseract>=0.3.10
+pdf2image>=1.17
+Pillow>=10.0

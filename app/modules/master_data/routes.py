@@ -1661,6 +1661,104 @@ def attachment_list_json():
     } for a in items])
 
 
+@bp.route("/attachments/<int:att_id>/extract", methods=["POST"])
+@login_required
+def attachment_extract(att_id):
+    """Read what we can off a scanned document.
+
+    Separate from applying, deliberately: reading is slow and
+    repeatable, applying is fast and destructive. Combining them would
+    mean re-running OCR every time somebody changed their mind about a
+    tickbox.
+
+    Runs in-request rather than through Celery. OCR on one CR takes a
+    few seconds, the browser shows a spinner, and it keeps the moving
+    parts down while this is still being proven. If it turns out slow on
+    real scans, moving it to a task is a contained change -- the
+    endpoint contract stays the same.
+    """
+    from app.core.attachments.attachment_service import AttachmentService
+    from app.core.extraction import ocr as ocr_mod
+    from app.core.extraction.cr_parser import parse_many
+    from app.core.extraction.extraction_service import ExtractionService
+
+    att = Attachment.query.get(att_id)
+    if att is None or not att.is_active:
+        abort(404)
+
+    if not ocr_mod.ocr_available():
+        # A real scenario while the deployment target is undecided: an
+        # image built before tesseract was added. Say so plainly rather
+        # than look broken.
+        return jsonify(trusted={}, unverified={}, message=(
+            "Text extraction is not available on this server "
+            "(tesseract is not installed). Please enter the details "
+            "manually \u2014 nothing else is affected."))
+
+    content = AttachmentService().get_bytes(att)
+    if not content:
+        return jsonify(trusted={}, unverified={}, message=(
+            "That attachment has no readable content. Please enter the "
+            "details manually."))
+
+    passes = ocr_mod.read_passes(content)
+    fields = parse_many(passes) if passes else {}
+    proposal = ExtractionService().propose(fields)
+
+    def _pack(group):
+        return {name: {"value": f.value, "confidence": f.confidence,
+                      "needs_review": f.needs_review, "note": f.note,
+                      "raw": f.raw}
+                for name, f in group.items()}
+
+    return jsonify(trusted=_pack(proposal["trusted"]),
+                   unverified=_pack(proposal["unverified"]),
+                   message=proposal["message"])
+
+
+@bp.route("/vehicles/<int:vid>/apply-extraction", methods=["POST"])
+@login_required
+@require_permission("vehicle.update")
+def vehicle_apply_extraction(vid):
+    """Write the fields a person selected onto the vehicle.
+
+    The payload comes from the browser and is treated as untrusted: only
+    names that are real Vehicle columns are ever written, and a field
+    still needing review is refused unless explicitly confirmed.
+    """
+    from app.core.extraction.extraction_service import (
+        ExtractionService, UnconfirmedFieldsError)
+    from app.core.extraction.cr_parser import ExtractedField
+
+    # get_visible enforces the org scope: someone may hold vehicle.update
+    # and still have no business editing a vehicle outside their branch.
+    vehicle = VehicleService().get_visible(vid, current_user)
+    if vehicle is None:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    raw_fields = payload.get("fields") or {}
+    fields = {
+        name: ExtractedField(
+            value=str(spec.get("value") or ""),
+            confidence=spec.get("confidence") or "MEDIUM",
+            note=spec.get("note") or "",
+            needs_review=bool(spec.get("needs_review", True)))
+        for name, spec in raw_fields.items()
+        if isinstance(spec, dict)
+    }
+    try:
+        applied = ExtractionService().apply(
+            vehicle=vehicle, fields=fields,
+            selected=payload.get("selected") or [],
+            confirmed=payload.get("confirmed") or [],
+            user=current_user)
+    except UnconfirmedFieldsError as exc:
+        return jsonify(ok=False, error=str(exc), fields=exc.fields), 400
+
+    return jsonify(ok=True, applied=applied)
+
+
 @bp.route("/attachments/upload", methods=["POST"])
 @login_required
 def attachment_upload():

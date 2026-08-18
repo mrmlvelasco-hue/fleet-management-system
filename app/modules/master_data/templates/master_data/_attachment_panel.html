@@ -67,6 +67,16 @@
         {% if att.document_type %}
         <span class="badge text-bg-info me-1">{{ att.document_type }}</span>
         {% endif %}
+        {# Offered only for document types that carry vehicle details
+           worth reading. A "Read details" button on a photo of a dent
+           would be noise. #}
+        {% if att.document_type in ("CR", "OR") and reference_table == "vehicles" %}
+        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 me-1 extract-btn"
+                data-attachment-id="{{ att.id }}"
+                data-vehicle-id="{{ reference_id }}"
+                title="Read vehicle details from this scan">
+          <i class="bi bi-magic"></i> Extract</button>
+        {% endif %}
         {% if att.mime_type and att.mime_type.startswith('image/') %}
         <a href="{{ url_for('master_data.attachment_view', att_id=att.id) }}" target="_blank">
           <img src="{{ url_for('master_data.attachment_view', att_id=att.id) }}"
