@@ -20,16 +20,139 @@ suits every scan -- a faint photocopy and a crisp digital scan need
 different cut points. The readings are parsed separately and voted on
 rather than concatenated; see cr_parser.parse_many for why.
 
-The practical advice that follows from this, and which the upload screen
-now gives: scan in black and white at 300 DPI.
+Locating the tesseract binary
+-----------------------------
+This has to work in two very different places: a Linux container where
+tesseract is on PATH at /usr/bin/tesseract, and a Windows development
+machine where it is installed under Program Files and usually is not on
+PATH at all.
+
+So the search order is: TESSERACT_CMD if set, then PATH, then the usual
+Windows install locations. Hardcoding a Windows path as the default
+would break the container, and requiring the variable would make local
+setup needlessly fiddly.
+
+Nothing here raises. When OCR cannot run, diagnose() explains WHY --
+"pytesseract is not installed in this environment" and "the binary is
+not where TESSERACT_CMD points" are completely different problems with
+completely different fixes, and collapsing both into a bare False
+wasted an afternoon.
 """
 import io
+import os
+import shutil
 
-#: Cut points tried, low to high. A faint scan needs a low threshold; a
-#: dark or stamped one needs a high threshold to avoid flooding.
 THRESHOLDS = (110, 128, 150)
 SCALES = (3, 4, 6)
 PSM_MODES = (6, 4)
+
+#: Where tesseract usually lands on Windows when installed with the
+#: standard installer. Checked only if it is neither configured nor on
+#: PATH.
+_WINDOWS_FALLBACKS = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
+)
+
+
+def _configured_cmd():
+    """TESSERACT_CMD from the environment, cleaned up.
+
+    Stripped of surrounding quotes because a path with spaces invites
+    them, and pytesseract passes the value straight to the OS -- a
+    literal quote character makes the executable "not found" in a way
+    that reads as a missing install.
+    """
+    raw = os.getenv("TESSERACT_CMD", "").strip()
+    if not raw:
+        return None
+    return raw.strip('"').strip("'")
+
+
+def resolve_tesseract():
+    """The binary to use, or None. Never raises."""
+    configured = _configured_cmd()
+    if configured:
+        # Returned even if it does not exist, so diagnose() can say
+        # "configured but not found there" rather than silently falling
+        # back and leaving someone puzzling over an ignored setting.
+        return configured
+    on_path = shutil.which("tesseract")
+    if on_path:
+        return on_path
+    for candidate in _WINDOWS_FALLBACKS:
+        if candidate and os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def diagnose():
+    """Why OCR can or cannot run here.
+
+    Returns a dict with `ok`, the resolved command, and a `reason`
+    written for whoever has to fix it.
+    """
+    info = {"ok": False, "command": None, "version": None,
+            "source": None, "reason": ""}
+
+    try:
+        import pytesseract  # noqa: F401
+    except ImportError:
+        info["reason"] = (
+            "The pytesseract package is not installed in this Python "
+            "environment. Run: pip install -r requirements.txt "
+            "(in PyCharm, check you are on the project interpreter).")
+        return info
+
+    try:
+        from PIL import Image  # noqa: F401
+    except ImportError:
+        info["reason"] = ("Pillow is not installed. Run: "
+                         "pip install -r requirements.txt")
+        return info
+
+    cmd = resolve_tesseract()
+    info["command"] = cmd
+    configured = _configured_cmd()
+    info["source"] = ("TESSERACT_CMD" if configured
+                     else "PATH" if cmd and shutil.which("tesseract") == cmd
+                     else "default install location" if cmd else None)
+
+    if not cmd:
+        info["reason"] = (
+            "The tesseract program could not be found. It is a separate "
+            "install, not a Python package. On Windows install it from "
+            "the UB-Mannheim build and set TESSERACT_CMD in .env to the "
+            "full path of tesseract.exe; in Docker it comes from the "
+            "image.")
+        return info
+
+    if configured and not os.path.exists(cmd):
+        info["reason"] = (
+            f"TESSERACT_CMD is set to {cmd!r} but there is no file there. "
+            f"Check the path, and note that if you wrapped it in DOUBLE "
+            f"quotes in .env, the \\t in \\tesseract.exe is read as a tab "
+            f"character \u2014 use no quotes, single quotes, or forward "
+            f"slashes.")
+        return info
+
+    try:
+        import pytesseract
+        pytesseract.pytesseract.tesseract_cmd = cmd
+        info["version"] = str(pytesseract.get_tesseract_version())
+        info["ok"] = True
+        info["reason"] = "OCR is available."
+    except Exception as exc:
+        info["reason"] = (
+            f"Found {cmd!r} but running it failed: {exc}. If this is "
+            f"Windows, check the file is the real tesseract.exe and that "
+            f"your user can execute it.")
+    return info
+
+
+def ocr_available() -> bool:
+    return diagnose()["ok"]
 
 
 def read_passes(content: bytes, crop=None):
@@ -42,9 +165,11 @@ def read_passes(content: bytes, crop=None):
         from PIL import Image, ImageOps, ImageFilter
         import pytesseract
     except ImportError:
-        # OCR is optional: without Tesseract installed the whole feature
-        # degrades to manual entry rather than breaking the upload.
         return []
+
+    cmd = resolve_tesseract()
+    if cmd:
+        pytesseract.pytesseract.tesseract_cmd = cmd
 
     try:
         im = Image.open(io.BytesIO(content))
@@ -74,13 +199,3 @@ def read_passes(content: bytes, crop=None):
             except Exception:
                 continue
     return passes
-
-
-def ocr_available() -> bool:
-    """Whether text extraction can run at all in this deployment."""
-    try:
-        import pytesseract
-        pytesseract.get_tesseract_version()
-        return True
-    except Exception:
-        return False

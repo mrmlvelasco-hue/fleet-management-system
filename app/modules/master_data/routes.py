@@ -1686,14 +1686,19 @@ def attachment_extract(att_id):
     if att is None or not att.is_active:
         abort(404)
 
-    if not ocr_mod.ocr_available():
-        # A real scenario while the deployment target is undecided: an
-        # image built before tesseract was added. Say so plainly rather
-        # than look broken.
-        return jsonify(trusted={}, unverified={}, message=(
-            "Text extraction is not available on this server "
-            "(tesseract is not installed). Please enter the details "
-            "manually \u2014 nothing else is affected."))
+    diag = ocr_mod.diagnose()
+    if not diag["ok"]:
+        # Report the ACTUAL reason. "pytesseract is not installed" and
+        # "the binary is not where TESSERACT_CMD points" need completely
+        # different fixes, and a single generic message sends whoever is
+        # setting this up hunting in the wrong place.
+        current_app.logger.warning("OCR unavailable: %s", diag["reason"])
+        return jsonify(trusted={}, unverified={},
+                      diagnostic=diag["reason"],
+                      message=("Text extraction is not available: "
+                               + diag["reason"]
+                               + " You can still enter the details "
+                                 "manually \u2014 nothing else is affected."))
 
     content = AttachmentService().get_bytes(att)
     if not content:

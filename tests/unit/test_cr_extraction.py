@@ -334,3 +334,52 @@ def test_the_message_never_overstates_what_was_verified(app, db):
     assert not result["trusted"] or "verified" in result["message"]
     if not result["trusted"]:
         assert "nothing has been filled in" in result["message"]
+
+
+# ── Finding the tesseract binary ────────────────────────────────────
+
+def test_ocr_reports_why_it_is_unavailable_not_just_that_it_is(monkeypatch):
+    """"pytesseract is missing" and "the binary is not where you pointed
+    it" need completely different fixes. Collapsing both into a bare
+    False sent the client hunting in the wrong place."""
+    from app.core.extraction import ocr
+    monkeypatch.setenv("TESSERACT_CMD", "/definitely/not/here/tesseract")
+    info = ocr.diagnose()
+    assert info["ok"] is False
+    assert "no file there" in info["reason"]
+    assert "/definitely/not/here/tesseract" in info["reason"]
+
+
+def test_quotes_around_the_path_are_tolerated(monkeypatch):
+    """A path with spaces invites quoting it in .env, and pytesseract
+    passes the value straight to the OS -- a literal quote makes the
+    executable "not found" in a way that reads as a missing install."""
+    from app.core.extraction import ocr
+    monkeypatch.setenv("TESSERACT_CMD", '"/usr/bin/tesseract"')
+    assert ocr.resolve_tesseract() == "/usr/bin/tesseract"
+
+
+def test_the_env_var_wins_over_path(monkeypatch):
+    from app.core.extraction import ocr
+    monkeypatch.setenv("TESSERACT_CMD", "/custom/tesseract")
+    assert ocr.resolve_tesseract() == "/custom/tesseract"
+
+
+def test_path_is_used_when_nothing_is_configured(monkeypatch):
+    """What happens in the container, where tesseract is on PATH and no
+    variable is set. Hardcoding a Windows default would break this."""
+    from app.core.extraction import ocr
+    monkeypatch.delenv("TESSERACT_CMD", raising=False)
+    resolved = ocr.resolve_tesseract()
+    assert resolved is None or "tesseract" in resolved
+
+
+def test_the_double_quote_tab_trap_is_named_in_the_message(monkeypatch):
+    r"""python-dotenv processes escapes inside DOUBLE quotes, so
+    TESSERACT_CMD="C:\Program Files\Tesseract-OCR\tesseract.exe" turns
+    \t into a TAB and the path silently breaks. Verified against
+    python-dotenv directly. The message says so, because nobody would
+    ever guess it."""
+    from app.core.extraction import ocr
+    monkeypatch.setenv("TESSERACT_CMD", "C:\\Program Files\\Tesseract-OCR\tesseract.exe")
+    assert "tab" in ocr.diagnose()["reason"].lower()

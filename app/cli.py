@@ -1,6 +1,6 @@
 """Seed commands: `flask seed permissions|admin|all`."""
 import click
-from flask.cli import AppGroup
+from flask.cli import AppGroup, with_appcontext
 
 from app.extensions import db
 from app.core.security.password import hash_password
@@ -379,6 +379,25 @@ def _seed_dashboard_widgets() -> None:
 
 from app.modules.system_admin.services.print_template_service import (
     PRINT_TEMPLATE_DEFAULTS)
+
+@click.command("ocr-check")
+@with_appcontext
+def ocr_check_command():
+    """Report whether text extraction can run, and why not if it can't.
+
+    Run this when the Extract button says OCR is unavailable -- it names
+    the actual problem instead of leaving you to guess between a missing
+    Python package, a missing binary, and a mis-set path.
+    """
+    from app.core.extraction.ocr import diagnose
+    info = diagnose()
+    click.echo("OCR available : %s" % ("YES" if info["ok"] else "NO"))
+    click.echo("tesseract     : %s" % (info["command"] or "not found"))
+    click.echo("found via     : %s" % (info["source"] or "-"))
+    click.echo("version       : %s" % (info["version"] or "-"))
+    click.echo("")
+    click.echo(info["reason"])
+
 
 def _seed_print_templates() -> None:
     """Default bodies for printed documents.
@@ -1001,6 +1020,7 @@ def attachments_backfill_from_disk(dry_run):
 
 
 def register_cli(app):
+    app.cli.add_command(ocr_check_command)
     app.cli.add_command(attachments_cli)
     app.cli.add_command(email_cli)
     app.cli.add_command(seed_cli)
