@@ -1695,6 +1695,8 @@ def attachment_extract(att_id):
         current_app.logger.warning("OCR unavailable: %s", diag["reason"])
         return jsonify(trusted={}, unverified={},
                       diagnostic=diag["reason"],
+                      interpreter=diag.get("interpreter"),
+                      in_container=diag.get("in_container"),
                       message=("Text extraction is not available: "
                                + diag["reason"]
                                + " You can still enter the details "

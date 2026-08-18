@@ -40,7 +40,9 @@ wasted an afternoon.
 """
 import io
 import os
+import platform
 import shutil
+import sys
 
 THRESHOLDS = (110, 128, 150)
 SCALES = (3, 4, 6)
@@ -93,16 +95,31 @@ def diagnose():
     Returns a dict with `ok`, the resolved command, and a `reason`
     written for whoever has to fix it.
     """
+    # WHICH Python is asking matters as much as the answer. A dev
+    # machine typically has several environments in play at once -- a
+    # PyCharm venv, a system Python, and a Linux container -- and
+    # "pytesseract is not installed" is meaningless until you know which
+    # of them is reporting it. Naming the interpreter turns a guessing
+    # game into a one-line answer.
     info = {"ok": False, "command": None, "version": None,
-            "source": None, "reason": ""}
+            "source": None, "reason": "",
+            "interpreter": sys.executable,
+            "platform": platform.system(),
+            "in_container": os.path.exists("/.dockerenv")}
 
     try:
         import pytesseract  # noqa: F401
     except ImportError:
+        where = ("the Docker container" if info["in_container"]
+                else f"{info['platform']} interpreter {sys.executable}")
         info["reason"] = (
-            "The pytesseract package is not installed in this Python "
-            "environment. Run: pip install -r requirements.txt "
-            "(in PyCharm, check you are on the project interpreter).")
+            f"The pytesseract package is not installed in {where}. "
+            + ("Rebuild the image so it picks up requirements.txt: "
+               "docker compose build web worker && docker compose up -d"
+               if info["in_container"] else
+               "Run: pip install -r requirements.txt — and check this "
+               "is the same interpreter your app runs under, not just "
+               "the one in your terminal."))
         return info
 
     try:
