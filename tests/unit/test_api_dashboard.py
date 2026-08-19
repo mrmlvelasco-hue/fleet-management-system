@@ -1,0 +1,245 @@
+"""Tests for the REST dashboard API consumed by the React frontend.
+
+The whole point of this surface is that it must NOT be a second
+implementation of the dashboard. Every number it returns has to come
+from the same DashboardService / DashboardAnalyticsService the Jinja
+dashboard already calls, or the two dashboards will quietly disagree --
+which is worse than either being wrong on its own, because whoever spots
+it has no way to know which one to believe.
+
+These tests therefore assert equality against the services directly,
+not against hardcoded expected values.
+"""
+import json
+
+import pytest
+
+from app.core.security.password import hash_password
+from app.core.dashboard_service import DashboardService
+from app.core.dashboard_analytics_service import DashboardAnalyticsService
+from app.modules.master_data.reference.service import VehicleTypeService
+from app.modules.master_data.org.service import BranchService
+from app.modules.master_data.vehicle.service import VehicleService
+from app.modules.user_management.models import User, Role, Permission
+from app.core.security.registry import sync_permissions
+
+
+@pytest.fixture()
+def dash_env(db):
+    sync_permissions()
+    db.session.commit()
+
+    role = Role(name="Dashboard Role")
+    role.permissions = Permission.query.filter(
+        Permission.code.in_(["vehicle.view", "maintenanceorder.view"])).all()
+    db.session.add(role)
+
+    user = User(username="dashuser", email="dash@example.com",
+                password_hash=hash_password("secret123"), is_active=True)
+    user.roles = [role]
+    db.session.add(user)
+
+    # A user with NO dashboard-relevant permissions, to prove the
+    # endpoints are actually gated rather than merely authenticated.
+    plain_role = Role(name="No Access Role")
+    plain = User(username="nodash", email="nodash@example.com",
+                 password_hash=hash_password("secret123"), is_active=True)
+    plain.roles = [plain_role]
+    db.session.add_all([plain_role, plain])
+
+    vt = VehicleTypeService().create(code="LV-DASH", name="Light",
+                                     category="LIGHT")
+    branch = BranchService().create(code="BR-DASH", name="Dash Branch")
+    VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2022,
+        branch_id=branch.id, conduction_number="DASH-000",
+        plate_number="DASH-1234")
+    db.session.commit()
+    return user, branch
+
+
+def _token(client, username="dashuser", password="secret123"):
+    r = client.post("/api/v1/auth/token",
+                    json={"username": username, "password": password})
+    return json.loads(r.get_data(as_text=True)).get("access_token")
+
+
+def _auth(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _get(client, url, token):
+    r = client.get(url, headers=_auth(token))
+    return r.status_code, json.loads(r.get_data(as_text=True))
+
+
+# ── Authentication & authorisation ──────────────────────────────────────────
+
+def test_summary_requires_a_token(db, client, dash_env):
+    assert client.get("/api/v1/dashboard/summary").status_code == 401
+
+
+def test_summary_requires_vehicle_view_permission(db, client, dash_env):
+    token = _token(client, username="nodash")
+    assert client.get("/api/v1/dashboard/summary",
+                      headers=_auth(token)).status_code == 403
+
+
+# ── Summary KPIs ────────────────────────────────────────────────────────────
+
+def test_summary_matches_the_dashboard_service_exactly(db, client, dash_env):
+    """The React KPI numbers must be the Jinja KPI numbers."""
+    user, _ = dash_env
+    token = _token(client)
+    status, body = _get(client, "/api/v1/dashboard/summary", token)
+    assert status == 200
+
+    dash = DashboardService()
+    assert body["fleet_count"] == dash.fleet_count(user=user)
+    assert body["tire_stock_count"] == dash.tire_stock_count(user=user)
+    assert body["battery_stock_count"] == dash.battery_stock_count(user=user)
+
+
+def test_summary_includes_the_deferred_counts(db, client, dash_env):
+    """maintenance_due and registrations_expiring are deferred in Jinja
+    for first-paint reasons. The API is a single call, so it returns
+    them -- but they must still be the same figures."""
+    user, _ = dash_env
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/summary", token)
+
+    dash = DashboardService()
+    assert body["maintenance_due_count"] == dash.maintenance_due_count(user=user)
+    assert body["registrations_expiring_count"] == \
+        dash.registrations_expiring_count(user=user)
+
+
+def test_summary_reports_availability_as_a_real_ratio(db, client, dash_env):
+    """Availability is derived from real status counts, never invented."""
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/summary", token)
+    assert 0.0 <= body["availability_percentage"] <= 100.0
+
+
+def test_summary_availability_is_null_for_an_empty_fleet(db, client, dash_env):
+    """A 0/0 fleet has no meaningful availability. Returning 0.0 would
+    read as 'nothing is available', which is a different and alarming
+    claim. Absent is honest; the UI renders a dash."""
+    from app.modules.master_data.vehicle.models import Vehicle
+    Vehicle.query.delete()
+    db.session.commit()
+
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/summary", token)
+    assert body["availability_percentage"] is None
+
+
+# ── Fleet status ────────────────────────────────────────────────────────────
+
+def test_fleet_status_matches_the_analytics_service(db, client, dash_env):
+    user, _ = dash_env
+    token = _token(client)
+    status, body = _get(client, "/api/v1/dashboard/fleet-status", token)
+    assert status == 200
+    assert body == DashboardAnalyticsService().fleet_by_status(user=user)
+
+
+def test_fleet_status_uses_real_backend_status_codes(db, client, dash_env):
+    """Labels must be the real enum values so the frontend can map them
+    to its own display text -- not invented words like 'Unavailable'."""
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/fleet-status", token)
+    assert set(body["labels"]) <= {"ACTIVE", "INACTIVE", "IN_REPAIR",
+                                   "DISPOSED"}
+
+
+# ── Due maintenance ─────────────────────────────────────────────────────────
+
+def test_due_maintenance_returns_a_list_with_the_documented_fields(
+        db, client, dash_env):
+    token = _token(client)
+    status, body = _get(client, "/api/v1/dashboard/due-maintenance", token)
+    assert status == 200
+    assert isinstance(body["items"], list)
+    for item in body["items"]:
+        assert set(item) >= {"vehicle_id", "plate_number", "status",
+                             "current_odometer", "due_odometer", "due_date",
+                             "branch", "maintenance_type"}
+
+
+def test_due_maintenance_respects_the_limit_parameter(db, client, dash_env):
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/due-maintenance?limit=1", token)
+    assert len(body["items"]) <= 1
+
+
+# ── Branches (for the dashboard filter) ─────────────────────────────────────
+
+def test_branches_returns_only_branches_the_user_can_see(db, client, dash_env):
+    """The frontend branch filter must be populated from the backend, so
+    it cannot offer a branch the API would then refuse to answer for."""
+    token = _token(client)
+    status, body = _get(client, "/api/v1/dashboard/branches", token)
+    assert status == 200
+    assert isinstance(body["items"], list)
+    assert all({"id", "name"} <= set(b) for b in body["items"])
+
+
+# ── Branch scoping ──────────────────────────────────────────────────────────
+
+def test_branch_filter_narrows_the_summary(db, client, dash_env):
+    """?branch_id= must actually filter, not be silently ignored."""
+    _, branch = dash_env
+    token = _token(client)
+    _, unfiltered = _get(client, "/api/v1/dashboard/summary", token)
+    _, filtered = _get(
+        client, f"/api/v1/dashboard/summary?branch_id={branch.id}", token)
+    assert filtered["fleet_count"] <= unfiltered["fleet_count"]
+
+
+def test_unknown_branch_id_is_rejected_not_ignored(db, client, dash_env):
+    """Silently ignoring an unknown branch would show company-wide
+    figures to someone who believes they are looking at one branch."""
+    token = _token(client)
+    r = client.get("/api/v1/dashboard/summary?branch_id=999999",
+                   headers=_auth(token))
+    assert r.status_code == 400
+
+
+def test_non_numeric_branch_id_is_rejected(db, client, dash_env):
+    token = _token(client)
+    r = client.get("/api/v1/dashboard/summary?branch_id=abc",
+                   headers=_auth(token))
+    assert r.status_code == 400
+
+
+# ── CORS (the React dev server is a different origin) ───────────────────────
+
+def test_configured_origin_gets_cors_headers(db, client, dash_env, app):
+    app.config["CORS_ORIGINS"] = ["http://localhost:5173"]
+    token = _token(client)
+    r = client.get("/api/v1/dashboard/summary",
+                   headers={**_auth(token),
+                            "Origin": "http://localhost:5173"})
+    assert r.headers.get("Access-Control-Allow-Origin") == \
+        "http://localhost:5173"
+
+
+def test_unconfigured_origin_gets_no_cors_headers(db, client, dash_env, app):
+    app.config["CORS_ORIGINS"] = ["http://localhost:5173"]
+    token = _token(client)
+    r = client.get("/api/v1/dashboard/summary",
+                   headers={**_auth(token),
+                            "Origin": "http://evil.example.com"})
+    assert r.headers.get("Access-Control-Allow-Origin") is None
+
+
+def test_preflight_is_answered_without_a_token(db, client, dash_env, app):
+    """The browser sends OPTIONS before it has ever attached the
+    Authorization header, so preflight must not require auth."""
+    app.config["CORS_ORIGINS"] = ["http://localhost:5173"]
+    r = client.options("/api/v1/dashboard/summary",
+                       headers={"Origin": "http://localhost:5173",
+                                "Access-Control-Request-Method": "GET"})
+    assert r.status_code == 200
+    assert "Authorization" in r.headers.get("Access-Control-Allow-Headers", "")

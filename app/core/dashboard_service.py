@@ -10,19 +10,37 @@ from app.core.approval.task_service import ApprovalTaskService
 
 
 class DashboardService:
-    def fleet_count(self, user=None) -> int:
-        return len(VehicleService().list(include_inactive=False, user=user))
+    """Every method takes an optional `branch_id` so a caller can narrow
+    to a single branch WITHOUT bypassing org-scoping: `user` is still
+    applied, and `branch_id` only ever narrows further. A user who
+    cannot see a branch therefore gets an empty result rather than that
+    branch's data, even if they pass its id directly. The API layer
+    additionally rejects unknown ids outright -- see
+    app/modules/api/dashboard.py -- so a mistyped filter surfaces as an
+    error rather than as silently company-wide figures.
 
-    def tire_stock_count(self, user=None) -> int:
-        return len(TireService().list(status="IN_STOCK", user=user))
+    Defaults are None throughout, so the Jinja dashboard's existing
+    calls are unchanged.
+    """
 
-    def battery_stock_count(self, user=None) -> int:
-        return len(BatteryService().list(status="IN_STOCK", user=user))
+    def fleet_count(self, user=None, branch_id=None) -> int:
+        return len(VehicleService().list(include_inactive=False, user=user,
+                                         branch_id=branch_id))
 
-    def maintenance_due_count(self, user=None) -> int:
+    def tire_stock_count(self, user=None, branch_id=None) -> int:
+        return len(TireService().list(status="IN_STOCK", user=user,
+                                      branch_id=branch_id))
+
+    def battery_stock_count(self, user=None, branch_id=None) -> int:
+        return len(BatteryService().list(status="IN_STOCK", user=user,
+                                         branch_id=branch_id))
+
+    def maintenance_due_count(self, user=None, branch_id=None) -> int:
         from app.core.maintenance.due_calculation_service import (
             PMDueCalculationService)
         due = PMDueCalculationService().get_all_due_vehicles()
+        if branch_id is not None:
+            due = [d for d in due if d["vehicle"].branch_id == branch_id]
         if user is None:
             return len(due)
         from app.modules.user_management.org_scope_service import (
@@ -44,7 +62,8 @@ class DashboardService:
             return 0
         return len(ApprovalTaskService().list_for_user(user))
 
-    def registrations_expiring_count(self, user=None, days_ahead: int = 30) -> int:
+    def registrations_expiring_count(self, user=None, days_ahead: int = 30,
+                                     branch_id=None) -> int:
         """Count of vehicles needing registration attention.
 
         Deliberately uses the SAME RegistrationDueCalculationService that
@@ -59,6 +78,8 @@ class DashboardService:
         from app.modules.registration_config.service import (
             RegistrationDueCalculationService)
         due = RegistrationDueCalculationService().get_all_due_vehicles()
+        if branch_id is not None:
+            due = [d for d in due if d["vehicle"].branch_id == branch_id]
         if user is None:
             return len(due)
         from app.modules.user_management.org_scope_service import (

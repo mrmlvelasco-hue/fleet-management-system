@@ -50,12 +50,15 @@ class TireService:
             return obj
         return None
 
-    def list(self, include_inactive=False, status=None, user=None):
+    def list(self, include_inactive=False, status=None, user=None,
+             branch_id=None):
         q = Tire.query
         if not include_inactive:
             q = q.filter_by(is_active=True)
         if status:
             q = q.filter_by(status=status)
+        if branch_id:
+            q = q.filter_by(branch_id=branch_id)
         records = q.order_by(Tire.brand, Tire.serial_number).all()
         if user is None:
             return records

@@ -87,6 +87,11 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(api_search_bp)
     app.register_blueprint(comments_bp)
     from app.modules.api.routes import bp as api_v1_bp
+    # Imported for its side effect: dashboard.py attaches its routes to
+    # the api_v1 blueprint, so it must be imported BEFORE the blueprint
+    # is registered -- Flask freezes a blueprint's route list at
+    # registration time and silently ignores anything added afterwards.
+    from app.modules.api import dashboard as _api_dashboard  # noqa: F401
     app.register_blueprint(api_v1_bp)
     # CSRF protects COOKIE-authenticated form posts: the browser attaches
     # the session automatically, so a third-party page could otherwise
@@ -95,6 +100,11 @@ def create_app(config_name: str | None = None) -> Flask:
     # client to send, so CSRF adds nothing here and would simply block
     # every non-browser client (GPS units, the mobile app).
     csrf.exempt(api_v1_bp)
+
+    # Cross-origin support for the React frontend's dev server. Scoped to
+    # /api/ and driven by CORS_ORIGINS config -- see app/core/cors.py.
+    from app.core.cors import init_cors
+    init_cors(app)
 
     from app.modules.system_admin.services.notification_engine import (
         register_notification_hooks)

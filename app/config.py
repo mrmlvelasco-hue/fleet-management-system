@@ -88,6 +88,11 @@ class BaseConfig:
     MAX_FAILED_LOGIN_ATTEMPTS = int(os.environ.get("MAX_FAILED_LOGIN_ATTEMPTS", "5"))
     CELERY_BROKER_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     CELERY_RESULT_BACKEND = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    # Origins allowed to call /api/ from a browser. Comma-separated in
+    # the environment; empty by default, so cross-origin access is
+    # off unless deliberately switched on for a known frontend host.
+    CORS_ORIGINS = [o.strip() for o in
+                    os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
     WTF_CSRF_ENABLED = True
     # Tie the CSRF token's lifetime to the SESSION rather than letting it
     # run its own independent clock (Flask-WTF defaults to 1 hour).

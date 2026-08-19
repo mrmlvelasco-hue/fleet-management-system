@@ -62,13 +62,28 @@ class DashboardAnalyticsService:
             return None  # no recognised scope rows -- fail open, not closed
         return list(branch_ids)
 
+    def _scoped_branch_ids(self, user, branch_id=None):
+        """The user's visible branches, optionally narrowed to one.
+
+        `branch_id` may only ever NARROW the org scope, never widen it:
+        a branch the user cannot see intersects to an empty list, which
+        filters everything out. Passing a branch id can therefore never
+        be used to read another branch's figures.
+        """
+        visible = self._visible_branch_ids(user)
+        if branch_id is None:
+            return visible
+        if visible is None:          # unrestricted user
+            return [branch_id]
+        return [b for b in visible if b == branch_id]
+
     @request_cached("chart_fleet_by_status")
-    def fleet_by_status(self, user=None) -> dict:
+    def fleet_by_status(self, user=None, branch_id=None) -> dict:
         from app.modules.master_data.vehicle.models import Vehicle
         q = (db.session.query(Vehicle.status, func.count(Vehicle.id))
             .filter(Vehicle.is_active.is_(True))
             .group_by(Vehicle.status))
-        branch_ids = self._visible_branch_ids(user)
+        branch_ids = self._scoped_branch_ids(user, branch_id)
         if branch_ids is not None:
             q = q.filter(Vehicle.branch_id.in_(branch_ids))
         rows = q.all()
