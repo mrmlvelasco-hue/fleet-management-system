@@ -304,6 +304,84 @@ class VehicleService:
                if v.created_by == getattr(user, "id", None)
                or scope_svc.covers(user.id, branch_id=v.branch_id)]
 
+    def list_page(self, user=None, q=None, status=None, vehicle_type_id=None,
+                  branch_id=None, sort="plate", direction="asc",
+                  page=1, page_size=20, include_disposed=False):
+        """One page of vehicles, filtered and sorted IN SQL.
+
+        `list()` above loads every visible vehicle and filters visibility
+        in Python. That is fine for a dashboard count and unusable for a
+        5,000-vehicle list screen: measured at 1.25s just to materialise
+        the rows, before any filtering, on every keystroke of a search.
+
+        The Python predicate is
+            created_by == me OR org scope covers the branch
+        and it IS expressible in SQL once the visible branch ids are
+        fetched once, which is what this does. (An earlier note in the
+        API layer claimed otherwise; that was wrong.)
+
+        Returns (rows, total). `total` counts the filtered set, not the
+        page, so a caller can render "showing 1-20 of N".
+
+        The two paths must agree exactly -- a test asserts list_page()
+        returns the same ids as list() -- because the list screen and
+        the dashboard would otherwise describe different fleets.
+        """
+        from sqlalchemy import or_, func
+        from app.modules.user_management.org_scope_service import (
+            UserOrgScopeService)
+
+        query = Vehicle.query.filter_by(is_active=True)
+        if not include_disposed:
+            query = query.filter(Vehicle.status != "DISPOSED")
+        if branch_id:
+            query = query.filter(Vehicle.branch_id == branch_id)
+
+        if user is not None:
+            scope_svc = UserOrgScopeService()
+            scopes = scope_svc.list_for_user(user.id)
+            # No scopes assigned means unrestricted -- the same
+            # backward-compatibility rule covers() applies, and getting
+            # it wrong here would lock out every user an admin has not
+            # yet configured.
+            if scopes:
+                unrestricted = any(
+                    sc.scope_type in ("GLOBAL", "COMPANY") for sc in scopes)
+                if not unrestricted:
+                    ids = [sc.branch_id for sc in scopes
+                           if sc.scope_type == "BRANCH" and sc.branch_id]
+                    query = query.filter(or_(
+                        Vehicle.created_by == user.id,
+                        Vehicle.branch_id.in_(ids) if ids else False,
+                    ))
+
+        if status:
+            query = query.filter(Vehicle.status == status)
+        if vehicle_type_id:
+            query = query.filter(Vehicle.vehicle_type_id == vehicle_type_id)
+        if q:
+            like = f"%{q.lower()}%"
+            query = query.filter(or_(
+                func.lower(Vehicle.plate_number).like(like),
+                func.lower(Vehicle.conduction_number).like(like),
+                func.lower(Vehicle.brand).like(like),
+                func.lower(Vehicle.model).like(like),
+            ))
+
+        columns = {
+            "plate": Vehicle.plate_number,
+            "vehicle": Vehicle.brand,
+            "status": Vehicle.status,
+            "odometer": Vehicle.current_odometer,
+            "year": Vehicle.year,
+        }
+        col = columns.get(sort, Vehicle.plate_number)
+        query = query.order_by(col.desc() if direction == "desc" else col.asc())
+
+        total = query.order_by(None).count()
+        rows = query.limit(page_size).offset((page - 1) * page_size).all()
+        return rows, total
+
     def deactivate(self, record_id):
         obj = db.session.get(Vehicle, record_id)
         if obj:

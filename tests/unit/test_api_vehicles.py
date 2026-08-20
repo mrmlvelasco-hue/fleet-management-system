@@ -249,12 +249,15 @@ def test_enrichment_is_limited_to_the_page(db, client, veh_env):
 
 
 def test_summary_counts_describe_the_whole_filtered_set(db, client, veh_env):
-    """The stat chips above the table summarise every matching vehicle,
-    not the current page -- '12 Active' means twelve in the fleet, not
-    twelve on screen."""
+    """The stat chips summarise every matching vehicle, not the current
+    page -- '12 Active' means twelve in the fleet, not twelve on screen.
+
+    Served by its own endpoint: the due counts cost ~3s across 5,000
+    vehicles, twenty times the table itself, so they are not allowed to
+    hold the table's request.
+    """
     token = _token(client)
-    _, body = _get(client, "/api/v1/vehicles?page_size=1", token)
-    s = body["summary"]
+    _, s = _get(client, "/api/v1/vehicles/summary", token)
     assert set(s) >= {"total", "active", "in_maintenance",
                       "pms_due_soon", "registration_expiring"}
     assert s["total"] == 3
@@ -265,7 +268,76 @@ def test_summary_ignores_paging_but_respects_filters(db, client, veh_env):
     describe a set the table is no longer showing."""
     _, _, lv, _ = veh_env
     token = _token(client)
-    _, all_rows = _get(client, "/api/v1/vehicles", token)
-    _, filtered = _get(client, f"/api/v1/vehicles?vehicle_type_id={lv.id}", token)
-    assert all_rows["summary"]["total"] == 3
-    assert filtered["summary"]["total"] == 2
+    _, all_rows = _get(client, "/api/v1/vehicles/summary", token)
+    _, filtered = _get(
+        client, f"/api/v1/vehicles/summary?vehicle_type_id={lv.id}", token)
+    assert all_rows["total"] == 3
+    assert filtered["total"] == 2
+
+
+# ── SQL-scoped paging path ──────────────────────────────────────────────────
+
+def test_sql_paged_scope_matches_the_python_scope(db, client, veh_env):
+    """The fast path must return exactly what the trusted path returns.
+
+    VehicleService.list() filters visibility in Python and is what every
+    other screen uses. list_page() reproduces that predicate in SQL so a
+    page can be fetched without loading the whole fleet. If the two ever
+    disagree, the list screen shows a different fleet from the dashboard
+    -- so this asserts equality rather than trusting the rewrite.
+    """
+    from app.modules.master_data.vehicle.service import VehicleService
+    user, _, _, _ = veh_env
+    svc = VehicleService()
+    slow = {v.id for v in svc.list(user=user)}
+    rows, total = svc.list_page(user=user, page=1, page_size=500)
+    assert {v.id for v in rows} == slow
+    assert total == len(slow)
+
+
+def test_sql_paged_scope_respects_a_restricted_user(db, client, veh_env):
+    """A user scoped to one branch must not see another's vehicles via
+    the paged path, which is precisely where a rewritten filter would
+    leak."""
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.master_data.org.service import BranchService
+    from app.modules.user_management.models import User, Role
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+    from app.core.security.password import hash_password
+
+    other = BranchService().create(code="BR-OTHER", name="Other Branch")
+    scoped = User(username="scoped", email="s@e.com",
+                  password_hash=hash_password("secret123"), is_active=True)
+    scoped.roles = [Role(name="Scoped")]
+    db.session.add(scoped)
+    db.session.commit()
+    UserOrgScopeService().assign(scoped.id, scope_type="BRANCH",
+                                 branch_id=other.id)
+    db.session.commit()
+
+    svc = VehicleService()
+    rows, total = svc.list_page(user=scoped, page=1, page_size=500)
+    slow = {v.id for v in svc.list(user=scoped)}
+    assert {v.id for v in rows} == slow
+    assert total == len(slow)
+
+
+def test_sql_paged_search_and_sort_match_the_endpoint(db, client, veh_env):
+    from app.modules.master_data.vehicle.service import VehicleService
+    user, _, _, _ = veh_env
+    rows, total = VehicleService().list_page(
+        user=user, q="hilux", page=1, page_size=20)
+    assert total == 1
+    assert rows[0].model == "Hilux"
+
+
+def test_summary_is_its_own_endpoint(db, client, veh_env):
+    """The chips are expensive -- due status across the whole filtered
+    set. Kept off the table request so the table is not held behind
+    them, exactly as the Jinja dashboard defers its costly figures."""
+    token = _token(client)
+    status, body = _get(client, "/api/v1/vehicles/summary", token)
+    assert status == 200
+    assert set(body) >= {"total", "active", "in_maintenance",
+                         "pms_due_soon", "registration_expiring"}
