@@ -341,3 +341,145 @@ def test_summary_is_its_own_endpoint(db, client, veh_env):
     assert status == 200
     assert set(body) >= {"total", "active", "in_maintenance",
                          "pms_due_soon", "registration_expiring"}
+
+
+# ── Detail parity with vehicle_detail.html ──────────────────────────────────
+#
+# The Jinja detail screen is the specification -- it is the working,
+# tested solution. These assert the API can actually supply every
+# section it renders, because the React screen shipped with six of the
+# eight sections missing and every test green.
+
+def test_detail_carries_basic_information(db, client, veh_env):
+    token = _token(client)
+    from app.modules.master_data.vehicle.models import Vehicle
+    vid = Vehicle.query.first().id
+    status, body = _get(client, f"/api/v1/vehicles/{vid}", token)
+    assert status == 200
+    assert set(body) >= {"conduction_number", "plate_number", "vehicle_type",
+                         "brand", "model", "year", "variant", "color",
+                         "fuel_type", "current_odometer",
+                         "current_engine_hours"}
+
+
+def test_detail_carries_technical_specifications(db, client, veh_env):
+    token = _token(client)
+    from app.modules.master_data.vehicle.models import Vehicle
+    vid = Vehicle.query.first().id
+    _, body = _get(client, f"/api/v1/vehicles/{vid}", token)
+    assert set(body) >= {"chassis_number", "engine_number", "transmission",
+                         "engine_type", "displacement"}
+
+
+def test_detail_carries_identification_and_compliance(db, client, veh_env):
+    """MV File No. and LTO Office are Philippine LTO compliance fields.
+    A clerk processing a renewal needs them on this screen."""
+    token = _token(client)
+    from app.modules.master_data.vehicle.models import Vehicle
+    vid = Vehicle.query.first().id
+    _, body = _get(client, f"/api/v1/vehicles/{vid}", token)
+    assert set(body) >= {"mv_file_number", "lto_office",
+                         "last_known_registration_expiry"}
+
+
+def test_detail_carries_financial_details(db, client, veh_env):
+    token = _token(client)
+    from app.modules.master_data.vehicle.models import Vehicle
+    vid = Vehicle.query.first().id
+    _, body = _get(client, f"/api/v1/vehicles/{vid}", token)
+    assert set(body) >= {"acquisition_date", "acquisition_cost",
+                         "assured_value_current_year", "delivery_date"}
+
+
+def test_money_is_serialised_as_a_string(db, client, veh_env):
+    """Decimal -> float would put binary rounding into a peso figure.
+    Same rule the fuel endpoint already follows."""
+    from decimal import Decimal
+    from app.modules.master_data.vehicle.models import Vehicle
+    v = Vehicle.query.first()
+    v.acquisition_cost = Decimal("1234567.89")
+    db.session.commit()
+
+    token = _token(client)
+    _, body = _get(client, f"/api/v1/vehicles/{v.id}", token)
+    assert body["acquisition_cost"] == "1234567.89"
+    assert isinstance(body["acquisition_cost"], str)
+
+
+def test_detail_carries_insurance_coverage(db, client, veh_env):
+    """Four independent covers, each with its own dates. Collapsing them
+    into one 'insured' flag would hide which cover has lapsed."""
+    token = _token(client)
+    from app.modules.master_data.vehicle.models import Vehicle
+    vid = Vehicle.query.first().id
+    _, body = _get(client, f"/api/v1/vehicles/{vid}", token)
+    ins = body["insurance"]
+    assert set(ins) >= {"reference_number", "comprehensive_policy_number",
+                        "comprehensive_provider", "ctpl_policy_number",
+                        "ctpl_provider", "covers"}
+    codes = {c["code"] for c in ins["covers"]}
+    assert codes == {"CTPL", "OD_THEFT_AON", "VTPL_PD", "VTPL_BI"}
+    for cover in ins["covers"]:
+        assert set(cover) >= {"code", "label", "active", "from", "to"}
+
+
+def test_detail_carries_assignment_and_remarks(db, client, veh_env):
+    token = _token(client)
+    from app.modules.master_data.vehicle.models import Vehicle
+    vid = Vehicle.query.first().id
+    _, body = _get(client, f"/api/v1/vehicles/{vid}", token)
+    assert set(body) >= {"assigned_driver", "branch", "department", "remarks"}
+
+
+def test_detail_carries_registration_status(db, client, veh_env):
+    """From RegistrationDueCalculationService, not recomputed here, so
+    this screen cannot disagree with the dashboard about the same
+    vehicle."""
+    token = _token(client)
+    from app.modules.master_data.vehicle.models import Vehicle
+    vid = Vehicle.query.first().id
+    _, body = _get(client, f"/api/v1/vehicles/{vid}", token)
+    reg = body["registration_status"]
+    assert set(reg) >= {"status", "plate_schedule", "expiry_date",
+                        "days_remaining", "source"}
+
+
+def test_detail_still_serves_the_original_consumers(db, client, veh_env):
+    """This endpoint predates the React screen. Fields it already
+    returned must keep working."""
+    token = _token(client)
+    from app.modules.master_data.vehicle.models import Vehicle
+    vid = Vehicle.query.first().id
+    _, body = _get(client, f"/api/v1/vehicles/{vid}", token)
+    assert set(body) >= {"id", "plate_number", "status", "current_odometer",
+                         "pm_status"}
+
+
+def test_maintenance_history_endpoint(db, client, veh_env):
+    token = _token(client)
+    from app.modules.master_data.vehicle.models import Vehicle
+    vid = Vehicle.query.first().id
+    status, body = _get(
+        client, f"/api/v1/vehicles/{vid}/maintenance-history", token)
+    assert status == 200
+    assert isinstance(body["items"], list)
+
+
+def test_registration_history_endpoint(db, client, veh_env):
+    token = _token(client)
+    from app.modules.master_data.vehicle.models import Vehicle
+    vid = Vehicle.query.first().id
+    status, body = _get(
+        client, f"/api/v1/vehicles/{vid}/registration-history", token)
+    assert status == 200
+    assert isinstance(body["items"], list)
+
+
+def test_history_endpoints_respect_visibility(db, client, veh_env):
+    """Same 404 as the detail endpoint: a history must not confirm the
+    existence of a vehicle the caller cannot see."""
+    token = _token(client, "nobody")
+    for path in ("maintenance-history", "registration-history"):
+        r = client.get(f"/api/v1/vehicles/1/{path}",
+                       headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code in (403, 404)

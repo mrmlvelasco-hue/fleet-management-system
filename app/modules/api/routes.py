@@ -133,7 +133,8 @@ def get_vehicle(api_user, vehicle_id):
         return jsonify({"error": "not_found",
                        "message": "Vehicle not found or not visible to "
                                   "this account."}), 404
-    return jsonify(_vehicle_json(vehicle, include_pm=True))
+    from app.modules.api.vehicles import detail_json
+    return jsonify(detail_json(vehicle))
 
 
 def _apply_odometer_update(vehicle, raw):

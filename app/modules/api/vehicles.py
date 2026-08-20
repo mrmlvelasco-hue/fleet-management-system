@@ -258,3 +258,213 @@ def _due_block(status: dict, km: bool = False):
     if km:
         block["due_km"] = status.get("next_due_km")
     return block
+
+
+def _money(value):
+    """Decimal -> string, never float.
+
+    A float turns 1234567.89 into binary rounding, and this figure is
+    read as pesos. The fuel endpoint already follows this rule; the two
+    must not disagree about how money crosses the wire.
+    """
+    return None if value is None else str(value)
+
+
+def _iso(value):
+    return value.isoformat() if value else None
+
+
+_COVERS = [
+    ("CTPL", "CTPL", "has_ctpl", "ctpl_from_date", "ctpl_to_date"),
+    ("OD_THEFT_AON", "OD / Theft / AON", "has_od_theft_aon",
+     "od_theft_aon_from_date", "od_theft_aon_to_date"),
+    ("VTPL_PD", "VTPL - Property Damage", "has_vtpl_pd",
+     "vtpl_pd_from_date", "vtpl_pd_to_date"),
+    ("VTPL_BI", "VTPL - Bodily Injury", "has_vtpl_bi",
+     "vtpl_bi_from_date", "vtpl_bi_to_date"),
+]
+
+
+def detail_json(v):
+    """Everything vehicle_detail.html renders.
+
+    The Jinja detail screen is the specification: it is the working,
+    tested solution, and React inherits from it rather than
+    approximating it. The React screen originally shipped with six of
+    its eight sections missing while every test passed, which is what
+    this payload -- and the parity audit in the frontend repo -- exist
+    to prevent recurring.
+
+    Derived figures come from the same services the rest of the system
+    uses. Nothing here recomputes a status.
+    """
+    from app.core.maintenance.due_calculation_service import (
+        PMDueCalculationService)
+    from app.modules.registration_config.service import (
+        RegistrationDueCalculationService)
+
+    reg = RegistrationDueCalculationService().get_due_status(v) or {}
+    pm = PMDueCalculationService().get_due_status(v) or {}
+
+    return {
+        # ── Basic ────────────────────────────────────────────────────
+        "id": v.id,
+        "conduction_number": v.conduction_number,
+        "plate_number": v.plate_number,
+        "vehicle_type": v.vehicle_type.name if v.vehicle_type else None,
+        "vehicle_type_id": v.vehicle_type_id,
+        "brand": v.brand,
+        "model": v.model,
+        "year": v.year,
+        "variant": v.variant,
+        "color": v.color,
+        "fuel_type": v.fuel_type,
+        "status": v.status,
+        "current_odometer": v.current_odometer,
+        "current_engine_hours": v.current_engine_hours,
+
+        # ── Technical specifications ─────────────────────────────────
+        "chassis_number": v.chassis_number,
+        "engine_number": v.engine_number,
+        "transmission": v.transmission,
+        "engine_type": v.engine_type,
+        "displacement": v.displacement,
+
+        # ── Identification & compliance ──────────────────────────────
+        "mv_file_number": v.mv_file_number,
+        "lto_office": v.lto_office,
+        "last_known_registration_expiry": _iso(
+            v.last_known_registration_expiry),
+
+        # ── Financial ────────────────────────────────────────────────
+        "acquisition_date": _iso(v.acquisition_date),
+        "acquisition_cost": _money(v.acquisition_cost),
+        "assured_value_current_year": _money(v.assured_value_current_year),
+        "delivery_date": _iso(v.delivery_date),
+
+        # ── Insurance ────────────────────────────────────────────────
+        # Four independent covers, each with its own dates. Collapsing
+        # them into a single "insured" flag would hide which one has
+        # lapsed -- and a vehicle with expired CTPL cannot legally be
+        # driven even if the others are current.
+        "insurance": {
+            "reference_number": v.insurance_reference_number,
+            "comprehensive_policy_number": v.comprehensive_policy_number,
+            "comprehensive_provider": v.comprehensive_insurance_provider,
+            "ctpl_policy_number": v.ctpl_policy_number,
+            "ctpl_provider": v.ctpl_insurance_provider,
+            "covers": [
+                {
+                    "code": code,
+                    "label": label,
+                    "active": bool(getattr(v, flag, False)),
+                    "from": _iso(getattr(v, start, None)),
+                    "to": _iso(getattr(v, end, None)),
+                }
+                for code, label, flag, start, end in _COVERS
+            ],
+        },
+
+        # ── Assignment ───────────────────────────────────────────────
+        "assigned_driver": (v.assigned_driver.full_name
+                            if v.assigned_driver else None),
+        "branch": v.branch.name if v.branch else None,
+        "branch_id": v.branch_id,
+        "department": v.department.name if v.department else None,
+        "remarks": v.remarks,
+
+        # ── Registration status ──────────────────────────────────────
+        "registration_status": {
+            "status": reg.get("status"),
+            "plate_schedule": reg.get("plate_schedule"),
+            "or_cr_number": reg.get("or_cr_number"),
+            "expiry_date": _iso(reg.get("next_due_date")),
+            "days_remaining": reg.get("days_remaining"),
+            # The service explains WHERE the expiry came from (a
+            # registration record, or the last-known fallback). Dropping
+            # it leaves the reader unable to judge how much to trust it.
+            "source": reg.get("source"),
+        },
+
+        # ── PM status (kept: predates the React screen) ───────────────
+        "pm_status": {
+            "status": pm.get("status"),
+            "due_by": pm.get("due_by"),
+            "due_odometer": pm.get("next_due_km"),
+            "due_date": _iso(pm.get("next_due_date")),
+            "reason": pm.get("reason"),
+        } if pm else None,
+    }
+
+
+@bp.route("/vehicles/<int:vehicle_id>/maintenance-history", methods=["GET"])
+@api_auth_required("vehicle.view")
+def vehicle_maintenance_history(api_user, vehicle_id):
+    """Completed maintenance orders for one vehicle.
+
+    Mirrors master_data/routes.py exactly: COMPLETED only, newest
+    completed_date first. Including in-flight orders here would double
+    up with the Maintenance module's own open list and make the history
+    read as work already done.
+    """
+    from app.modules.master_data.vehicle.service import VehicleService
+    if VehicleService().get_visible(vehicle_id, api_user) is None:
+        return jsonify({"error": "not_found",
+                        "message": "Vehicle not found or not visible to "
+                                   "this account."}), 404
+    try:
+        from app.modules.transactions.maintenance_order.models import (
+            MaintenanceOrder)
+    except Exception:
+        # The Jinja route tolerates the transactions module being absent
+        # in older phases; an empty history is the honest answer there,
+        # not a 500.
+        return jsonify({"items": []})
+
+    rows = (MaintenanceOrder.query
+            .filter_by(vehicle_id=vehicle_id, status="COMPLETED")
+            .order_by(MaintenanceOrder.completed_date.desc())
+            .all())
+    return jsonify({"items": [{
+        "id": m.id,
+        "document_number": m.document_number,
+        "completed_date": _iso(m.completed_date),
+        "category": getattr(m, "category", None) or getattr(
+            m, "order_category", None),
+        "maintenance_type": (
+            m.maintenance_type.name if getattr(m, "maintenance_type", None)
+            else (m.transaction_type.name
+                  if getattr(m, "transaction_type", None) else None)),
+        "vendor": m.vendor.name if getattr(m, "vendor", None) else None,
+        "total_cost": _money(getattr(m, "total_cost", None)),
+    } for m in rows]})
+
+
+@bp.route("/vehicles/<int:vehicle_id>/registration-history", methods=["GET"])
+@api_auth_required("vehicle.view")
+def vehicle_registration_history(api_user, vehicle_id):
+    """Every registration document for one vehicle, newest first."""
+    from app.modules.master_data.vehicle.service import VehicleService
+    if VehicleService().get_visible(vehicle_id, api_user) is None:
+        return jsonify({"error": "not_found",
+                        "message": "Vehicle not found or not visible to "
+                                   "this account."}), 404
+    try:
+        from app.modules.transactions.vehicle_registration.models import (
+            VehicleRegistration)
+    except Exception:
+        return jsonify({"items": []})
+
+    rows = (VehicleRegistration.query
+            .filter_by(vehicle_id=vehicle_id)
+            .order_by(VehicleRegistration.id.desc())
+            .all())
+    return jsonify({"items": [{
+        "id": r.id,
+        "document_number": r.document_number,
+        "registration_type": getattr(r, "registration_type", None),
+        "registration_date": _iso(getattr(r, "registration_date", None)),
+        "expiry_date": _iso(getattr(r, "expiry_date", None)),
+        "plate_number": getattr(r, "plate_number", None),
+        "status": r.status,
+    } for r in rows]})
