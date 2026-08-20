@@ -211,3 +211,61 @@ def test_paging_happens_after_org_scoping(db, client, veh_env):
     token = _token(client)
     _, body = _get(client, "/api/v1/vehicles?page_size=50", token)
     assert body["total"] == len(body["items"])
+
+
+# ── Enriched list columns ───────────────────────────────────────────────────
+
+def test_rows_carry_assignment_and_due_columns(db, client, veh_env):
+    """The list screen shows Assigned To, Next PMS and Registration
+    alongside the basics. All three come from the same services the
+    dashboard and the Jinja screens use, so a vehicle cannot read
+    'overdue' in one place and 'due soon' in another."""
+    token = _token(client)
+    _, body = _get(client, "/api/v1/vehicles", token)
+    row = body["items"][0]
+    assert set(row) >= {"assigned_driver", "department",
+                        "next_pms", "registration"}
+
+
+def test_due_blocks_are_null_when_nothing_is_scheduled(db, client, veh_env):
+    """A vehicle with no PM schedule has no next service. Returning a
+    zero-day countdown would render as 'due today' on every such row."""
+    token = _token(client)
+    _, body = _get(client, "/api/v1/vehicles", token)
+    row = body["items"][0]
+    for block in ("next_pms", "registration"):
+        assert row[block] is None or set(row[block]) >= {"status", "days"}
+
+
+def test_enrichment_is_limited_to_the_page(db, client, veh_env):
+    """PM and registration status are expensive per vehicle. Computing
+    them for the whole filtered set instead of the 20 rows on screen
+    would make page size irrelevant to cost -- the thing paging exists
+    to control."""
+    token = _token(client)
+    _, body = _get(client, "/api/v1/vehicles?page_size=1", token)
+    assert len(body["items"]) == 1
+    assert body["total"] == 3
+
+
+def test_summary_counts_describe_the_whole_filtered_set(db, client, veh_env):
+    """The stat chips above the table summarise every matching vehicle,
+    not the current page -- '12 Active' means twelve in the fleet, not
+    twelve on screen."""
+    token = _token(client)
+    _, body = _get(client, "/api/v1/vehicles?page_size=1", token)
+    s = body["summary"]
+    assert set(s) >= {"total", "active", "in_maintenance",
+                      "pms_due_soon", "registration_expiring"}
+    assert s["total"] == 3
+
+
+def test_summary_ignores_paging_but_respects_filters(db, client, veh_env):
+    """Filtering to one type must move the chips too; otherwise they
+    describe a set the table is no longer showing."""
+    _, _, lv, _ = veh_env
+    token = _token(client)
+    _, all_rows = _get(client, "/api/v1/vehicles", token)
+    _, filtered = _get(client, f"/api/v1/vehicles?vehicle_type_id={lv.id}", token)
+    assert all_rows["summary"]["total"] == 3
+    assert filtered["summary"]["total"] == 2

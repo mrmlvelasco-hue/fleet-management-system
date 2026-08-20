@@ -125,8 +125,15 @@ def build_vehicle_list(api_user):
     start = (page - 1) * page_size
     window = rows[start:start + page_size]
 
+    # Enrichment runs ONLY over the page window. PM and registration
+    # status are several queries each per vehicle; computing them for
+    # the whole filtered set would make page_size irrelevant to cost,
+    # which is the one thing paging exists to control.
+    enriched = _enrich(window)
+
     return jsonify({
-        "items": [_serialise(v) for v in window],
+        "summary": _summary(rows),
+        "items": enriched,
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -134,7 +141,7 @@ def build_vehicle_list(api_user):
         # Kept for the original consumers of this endpoint, which predate
         # paging. Same rows, same order -- only the key names differ, so
         # nothing that reads `results`/`count` has to change.
-        "results": [_serialise(v) for v in window],
+        "results": enriched,
         "count": total,
     })
 
@@ -154,3 +161,84 @@ def _serialise(v):
         "branch": v.branch.name if v.branch else None,
         "branch_id": v.branch_id,
     }
+
+
+def _summary(rows):
+    """Counts for the stat chips above the table.
+
+    Computed over the whole FILTERED set, not the page: "12 Active"
+    means twelve in the fleet, not twelve on screen. Status counts are
+    cheap (the rows are already in memory); the due counts are not, so
+    they are derived from the bulk services rather than per row.
+    """
+    from app.core.maintenance.due_calculation_service import (
+        PMDueCalculationService)
+    from app.modules.registration_config.service import (
+        RegistrationDueCalculationService)
+
+    ids = {v.id for v in rows}
+    pm_due = [d for d in PMDueCalculationService().get_all_due_vehicles()
+              if d["vehicle"].id in ids]
+    reg_due = [d for d in
+               RegistrationDueCalculationService().get_all_due_vehicles()
+               if d["vehicle"].id in ids]
+
+    return {
+        "total": len(rows),
+        "active": sum(1 for v in rows if v.status == "ACTIVE"),
+        "in_maintenance": sum(1 for v in rows if v.status == "IN_REPAIR"),
+        # Distinct vehicles, not schedules: one unit with three overdue
+        # services is one vehicle needing attention, and counting rows
+        # would inflate the chip against the fleet size beside it.
+        "pms_due_soon": len({d["vehicle"].id for d in pm_due}),
+        "registration_expiring": len({d["vehicle"].id for d in reg_due}),
+    }
+
+
+def _enrich(window):
+    """Attach assignment, next PMS and registration to the page rows."""
+    from app.core.maintenance.due_calculation_service import (
+        PMDueCalculationService, _Prefetch)
+    from app.modules.registration_config.service import (
+        RegistrationDueCalculationService)
+
+    # _Prefetch turns ~5 queries per vehicle into zero by reading
+    # reference data from memory -- the difference between 20 rows
+    # costing 100 queries and costing none.
+    prefetch = _Prefetch()
+    pm_svc = PMDueCalculationService()
+    reg_svc = RegistrationDueCalculationService()
+
+    out = []
+    for v in window:
+        row = _serialise(v)
+        row["assigned_driver"] = (v.assigned_driver.full_name
+                                  if v.assigned_driver else None)
+        row["department"] = v.department.name if v.department else None
+        row["next_pms"] = _due_block(
+            pm_svc.get_due_status(v, _prefetch=prefetch), km=True)
+        row["registration"] = _due_block(reg_svc.get_due_status(v))
+        out.append(row)
+    return out
+
+
+def _due_block(status: dict, km: bool = False):
+    """Normalise a due-status dict into what the list column renders.
+
+    Returns None when nothing is scheduled. A zero-day countdown would
+    render as "due today" on every unscheduled vehicle -- a fleet-wide
+    false alarm.
+    """
+    if not status:
+        return None
+    due_date = status.get("next_due_date")
+    if due_date is None and status.get("next_due_km") is None:
+        return None
+    block = {
+        "status": status.get("status"),
+        "date": due_date.isoformat() if due_date else None,
+        "days": status.get("days_remaining"),
+    }
+    if km:
+        block["due_km"] = status.get("next_due_km")
+    return block
