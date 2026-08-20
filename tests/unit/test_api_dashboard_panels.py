@@ -175,3 +175,49 @@ def test_charts_only_parameter_limits_the_payload(db, client, panel_env):
     _, body = _get(client,
                    "/api/v1/dashboard/charts?only=registration_status", token)
     assert set(body) == {"registration_status"}
+
+
+# ── Registration renewal worklist ───────────────────────────────────────────
+
+def test_due_registration_requires_a_token(db, client, panel_env):
+    assert client.get("/api/v1/dashboard/due-registration").status_code == 401
+
+
+def test_due_registration_returns_the_documented_fields(db, client, panel_env):
+    token = _token(client)
+    status, body = _get(client, "/api/v1/dashboard/due-registration", token)
+    assert status == 200
+    assert isinstance(body["items"], list)
+    assert "total" in body
+    for item in body["items"]:
+        assert set(item) >= {"vehicle_id", "plate_number", "vehicle",
+                             "status", "expiry_date", "days_remaining"}
+
+
+def test_due_registration_pages_against_the_full_total(db, client, panel_env):
+    """`total` is the whole queue, not the window, so 'Showing 1-5 of 90'
+    can be stated honestly rather than implying five is all there is."""
+    token = _token(client)
+    _, body = _get(client,
+                   "/api/v1/dashboard/due-registration?limit=5&offset=0", token)
+    assert len(body["items"]) <= 5
+    assert body["total"] >= len(body["items"])
+
+
+def test_due_registration_rejects_an_unknown_branch(db, client, panel_env):
+    token = _token(client)
+    status, _ = _get(client,
+                     "/api/v1/dashboard/due-registration?branch_id=999999",
+                     token)
+    assert status == 400
+
+
+def test_due_registration_count_matches_the_summary_card(db, client, panel_env):
+    """The Registrations KPI and this list are the same population. They
+    once disagreed -- the card read 0 while the list showed 1, because
+    count and list used different lookups -- so this asserts they cannot
+    drift apart again."""
+    token = _token(client)
+    _, summary = _get(client, "/api/v1/dashboard/summary", token)
+    _, body = _get(client, "/api/v1/dashboard/due-registration", token)
+    assert body["total"] == summary["registrations_expiring_count"]

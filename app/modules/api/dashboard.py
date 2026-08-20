@@ -20,6 +20,8 @@ and the list used different lookups.
 So: if a number is needed here and no service provides it, the fix is
 to add it to the service, not to compute it here.
 """
+from datetime import date as _date
+
 from flask import jsonify, request
 
 from app.core.dashboard_service import DashboardService
@@ -388,3 +390,74 @@ def _person_label(user):
     if first and last:
         return f"{first[0]}. {last}"
     return last or first or user.username
+
+
+@bp.route("/dashboard/due-registration", methods=["GET"])
+@api_auth_required("vehicle.view")
+def dashboard_due_registration(api_user):
+    """Vehicles whose LTO registration is expiring or expired.
+
+    Uses RegistrationDueCalculationService -- the same service behind the
+    Registrations KPI card and the Jinja widget. That is not incidental:
+    the card and the list are one population, and they have already
+    disagreed once on this project (card 0, list 1) because a count and
+    a list used different lookups. A test asserts `total` equals
+    registrations_expiring_count so they cannot drift apart again.
+
+    Vehicles with an open Vehicle Registration already in flight are
+    excluded by the service: the renewal has been raised, so listing it
+    again double-counts it and sends someone to raise a duplicate.
+    """
+    branch_id, error = _requested_branch_id(api_user)
+    if error:
+        return error
+
+    try:
+        limit = int(request.args.get("limit", 5))
+        offset = max(0, int(request.args.get("offset", 0)))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_request",
+                        "message": "limit and offset must be integers."}), 400
+    limit = max(1, min(limit, 200))
+
+    from app.modules.registration_config.service import (
+        RegistrationDueCalculationService)
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+
+    due = RegistrationDueCalculationService().get_all_due_vehicles()
+    if branch_id is not None:
+        due = [d for d in due if d["vehicle"].branch_id == branch_id]
+    scope_svc = UserOrgScopeService()
+    due = [d for d in due
+           if scope_svc.covers(api_user.id, branch_id=d["vehicle"].branch_id)]
+
+    # Soonest expiry first, and OVERDUE ahead of DUE_SOON. A `limit` must
+    # truncate the least urgent rows, never the expired ones.
+    def _sort_key(d):
+        date = d.get("next_due_date")
+        return (0 if d.get("status") == "OVERDUE" else 1,
+                date or _date.max)
+
+    due.sort(key=_sort_key)
+    total = len(due)
+
+    items = []
+    for d in due[offset:offset + limit]:
+        v = d["vehicle"]
+        expiry = d.get("next_due_date")
+        items.append({
+            "vehicle_id": v.id,
+            "plate_number": v.plate_number,
+            "conduction_number": v.conduction_number,
+            "vehicle": f"{v.brand} {v.model}".strip(),
+            "branch": v.branch.name if v.branch else None,
+            "status": d.get("status"),
+            "expiry_date": expiry.isoformat() if expiry else None,
+            # Negative means expired. Comes from the service rather than
+            # being recomputed here, so the figure matches the Jinja
+            # widget exactly.
+            "days_remaining": d.get("days_remaining"),
+        })
+
+    return jsonify({"items": items, "total": total, "offset": offset})
