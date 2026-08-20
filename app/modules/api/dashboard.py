@@ -285,3 +285,106 @@ def dashboard_branches(api_user):
         {"id": b.id, "code": b.code, "name": b.name}
         for b in branches
         if scope_svc.covers(api_user.id, branch_id=b.id)]})
+
+
+@bp.route("/dashboard/awaiting-approval", methods=["GET"])
+@api_auth_required("vehicle.view")
+def dashboard_awaiting_approval(api_user):
+    """The signed-in user's pending approval queue.
+
+    Deliberately built from the SAME pieces as the Jinja "For My Action"
+    worklist -- ApprovalTaskService.list_for_user() for the queue, and
+    the reference_resolver for the plate and type label. The two UIs show
+    one queue; if they disagreed about which documents are waiting, an
+    approver would have no way to tell which to believe.
+
+    No branch_id: approval tasks scope by APPROVER, not by branch.
+    list_for_user() already applies the user's org scope internally when
+    matching role-assigned tasks, so a branch filter here would be either
+    redundant or wrong.
+    """
+    try:
+        limit = int(request.args.get("limit", 5))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_request",
+                        "message": "limit must be an integer."}), 400
+    limit = max(1, min(limit, 100))
+    try:
+        offset = max(0, int(request.args.get("offset", 0)))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_request",
+                        "message": "offset must be an integer."}), 400
+
+    from app.core.approval.task_service import ApprovalTaskService
+    from app.core.reference_resolver import (get_worklist_labels,
+                                             get_document_number)
+    from app.modules.user_management.models import User
+
+    tasks = ApprovalTaskService().list_for_user(api_user)
+    total = len(tasks)
+    window = tasks[offset:offset + limit]
+
+    items = []
+    for t in window:
+        labels = get_worklist_labels(t.reference_table, t.reference_id)
+
+        # ApprovalTask.document_number is a DENORMALISED copy taken at
+        # submit time. If auto-numbering assigned the number later, that
+        # copy stays null forever even though the document now has one --
+        # which is why a real MO once rendered as "(no number)" here
+        # while the Maintenance Orders list showed MO-2026-000020.
+        # Resolving against the live record makes every task already in
+        # the queue self-correcting, with no data migration. The Jinja
+        # worklist does exactly this; diverging would put two different
+        # numbers on screen for one document.
+        document_number = t.document_number
+        if not document_number:
+            resolved = get_document_number(t.reference_table, t.reference_id)
+            # get_document_number() falls back to "<table> #<id>" when
+            # there genuinely is no number; that is noise on a dashboard.
+            document_number = (
+                resolved
+                if resolved and not resolved.startswith(t.reference_table)
+                else None)
+
+        requester = (db_session_get(User, t.requested_by)
+                     if t.requested_by else None)
+
+        items.append({
+            "task_id": t.id,
+            "document_number": document_number,
+            "document_type": (t.document_type.name
+                              if getattr(t, "document_type", None) else None),
+            "plate_number": labels.get("plate_number"),
+            "type_label": labels.get("type_label"),
+            "level_number": t.level_number,
+            "assigned_to": (t.assigned_role.name
+                            if getattr(t, "assigned_role", None) else None),
+            "requested_by": _person_label(requester),
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "reference_table": t.reference_table,
+            "reference_id": t.reference_id,
+        })
+
+    return jsonify({"items": items, "total": total, "offset": offset})
+
+
+def db_session_get(model, pk):
+    from app.extensions import db
+    return db.session.get(model, pk) if pk else None
+
+
+def _person_label(user):
+    """'R. Delgado' style: initial + surname, matching the worklist.
+
+    Falls back to the username when names are absent -- an approver
+    needs to know WHO raised a document, and a blank is worse than a
+    less friendly identifier.
+    """
+    if user is None:
+        return None
+    first = (user.first_name or "").strip()
+    last = (user.last_name or "").strip()
+    if first and last:
+        return f"{first[0]}. {last}"
+    return last or first or user.username
