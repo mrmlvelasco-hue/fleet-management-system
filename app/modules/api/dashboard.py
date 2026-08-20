@@ -138,12 +138,50 @@ def dashboard_fleet_status(api_user):
 @api_auth_required("vehicle.view")
 def dashboard_charts(api_user):
     """The analytics charts, in the same {labels, data, colors} shape the
-    Jinja dashboard's Chart.js already consumes. ?only=a,b limits the
-    payload, matching the existing /dashboard/charts web route."""
+    Jinja dashboard's Chart.js already consumes.
+
+    ?only=a,b limits the payload, matching the existing web route. This
+    matters more than it looks: the six charts have wildly different
+    costs -- registration_status is a simple aggregate, pm_compliance
+    runs the full fleet-wide due calculation -- so a client that wants
+    the cheap ones should not have to wait for the expensive one.
+    """
     only = request.args.get("only")
     only = [c.strip() for c in only.split(",") if c.strip()] if only else None
+    branch_id, error = _requested_branch_id(api_user)
+    if error:
+        return error
     return jsonify(DashboardAnalyticsService().all_charts(
-        user=api_user, only=only))
+        user=api_user, only=only, branch_id=branch_id))
+
+
+@bp.route("/dashboard/fuel", methods=["GET"])
+@api_auth_required("fuel.view")
+def dashboard_fuel(api_user):
+    """Fuel management summary.
+
+    Gated on `fuel.view`, NOT `vehicle.view`: the Jinja dashboard hides
+    this panel behind that permission, and an API that answered on the
+    weaker one would be a way around the very gate the UI is enforcing.
+
+    Decimal values (litres, spend, avg_price) serialise as JSON strings
+    rather than floats. Binary floating point cannot represent most
+    decimal fractions exactly, and these are pesos and litres the client
+    reconciles against fuel receipts -- a cent of drift per row is a
+    support ticket. The frontend formats from the string.
+
+    avg_kmpl is null, never 0, when nothing is measurable: zero km/L
+    would read as catastrophic efficiency rather than "no fills yet".
+    """
+    from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+
+    try:
+        days = int(request.args.get("days", 30))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_request",
+                        "message": "days must be an integer."}), 400
+    days = max(1, min(days, 365))
+    return jsonify(FuelAnalyticsService().summary(user=api_user, days=days))
 
 
 @bp.route("/dashboard/workflow", methods=["GET"])

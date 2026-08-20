@@ -274,7 +274,7 @@ class DashboardAnalyticsService:
                "branch_id": int(branch_id) if branch_id else None}
 
     @request_cached("chart_pm_compliance")
-    def pm_compliance(self, user=None) -> dict:
+    def pm_compliance(self, user=None, branch_id=None) -> dict:
         """Reuses the SAME due-calculation the dashboard's due-list and
         KPI already use, so this chart can never disagree with them --
         the exact bug fixed earlier when the KPI and list used two
@@ -287,6 +287,13 @@ class DashboardAnalyticsService:
 
         due = PMDueCalculationService().get_all_due_vehicles(
             exclude_with_open_order=False)
+        # Scope the due list to the SAME set the total below is counted
+        # from. Filtering only the total lets a segment exceed the whole
+        # it is drawn against, which renders as a donut slice larger than
+        # the circle. Only applied when branch_id is given, so the
+        # existing user-only path the Jinja dashboard uses is untouched.
+        if branch_id is not None:
+            due = [d for d in due if d["vehicle"].branch_id == branch_id]
         counts = {"OVERDUE": 0, "DUE_SOON": 0, "UPCOMING": 0}
         flagged_vehicle_ids = set()
         for d in due:
@@ -297,7 +304,7 @@ class DashboardAnalyticsService:
 
         q = db.session.query(func.count(Vehicle.id)).filter(
             Vehicle.is_active.is_(True), Vehicle.status != "DISPOSED")
-        branch_ids = self._visible_branch_ids(user)
+        branch_ids = self._scoped_branch_ids(user, branch_id)
         if branch_ids is not None:
             q = q.filter(Vehicle.branch_id.in_(branch_ids))
         total_fleet = q.scalar() or 0
@@ -385,17 +392,29 @@ class DashboardAnalyticsService:
     # Each chart's data, keyed by the name the front end asks for.
     # Values are the bound method, not the result -- so a caller wanting
     # one chart pays for one chart.
-    def _chart_builders(self, user=None):
+    def _chart_builders(self, user=None, branch_id=None):
+        """branch_id is threaded only into the charts that support it.
+
+        fleet_by_branch is deliberately excluded: it exists to COMPARE
+        branches, so narrowing it to one would leave a chart with a
+        single bar and no meaning. The cost-trend and MO-by-type charts
+        do not take it yet -- they are not on the Phase 1 dashboard, and
+        adding a parameter they silently ignore would be worse than not
+        offering it.
+        """
         return {
-            "fleet_by_status": lambda: self.fleet_by_status(user=user),
+            "fleet_by_status": lambda: self.fleet_by_status(
+                user=user, branch_id=branch_id),
             "fleet_by_branch": lambda: self.fleet_by_branch(user=user),
             "maintenance_cost_trend": lambda: self.maintenance_cost_trend(user=user),
-            "pm_compliance": lambda: self.pm_compliance(user=user),
+            "pm_compliance": lambda: self.pm_compliance(
+                user=user, branch_id=branch_id),
             "mo_by_type": lambda: self.maintenance_orders_by_type(user=user),
-            "registration_status": lambda: self.registration_status(user=user),
+            "registration_status": lambda: self.registration_status(
+                user=user, branch_id=branch_id),
         }
 
-    def all_charts(self, user=None, only=None) -> dict:
+    def all_charts(self, user=None, only=None, branch_id=None) -> dict:
         """Chart payloads. `only` limits it to the named charts.
 
         Why this matters: these six have wildly different costs.
@@ -412,7 +431,7 @@ class DashboardAnalyticsService:
         request charts individually means each one appears as soon as
         its OWN data is ready.
         """
-        builders = self._chart_builders(user=user)
+        builders = self._chart_builders(user=user, branch_id=branch_id)
         if only:
             wanted = [k for k in only if k in builders]
         else:
@@ -514,7 +533,7 @@ class DashboardAnalyticsService:
         return trends
 
     @request_cached("chart_registration_status")
-    def registration_status(self, user=None) -> dict:
+    def registration_status(self, user=None, branch_id=None) -> dict:
         """Registration health of the whole fleet, as the mockup's
         'Vehicle Registration Status' donut: Active / Expiring Soon /
         For Renewal, with counts and percentages.
@@ -534,13 +553,18 @@ class DashboardAnalyticsService:
 
         due = RegistrationDueCalculationService().get_all_due_vehicles(
             exclude_with_open_order=False)
+        # See pm_compliance: the due list and the total must be scoped to
+        # the same set, or "For Renewal" can exceed the fleet it is drawn
+        # against.
+        if branch_id is not None:
+            due = [d for d in due if d["vehicle"].branch_id == branch_id]
         overdue = sum(1 for d in due if d["status"] == "OVERDUE")
         soon = sum(1 for d in due if d["status"] == "DUE_SOON")
         flagged = {d["vehicle"].id for d in due}
 
         q = db.session.query(func.count(Vehicle.id)).filter(
             Vehicle.is_active.is_(True), Vehicle.status != "DISPOSED")
-        branch_ids = self._visible_branch_ids(user)
+        branch_ids = self._scoped_branch_ids(user, branch_id)
         if branch_ids is not None:
             q = q.filter(Vehicle.branch_id.in_(branch_ids))
         total = q.scalar() or 0
