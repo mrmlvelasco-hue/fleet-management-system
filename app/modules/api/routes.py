@@ -106,15 +106,22 @@ def me(api_user):
 def list_vehicles(api_user):
     from app.modules.master_data.vehicle.service import VehicleService
     plate = request.args.get("plate")
-    vehicles = VehicleService().list(user=api_user)
     if plate:
+        # Exact-match lookup, the original behaviour. Kept separate from
+        # the list path below: this answers "which vehicle is THIS
+        # plate", and folding it into a fuzzy search would change what
+        # existing integrations get back for a plate that is a prefix of
+        # another.
         needle = plate.strip().upper()
-        vehicles = [v for v in vehicles
+        vehicles = [v for v in VehicleService().list(user=api_user)
                    if (v.plate_number or "").upper() == needle
                    or (v.conduction_number or "").upper() == needle]
-    limit = min(request.args.get("limit", default=100, type=int), 500)
-    return jsonify({"count": len(vehicles),
-                   "results": [_vehicle_json(v) for v in vehicles[:limit]]})
+        limit = min(request.args.get("limit", default=100, type=int), 500)
+        return jsonify({"count": len(vehicles),
+                       "results": [_vehicle_json(v) for v in vehicles[:limit]]})
+
+    from app.modules.api.vehicles import build_vehicle_list
+    return build_vehicle_list(api_user)
 
 
 @bp.route("/vehicles/<int:vehicle_id>", methods=["GET"])
