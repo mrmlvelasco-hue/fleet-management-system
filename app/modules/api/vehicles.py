@@ -668,3 +668,104 @@ def update_vehicle(api_user, vehicle_id):
                         "message": message,
                         "fields": {field: message}}), 400
     return jsonify(detail_json(vehicle))
+
+
+# ── Register report & print ─────────────────────────────────────────────────
+
+@bp.route("/reports/vehicle-register", methods=["GET"])
+@api_auth_required("reportvehicleregister.view")
+def vehicle_register_report(api_user):
+    """Vehicle Register Details, grouped by branch.
+
+    Its own permission, as in Flask: a reporting export over the whole
+    fleet is a different disclosure from browsing one record at a time,
+    and vehicle.view must not imply it.
+
+    Rows come from VehicleRegisterReportService -- the same service the
+    Jinja report renders -- so this cannot show a branch the browser
+    list would hide, nor disagree with the printed copy.
+    """
+    from datetime import datetime
+    from app.modules.master_data.vehicle.report_service import (
+        VehicleRegisterReportService)
+
+    groups = VehicleRegisterReportService().get_grouped(user=api_user)
+    branch_id = request.args.get("branch_id")
+    if branch_id:
+        try:
+            wanted = int(branch_id)
+        except (TypeError, ValueError):
+            return _bad("branch_id must be an integer.")
+        groups = [g for g in groups
+                  if any(r.get("branch_id") == wanted
+                         for r in g.get("vehicles", []))]
+
+    return jsonify({
+        "groups": groups,
+        # A printed register with no timestamp cannot be told apart from
+        # one printed last quarter.
+        "generated_at": datetime.now().isoformat(),
+    })
+
+
+@bp.route("/reports/vehicle-register/export.xlsx", methods=["GET"])
+@api_auth_required("reportvehicleregister.view")
+def vehicle_register_export(api_user):
+    """The same spreadsheet the Jinja page downloads.
+
+    Reuses generate_vehicle_register_xlsx rather than building a second
+    workbook: two files with the same name and different columns would
+    leave whoever received one unable to tell which they had.
+    """
+    from io import BytesIO
+    from flask import send_file
+    from app.core.reporting.generators import generate_vehicle_register_xlsx
+
+    filters = {}
+    branch_id = request.args.get("branch_id")
+    if branch_id:
+        try:
+            filters["branch_id"] = int(branch_id)
+        except (TypeError, ValueError):
+            return _bad("branch_id must be an integer.")
+
+    filename, xlsx = generate_vehicle_register_xlsx(filters=filters,
+                                                    user=api_user)
+    return send_file(
+        BytesIO(xlsx), as_attachment=True, download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument"
+                 ".spreadsheetml.sheet")
+
+
+@bp.route("/vehicles/<int:vehicle_id>/print", methods=["GET"])
+@api_auth_required("vehicle.view")
+def vehicle_print(api_user, vehicle_id):
+    """Everything the printable vehicle sheet needs.
+
+    Returns the SAME detail payload the screen uses plus the company
+    letterhead and a timestamp, and lets the client lay it out. A
+    server-rendered HTML page would be a second definition of what a
+    vehicle record contains, and the two would drift.
+    """
+    from datetime import datetime
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    vehicle = VehicleService().get_visible(vehicle_id, api_user)
+    if vehicle is None:
+        return jsonify({"error": "not_found",
+                        "message": "Vehicle not found or not visible to "
+                                   "this account."}), 404
+
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    company = CompanyProfileService().get()
+
+    return jsonify({
+        "vehicle": detail_json(vehicle),
+        "company": {
+            "company_name": getattr(company, "company_name", None),
+            "address_line": getattr(company, "address_line", None),
+            "city": getattr(company, "city", None),
+        } if company else {},
+        "generated_at": datetime.now().isoformat(),
+    })
