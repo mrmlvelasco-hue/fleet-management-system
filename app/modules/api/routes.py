@@ -82,7 +82,53 @@ def auth_token():
             user.password_hash, password):
         return jsonify({"error": "unauthorized",
                        "message": "Invalid username or password."}), 401
-    return jsonify(issue_token(user))
+    from app.modules.api.auth import (issue_refresh_token,
+                                      set_refresh_cookie)
+    response = jsonify(issue_token(user))
+    # The refresh token rides in an httpOnly cookie; the access token
+    # stays in the body and in memory. Only the long-lived credential is
+    # sent automatically, and JavaScript can read neither it nor replay
+    # it cross-site.
+    refresh, expires_at = issue_refresh_token(user)
+    return set_refresh_cookie(response, refresh, expires_at)
+
+
+@bp.route("/auth/refresh", methods=["POST"])
+def auth_refresh():
+    """Exchange the refresh cookie for a new access token.
+
+    Deliberately takes NO Authorization header: this is the endpoint a
+    freshly-opened tab calls when it has no access token at all, which
+    is the situation the whole mechanism exists to serve.
+    """
+    from app.modules.api.auth import (REFRESH_COOKIE, issue_refresh_token,
+                                      set_refresh_cookie,
+                                      user_from_refresh_token)
+
+    user = user_from_refresh_token(request.cookies.get(REFRESH_COOKIE))
+    if user is None:
+        return jsonify({"error": "unauthorized",
+                        "message": "Please sign in again."}), 401
+
+    response = jsonify(issue_token(user))
+    # Rotated on every use, so a token captured from an old response
+    # stops working as soon as the legitimate client refreshes, and an
+    # active session never has to re-login on a fixed schedule.
+    refresh, expires_at = issue_refresh_token(user)
+    return set_refresh_cookie(response, refresh, expires_at)
+
+
+@bp.route("/auth/logout", methods=["POST"])
+def auth_logout():
+    """Clear the refresh cookie.
+
+    The access token is not revoked -- it is stateless and short-lived,
+    and a revocation list would be a bigger change than it earns here.
+    What this guarantees is that no NEW access token can be minted, so
+    the session ends within the access token's remaining lifetime.
+    """
+    from app.modules.api.auth import clear_refresh_cookie
+    return clear_refresh_cookie(jsonify({"ok": True}))
 
 
 @bp.route("/me", methods=["GET"])

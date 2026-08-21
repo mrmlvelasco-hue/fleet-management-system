@@ -66,6 +66,21 @@ def init_cors(app):
         if allow is None:
             return response
         response.headers["Access-Control-Allow-Origin"] = allow
+        # Credentials are permitted on the refresh route ONLY.
+        #
+        # That route needs the browser to attach the httpOnly refresh
+        # cookie cross-origin, which it will not do unless the server
+        # says so. Everywhere else stays cookie-free, so CSRF against
+        # the API remains closed off by construction rather than by a
+        # token dance -- an attacker's page can issue the request, but
+        # the browser attaches no credential to it.
+        #
+        # The refresh route is safe to credential because it is a bare
+        # POST with no body: replaying it mints an access token into a
+        # response the attacker's page cannot read, thanks to this very
+        # allow-list.
+        if request.path.rstrip("/").endswith("/auth/refresh"):
+            response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Headers"] = \
             "Authorization, Content-Type"
         response.headers["Access-Control-Allow-Methods"] = \

@@ -33,6 +33,10 @@ def issue_token(user: User, ttl_hours: int = TOKEN_TTL_HOURS) -> dict:
     payload = {
         "sub": str(user.id),
         "username": user.username,
+        # Marks this as an ACCESS token. _user_from_request refuses
+        # anything else, so the long-lived refresh token cannot be
+        # presented as a bearer and open every endpoint directly.
+        "typ": "access",
         "iat": now,
         "exp": expires_at,
     }
@@ -55,6 +59,8 @@ def _user_from_request():
     token = header[7:].strip()
     try:
         payload = jwt.decode(token, _secret(), algorithms=["HS256"])
+        if payload.get("typ") == "refresh":
+            return None, "Refresh tokens cannot be used to call the API."
     except jwt.ExpiredSignatureError:
         return None, "Token has expired. Request a new one from "\
                      "/api/v1/auth/token."
@@ -89,3 +95,87 @@ def api_auth_required(permission: str = None):
             return fn(*args, api_user=user, **kwargs)
         return wrapper
     return decorator
+
+
+# ── Refresh tokens ──────────────────────────────────────────────────────────
+#
+# The React app holds its ACCESS token in memory only, so a new tab or a
+# refresh has no credential. That is deliberate -- a token JavaScript can
+# read is a token an injected script can steal -- but it means ordinary
+# actions like ctrl-clicking a row into a background tab log the user
+# out.
+#
+# The refresh token closes that gap without giving the credential back to
+# JavaScript: it lives in an httpOnly cookie the browser attaches
+# automatically and no script can read. A new tab exchanges it for a
+# short-lived access token and carries on.
+#
+# The two token types are deliberately distinct (`typ`). If an access
+# token could be replayed at the refresh endpoint, its short lifetime --
+# the whole reason it is safe to hold in memory -- would mean nothing;
+# and if a refresh token were accepted as a bearer, the long-lived
+# credential would open every endpoint directly.
+
+REFRESH_COOKIE = "fms_refresh"
+REFRESH_TTL_DAYS = 14
+# Scoped to the auth routes so an ordinary API call never carries it.
+# A request that has no business refreshing has no business holding the
+# credential that could.
+REFRESH_COOKIE_PATH = "/api/v1/auth"
+
+
+def issue_refresh_token(user: User) -> tuple:
+    """Returns (token, expires_at)."""
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(days=REFRESH_TTL_DAYS)
+    token = jwt.encode({
+        "sub": str(user.id),
+        "typ": "refresh",
+        "iat": now,
+        "exp": expires_at,
+    }, _secret(), algorithm="HS256")
+    return token, expires_at
+
+
+def user_from_refresh_token(token: str):
+    """The user this refresh token belongs to, or None."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, _secret(), algorithms=["HS256"])
+    except Exception:
+        return None
+    if payload.get("typ") != "refresh":
+        return None
+    user = db.session.get(User, int(payload.get("sub") or 0))
+    # Re-checked on every refresh, not just at login: disabling an
+    # account must end access promptly, and a refresh token that kept
+    # minting credentials for a disabled user would outlive the decision
+    # to revoke them.
+    if user is None or not user.is_active:
+        return None
+    return user
+
+
+def set_refresh_cookie(response, token, expires_at):
+    response.set_cookie(
+        REFRESH_COOKIE, token,
+        httponly=True,
+        # Lax rather than Strict: the cookie must survive a normal
+        # top-level navigation into a new tab, which is the case this
+        # whole mechanism exists to serve.
+        samesite="Lax",
+        # Secure follows the deployment. Forcing it on in development
+        # would silently drop the cookie over plain http and make the
+        # feature look broken.
+        secure=not current_app.config.get("DEBUG", False),
+        path=REFRESH_COOKIE_PATH,
+        expires=expires_at,
+    )
+    return response
+
+
+def clear_refresh_cookie(response):
+    response.set_cookie(REFRESH_COOKIE, "", expires=0,
+                        path=REFRESH_COOKIE_PATH, httponly=True)
+    return response
