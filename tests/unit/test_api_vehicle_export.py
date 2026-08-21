@@ -224,3 +224,46 @@ def test_export_cannot_widen_org_scope(db, client, exp_env):
     assert "ZZZ-9999" in plates, "the caller's own branch went missing"
     assert "AAA-0001" not in plates
     assert "BBB-2222" not in plates
+
+
+# ── Disposed count for the list toggle ──────────────────────────────────────
+
+def test_summary_carries_a_disposed_count(db, client, exp_env):
+    """The Jinja list badges its Show/Hide Disposed toggle with a count,
+    and says why in a comment: without it, clicking when there happen to
+    be zero disposed vehicles looks exactly like the click did nothing,
+    which is indistinguishable from a broken filter.
+
+    Flask computes it by listing the whole fleet a SECOND time. Folded
+    into the summary here instead -- that endpoint already exists, is
+    already off the critical path, and a third full list per page render
+    is not worth a badge.
+    """
+    r = client.get("/api/v1/vehicles/summary",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 200
+    assert json.loads(r.get_data(as_text=True))["disposed"] == 1
+
+
+def test_disposed_count_ignores_the_status_filter(db, client, exp_env):
+    """It answers "how many are there to reveal", not "how many match
+    the current filter". Tying it to the filter would show 0 whenever
+    any status was selected, and the toggle would look broken in exactly
+    the situation it exists for."""
+    r = client.get("/api/v1/vehicles/summary?status=ACTIVE",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert json.loads(r.get_data(as_text=True))["disposed"] == 1
+
+
+def test_disposed_count_respects_org_scope(db, client, exp_env):
+    """A count is still a disclosure: it must not reveal that another
+    branch has retired vehicles."""
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+    UserOrgScopeService().assign(exp_env["user"].id, scope_type="BRANCH",
+                                 branch_id=exp_env["cebu"].id)
+    db.session.commit()
+    r = client.get("/api/v1/vehicles/summary",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    # The only disposed vehicle is in Manila.
+    assert json.loads(r.get_data(as_text=True))["disposed"] == 0

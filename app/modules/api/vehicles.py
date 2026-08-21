@@ -236,7 +236,20 @@ def vehicles_summary(api_user):
         status=status or None, vehicle_type_id=vehicle_type_id,
         branch_id=branch_id, page=1, page_size=100000,
         include_disposed=(request.args.get("show_disposed") == "1"))
-    return jsonify(_summary(rows))
+
+    # How many disposed vehicles exist to REVEAL -- deliberately
+    # independent of the status filter, so the toggle's badge does not
+    # read 0 the moment any status is selected and look broken in
+    # exactly the case it exists for. page_size=1 because only the
+    # count is wanted; list_page filters in SQL, so this does not
+    # materialise the rows.
+    _disposed_rows, disposed_total = VehicleService().list_page(
+        user=api_user, status="DISPOSED", branch_id=branch_id,
+        page=1, page_size=1, include_disposed=True)
+
+    summary = _summary(rows)
+    summary["disposed"] = disposed_total
+    return jsonify(summary)
 
 
 def _serialise(v):
