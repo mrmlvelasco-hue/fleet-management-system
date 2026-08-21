@@ -468,3 +468,195 @@ def vehicle_registration_history(api_user, vehicle_id):
         "plate_number": getattr(r, "plate_number", None),
         "status": r.status,
     } for r in rows]})
+
+
+# ── Write endpoints ─────────────────────────────────────────────────────────
+#
+# These REUSE VehicleService.create/update. Every validation rule lives
+# there and is the reason the Flask data is clean; restating any of it
+# here would produce a second definition of "a valid vehicle" that
+# drifts from the one the Jinja form enforces.
+#
+# The only job of this layer is translating the service's exceptions into
+# FIELD-level errors, so a form spanning 64 inputs can attach a message
+# to the offending one instead of showing a single banner above it.
+
+# Which input each service exception belongs against.
+_FIELD_FOR_ERROR = {
+    "BrandRequiredError": "brand",
+    "InvalidBrandError": "brand",
+    "ModelRequiredError": "model",
+    "InvalidModelError": "model",
+    "ModelBrandMismatchError": "model",
+}
+
+# Fields a client may set. An allow-list, not `**payload`: an unknown key
+# reaching the model would either raise or silently set an attribute that
+# is not a column.
+_WRITABLE = [
+    # Basic
+    "vehicle_type_id", "brand", "model", "year", "variant", "color",
+    "fuel_type", "status", "conduction_number", "plate_number",
+    "current_odometer", "current_engine_hours", "vehicle_body_type",
+    "vehicle_usage",
+    # Identification & compliance
+    "mv_file_number", "cr_number", "lto_office",
+    "last_known_registration_expiry", "far_number", "mr_eds",
+    # Technical
+    "chassis_number", "engine_number", "transmission", "engine_type",
+    "displacement", "component_group",
+    # Financial
+    "acquisition_date", "acquisition_cost", "assured_value_current_year",
+    "delivery_date", "top_up_amount", "supplier", "leasing_company",
+    "with_vehicle_contract", "start_date", "end_date",
+    # Insurance
+    "insurance_reference_number", "comprehensive_policy_number",
+    "comprehensive_insurance_provider", "ctpl_policy_number",
+    "ctpl_insurance_provider",
+    "has_ctpl", "ctpl_from_date", "ctpl_to_date",
+    "has_od_theft_aon", "od_theft_aon_from_date", "od_theft_aon_to_date",
+    "has_vtpl_pd", "vtpl_pd_from_date", "vtpl_pd_to_date",
+    "has_vtpl_bi", "vtpl_bi_from_date", "vtpl_bi_to_date",
+    "has_inland_marine",
+    # Assignment & remarks
+    "branch_id", "department_id", "assigned_driver_id", "assignment",
+    "assignment_group_classification", "remarks", "notes",
+    "pm_schedule_id", "last_pm_date", "last_pm_odometer",
+]
+
+_DUPLICATE_FIELDS = (
+    ("conduction number", "conduction_number"),
+    ("plate number", "plate_number"),
+    ("engine number", "engine_number"),
+)
+
+
+def _field_error(exc, payload=None, exclude_id=None):
+    """Map a service exception to (field, message).
+
+    Wording stays owned by the service; this only decides which input
+    the message belongs against.
+
+    Two shapes of duplicate error arrive here. The service's own
+    pre-checks name ONE field ("Plate number 'X' already exists."). Its
+    DB-constraint fallback cannot -- it raises a generic message listing
+    every unique column, because at that point all it has is an
+    IntegrityError. Matching phrases against the generic message would
+    pick whichever field name appears first and attribute the error to
+    the wrong input, which is worse than not attributing it at all.
+
+    So when several field names appear, the submitted values are probed
+    to find the one that actually collides. That is attribution of an
+    error the service already raised, not a second validation rule.
+    """
+    name = type(exc).__name__
+    if name in _FIELD_FOR_ERROR:
+        return _FIELD_FOR_ERROR[name], str(exc)
+
+    text = str(exc).lower()
+    matches = [field for phrase, field in _DUPLICATE_FIELDS if phrase in text]
+
+    if len(matches) == 1:
+        return matches[0], str(exc)
+
+    if matches and payload:
+        found = _colliding_unique_field(payload, exclude_id)
+        if found:
+            return found, str(exc)
+
+    # Genuinely unattributable: show it at form level rather than
+    # highlighting an input that may be correct.
+    return "_", str(exc)
+
+
+def _colliding_unique_field(payload, exclude_id=None):
+    """Which submitted unique value already belongs to another vehicle."""
+    from app.modules.master_data.vehicle.models import Vehicle
+    for column in ("plate_number", "conduction_number", "engine_number",
+                   "chassis_number"):
+        value = payload.get(column)
+        if not value:
+            continue
+        query = Vehicle.query.filter(getattr(Vehicle, column) == value)
+        if exclude_id:
+            query = query.filter(Vehicle.id != exclude_id)
+        if query.first():
+            return column
+    return None
+
+
+def _payload_fields(payload):
+    return {k: v for k, v in payload.items() if k in _WRITABLE}
+
+
+def _write_errors():
+    from app.modules.master_data.vehicle import service as vsvc
+    return tuple(
+        getattr(vsvc, n) for n in (
+            "DuplicateVehicleError", "InvalidVehicleDataError",
+            "BrandRequiredError", "ModelRequiredError", "InvalidBrandError",
+            "InvalidModelError", "ModelBrandMismatchError")
+        if hasattr(vsvc, n))
+
+
+@bp.route("/vehicles", methods=["POST"])
+@api_auth_required("vehicle.create")
+def create_vehicle(api_user):
+    from app.extensions import db
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    payload = request.get_json(silent=True) or {}
+    fields = _payload_fields(payload)
+    # Vehicle.year is NOT NULL, and the service takes it positionally.
+    # Defaulting it to None produced an IntegrityError, which the
+    # service reports through its generic duplicate message -- so a
+    # missing year surfaced as "a unique field is already used", which
+    # is both wrong and unactionable. Rejected explicitly instead.
+    if not fields.get("year"):
+        return jsonify({
+            "error": "validation",
+            "message": "Year is required.",
+            "fields": {"year": "Year is required."}}), 400
+    try:
+        # strict=True mirrors the Jinja route exactly: brand and model
+        # must resolve against the master list. Passing False here would
+        # let the API create rows the web form would have rejected, and
+        # free-text brands are precisely what the master list exists to
+        # prevent.
+        vehicle = VehicleService().create(strict=True, **fields)
+    except _write_errors() as exc:
+        # The service raises before committing, but rolling back keeps
+        # the session clean for anything the request does afterwards.
+        db.session.rollback()
+        field, message = _field_error(exc, fields)
+        return jsonify({"error": "validation",
+                        "message": message,
+                        "fields": {field: message}}), 400
+    return jsonify(detail_json(vehicle)), 201
+
+
+@bp.route("/vehicles/<int:vehicle_id>", methods=["PUT", "PATCH"])
+@api_auth_required("vehicle.update")
+def update_vehicle(api_user, vehicle_id):
+    from app.extensions import db
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    svc = VehicleService()
+    # Visibility first, and the same 404 the detail endpoint gives, so a
+    # write attempt cannot be used to discover which ids exist.
+    if svc.get_visible(vehicle_id, api_user) is None:
+        return jsonify({"error": "not_found",
+                        "message": "Vehicle not found or not visible to "
+                                   "this account."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    fields = _payload_fields(payload)
+    try:
+        vehicle = svc.update(vehicle_id, strict=True, **fields)
+    except _write_errors() as exc:
+        db.session.rollback()
+        field, message = _field_error(exc, fields, exclude_id=vehicle_id)
+        return jsonify({"error": "validation",
+                        "message": message,
+                        "fields": {field: message}}), 400
+    return jsonify(detail_json(vehicle))
