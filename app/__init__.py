@@ -94,6 +94,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.api import dashboard as _api_dashboard  # noqa: F401
     from app.modules.api import attachments as _api_attachments  # noqa: F401
     from app.modules.api import vehicles as _api_vehicles  # noqa: F401
+    from app.modules.api import reference as _api_reference  # noqa: F401
     app.register_blueprint(api_v1_bp)
     # CSRF protects COOKIE-authenticated form posts: the browser attaches
     # the session automatically, so a third-party page could otherwise

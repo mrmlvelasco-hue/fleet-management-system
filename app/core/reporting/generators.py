@@ -75,6 +75,51 @@ def _to_bytes(wb) -> bytes:
     return buf.getvalue()
 
 
+# ── Vehicle Master list export ──────────────────────────────────────────────
+
+def generate_vehicle_list_xlsx(vehicles):
+    """The Vehicle Master list as the user currently has it filtered.
+
+    Takes ALREADY-FILTERED, already-scoped rows rather than a filter
+    dict. The caller has just produced exactly the set the screen is
+    showing, via the same service call the list makes; re-deriving it
+    here from parameters would be a second interpretation of the filter,
+    and the two would eventually disagree.
+
+    Columns mirror the Jinja list's eight, plus the identifiers someone
+    doing this in a spreadsheet always needs next (conduction, chassis,
+    engine) and the assignee. The Vehicle Register report remains the
+    fuller, branch-sectioned document -- this one is "what I am looking
+    at, in Excel".
+    """
+    columns = [
+        ("Plate No.", lambda v: v.plate_number or v.conduction_number or ""),
+        ("Conduction No.", lambda v: v.conduction_number or ""),
+        ("Brand", lambda v: v.brand or ""),
+        ("Model", lambda v: v.model or ""),
+        ("Year", lambda v: v.year),
+        ("Type", lambda v: v.vehicle_type.name if v.vehicle_type else ""),
+        ("Branch", lambda v: v.branch.name if v.branch else ""),
+        ("Status", lambda v: v.status or ""),
+        # Left blank when never captured. A fabricated 0 reads as "this
+        # vehicle has zero mileage", not "we do not know" -- the same
+        # distinction the Jinja list makes with an em dash.
+        ("Odometer (km)", lambda v: v.current_odometer
+         if v.current_odometer is not None else ""),
+        ("Assignee", lambda v: v.assigned_driver.full_name
+         if v.assigned_driver else ""),
+        ("Chassis No.", lambda v: v.chassis_number or ""),
+        ("Engine No.", lambda v: v.engine_number or ""),
+    ]
+    wb, ws = _new_workbook("Vehicle Master", "Vehicles")
+    ws.append([label for label, _ in columns])
+    _style_header_row(ws, ws.max_row, len(columns))
+    for vehicle in vehicles:
+        ws.append([accessor(vehicle) for _, accessor in columns])
+    _autosize(ws, [c[0] for c in columns])
+    return (f"Vehicle_Master_{datetime.now():%Y%m%d}.xlsx", _to_bytes(wb))
+
+
 # ── Vehicle Register Details ────────────────────────────────────────────────
 
 def generate_vehicle_register_xlsx(filters: dict = None, user=None):
@@ -83,10 +128,15 @@ def generate_vehicle_register_xlsx(filters: dict = None, user=None):
     filters = filters or {}
     groups = VehicleRegisterReportService().get_grouped(user=user)
     if filters.get("branch_id"):
+        # Compares ids to ids. This previously matched branch_CODE
+        # against a branch_ID -- a string like "BR-01" against 3 -- so
+        # the filter dropped every group unless a branch had been given
+        # a code that happened to be its own primary key. The rows now
+        # carry branch_id, so the comparison can be the one intended.
+        wanted = filters["branch_id"]
         groups = [g for g in groups
-                 if str(g["branch_code"]) == str(filters["branch_id"])
-                 or any(v.get("branch_code") == filters["branch_id"]
-                       for v in g["vehicles"])]
+                  if any(v.get("branch_id") == wanted
+                         for v in g["vehicles"])]
 
     columns = [
         ("Plate No.", "plate_number"), ("Assignee", "assignee"),

@@ -53,12 +53,18 @@ def _bad(message):
     return jsonify({"error": "bad_request", "message": message}), 400
 
 
-def build_vehicle_list(api_user):
-    """Filter/sort/page the caller's visible vehicles.
+def _list_filters():
+    """Parse the filter/sort parameters shared by the list and its export.
 
-    Called by the existing GET /api/v1/vehicles route rather than
-    registering a second one: two endpoints over the same data drift,
-    and the older one already has external consumers.
+    Returns (params, None) or (None, error_response).
+
+    Extracted so `GET /vehicles` and `GET /vehicles/export.xlsx` cannot
+    drift. Two parsers over the same query string is how a spreadsheet
+    ends up meaning something slightly different from the screen it was
+    exported from -- and the spreadsheet is the copy that gets emailed
+    on, long after anyone can check it against the list.
+
+    Paging is deliberately NOT parsed here: the export has none.
     """
     q = (request.args.get("q") or "").strip().lower()
     status = (request.args.get("status") or "").strip().upper()
@@ -69,11 +75,51 @@ def build_vehicle_list(api_user):
         # Silently ignoring a typo would show the full list under a
         # filter the user believes is applied -- every row real, nothing
         # visibly wrong.
-        return _bad(f"Unknown status '{status}'.")
+        return None, _bad(f"Unknown status '{status}'.")
     if sort not in _SORT_KEYS:
-        return _bad(f"Unknown sort key '{sort}'.")
+        return None, _bad(f"Unknown sort key '{sort}'.")
     if direction not in ("asc", "desc"):
-        return _bad("dir must be 'asc' or 'desc'.")
+        return None, _bad("dir must be 'asc' or 'desc'.")
+
+    branch_id = request.args.get("branch_id")
+    vehicle_type_id = request.args.get("vehicle_type_id")
+    try:
+        branch_id = int(branch_id) if branch_id else None
+        vehicle_type_id = int(vehicle_type_id) if vehicle_type_id else None
+    except (TypeError, ValueError):
+        return None, _bad("branch_id and vehicle_type_id must be integers.")
+
+    return {
+        "q": q or None,
+        "status": status or None,
+        "sort": sort,
+        "direction": direction,
+        "branch_id": branch_id,
+        "vehicle_type_id": vehicle_type_id,
+        # Disposed visibility is an EXPLICIT toggle, mirroring the Jinja
+        # route's show_disposed=1 -- deliberately independent of the
+        # status dropdown.
+        #
+        # Deriving it from `status == "DISPOSED"` instead, as this did,
+        # produced an incoherence: an unfiltered search for a plate
+        # returned nothing while the same search filtered to Disposed
+        # returned a row. "All statuses" showing FEWER rows than one of
+        # its own subsets is wrong whichever default is correct, and it
+        # reads as a broken search rather than a hidden record.
+        "include_disposed": request.args.get("show_disposed") == "1",
+    }, None
+
+
+def build_vehicle_list(api_user):
+    """Filter/sort/page the caller's visible vehicles.
+
+    Called by the existing GET /api/v1/vehicles route rather than
+    registering a second one: two endpoints over the same data drift,
+    and the older one already has external consumers.
+    """
+    filters, error = _list_filters()
+    if error:
+        return error
 
     try:
         page = int(request.args.get("page", 1))
@@ -84,33 +130,10 @@ def build_vehicle_list(api_user):
         return _bad("page and page_size must be 1 or greater.")
     page_size = min(page_size, 200)
 
-    branch_id = request.args.get("branch_id")
-    vehicle_type_id = request.args.get("vehicle_type_id")
-    try:
-        branch_id = int(branch_id) if branch_id else None
-        vehicle_type_id = int(vehicle_type_id) if vehicle_type_id else None
-    except (TypeError, ValueError):
-        return _bad("branch_id and vehicle_type_id must be integers.")
-
     from app.modules.master_data.vehicle.service import VehicleService
 
-    # Disposed visibility is an EXPLICIT toggle, mirroring the Jinja
-    # route's show_disposed=1 -- deliberately independent of the status
-    # dropdown.
-    #
-    # Deriving it from `status == "DISPOSED"` instead, as this did,
-    # produced an incoherence: an unfiltered search for a plate returned
-    # nothing while the same search filtered to Disposed returned a row.
-    # "All statuses" showing FEWER rows than one of its own subsets is
-    # wrong whichever default is correct, and it reads as a broken
-    # search rather than a hidden record.
-    show_disposed = request.args.get("show_disposed") == "1"
-
     rows, total = VehicleService().list_page(
-        user=api_user, q=q or None, status=status or None,
-        vehicle_type_id=vehicle_type_id, branch_id=branch_id,
-        sort=sort, direction=direction, page=page, page_size=page_size,
-        include_disposed=show_disposed)
+        user=api_user, page=page, page_size=page_size, **filters)
 
     pages = max(1, (total + page_size - 1) // page_size)
     # Enrichment runs ONLY over the page rows. PM and registration status
@@ -130,6 +153,52 @@ def build_vehicle_list(api_user):
         "results": enriched,
         "count": total,
     })
+
+
+@bp.route("/vehicles/export.xlsx", methods=["GET"])
+@api_auth_required("vehicle.view")
+def vehicles_export(api_user):
+    """The Vehicle Master list as an Excel file, respecting the filters.
+
+    Flask's own Export button ignores every filter on the screen above
+    it and dumps the whole table. This deliberately does not: exporting
+    5,000 rows while the user is looking at 12 is the failure that gets
+    noticed in front of a client, and the unfiltered export stays one
+    click away by clearing the filters.
+
+    Takes the SAME parameters as GET /vehicles through the SAME parser,
+    and calls the SAME service method, so the file cannot contain a row
+    the list would have hidden -- including org scoping, which is
+    applied by list_page and never re-implemented here.
+
+    No paging. The list caps page_size at 200; inheriting that would
+    hand over a truncated file that looks complete, which is the worst
+    failure available to a document someone forwards. page_size is set
+    from the count so a single page holds everything.
+    """
+    from io import BytesIO
+    from flask import send_file
+    from app.core.reporting.generators import generate_vehicle_list_xlsx
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    filters, error = _list_filters()
+    if error:
+        return error
+
+    service = VehicleService()
+    # First call establishes the size of the visible, filtered set;
+    # second retrieves it whole. Cheaper than adding an unpaged code
+    # path to list_page, and it cannot diverge from what the list means.
+    _rows, total = service.list_page(user=api_user, page=1, page_size=1,
+                                     **filters)
+    rows, _total = service.list_page(user=api_user, page=1,
+                                     page_size=max(total, 1), **filters)
+
+    filename, xlsx = generate_vehicle_list_xlsx(rows)
+    return send_file(
+        BytesIO(xlsx), as_attachment=True, download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument"
+                 ".spreadsheetml.sheet")
 
 
 @bp.route("/vehicles/summary", methods=["GET"])

@@ -21,6 +21,11 @@ class VehicleRegisterReportService:
         rows = []
         for v in vehicles:
             rows.append({
+                # Carried so callers can filter by branch without
+                # matching on a display string. branch_code is "—" for an
+                # unassigned vehicle, and two branches could legitimately
+                # share a name; neither is safe to filter on.
+                "branch_id": v.branch.id if v.branch else None,
                 "branch_code": v.branch.code if v.branch else "—",
                 "branch_name": v.branch.name if v.branch else "Unassigned",
                 "plate_number": v.plate_number or v.conduction_number or "—",

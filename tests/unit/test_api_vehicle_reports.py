@@ -171,3 +171,37 @@ def test_print_follows_vehicle_visibility(db, client, rep_env):
     token = _token(client)
     r = client.get("/api/v1/vehicles/999999/print", headers=_auth(token))
     assert r.status_code == 404
+
+
+def test_register_report_branch_filter_returns_that_branch(db, client, rep_env):
+    """?branch_id= must narrow the report, not empty it.
+
+    The filter compared r["branch_id"] against a key get_rows() never
+    emitted, so every group was dropped and any branch-scoped request
+    returned an empty register. An empty report reads as "this branch has
+    no vehicles" -- a factual claim about the fleet, not a visibly broken
+    filter.
+
+    Only export.xlsx had branch_id coverage; the JSON route had none.
+    """
+    _user, branch = rep_env
+    t = _token(client)
+    r = client.get(f"/api/v1/reports/vehicle-register?branch_id={branch.id}",
+                   headers=_auth(t))
+    assert r.status_code == 200
+    body = json.loads(r.get_data(as_text=True))
+    assert len(body["groups"]) == 1
+    assert body["groups"][0]["branch_code"] == branch.code
+    assert body["groups"][0]["vehicles"][0]["plate_number"] == "REP-1111"
+
+
+def test_register_report_unknown_branch_is_empty_not_everything(db, client,
+                                                                rep_env):
+    """A branch with no vehicles returns nothing, rather than falling
+    back to the full register -- silently widening a filter shows rows
+    the caller believes they excluded."""
+    t = _token(client)
+    r = client.get("/api/v1/reports/vehicle-register?branch_id=99999",
+                   headers=_auth(t))
+    assert r.status_code == 200
+    assert json.loads(r.get_data(as_text=True))["groups"] == []
