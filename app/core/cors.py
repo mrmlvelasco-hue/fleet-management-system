@@ -54,6 +54,17 @@ def _resolve(app, origin: str):
     return None
 
 
+# The only routes permitted to carry cookies. Everything else stays
+# cookie-free, so CSRF against the API remains closed off by
+# construction rather than by a token dance.
+_CREDENTIALED_PATHS = ("/auth/token", "/auth/refresh", "/auth/logout")
+
+
+def _is_credentialed_auth_route(path: str) -> bool:
+    stripped = path.rstrip("/")
+    return any(stripped.endswith(p) for p in _CREDENTIALED_PATHS)
+
+
 def init_cors(app):
     """Attach CORS handling scoped to the API blueprint's URL prefix."""
     prefix = app.config.get("CORS_PATH_PREFIX", "/api/")
@@ -79,7 +90,12 @@ def init_cors(app):
         # POST with no body: replaying it mints an access token into a
         # response the attacker's page cannot read, thanks to this very
         # allow-list.
-        if request.path.rstrip("/").endswith("/auth/refresh"):
+        # /auth/token sets the cookie and /auth/refresh reads it, so BOTH
+        # are credentialed requests -- the browser refuses either without
+        # this header, and login itself fails cross-origin. That was not
+        # caught by the API tests because the Flask test client does not
+        # enforce CORS; only a real browser does.
+        if _is_credentialed_auth_route(request.path):
             response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Headers"] = \
             "Authorization, Content-Type"

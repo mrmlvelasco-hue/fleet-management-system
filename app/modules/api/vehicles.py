@@ -769,3 +769,22 @@ def vehicle_print(api_user, vehicle_id):
         } if company else {},
         "generated_at": datetime.now().isoformat(),
     })
+
+
+@bp.route("/vehicle-types", methods=["GET"])
+@api_auth_required("vehicle.view")
+def vehicle_types(api_user):
+    """Vehicle types for the form's required dropdown.
+
+    Gated on vehicle.view rather than vehicletype.view: this is
+    reference data needed to READ or fill a vehicle form, and requiring
+    the master-data permission would leave the dropdown empty for
+    exactly the people expected to enrol vehicles -- a required field
+    with no options, which is a form that cannot be submitted.
+    """
+    from app.modules.master_data.reference.service import VehicleTypeService
+    rows = VehicleTypeService().list()
+    return jsonify({"items": [
+        {"id": t.id, "code": t.code, "name": t.name,
+         "category": getattr(t, "category", None)}
+        for t in rows]})

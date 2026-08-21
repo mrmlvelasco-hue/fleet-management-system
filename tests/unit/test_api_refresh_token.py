@@ -185,3 +185,21 @@ def test_ordinary_endpoints_stay_non_credentialed(db, client, auth_env):
                    headers={"Authorization": f"Bearer {token}",
                             "Origin": "http://localhost:5173"})
     assert r.headers.get("Access-Control-Allow-Credentials") is None
+
+
+def test_login_route_allows_credentials(db, client, auth_env):
+    """/auth/token SETS the refresh cookie, so it is a credentialed
+    request too. Without this header the browser blocks login entirely
+    cross-origin -- which the Flask test client cannot show, because it
+    does not enforce CORS. Found by driving a real browser.
+    """
+    r = client.post("/api/v1/auth/token",
+                    json={"username": "refresher", "password": "secret123"},
+                    headers={"Origin": "http://localhost:5173"})
+    assert r.headers.get("Access-Control-Allow-Credentials") == "true"
+
+
+def test_logout_route_allows_credentials(db, client, auth_env):
+    r = client.post("/api/v1/auth/logout",
+                    headers={"Origin": "http://localhost:5173"})
+    assert r.headers.get("Access-Control-Allow-Credentials") == "true"

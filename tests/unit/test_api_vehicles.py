@@ -534,3 +534,26 @@ def test_show_disposed_widens_the_unfiltered_list_too(db, client, veh_env):
     _, without = _get(client, "/api/v1/vehicles", token)
     _, with_disposed = _get(client, "/api/v1/vehicles?show_disposed=1", token)
     assert with_disposed["total"] == without["total"] + 1
+
+
+def test_vehicle_types_are_available_for_the_form(db, client, veh_env):
+    """The form's Vehicle Type field is REQUIRED. Without this endpoint
+    the dropdown is empty and no vehicle can be enrolled -- which unit
+    tests did not show, because they never rendered the form against a
+    real server. Found by driving a browser."""
+    token = _token(client)
+    status, body = _get(client, "/api/v1/vehicle-types", token)
+    assert status == 200
+    assert body["items"]
+    assert set(body["items"][0]) >= {"id", "name"}
+
+
+def test_vehicle_types_need_only_vehicle_view(db, client, veh_env):
+    """Requiring vehicletype.view would empty the dropdown for the very
+    users expected to enrol vehicles."""
+    from app.modules.user_management.models import Permission
+    codes = {p.code for p in Permission.query.filter(
+        Permission.code == "vehicletype.view").all()}
+    assert codes  # the stricter permission exists...
+    token = _token(client)  # ...but this user does not hold it
+    assert _get(client, "/api/v1/vehicle-types", token)[0] == 200
