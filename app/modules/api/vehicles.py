@@ -94,15 +94,23 @@ def build_vehicle_list(api_user):
 
     from app.modules.master_data.vehicle.service import VehicleService
 
-    # DISPOSED units are excluded from the everyday list by the service,
-    # but must be reachable when explicitly filtered for -- otherwise
-    # asking for disposed vehicles returns nothing, which reads as
-    # "there are none" rather than "the list will not show you those".
+    # Disposed visibility is an EXPLICIT toggle, mirroring the Jinja
+    # route's show_disposed=1 -- deliberately independent of the status
+    # dropdown.
+    #
+    # Deriving it from `status == "DISPOSED"` instead, as this did,
+    # produced an incoherence: an unfiltered search for a plate returned
+    # nothing while the same search filtered to Disposed returned a row.
+    # "All statuses" showing FEWER rows than one of its own subsets is
+    # wrong whichever default is correct, and it reads as a broken
+    # search rather than a hidden record.
+    show_disposed = request.args.get("show_disposed") == "1"
+
     rows, total = VehicleService().list_page(
         user=api_user, q=q or None, status=status or None,
         vehicle_type_id=vehicle_type_id, branch_id=branch_id,
         sort=sort, direction=direction, page=page, page_size=page_size,
-        include_disposed=(status == "DISPOSED"))
+        include_disposed=show_disposed)
 
     pages = max(1, (total + page_size - 1) // page_size)
     # Enrichment runs ONLY over the page rows. PM and registration status
@@ -158,7 +166,7 @@ def vehicles_summary(api_user):
         user=api_user, q=(request.args.get("q") or "").strip() or None,
         status=status or None, vehicle_type_id=vehicle_type_id,
         branch_id=branch_id, page=1, page_size=100000,
-        include_disposed=(status == "DISPOSED"))
+        include_disposed=(request.args.get("show_disposed") == "1"))
     return jsonify(_summary(rows))
 
 

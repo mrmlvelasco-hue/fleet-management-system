@@ -483,3 +483,54 @@ def test_history_endpoints_respect_visibility(db, client, veh_env):
         r = client.get(f"/api/v1/vehicles/1/{path}",
                        headers={"Authorization": f"Bearer {token}"})
         assert r.status_code in (403, 404)
+
+
+# ── Disposed visibility ─────────────────────────────────────────────────────
+
+def test_all_statuses_is_never_smaller_than_one_status(db, client, veh_env):
+    """"All statuses" must be a superset of any single status filter.
+
+    It was not: status=DISPOSED implicitly revealed disposed vehicles
+    while the unfiltered list still hid them, so searching a plate with
+    no status filter returned nothing and the same search filtered to
+    Disposed returned a row. A filter that finds MORE than "all" is
+    incoherent regardless of which side is right.
+    """
+    from app.modules.master_data.vehicle.models import Vehicle
+    v = Vehicle.query.first()
+    v.status = "DISPOSED"
+    db.session.commit()
+    token = _token(client)
+
+    _, unfiltered = _get(client, "/api/v1/vehicles", token)
+    _, disposed = _get(client, "/api/v1/vehicles?status=DISPOSED", token)
+    assert disposed["total"] <= unfiltered["total"]
+
+
+def test_disposed_are_hidden_until_explicitly_requested(db, client, veh_env):
+    """Mirrors the Jinja route: show_disposed=1, a toggle independent of
+    the status dropdown."""
+    from app.modules.master_data.vehicle.models import Vehicle
+    v = Vehicle.query.first()
+    v.status = "DISPOSED"
+    db.session.commit()
+    token = _token(client)
+
+    _, hidden = _get(client, "/api/v1/vehicles?status=DISPOSED", token)
+    assert hidden["total"] == 0
+
+    _, shown = _get(
+        client, "/api/v1/vehicles?status=DISPOSED&show_disposed=1", token)
+    assert shown["total"] == 1
+
+
+def test_show_disposed_widens_the_unfiltered_list_too(db, client, veh_env):
+    from app.modules.master_data.vehicle.models import Vehicle
+    v = Vehicle.query.first()
+    v.status = "DISPOSED"
+    db.session.commit()
+    token = _token(client)
+
+    _, without = _get(client, "/api/v1/vehicles", token)
+    _, with_disposed = _get(client, "/api/v1/vehicles?show_disposed=1", token)
+    assert with_disposed["total"] == without["total"] + 1
