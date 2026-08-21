@@ -406,18 +406,38 @@ def detail_json(v):
         "transmission": v.transmission,
         "engine_type": v.engine_type,
         "displacement": v.displacement,
+        "component_group": v.component_group,
+        "vehicle_body_type": v.vehicle_body_type,
+        "vehicle_usage": v.vehicle_usage,
 
         # ── Identification & compliance ──────────────────────────────
         "mv_file_number": v.mv_file_number,
+        "cr_number": v.cr_number,
+        "far_number": v.far_number,
         "lto_office": v.lto_office,
         "last_known_registration_expiry": _iso(
             v.last_known_registration_expiry),
+        "mr_eds": v.mr_eds,
 
         # ── Financial ────────────────────────────────────────────────
         "acquisition_date": _iso(v.acquisition_date),
         "acquisition_cost": _money(v.acquisition_cost),
         "assured_value_current_year": _money(v.assured_value_current_year),
+        # OFFERED, not imposed. 10% compounding depreciation per year
+        # from Delivery Date, computed by the model -- the same call the
+        # Jinja route makes. The form prefills from this when the stored
+        # value is empty and leaves it editable, so an appraised
+        # override is never silently replaced. React reads this and
+        # never recomputes it: a second implementation of a money figure
+        # is a second answer.
+        "computed_assured_value": _money(v.compute_assured_value()),
         "delivery_date": _iso(v.delivery_date),
+        "top_up_amount": _money(v.top_up_amount),
+        "supplier": v.supplier,
+        "leasing_company": v.leasing_company,
+        "with_vehicle_contract": v.with_vehicle_contract,
+        "start_date": _iso(v.start_date),
+        "end_date": _iso(v.end_date),
 
         # ── Insurance ────────────────────────────────────────────────
         # Four independent covers, each with its own dates. Collapsing
@@ -442,13 +462,36 @@ def detail_json(v):
             ],
         },
 
+        # `has_inland_marine` has no from/to dates, unlike the other
+        # four covers, so it sits outside the covers list rather than
+        # being given empty dates it does not have.
+        "has_inland_marine": v.has_inland_marine,
+
         # ── Assignment ───────────────────────────────────────────────
+        # Names AND ids. The detail screen reads "Juan Dela Cruz"; the
+        # form needs the id to preselect the dropdown. Returning only
+        # the name left Assigned Driver rendering empty on a vehicle
+        # that had one, and the next save cleared the assignment.
         "assigned_driver": (v.assigned_driver.full_name
                             if v.assigned_driver else None),
+        "assigned_driver_id": v.assigned_driver_id,
         "branch": v.branch.name if v.branch else None,
         "branch_id": v.branch_id,
         "department": v.department.name if v.department else None,
+        "department_id": v.department_id,
+        "assignment": v.assignment,
+        "assignment_group_classification": v.assignment_group_classification,
         "remarks": v.remarks,
+        "notes": v.notes,
+
+        # ── PM assignment & legacy baseline ──────────────────────────
+        # The baseline is why a migrated vehicle with a high odometer
+        # and no Maintenance Order on record does not read as instantly
+        # overdue. Omitting it from this payload made the React form
+        # unable to show or preserve it.
+        "pm_schedule_id": v.pm_schedule_id,
+        "last_pm_odometer": v.last_pm_odometer,
+        "last_pm_date": _iso(v.last_pm_date),
 
         # ── Registration status ──────────────────────────────────────
         "registration_status": {
@@ -559,6 +602,20 @@ def vehicle_registration_history(api_user, vehicle_id):
 # to the offending one instead of showing a single banner above it.
 
 # Which input each service exception belongs against.
+class _DateFieldError(Exception):
+    """A DateFormatError that remembers which input produced it.
+
+    parse_form_date is shared with the Jinja routes, which show the
+    message as a flash and do not need the field name. Rather than
+    change a validation path two apps depend on, the API adds the
+    attribution on its own side.
+    """
+
+    def __init__(self, message, field):
+        super().__init__(message)
+        self.field = field
+
+
 _FIELD_FOR_ERROR = {
     "BrandRequiredError": "brand",
     "InvalidBrandError": "brand",
@@ -626,6 +683,9 @@ def _field_error(exc, payload=None, exclude_id=None):
     to find the one that actually collides. That is attribution of an
     error the service already raised, not a second validation rule.
     """
+    if isinstance(exc, _DateFieldError):
+        return exc.field, str(exc)
+
     name = type(exc).__name__
     if name in _FIELD_FOR_ERROR:
         return _FIELD_FOR_ERROR[name], str(exc)
@@ -662,13 +722,77 @@ def _colliding_unique_field(payload, exclude_id=None):
     return None
 
 
+# Every writable column that is a DATE, with the label its error message
+# should use. The labels match the Jinja form's, so the two apps report
+# the same problem in the same words.
+_DATE_FIELDS = {
+    "acquisition_date": "Purchase Date",
+    "delivery_date": "Delivery Date",
+    "start_date": "Start Date",
+    "end_date": "End Date",
+    "last_pm_date": "Last PM Service Date",
+    "last_known_registration_expiry": "Last Known Registration Expiry",
+    "ctpl_from_date": "CTPL From Date",
+    "ctpl_to_date": "CTPL To Date",
+    "od_theft_aon_from_date": "OD/Theft/AON From Date",
+    "od_theft_aon_to_date": "OD/Theft/AON To Date",
+    "vtpl_pd_from_date": "VTPL/PD From Date",
+    "vtpl_pd_to_date": "VTPL/PD To Date",
+    "vtpl_bi_from_date": "VTPL/BI From Date",
+    "vtpl_bi_to_date": "VTPL/BI To Date",
+}
+
+
 def _payload_fields(payload):
-    return {k: v for k, v in payload.items() if k in _WRITABLE}
+    """Allow-listed fields, with JSON date strings coerced to `date`.
+
+    The Jinja path runs every date through parse_form_date before the
+    service sees it (`_vehicle_fields`). The API did not, so a date
+    arrived as the string "2025-03-01" and went straight to SQLAlchemy,
+    which raised `SQLite Date type only accepts Python date objects`.
+
+    That is a 500 on a well-formed request. The caller is told the
+    server broke, when in fact the value was fine and simply never
+    parsed -- and on the fields that reach this path most (delivery,
+    start/end, last PM) it made those inputs unusable from React
+    entirely.
+
+    Reuses parse_form_date rather than parsing here: it already owns the
+    wording, and a second parser would be a second opinion on what
+    counts as a valid date.
+    """
+    from app.core.validation.date_utils import (
+        DateFormatError, parse_form_date)
+
+    out = {}
+    for key, value in payload.items():
+        if key not in _WRITABLE:
+            continue
+        if key in _DATE_FIELDS and isinstance(value, str):
+            try:
+                out[key] = parse_form_date(value, _DATE_FIELDS[key])
+            except DateFormatError as exc:
+                # parse_form_date raises one exception TYPE for all 14
+                # date fields, with the field's label inside the
+                # message. _field_error attributes by type, so every bad
+                # date would land at form level -- "check the dates"
+                # against a form holding fourteen of them.
+                #
+                # Re-raised carrying which field it was. The message
+                # stays the service's; only the attribution is added,
+                # and parse_form_date itself is untouched because the
+                # Jinja routes share it.
+                raise _DateFieldError(str(exc), key) from exc
+        else:
+            out[key] = value
+    return out
 
 
 def _write_errors():
+    from app.core.validation.date_utils import (
+        DateFormatError, RequiredFieldError)
     from app.modules.master_data.vehicle import service as vsvc
-    return tuple(
+    return (_DateFieldError, DateFormatError, RequiredFieldError) + tuple(
         getattr(vsvc, n) for n in (
             "DuplicateVehicleError", "InvalidVehicleDataError",
             "BrandRequiredError", "ModelRequiredError", "InvalidBrandError",
@@ -683,7 +807,16 @@ def create_vehicle(api_user):
     from app.modules.master_data.vehicle.service import VehicleService
 
     payload = request.get_json(silent=True) or {}
-    fields = _payload_fields(payload)
+    try:
+        # Inside the try: date coercion raises DateFormatError, and a
+        # bad date is the caller's mistake. Leaving this outside would
+        # let it escape as a 500 -- telling the caller the server broke
+        # when in fact their value was simply not a date.
+        fields = _payload_fields(payload)
+    except _write_errors() as exc:
+        field, message = _field_error(exc, payload)
+        return jsonify({"error": "validation", "message": message,
+                        "fields": {field: message}}), 400
     # Vehicle.year is NOT NULL, and the service takes it positionally.
     # Defaulting it to None produced an IntegrityError, which the
     # service reports through its generic duplicate message -- so a
@@ -727,8 +860,8 @@ def update_vehicle(api_user, vehicle_id):
                                    "this account."}), 404
 
     payload = request.get_json(silent=True) or {}
-    fields = _payload_fields(payload)
     try:
+        fields = _payload_fields(payload)
         vehicle = svc.update(vehicle_id, strict=True, **fields)
     except _write_errors() as exc:
         db.session.rollback()

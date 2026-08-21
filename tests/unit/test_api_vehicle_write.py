@@ -292,3 +292,153 @@ def test_missing_year_is_a_field_error(db, client, write_env):
     status, body = _post(client, "/api/v1/vehicles", payload, token)
     assert status == 400
     assert "year" in body["fields"]
+
+
+# ── Detail payload completeness ─────────────────────────────────────────────
+
+def _detail(client, token, vehicle_id):
+    r = client.get(f"/api/v1/vehicles/{vehicle_id}",
+                   headers={"Authorization": f"Bearer {token}"})
+    return json.loads(r.get_data(as_text=True))
+
+
+def _a_vehicle(write_env):
+    """One saved vehicle to read back. write_env yields the actors and
+    reference data; these tests need a row."""
+    from app.modules.master_data.vehicle.service import VehicleService
+    _writer, branch, vt = write_env
+    return VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2021,
+        branch_id=branch.id, plate_number="DET-0001", strict=True)
+
+
+def test_detail_returns_every_writable_field(db, client, write_env):
+    """A field the form can WRITE but cannot READ BACK is worse than a
+    missing field.
+
+    `cr_number` was exactly this: the React form rendered the input and
+    read `v.cr_number` from this payload, which never contained it. The
+    box was blank on every edit regardless of what was stored, so the
+    only way to discover the real value was to open the Jinja screen.
+
+    This asserts the payload covers the write allowlist, so adding a
+    writable column without a way to see it fails here rather than in
+    front of a user.
+    """
+    from app.modules.api.vehicles import _WRITABLE
+
+    body = _detail(client, _token(client), _a_vehicle(write_env).id)
+    flat = dict(body)
+    # Insurance is nested by design -- four covers with their own dates.
+    for key, value in (body.get("insurance") or {}).items():
+        if key == "covers":
+            for cover in value:
+                flat[f"has_{cover['code'].lower()}"] = cover["active"]
+                flat[f"{cover['code'].lower()}_from_date"] = cover["from"]
+                flat[f"{cover['code'].lower()}_to_date"] = cover["to"]
+        else:
+            flat[key] = value
+    flat["insurance_reference_number"] = flat.get("reference_number")
+    flat["comprehensive_insurance_provider"] = flat.get(
+        "comprehensive_provider")
+    flat["ctpl_insurance_provider"] = flat.get("ctpl_provider")
+
+    missing = [f for f in _WRITABLE if f not in flat]
+    assert not missing, f"writable but not readable: {sorted(missing)}"
+
+
+def test_detail_round_trips_the_fields_the_form_lost(db, client, write_env):
+    """Write, read back, compare. The specific columns React could not
+    reach: none of them appeared in the payload, so all were invisible
+    on edit."""
+    vehicle_id = _a_vehicle(write_env).id
+    token = _token(client)
+    payload = {
+        "cr_number": "CR-77-123", "far_number": "FAR-9", "supplier": "Acme",
+        "leasing_company": "LeaseCo", "component_group": "ENGINE",
+        "vehicle_body_type": "PICKUP", "notes": "migrated 2024",
+        "assignment": "SECONDARY",
+        "assignment_group_classification": "CAR_PLAN",
+        "vehicle_usage": "SALES", "last_pm_odometer": 42000,
+        "last_pm_date": "2025-03-01", "start_date": "2025-01-01",
+        "end_date": "2028-01-01", "top_up_amount": "15000.00",
+        "mr_eds": True, "with_vehicle_contract": True,
+        "has_inland_marine": True,
+    }
+    r = client.put(f"/api/v1/vehicles/{vehicle_id}", json=payload,
+                   headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+    body = _detail(client, token, vehicle_id)
+    assert body["cr_number"] == "CR-77-123"
+    assert body["far_number"] == "FAR-9"
+    assert body["component_group"] == "ENGINE"
+    assert body["vehicle_body_type"] == "PICKUP"
+    assert body["notes"] == "migrated 2024"
+    assert body["assignment"] == "SECONDARY"
+    assert body["assignment_group_classification"] == "CAR_PLAN"
+    assert body["vehicle_usage"] == "SALES"
+    assert body["last_pm_odometer"] == 42000
+    assert body["last_pm_date"] == "2025-03-01"
+    assert body["mr_eds"] is True
+    assert body["has_inland_marine"] is True
+    assert body["top_up_amount"] == "15000.00"
+
+
+def test_detail_carries_ids_not_only_display_names(db, client, write_env):
+    """The detail SCREEN needs 'Juan Dela Cruz'; the FORM needs the id to
+    preselect the dropdown. Returning only the name would make the
+    Assigned Driver box render empty on a vehicle that has one, and the
+    next save would clear the assignment."""
+    body = _detail(client, _token(client), _a_vehicle(write_env).id)
+    for key in ("assigned_driver_id", "department_id", "pm_schedule_id"):
+        assert key in body
+
+
+def test_computed_assured_value_is_offered_not_imposed(db, client, write_env):
+    """10% compounding depreciation from Delivery Date, computed by the
+    model. React must read it, never recompute it -- a second
+    implementation of a money figure is a second answer.
+
+    Offered separately from the stored value so the form can prefill
+    without overwriting an appraised override.
+    """
+    body = _detail(client, _token(client), _a_vehicle(write_env).id)
+    assert "computed_assured_value" in body
+
+
+def test_a_malformed_date_is_a_field_error_not_a_500(db, client, write_env):
+    """The value is the caller's mistake, so the caller must be told
+    which field and why -- not handed a server error implying the
+    request was fine and the server broke.
+
+    Coercion happens during payload parsing, which sits OUTSIDE the
+    try/except that shapes write errors, so this needs the parse to be
+    inside it.
+    """
+    _writer, branch, vt = write_env
+    r = client.post("/api/v1/vehicles", json={
+        "vehicle_type_id": vt.id, "brand": "Toyota", "model": "Hilux",
+        "year": 2022, "branch_id": branch.id,
+        "plate_number": "BAD-0001", "delivery_date": "31/12/2025",
+    }, headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 400, r.get_data(as_text=True)
+    body = json.loads(r.get_data(as_text=True))
+    assert "delivery_date" in body["fields"]
+    assert "YYYY-MM-DD" in body["fields"]["delivery_date"]
+
+
+def test_a_valid_date_string_round_trips(db, client, write_env):
+    """The ordinary case, which used to raise `SQLite Date type only
+    accepts Python date objects` -- a 500 on a well-formed request."""
+    _writer, branch, vt = write_env
+    token = _token(client)
+    r = client.post("/api/v1/vehicles", json={
+        "vehicle_type_id": vt.id, "brand": "Toyota", "model": "Hilux",
+        "year": 2022, "branch_id": branch.id, "plate_number": "GOOD-0001",
+        "delivery_date": "2025-12-31", "start_date": "2025-01-01",
+    }, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 201, r.get_data(as_text=True)
+    body = json.loads(r.get_data(as_text=True))
+    assert body["delivery_date"] == "2025-12-31"
+    assert body["start_date"] == "2025-01-01"
