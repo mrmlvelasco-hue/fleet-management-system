@@ -563,3 +563,55 @@ def test_a_driver_with_no_vehicle_returns_an_empty_list(db, client, drv_env):
     d = Driver.query.filter_by(employee_number="EMP-003").first()
     _status, body = _detail(client, d.id, _token(client))
     assert body["assigned_vehicles"] == []
+
+
+# ── Photo ───────────────────────────────────────────────────────────────────
+
+def test_detail_carries_the_photo_attachment_id(db, client, drv_env):
+    """driver_print.html renders the photo; driver_detail.html does not.
+
+    The photo is captured on the form, printed on the profile, and
+    required at creation precisely because it appears on the Vehicle
+    Assignment Memo and the Issuance / Receiving Checklist. A screen
+    showing everything about a person except their photograph, while the
+    printout of that same screen includes it, is a gap rather than a
+    decision -- confirmed by the print audit and agreed with the client.
+
+    The ID rather than a URL: the client builds the download URL from
+    the same attachment endpoint it already uses, so there is one
+    definition of where an attachment lives.
+    """
+    from app.modules.master_data.driver.models import Driver
+    d = Driver.query.filter_by(employee_number="EMP-001").first()
+    d.photo_attachment_id = 4321
+    db.session.commit()
+
+    _status, body = _detail(client, d.id, _token(client))
+    assert body["photo_attachment_id"] == 4321
+
+
+def test_a_driver_with_no_photo_returns_null_not_zero(db, client, drv_env):
+    """Legacy records migrated with REQUIRE_ASSIGNEE_PHOTO off have
+    none. Null renders a placeholder; 0 would be a valid-looking
+    attachment id that 404s on fetch."""
+    from app.modules.master_data.driver.models import Driver
+    d = Driver.query.filter_by(employee_number="EMP-003").first()
+    _status, body = _detail(client, d.id, _token(client))
+    assert body["photo_attachment_id"] is None
+
+
+def test_the_list_row_says_whether_a_photo_exists(db, client, drv_env):
+    """Not the id -- the list does not render photos. But with the
+    photo requirement waived for migration, "which records still need a
+    photograph" is a question someone will have to answer, and the list
+    is where they would answer it."""
+    from app.modules.master_data.driver.models import Driver
+    d = Driver.query.filter_by(employee_number="EMP-001").first()
+    d.photo_attachment_id = 4321
+    db.session.commit()
+
+    _status, body = _get(client, "/api/v1/drivers?q=EMP-001", _token(client))
+    assert body["items"][0]["has_photo"] is True
+
+    _status, body = _get(client, "/api/v1/drivers?q=EMP-003", _token(client))
+    assert body["items"][0]["has_photo"] is False

@@ -84,6 +84,11 @@ def _serialise(d):
         "branch_id": d.branch_id,
         "department": d.department.name if d.department else None,
         "status": d.status,
+        # Not the id -- the list does not render photos. But with
+        # REQUIRE_ASSIGNEE_PHOTO waived for migration, "which records
+        # still need a photograph" becomes a real question, and the
+        # list is where it gets answered.
+        "has_photo": d.photo_attachment_id is not None,
     }
 
 
@@ -317,6 +322,11 @@ def driver_detail(api_user, driver_id):
         "last_name": d.last_name,
         "suffix": d.suffix,
         "nickname": d.nickname,
+        # The ID, not a URL: the client builds the download URL from the
+        # attachment endpoint it already uses, so there is one
+        # definition of where an attachment lives. Null when absent --
+        # 0 would be a valid-looking id that 404s on fetch.
+        "photo_attachment_id": d.photo_attachment_id,
         "assignee_type": d.assignee_type,
         "status": d.status,
         # Organization
