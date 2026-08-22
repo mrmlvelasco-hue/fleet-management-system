@@ -29,6 +29,8 @@ here rather than discovered later.
 """
 from flask import jsonify, request
 
+from app.modules.api.coercion import Coercer, FieldValueError
+
 from app.modules.api.auth import api_auth_required
 from app.modules.api.routes import bp
 
@@ -615,32 +617,6 @@ def vehicle_registration_history(api_user, vehicle_id):
 # to the offending one instead of showing a single banner above it.
 
 # Which input each service exception belongs against.
-class _NumericFieldError(Exception):
-    """A bad number, carrying which input produced it.
-
-    int("abc") raises ValueError, which nothing catches -- coercing
-    without shaping the failure would have swapped one 500 for another.
-    """
-
-    def __init__(self, message, field):
-        super().__init__(message)
-        self.field = field
-
-
-class _DateFieldError(Exception):
-    """A DateFormatError that remembers which input produced it.
-
-    parse_form_date is shared with the Jinja routes, which show the
-    message as a flash and do not need the field name. Rather than
-    change a validation path two apps depend on, the API adds the
-    attribution on its own side.
-    """
-
-    def __init__(self, message, field):
-        super().__init__(message)
-        self.field = field
-
-
 _FIELD_FOR_ERROR = {
     "BrandRequiredError": "brand",
     "InvalidBrandError": "brand",
@@ -708,7 +684,7 @@ def _field_error(exc, payload=None, exclude_id=None):
     to find the one that actually collides. That is attribution of an
     error the service already raised, not a second validation rule.
     """
-    if isinstance(exc, (_DateFieldError, _NumericFieldError)):
+    if isinstance(exc, FieldValueError):
         return exc.field, str(exc)
 
     name = type(exc).__name__
@@ -793,6 +769,13 @@ _DECIMAL_FIELDS = {
 }
 
 
+#: This module's declaration. The maps above name the fields; this
+#: turns them into the shared coercer, so vehicles and drivers convert
+#: values the same way rather than each growing their own copy.
+_COERCER = Coercer(ints=_INT_FIELDS, decimals=_DECIMAL_FIELDS,
+                   dates=_DATE_FIELDS)
+
+
 def _payload_fields(payload):
     """Allow-listed fields, with JSON strings coerced to their column types.
 
@@ -831,66 +814,14 @@ def _payload_fields(payload):
     the defect, and one input path producing differently-typed objects
     from another is the thing to fix.
     """
-    from decimal import Decimal, InvalidOperation
-
-    from app.core.validation.date_utils import (
-        DateFormatError, parse_form_date)
-
-    out = {}
-    for key, value in payload.items():
-        if key not in _WRITABLE:
-            continue
-        if key in _INT_FIELDS and isinstance(value, str):
-            # "" means the field was cleared, not zero. int("") raises,
-            # and defaulting to 0 would record a vehicle as having done
-            # no kilometres rather than as unmeasured.
-            if not value.strip():
-                out[key] = None
-                continue
-            try:
-                out[key] = int(value.strip())
-            except ValueError:
-                raise _NumericFieldError(
-                    f"{_INT_FIELDS[key]} must be a whole number.", key
-                ) from None
-        elif key in _DECIMAL_FIELDS and isinstance(value, str):
-            if not value.strip():
-                out[key] = None
-                continue
-            try:
-                # Commas stripped: the form displays amounts grouped,
-                # and a pasted-back "1,234,567.89" is a real value the
-                # user believes they entered correctly.
-                out[key] = Decimal(value.strip().replace(",", ""))
-            except InvalidOperation:
-                raise _NumericFieldError(
-                    f"{_DECIMAL_FIELDS[key]} must be an amount.", key
-                ) from None
-        elif key in _DATE_FIELDS and isinstance(value, str):
-            try:
-                out[key] = parse_form_date(value, _DATE_FIELDS[key])
-            except DateFormatError as exc:
-                # parse_form_date raises one exception TYPE for all 14
-                # date fields, with the field's label inside the
-                # message. _field_error attributes by type, so every bad
-                # date would land at form level -- "check the dates"
-                # against a form holding fourteen of them.
-                #
-                # Re-raised carrying which field it was. The message
-                # stays the service's; only the attribution is added,
-                # and parse_form_date itself is untouched because the
-                # Jinja routes share it.
-                raise _DateFieldError(str(exc), key) from exc
-        else:
-            out[key] = value
-    return out
+    return _COERCER.fields(payload, _WRITABLE)
 
 
 def _write_errors():
     from app.core.validation.date_utils import (
         DateFormatError, RequiredFieldError)
     from app.modules.master_data.vehicle import service as vsvc
-    return (_DateFieldError, _NumericFieldError, DateFormatError,
+    return (FieldValueError, DateFormatError,
             RequiredFieldError) + tuple(
         getattr(vsvc, n) for n in (
             "DuplicateVehicleError", "InvalidVehicleDataError",
