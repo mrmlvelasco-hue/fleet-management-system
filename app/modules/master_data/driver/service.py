@@ -40,25 +40,53 @@ class DriverService:
                branch_id, assignee_type="DRIVER", license_number=None,
                license_expiry=None, license_type=None, photo_file=None,
                user=None, **kwargs):
-        # DRIVER-type assignees keep the exact original requirement —
-        # license details are mandatory. Every other assignee type
-        # (Employee, Consultant, Third Party Delivery) can be assigned a
-        # vehicle without personally holding a license on file.
-        if assignee_type == "DRIVER" and not (
-                license_number and license_expiry and license_type):
-            raise InvalidAssigneeError(
-                "License Number, Expiry, and Type are required for a "
-                "Driver-type assignee.")
+        # Both creation constraints below are CONFIGURABLE, because both
+        # block the client's migration from manual records: create()
+        # raises, so a legacy assignee whose paper file lacks a licence
+        # or a photograph cannot be entered at all. The record would
+        # have to be falsified or left out, and a driver missing from
+        # the roster is worse than one with an incomplete record.
+        #
+        # Read PER CALL, never cached at import: toggling a parameter in
+        # System Administration has to take effect immediately, and a
+        # rule that needed a restart is one nobody would connect to the
+        # switch they just flipped.
+        #
+        # Defaults are STRICT. An install predating these parameters
+        # behaves exactly as it did before; the permissive setting is an
+        # explicit choice recorded in the database, not something a
+        # missing row can cause by accident.
+        from app.modules.system_admin.services.system_parameter_service import (
+            SystemParameterService)
+        params = SystemParameterService()
+
+        # DRIVER-type assignees keep the original requirement — license
+        # details are mandatory. Every other assignee type (Employee,
+        # Consultant, Third Party Delivery) can be assigned a vehicle
+        # without personally holding a license on file, which is
+        # unchanged and independent of the parameter.
+        if params.get("REQUIRE_DRIVER_LICENSE", default=True):
+            if assignee_type == "DRIVER" and not (
+                    license_number and license_expiry and license_type):
+                raise InvalidAssigneeError(
+                    "License Number, Expiry, and Type are required for a "
+                    "Driver-type assignee.")
+
         # A photo is required for EVERY new assignee, regardless of
         # type -- it prints on the Vehicle Assignment Memo and the
         # Vehicle Issuance / Receiving Checklist for any assignee, not
         # just literal drivers. Checked here, before anything is
         # written, so a missing photo never leaves a half-created
         # record behind.
-        if photo_file is None or not getattr(photo_file, "filename", ""):
-            raise InvalidAssigneeError(
-                "A photo is required when creating a new driver or "
-                "assignee record.")
+        #
+        # Independent of the licence parameter. They exist for the same
+        # migration but describe different facts, and collapsing them
+        # would let one client decision silently make another.
+        if params.get("REQUIRE_ASSIGNEE_PHOTO", default=True):
+            if photo_file is None or not getattr(photo_file, "filename", ""):
+                raise InvalidAssigneeError(
+                    "A photo is required when creating a new driver or "
+                    "assignee record.")
         if license_number and Driver.query.filter_by(
                 license_number=license_number).first():
             raise DuplicateDriverError(
@@ -78,15 +106,21 @@ class DriverService:
         db.session.add(obj)
         db.session.commit()
 
-        # The attachment references this driver's own id, so the
-        # upload can only happen once the row (and its id) exist --
-        # the validation above already guaranteed a file was provided.
-        from app.core.attachments.attachment_service import AttachmentService
-        attachment = AttachmentService().upload(
-            photo_file, reference_table="drivers", reference_id=obj.id,
-            user=user)
-        obj.photo_attachment_id = attachment.id
-        db.session.commit()
+        # The attachment references this driver's own id, so the upload
+        # can only happen once the row (and its id) exist.
+        #
+        # Guarded now rather than assumed: with REQUIRE_ASSIGNEE_PHOTO
+        # off, photo_file may legitimately be absent. Waiving the
+        # REQUIREMENT must not disable the feature, so a photo supplied
+        # during migration is still stored.
+        if photo_file is not None and getattr(photo_file, "filename", ""):
+            from app.core.attachments.attachment_service import (
+                AttachmentService)
+            attachment = AttachmentService().upload(
+                photo_file, reference_table="drivers", reference_id=obj.id,
+                user=user)
+            obj.photo_attachment_id = attachment.id
+            db.session.commit()
         return obj
 
     def _generate_person_id(self) -> str:
