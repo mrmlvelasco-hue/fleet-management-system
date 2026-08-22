@@ -1,9 +1,47 @@
 # Unified Print Format — Design Spec
 
 **Date:** 2026-08-22
-**Status:** Awaiting review
+**Status:** SUPERSEDED — see "Constraint change" below before reading
 **Approach:** A (shared stylesheet + a thin shell in each app)
 **Scope:** All printable documents, Flask and React
+
+---
+
+## Constraint change (2026-08-22, after review)
+
+The premise below is no longer valid.
+
+This spec assumed the thirteen Flask print templates would be ported onto
+a shared shell. The instruction since received is that **Flask is not to
+be modified**: it is working, tested, and in production use, and React is
+the upgraded successor that may eventually replace it.
+
+That reverses the direction of the work. Flask's print templates are now
+the SPECIFICATION to audit against, not code to change. Nothing under
+`app/modules/**/templates/**/*_print*.html` is touched.
+
+What survives from this spec:
+
+  * The duplication analysis (§Problem) -- still the reason a shared
+    shell is right, and still the source of the parity audits.
+  * The shared-stylesheet + shell architecture (§Architecture, layers 1
+    and 3) -- now React-only.
+  * The whole Testing section, which was always the point.
+  * The @page constraint, which is a browser fact and applies wherever
+    the format lives.
+
+What does not survive: layer 2 (the Jinja `print_base.html` and macros),
+the migration sequence steps 1-5, and the "port the remaining twelve"
+risk. All were Flask template changes.
+
+Additive Flask API work is still in scope -- React needs a print payload
+per module, and one endpoint exists so far (`/vehicles/<id>/print`).
+Adding endpoints to `app/modules/api/` is not a change to the Vehicle
+module; it is the scaffolding React reads through, and follows the
+existing rule that endpoints wrap services and never re-implement a
+rule.
+
+A replacement spec is to be written once ordering is confirmed.
 
 ---
 
