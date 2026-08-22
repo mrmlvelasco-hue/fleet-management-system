@@ -1038,6 +1038,60 @@ def vehicle_register_export(api_user):
                  ".spreadsheetml.sheet")
 
 
+@bp.route("/vehicles/<int:vehicle_id>/clone", methods=["GET"])
+@api_auth_required("vehicle.create")
+def clone_vehicle(api_user, vehicle_id):
+    """Field values for prefilling a NEW vehicle from an existing one.
+
+    Wraps VehicleService.get_clone_data, which already owns the rule
+    about what a clone may carry: plate, conduction, chassis and engine
+    numbers are excluded there, because a clone inheriting them would
+    collide with the original -- and a duplicate chassis number on a
+    fleet register is the kind of data problem nobody notices until an
+    audit.
+
+    Gated on `vehicle.create`, not `vehicle.view`: this is a draft of a
+    new record, and a read-only user has no use for a prefilled form
+    they cannot submit.
+
+    Creates NOTHING. The clone exists only in the browser until the
+    user fills in the identifiers and saves, which mirrors Flask --
+    there, this route renders the form rather than writing a row.
+    """
+    from datetime import date
+    from decimal import Decimal
+
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    svc = VehicleService()
+    # Visibility first, and the same 404 the detail endpoint gives. A
+    # clone returns nearly every column, so without this it would be a
+    # way to read a vehicle the caller cannot otherwise see.
+    if svc.get_visible(vehicle_id, api_user) is None:
+        return jsonify({"error": "not_found",
+                        "message": "Vehicle not found or not visible to "
+                                   "this account."}), 404
+
+    data = svc.get_clone_data(vehicle_id)
+    if not data:
+        return jsonify({"error": "not_found",
+                        "message": "Vehicle not found."}), 404
+
+    # get_clone_data returns RAW column values -- date and Decimal
+    # objects, which jsonify cannot encode. Converted with the same
+    # helpers detail_json uses, so a cloned date reaches the form in the
+    # format its input expects rather than as a Python repr.
+    out = {}
+    for key, value in data.items():
+        if isinstance(value, date):
+            out[key] = _iso(value)
+        elif isinstance(value, Decimal):
+            out[key] = _money(value)
+        else:
+            out[key] = value
+    return jsonify(out)
+
+
 @bp.route("/vehicles/<int:vehicle_id>/print", methods=["GET"])
 @api_auth_required("vehicle.view")
 def vehicle_print(api_user, vehicle_id):

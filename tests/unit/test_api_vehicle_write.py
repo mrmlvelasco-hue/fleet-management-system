@@ -12,6 +12,8 @@ Written from docs/parity-vehicle-form.md in the frontend repo, before
 the endpoints existed.
 """
 import json
+from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -566,3 +568,79 @@ def test_an_empty_numeric_string_clears_rather_than_crashing(db, client,
                    headers={"Authorization": f"Bearer {_token(client)}"})
     assert r.status_code == 200, r.get_data(as_text=True)
     assert db.session.get(Vehicle, vehicle.id).current_engine_hours is None
+
+
+# ── Clone ───────────────────────────────────────────────────────────────────
+
+def test_clone_clears_the_unique_identifiers(db, client, write_env):
+    """Wraps VehicleService.get_clone_data, which already decides what a
+    clone may carry. Plate, conduction, chassis and engine numbers are
+    excluded there because a clone that inherited them would collide
+    with the original -- and a duplicate chassis number on a fleet
+    register is a data problem nobody spots until an audit.
+    """
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    _writer, branch, vt = write_env
+    original = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2021,
+        branch_id=branch.id, plate_number="CLN-0001",
+        conduction_number="CC-1", chassis_number="CHS-1",
+        engine_number="ENG-1", color="White", strict=True)
+    db.session.commit()
+
+    r = client.get(f"/api/v1/vehicles/{original.id}/clone",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = json.loads(r.get_data(as_text=True))
+
+    for unique in ("plate_number", "conduction_number", "chassis_number",
+                   "engine_number", "id"):
+        assert not body.get(unique), f"{unique} survived the clone"
+    # Everything else is what makes cloning worth doing.
+    assert body["brand"] == "Toyota"
+    assert body["model"] == "Hilux"
+    assert body["color"] == "White"
+    assert body["branch_id"] == branch.id
+
+
+def test_clone_requires_the_create_permission(db, client, write_env):
+    """A clone is a draft of a NEW vehicle, so it is gated on create --
+    not view. Gating it on view would let a read-only user pull a
+    prefilled form they cannot submit."""
+    r = client.get("/api/v1/vehicles/1/clone",
+                   headers={"Authorization": f"Bearer {_token(client, 'viewer')}"})
+    assert r.status_code == 403
+
+
+def test_clone_rejects_anonymous(db, client, write_env):
+    assert client.get("/api/v1/vehicles/1/clone").status_code == 401
+
+
+def test_clone_of_a_missing_vehicle_is_404(db, client, write_env):
+    r = client.get("/api/v1/vehicles/999999/clone",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 404
+
+
+def test_clone_serialises_dates_and_money_as_strings(db, client, write_env):
+    """get_clone_data returns raw column values -- date and Decimal
+    objects, which jsonify cannot encode. Returning them unconverted
+    would 500, and converting with str() would produce a Decimal repr
+    the form cannot put back in an input."""
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    _writer, branch, vt = write_env
+    original = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2021,
+        branch_id=branch.id, plate_number="CLN-0002",
+        acquisition_date=date(2021, 3, 1), strict=True)
+    original.acquisition_cost = Decimal("1250000.50")
+    db.session.commit()
+
+    r = client.get(f"/api/v1/vehicles/{original.id}/clone",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = json.loads(r.get_data(as_text=True))
+    assert body["acquisition_date"] == "2021-03-01"
+    assert body["acquisition_cost"] == "1250000.50"
