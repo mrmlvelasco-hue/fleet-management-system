@@ -87,10 +87,16 @@ def _serialise(d):
     }
 
 
-@bp.route("/drivers", methods=["GET"])
-@api_auth_required("driver.view")
-def list_drivers(api_user):
-    """Filter/sort/page the caller's visible drivers."""
+def _filtered(api_user):
+    """The caller's visible drivers, narrowed by the query string.
+
+    Shared by the list and its export. Two filter implementations over
+    one query string is how a spreadsheet ends up meaning something
+    subtly different from the screen it came from -- and the
+    spreadsheet is the copy that gets emailed on.
+
+    Returns (rows, None) or (None, error_response).
+    """
     from app.modules.master_data.driver.service import DriverService
 
     q = (request.args.get("q") or "").strip().lower()
@@ -99,18 +105,13 @@ def list_drivers(api_user):
     expiring = request.args.get("license_expiring") == "1"
 
     if status and status not in _DRIVER_STATUSES:
-        return _bad(f"Unknown status '{status}'.")
+        return None, _bad(f"Unknown status '{status}'.")
 
     try:
         branch_id = request.args.get("branch_id")
         branch_id = int(branch_id) if branch_id else None
-        page = int(request.args.get("page", 1))
-        page_size = int(request.args.get("page_size", 20))
     except (TypeError, ValueError):
-        return _bad("branch_id, page and page_size must be integers.")
-    if page < 1 or page_size < 1:
-        return _bad("page and page_size must be 1 or greater.")
-    page_size = min(page_size, 200)
+        return None, _bad("branch_id must be an integer.")
 
     # include_inactive=True: the list has its own status filter, and
     # hiding INACTIVE rows here would make that filter unable to show
@@ -137,6 +138,26 @@ def list_drivers(api_user):
         rows = [d for d in rows if d.license_expiry
                 and d.license_expiry <= threshold]
 
+    return rows, None
+
+
+@bp.route("/drivers", methods=["GET"])
+@api_auth_required("driver.view")
+def list_drivers(api_user):
+    """Filter/sort/page the caller's visible drivers."""
+    rows, error = _filtered(api_user)
+    if error:
+        return error
+
+    try:
+        page = int(request.args.get("page", 1))
+        page_size = int(request.args.get("page_size", 20))
+    except (TypeError, ValueError):
+        return _bad("page and page_size must be integers.")
+    if page < 1 or page_size < 1:
+        return _bad("page and page_size must be 1 or greater.")
+    page_size = min(page_size, 200)
+
     total = len(rows)
     start = (page - 1) * page_size
     window = rows[start:start + page_size]
@@ -148,3 +169,68 @@ def list_drivers(api_user):
         "page_size": page_size,
         "pages": max(1, (total + page_size - 1) // page_size),
     })
+
+
+@bp.route("/drivers/summary", methods=["GET"])
+@api_auth_required("driver.view")
+def drivers_summary(api_user):
+    """Counts for the stat chips.
+
+    Expiring and expired are kept APART. They are two different facts
+    needing two different responses -- renew soon, versus stop
+    dispatching this person now -- and one combined figure would bury
+    the urgent case inside the routine one.
+
+    Drivers with no licence recorded (consultants, third-party delivery)
+    count toward neither. Including them would make the chip permanently
+    non-zero and therefore ignored.
+    """
+    from datetime import timedelta
+
+    from app.modules.master_data.driver.service import DriverService
+
+    rows = DriverService().list(include_inactive=True, user=api_user)
+    today = date.today()
+    threshold = today + timedelta(days=_EXPIRING_DAYS)
+
+    licensed = [d for d in rows if d.license_expiry]
+    return jsonify({
+        "total": len(rows),
+        "active": sum(1 for d in rows if d.status == "ACTIVE"),
+        "suspended": sum(1 for d in rows if d.status == "SUSPENDED"),
+        "license_expired": sum(1 for d in licensed
+                               if d.license_expiry < today),
+        "license_expiring": sum(1 for d in licensed
+                                if today <= d.license_expiry <= threshold),
+    })
+
+
+@bp.route("/drivers/export.xlsx", methods=["GET"])
+@api_auth_required("driver.view")
+def drivers_export(api_user):
+    """The roster as an Excel file, respecting the active filter.
+
+    Same divergence from Flask as the vehicle export, for the same
+    reason: Flask's Export dumps the whole table regardless of what is
+    on screen, and handing over the entire roster when the user was
+    looking at one branch is what gets noticed in front of a client.
+    Clearing the filters still gets everyone.
+
+    No paging. The list caps page_size at 200; inheriting that would
+    produce a truncated file that looks complete.
+    """
+    from io import BytesIO
+
+    from flask import send_file
+
+    from app.core.reporting.generators import generate_driver_list_xlsx
+
+    rows, error = _filtered(api_user)
+    if error:
+        return error
+
+    filename, xlsx = generate_driver_list_xlsx(rows)
+    return send_file(
+        BytesIO(xlsx), as_attachment=True, download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument"
+                 ".spreadsheetml.sheet")

@@ -120,6 +120,57 @@ def generate_vehicle_list_xlsx(vehicles):
     return (f"Vehicle_Master_{datetime.now():%Y%m%d}.xlsx", _to_bytes(wb))
 
 
+# ── Driver / Assignee list export ───────────────────────────────────────────
+
+def generate_driver_list_xlsx(drivers):
+    """The Driver / Assignee Master as the user currently has it filtered.
+
+    Takes ALREADY-FILTERED, already-scoped rows rather than a filter
+    dict, for the same reason the vehicle list export does: the caller
+    has just produced exactly the set on screen, and re-deriving it here
+    would be a second interpretation of the filter.
+    """
+    from datetime import date as _date
+
+    today = _date.today()
+
+    def _expiry(d):
+        if not d.license_expiry:
+            return ""
+        # Marked in the CELL, not by row colour. The spreadsheet is what
+        # gets forwarded, and a row reading as routine on paper while
+        # the screen showed it red is the difference that matters.
+        if d.license_expiry < today:
+            return f"{d.license_expiry.isoformat()} (EXPIRED)"
+        return d.license_expiry.isoformat()
+
+    def _name(d):
+        name = f"{d.last_name}, {d.first_name}"
+        return f"{name} {d.middle_name[0]}." if d.middle_name else name
+
+    columns = [
+        ("Employee No.", lambda d: d.employee_number or ""),
+        ("Name", _name),
+        ("Assignee Type", lambda d: d.assignee_type or ""),
+        ("License No.", lambda d: d.license_number or ""),
+        ("License Expiry", _expiry),
+        ("License Type", lambda d: d.license_type or ""),
+        ("Branch", lambda d: d.branch.name if d.branch else ""),
+        ("Department", lambda d: d.department.name if d.department else ""),
+        ("Position", lambda d: d.position or ""),
+        ("Phone", lambda d: d.phone or ""),
+        ("Email", lambda d: d.email or ""),
+        ("Status", lambda d: d.status or ""),
+    ]
+    wb, ws = _new_workbook("Driver / Assignee Master", "Drivers")
+    ws.append([label for label, _ in columns])
+    _style_header_row(ws, ws.max_row, len(columns))
+    for driver in drivers:
+        ws.append([accessor(driver) for _, accessor in columns])
+    _autosize(ws, [c[0] for c in columns])
+    return (f"Driver_Master_{datetime.now():%Y%m%d}.xlsx", _to_bytes(wb))
+
+
 # ── Vehicle Register Details ────────────────────────────────────────────────
 
 def generate_vehicle_register_xlsx(filters: dict = None, user=None):

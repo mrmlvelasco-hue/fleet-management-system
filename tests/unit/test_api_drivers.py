@@ -305,3 +305,105 @@ def test_inactive_status_is_filterable(db, client, drv_env):
     _status, body = _get(client, "/api/v1/drivers?status=INACTIVE",
                          _token(client))
     assert [d["employee_number"] for d in body["items"]] == ["EMP-006"]
+
+
+# ── Summary ─────────────────────────────────────────────────────────────────
+
+def test_summary_counts_the_roster(db, client, drv_env):
+    _status, body = _get(client, "/api/v1/drivers/summary", _token(client))
+    assert body["total"] == 3
+    assert body["active"] == 2
+
+
+def test_summary_separates_expiring_from_expired(db, client, drv_env):
+    """Two different facts needing two different responses: renew soon,
+    versus stop dispatching this person now. One combined count would
+    hide the urgent case inside the routine one."""
+    _driver(db, "EMP-010", "Soon", "Expiring",
+            branch_id=drv_env["manila"].id,
+            license_number="N10", license_type="PROFESSIONAL",
+            license_expiry=date.today() + timedelta(days=10))
+    _status, body = _get(client, "/api/v1/drivers/summary", _token(client))
+    assert body["license_expired"] == 1      # EMP-002, lapsed
+    assert body["license_expiring"] == 1     # EMP-010, within 30 days
+
+
+def test_summary_ignores_drivers_with_no_licence(db, client, drv_env):
+    """The consultant has none. Counting them as expiring would make the
+    chip permanently non-zero and useless."""
+    _status, body = _get(client, "/api/v1/drivers/summary", _token(client))
+    assert body["license_expiring"] == 0
+
+
+def test_summary_respects_org_scope(db, client, drv_env):
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+    UserOrgScopeService().assign(drv_env["user"].id, scope_type="BRANCH",
+                                 branch_id=drv_env["manila"].id)
+    db.session.commit()
+    _status, body = _get(client, "/api/v1/drivers/summary", _token(client))
+    # EMP-002 (Cebu, the expired one) is out of scope.
+    assert body["total"] == 2
+    assert body["license_expired"] == 0
+
+
+def test_summary_requires_driver_view(db, client, drv_env):
+    status, _ = _get(client, "/api/v1/drivers/summary", _token(client, "nodrv"))
+    assert status == 403
+
+
+# ── Export ──────────────────────────────────────────────────────────────────
+
+def _plates_or_numbers(response):
+    from io import BytesIO
+    from openpyxl import load_workbook
+    ws = load_workbook(BytesIO(response.data)).active
+    header_row, column = None, None
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
+        values = [c.value for c in row]
+        if "Employee No." in values:
+            header_row, column = row[0].row, values.index("Employee No.") + 1
+            break
+    assert header_row, "no header row in the exported workbook"
+    return [ws.cell(r, column).value
+            for r in range(header_row + 1, ws.max_row + 1)
+            if ws.cell(r, column).value]
+
+
+def test_export_respects_the_active_filter(db, client, drv_env):
+    """Same divergence from Flask as the vehicle export, for the same
+    reason: exporting the whole roster while the user is looking at one
+    branch is what gets noticed in front of a client."""
+    r = client.get(
+        f"/api/v1/drivers/export.xlsx?branch_id={drv_env['cebu'].id}",
+        headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 200
+    assert _plates_or_numbers(r) == ["EMP-002"]
+
+
+def test_export_is_not_capped_at_a_page(db, client, drv_env):
+    for i in range(60):
+        _driver(db, f"BULK-{i:03d}", "Bulk", f"Person{i}",
+                branch_id=drv_env["manila"].id)
+    r = client.get("/api/v1/drivers/export.xlsx?q=BULK",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert len(_plates_or_numbers(r)) == 60
+
+
+def test_export_requires_driver_view(db, client, drv_env):
+    r = client.get("/api/v1/drivers/export.xlsx",
+                   headers={"Authorization": f"Bearer {_token(client, 'nodrv')}"})
+    assert r.status_code == 403
+
+
+def test_export_marks_expired_licences(db, client, drv_env):
+    """The spreadsheet is what gets forwarded. A row that reads as
+    routine on paper while the screen showed it red is the difference
+    that matters."""
+    from io import BytesIO
+    from openpyxl import load_workbook
+    r = client.get("/api/v1/drivers/export.xlsx?q=EMP-002",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    ws = load_workbook(BytesIO(r.data)).active
+    assert any("EXPIRED" in str(c.value)
+               for row in ws.iter_rows() for c in row)
