@@ -323,6 +323,33 @@ def _seed_system_parameters() -> None:
          "approved. Separate from AUTO_PR_FROM_MO so scheduled and "
          "unscheduled work can be automated independently."),
 
+        # ── Driver / Assignee ─────────────────────────────────────────
+        # Seeded ON, matching the behaviour every existing install
+        # already has. A fresh install must not silently start accepting
+        # drivers with no licence because a new parameter arrived
+        # defaulted to off.
+        #
+        # Switching them off is the MIGRATION workflow: DriverService
+        # refuses a record missing either, so a legacy assignee whose
+        # paper file lacks a licence or a photograph cannot be entered
+        # at all. Turned off for the import, back on afterwards.
+        #
+        # Seeding matters on its own. The service reads both with a
+        # default, so the code works whether or not a row exists --
+        # which is why their absence went unnoticed. But System
+        # Administration lists ROWS, so an unseeded parameter never
+        # appears and the client has no way to switch it. A rule nobody
+        # can see is not configurable.
+        ("REQUIRE_DRIVER_LICENSE", "true", "BOOLEAN", "DRIVER",
+         "Require License Number, Expiry and Type when enrolling a "
+         "DRIVER-type assignee. Switch OFF while migrating legacy "
+         "records whose licence details are not on file, then ON again."),
+        ("REQUIRE_ASSIGNEE_PHOTO", "true", "BOOLEAN", "DRIVER",
+         "Require a photograph when enrolling ANY assignee. The photo "
+         "prints on the Vehicle Assignment Memo and the Issuance / "
+         "Receiving Checklist. Switch OFF while migrating legacy "
+         "records, then ON again."),
+
         # ── Appearance ────────────────────────────────────────────────
         ("SIDEBAR_SKIN_DEFAULT", "classic", "STRING", "APPEARANCE",
          "House style for the sidebar, used for anyone who hasn't "

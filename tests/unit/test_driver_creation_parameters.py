@@ -199,3 +199,69 @@ def test_the_two_parameters_are_independent(db, branch):
             employee_number="PRM-014", first_name="Still",
             last_name="NeedsLicence", branch_id=branch.id,
             assignee_type="DRIVER")
+
+
+# ── Seeding ─────────────────────────────────────────────────────────────────
+
+def test_both_parameters_are_seeded(db):
+    """A parameter the client cannot SEE is not configurable.
+
+    The service reads these with a default, so the code works whether or
+    not a row exists -- which is exactly why their absence went
+    unnoticed. But System Administration -> System Parameters lists
+    ROWS, so an unseeded parameter simply does not appear, and the
+    client has no way to switch it. The whole point of making the rule
+    configurable is lost.
+
+    Reported by the client after running the upgrade seed and finding
+    neither parameter present.
+    """
+    from app.cli import _seed_system_parameters
+
+    SystemParameter.query.filter(SystemParameter.code.in_([
+        "REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO"])).delete(
+            synchronize_session=False)
+    db.session.commit()
+
+    _seed_system_parameters()
+    db.session.commit()
+
+    for code in ("REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO"):
+        row = SystemParameter.query.filter_by(code=code).first()
+        assert row is not None, f"{code} was not seeded"
+        assert row.data_type == "BOOLEAN"
+        assert row.group_name == "DRIVER"
+        # Editable: switching these off IS the migration workflow.
+        assert row.is_editable is True
+
+
+def test_seeded_defaults_are_strict(db):
+    """Seeded ON, matching the behaviour every existing install already
+    has. A fresh install must not silently start accepting drivers with
+    no licence because a new parameter arrived defaulted to off."""
+    from app.cli import _seed_system_parameters
+
+    SystemParameter.query.filter(SystemParameter.code.in_([
+        "REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO"])).delete(
+            synchronize_session=False)
+    db.session.commit()
+    _seed_system_parameters()
+    db.session.commit()
+
+    for code in ("REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO"):
+        assert SystemParameterService().get(code) is True
+
+
+def test_seeding_does_not_overwrite_a_client_choice(db):
+    """Idempotent, like every other parameter in the list. Re-running
+    the seed after the client switches one off during migration must not
+    switch it back on -- that would re-block the import, days later,
+    with nothing obvious having changed.
+    """
+    from app.cli import _seed_system_parameters
+
+    _param(db, "REQUIRE_DRIVER_LICENSE", "NO")
+    _seed_system_parameters()
+    db.session.commit()
+
+    assert SystemParameterService().get("REQUIRE_DRIVER_LICENSE") is False
