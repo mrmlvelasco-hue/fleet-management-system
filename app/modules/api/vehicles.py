@@ -615,6 +615,18 @@ def vehicle_registration_history(api_user, vehicle_id):
 # to the offending one instead of showing a single banner above it.
 
 # Which input each service exception belongs against.
+class _NumericFieldError(Exception):
+    """A bad number, carrying which input produced it.
+
+    int("abc") raises ValueError, which nothing catches -- coercing
+    without shaping the failure would have swapped one 500 for another.
+    """
+
+    def __init__(self, message, field):
+        super().__init__(message)
+        self.field = field
+
+
 class _DateFieldError(Exception):
     """A DateFormatError that remembers which input produced it.
 
@@ -696,7 +708,7 @@ def _field_error(exc, payload=None, exclude_id=None):
     to find the one that actually collides. That is attribution of an
     error the service already raised, not a second validation rule.
     """
-    if isinstance(exc, _DateFieldError):
+    if isinstance(exc, (_DateFieldError, _NumericFieldError)):
         return exc.field, str(exc)
 
     name = type(exc).__name__
@@ -756,8 +768,33 @@ _DATE_FIELDS = {
 }
 
 
+# Integer columns. The Jinja path int()s every one of these
+# (routes.py 1247-1271); the API did not, so the two paths built objects
+# of DIFFERENT TYPES from the same input.
+_INT_FIELDS = {
+    "vehicle_type_id": "Vehicle Type",
+    "year": "Year",
+    "current_odometer": "Current Odometer",
+    "current_engine_hours": "Current Engine Hours",
+    "branch_id": "Branch",
+    "department_id": "Department",
+    "assigned_driver_id": "Assigned Driver",
+    "pm_schedule_id": "Assigned PM Template",
+    "last_pm_odometer": "Last PM Service Odometer",
+}
+
+# Money. Decimal, never float: float("0.1") + float("0.2") is not 0.3,
+# and an acquisition cost that drifts by a centavo is a figure the
+# client will eventually reconcile against something else.
+_DECIMAL_FIELDS = {
+    "acquisition_cost": "Acquisition Cost",
+    "assured_value_current_year": "Assured Value This Year",
+    "top_up_amount": "Top-up Amount",
+}
+
+
 def _payload_fields(payload):
-    """Allow-listed fields, with JSON date strings coerced to `date`.
+    """Allow-listed fields, with JSON strings coerced to their column types.
 
     The Jinja path runs every date through parse_form_date before the
     service sees it (`_vehicle_fields`). The API did not, so a date
@@ -773,7 +810,29 @@ def _payload_fields(payload):
     Reuses parse_form_date rather than parsing here: it already owns the
     wording, and a second parser would be a second opinion on what
     counts as a valid date.
+
+    NUMERICS need the same treatment, for a failure that is easy to miss
+    because the data lands correctly. JSON has no separate integer
+    input and the React form holds every value as a string, so
+    `current_odometer` arrives as "42000". SQLAlchemy coerces on FLUSH,
+    so the row is written properly and a later GET reads back an int --
+    but the in-memory object still holds the string, and detail_json
+    runs the PM due calculation against that same object immediately
+    after the write:
+
+        TypeError: '>=' not supported between instances of 'str' and 'int'
+
+    So the update SUCCEEDS and then 500s while reporting its own result.
+    The user sees a failed save for a change that was in fact committed,
+    which is worse than a clean failure: retrying appears to do nothing.
+
+    Coerced here rather than defended against in the due-calculation
+    service. The comparison there is correct; being handed a string is
+    the defect, and one input path producing differently-typed objects
+    from another is the thing to fix.
     """
+    from decimal import Decimal, InvalidOperation
+
     from app.core.validation.date_utils import (
         DateFormatError, parse_form_date)
 
@@ -781,7 +840,33 @@ def _payload_fields(payload):
     for key, value in payload.items():
         if key not in _WRITABLE:
             continue
-        if key in _DATE_FIELDS and isinstance(value, str):
+        if key in _INT_FIELDS and isinstance(value, str):
+            # "" means the field was cleared, not zero. int("") raises,
+            # and defaulting to 0 would record a vehicle as having done
+            # no kilometres rather than as unmeasured.
+            if not value.strip():
+                out[key] = None
+                continue
+            try:
+                out[key] = int(value.strip())
+            except ValueError:
+                raise _NumericFieldError(
+                    f"{_INT_FIELDS[key]} must be a whole number.", key
+                ) from None
+        elif key in _DECIMAL_FIELDS and isinstance(value, str):
+            if not value.strip():
+                out[key] = None
+                continue
+            try:
+                # Commas stripped: the form displays amounts grouped,
+                # and a pasted-back "1,234,567.89" is a real value the
+                # user believes they entered correctly.
+                out[key] = Decimal(value.strip().replace(",", ""))
+            except InvalidOperation:
+                raise _NumericFieldError(
+                    f"{_DECIMAL_FIELDS[key]} must be an amount.", key
+                ) from None
+        elif key in _DATE_FIELDS and isinstance(value, str):
             try:
                 out[key] = parse_form_date(value, _DATE_FIELDS[key])
             except DateFormatError as exc:
@@ -805,7 +890,8 @@ def _write_errors():
     from app.core.validation.date_utils import (
         DateFormatError, RequiredFieldError)
     from app.modules.master_data.vehicle import service as vsvc
-    return (_DateFieldError, DateFormatError, RequiredFieldError) + tuple(
+    return (_DateFieldError, _NumericFieldError, DateFormatError,
+            RequiredFieldError) + tuple(
         getattr(vsvc, n) for n in (
             "DuplicateVehicleError", "InvalidVehicleDataError",
             "BrandRequiredError", "ModelRequiredError", "InvalidBrandError",

@@ -442,3 +442,127 @@ def test_a_valid_date_string_round_trips(db, client, write_env):
     body = json.loads(r.get_data(as_text=True))
     assert body["delivery_date"] == "2025-12-31"
     assert body["start_date"] == "2025-01-01"
+
+
+# ── Numeric coercion ────────────────────────────────────────────────────────
+
+def test_update_with_a_pm_schedule_does_not_500(db, client, write_env):
+    """Reproduction of the reported 500 on PUT /api/v1/vehicles/91.
+
+        TypeError: '>=' not supported between instances of 'str' and 'int'
+        due_calculation_service.py:451  if current_km >= next_due_km
+
+    JSON has no separate integer input, and the React form holds every
+    value as a string, so `current_odometer` arrived as "42000".
+    SQLAlchemy coerces on FLUSH, so the database is fine and a later GET
+    reads back an int -- but the in-memory object still holds the string,
+    and detail_json runs the PM due calculation against that same object
+    immediately after the update. Hence a write that succeeds and then
+    500s while reporting its own result.
+
+    Only fires for vehicles with an applicable PM schedule, which is why
+    it survived the suite: nothing exercised the write path and the due
+    calculation together.
+    """
+    from app.modules.maintenance_config.models import PMSchedule
+    from app.modules.master_data.reference.service import MaintenanceTypeService
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    _writer, branch, vt = write_env
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2021,
+        branch_id=branch.id, plate_number="PM-500-1", strict=True)
+    mt = MaintenanceTypeService().create(code="PM-500", name="Preventive",
+                                         category="PREVENTIVE")
+    db.session.add(PMSchedule(maintenance_type_id=mt.id, trigger_mode="KM",
+                              interval_km=5000, vehicle_type_id=vt.id,
+                              is_active=True))
+    db.session.commit()
+
+    r = client.put(f"/api/v1/vehicles/{vehicle.id}",
+                   json={"current_odometer": "42000"},
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+
+def test_integer_fields_are_coerced_before_the_service_sees_them(
+        db, client, write_env):
+    """The Jinja path int()s every one of these (routes.py 1247-1271).
+    The API did not, so the two paths produced objects of different
+    types from the same input -- and only one of them crashed."""
+    from app.modules.master_data.vehicle.models import Vehicle
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    _writer, branch, vt = write_env
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2021,
+        branch_id=branch.id, plate_number="NUM-0001", strict=True)
+    db.session.commit()
+
+    r = client.put(f"/api/v1/vehicles/{vehicle.id}", json={
+        "year": "2023", "current_odometer": "51000",
+        "current_engine_hours": "120", "last_pm_odometer": "48000",
+    }, headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+    fresh = db.session.get(Vehicle, vehicle.id)
+    for field in ("year", "current_odometer", "current_engine_hours",
+                  "last_pm_odometer"):
+        assert isinstance(getattr(fresh, field), int), (
+            f"{field} is {type(getattr(fresh, field)).__name__}, not int")
+
+
+def test_a_non_numeric_integer_is_a_field_error_not_a_500(db, client,
+                                                          write_env):
+    """int("abc") raises ValueError, which nothing catches. Coercing
+    without shaping the failure would swap one 500 for another."""
+    _writer, branch, vt = write_env
+    r = client.post("/api/v1/vehicles", json={
+        "vehicle_type_id": vt.id, "brand": "Toyota", "model": "Hilux",
+        "year": "not-a-year", "branch_id": branch.id,
+        "plate_number": "NUM-BAD1",
+    }, headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 400, r.get_data(as_text=True)
+    assert "year" in json.loads(r.get_data(as_text=True))["fields"]
+
+
+def test_money_fields_stay_decimal_safe(db, client, write_env):
+    """Money is parsed as Decimal, never float. float("0.1") + float("0.2")
+    is not 0.3, and an acquisition cost that drifts by a centavo is a
+    figure the client will eventually reconcile against."""
+    from decimal import Decimal
+    from app.modules.master_data.vehicle.models import Vehicle
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    _writer, branch, vt = write_env
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2021,
+        branch_id=branch.id, plate_number="MON-0001", strict=True)
+    db.session.commit()
+
+    r = client.put(f"/api/v1/vehicles/{vehicle.id}",
+                   json={"acquisition_cost": "1234567.89"},
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    fresh = db.session.get(Vehicle, vehicle.id)
+    assert fresh.acquisition_cost == Decimal("1234567.89")
+
+
+def test_an_empty_numeric_string_clears_rather_than_crashing(db, client,
+                                                            write_env):
+    """int("") raises. A cleared optional field must read as None."""
+    from app.modules.master_data.vehicle.models import Vehicle
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    _writer, branch, vt = write_env
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2021,
+        branch_id=branch.id, plate_number="NUM-EMPT", strict=True,
+        current_engine_hours=99)
+    db.session.commit()
+
+    r = client.put(f"/api/v1/vehicles/{vehicle.id}",
+                   json={"current_engine_hours": ""},
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert db.session.get(Vehicle, vehicle.id).current_engine_hours is None
