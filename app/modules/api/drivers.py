@@ -234,3 +234,128 @@ def drivers_export(api_user):
         BytesIO(xlsx), as_attachment=True, download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument"
                  ".spreadsheetml.sheet")
+
+
+def _emergency_contacts(driver):
+    """Related Emergency Contact records, keyed by person_record_id.
+
+    Separate from the driver's own emergency_contact_person /
+    _number columns, which are ALSO shown under the same heading in
+    Jinja. Two records of the same fact that can disagree, with nothing
+    reconciling them -- mirrored here rather than quietly merged, and
+    flagged in docs/parity-driver.md for the client.
+    """
+    from app.modules.master_data.driver.service import EmergencyContactService
+    return [
+        {"id": c.id,
+         "contact_name": c.contact_name,
+         "relationship_type": c.relationship_type,
+         "contact_number": c.contact_number}
+        for c in EmergencyContactService().list_for_person(driver.person_id)]
+
+
+def _assigned_vehicles(driver):
+    """Vehicles this person is currently assigned.
+
+    The only place in the system that answers "what is this person
+    driving", and what makes the expired-licence flag actionable: an
+    expired licence matters precisely because a vehicle is attached to
+    it. The id is carried so the client can link back to vehicle
+    detail, which is the value of the section.
+    """
+    from app.modules.master_data.vehicle.models import Vehicle
+    rows = (Vehicle.query
+            .filter_by(assigned_driver_id=driver.id, is_active=True)
+            .order_by(Vehicle.plate_number)
+            .all())
+    return [
+        {"id": v.id,
+         "plate_number": v.plate_number or v.conduction_number,
+         "brand": v.brand,
+         "model": v.model,
+         "branch": v.branch.name if v.branch else None}
+        for v in rows]
+
+
+@bp.route("/drivers/<int:driver_id>", methods=["GET"])
+@api_auth_required("driver.view")
+def driver_detail(api_user, driver_id):
+    """One driver, shaped for the detail screen.
+
+    Built from docs/parity-driver.md §7, itself from
+    driver_detail.html. Not from the model: that has 35 columns, and the
+    screen shows a specific subset under specific headings.
+
+    `show_license` and `show_business` are decided HERE because
+    driver_detail.html decides them in Jinja -- unlike the FORM, which
+    decides the same thing in jQuery. The detail screen is the more
+    honest implementation of the rule, so the API follows it. Sending
+    the decision rather than the raw assignee_type means the client
+    cannot re-derive the rule slightly differently and drift.
+    """
+    from app.modules.master_data.driver.service import DriverService
+
+    d = DriverService().get_visible(driver_id, api_user)
+    if d is None:
+        # Same 404 a missing record gives, so this cannot be used to
+        # discover which ids exist.
+        return jsonify({"error": "not_found",
+                        "message": "Driver not found or not visible to "
+                                   "this account."}), 404
+
+    return jsonify({
+        # Basic
+        "id": d.id,
+        "person_id": d.person_id,
+        "employee_number": d.employee_number,
+        # The MODEL's own property ("First M. Last Suffix"). The list
+        # uses "Last, First M." -- both correct for their screen. What
+        # must not happen is a third format invented in the API.
+        "full_name": d.full_name,
+        "first_name": d.first_name,
+        "middle_name": d.middle_name,
+        "last_name": d.last_name,
+        "suffix": d.suffix,
+        "nickname": d.nickname,
+        "assignee_type": d.assignee_type,
+        "status": d.status,
+        # Organization
+        "branch": d.branch.name if d.branch else None,
+        "branch_id": d.branch_id,
+        "department": d.department.name if d.department else None,
+        "department_id": d.department_id,
+        "section": d.section,
+        "position": d.position,
+        "job_title": d.job_title,
+        "cost_center": d.cost_center,
+        "employment_status": d.employment_status,
+        "employment_type": d.employment_type,
+        # License
+        "license_number": d.license_number,
+        "license_type": d.license_type,
+        "license_expiry": d.license_expiry.isoformat()
+        if d.license_expiry else None,
+        "license_expired": bool(
+            d.license_expiry and d.license_expiry < date.today()),
+        # Contact. `phone` is labelled "Mobile Number" on screen; the
+        # roster distinguishes mobile from office and home.
+        "phone": d.phone,
+        "office_number": d.office_number,
+        "home_number": d.home_number,
+        "email": d.email,
+        "complete_address": d.complete_address,
+        # Business
+        "business_name": d.business_name,
+        "business_contact_no": d.business_contact_no,
+        "business_address": d.business_address,
+        # Emergency
+        "emergency_contact_person": d.emergency_contact_person,
+        "emergency_contact_number": d.emergency_contact_number,
+        "emergency_contacts": _emergency_contacts(d),
+        # Assignment
+        "assigned_vehicles": _assigned_vehicles(d),
+        # Section visibility, decided server-side (see docstring).
+        "show_license": d.assignee_type == "DRIVER",
+        "show_business": d.assignee_type in ("THIRD_PARTY_DELIVERY",
+                                             "CONSULTANT"),
+    })

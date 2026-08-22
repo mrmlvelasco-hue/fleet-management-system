@@ -407,3 +407,159 @@ def test_export_marks_expired_licences(db, client, drv_env):
     ws = load_workbook(BytesIO(r.data)).active
     assert any("EXPIRED" in str(c.value)
                for row in ws.iter_rows() for c in row)
+
+
+# ── Detail ──────────────────────────────────────────────────────────────────
+
+def _detail(client, driver_id, token=None):
+    r = client.get(f"/api/v1/drivers/{driver_id}",
+                   headers={"Authorization": f"Bearer {token}"})
+    return r.status_code, json.loads(r.get_data(as_text=True))
+
+
+def test_detail_rejects_anonymous(db, client, drv_env):
+    assert client.get("/api/v1/drivers/1").status_code == 401
+
+
+def test_detail_404s_for_a_driver_outside_scope(db, client, drv_env):
+    """Same 404 as a missing record, so the endpoint cannot be used to
+    discover which ids exist."""
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+    from app.modules.master_data.driver.models import Driver
+
+    cebu_driver = Driver.query.filter_by(employee_number="EMP-002").first()
+    UserOrgScopeService().assign(drv_env["user"].id, scope_type="BRANCH",
+                                 branch_id=drv_env["manila"].id)
+    db.session.commit()
+    status, _ = _detail(client, cebu_driver.id, _token(client))
+    assert status == 404
+
+
+def test_detail_carries_every_field_the_jinja_screen_shows(db, client,
+                                                           drv_env):
+    """Transcribed from docs/parity-driver.md §7, which was transcribed
+    from driver_detail.html. Not from the model -- it has 35 columns and
+    the screen shows a specific subset under specific headings."""
+    from app.modules.master_data.driver.models import Driver
+    d = Driver.query.filter_by(employee_number="EMP-001").first()
+    _status, body = _detail(client, d.id, _token(client))
+
+    for field in (
+            # Basic
+            "person_id", "employee_number", "full_name", "first_name",
+            "middle_name", "last_name", "suffix", "nickname",
+            "assignee_type", "status",
+            # Organization
+            "branch", "department", "section", "position", "job_title",
+            "cost_center", "employment_status", "employment_type",
+            # License
+            "license_number", "license_type", "license_expiry",
+            "license_expired",
+            # Contact
+            "phone", "office_number", "home_number", "email",
+            "complete_address",
+            # Business
+            "business_name", "business_contact_no", "business_address",
+            # Emergency
+            "emergency_contact_person", "emergency_contact_number",
+            "emergency_contacts",
+            # Assignment
+            "assigned_vehicles"):
+        assert field in body, f"field missing from detail payload: {field}"
+
+
+def test_full_name_uses_the_models_own_format(db, client, drv_env):
+    """'First M. Last Suffix' -- the model's full_name property, not a
+    string rebuilt here. The LIST uses a different format ('Last, First
+    M.') and both are correct for their screen; what must not happen is
+    a third format invented in the API."""
+    _driver(db, "EMP-020", "Ana", "Lopez", branch_id=drv_env["manila"].id,
+            middle_name="Bautista", suffix="Jr.")
+    from app.modules.master_data.driver.models import Driver
+    d = Driver.query.filter_by(employee_number="EMP-020").first()
+    _status, body = _detail(client, d.id, _token(client))
+    assert body["full_name"] == "Ana B. Lopez Jr."
+
+
+def test_detail_flags_an_expired_licence(db, client, drv_env):
+    from app.modules.master_data.driver.models import Driver
+    d = Driver.query.filter_by(employee_number="EMP-002").first()
+    _status, body = _detail(client, d.id, _token(client))
+    assert body["license_expired"] is True
+
+
+def test_section_visibility_is_decided_server_side(db, client, drv_env):
+    """driver_detail.html decides these in Jinja, unlike the FORM which
+    decides the same thing in jQuery. The detail screen is the more
+    honest implementation of the rule, so the API follows it -- and the
+    client is then told which sections apply rather than re-deriving
+    the rule and drifting from it."""
+    from app.modules.master_data.driver.models import Driver
+
+    driver = Driver.query.filter_by(employee_number="EMP-001").first()
+    _status, body = _detail(client, driver.id, _token(client))
+    assert body["show_license"] is True
+    assert body["show_business"] is False
+
+    consultant = Driver.query.filter_by(employee_number="EMP-003").first()
+    _status, body = _detail(client, consultant.id, _token(client))
+    assert body["show_license"] is False
+    assert body["show_business"] is True
+
+
+def test_emergency_contacts_are_listed(db, client, drv_env):
+    from app.modules.master_data.driver.models import Driver
+    from app.modules.master_data.driver.service import (
+        EmergencyContactService)
+
+    d = Driver.query.filter_by(employee_number="EMP-001").first()
+    EmergencyContactService().create(
+        person_record_id=d.person_id, contact_name="Rosa Dela Cruz",
+        relationship_type="Spouse", contact_number="0917-000-0000")
+    db.session.commit()
+
+    _status, body = _detail(client, d.id, _token(client))
+    assert body["emergency_contacts"][0]["contact_name"] == "Rosa Dela Cruz"
+    assert body["emergency_contacts"][0]["relationship_type"] == "Spouse"
+
+
+def test_assigned_vehicles_are_listed(db, client, drv_env):
+    """The only place in the system that answers "what is this person
+    driving" -- and what makes the expired-licence flag actionable, since
+    an expired licence matters precisely because a vehicle is attached
+    to it."""
+    from app.modules.master_data.driver.models import Driver
+    from app.modules.master_data.reference.service import VehicleTypeService
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    d = Driver.query.filter_by(employee_number="EMP-001").first()
+    vt = VehicleTypeService().create(code="LV-DRV", name="Light",
+                                     category="LIGHT")
+    # strict=False: strict validates the brand against Vehicle Brand
+    # master data, which this fixture has no reason to seed. The rule is
+    # real and covered by the vehicle tests; it is not what this test is
+    # about.
+    VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2022,
+        branch_id=drv_env["manila"].id, plate_number="DRV-1111",
+        assigned_driver_id=d.id)
+    db.session.commit()
+
+    _status, body = _detail(client, d.id, _token(client))
+    assert len(body["assigned_vehicles"]) == 1
+    v = body["assigned_vehicles"][0]
+    assert v["plate_number"] == "DRV-1111"
+    # The id is what makes it a LINK back to vehicle detail, which is
+    # the whole value of the section.
+    assert "id" in v
+
+
+def test_a_driver_with_no_vehicle_returns_an_empty_list(db, client, drv_env):
+    """Empty list, not absent. The client renders "none assigned" from
+    an empty list; a missing key is indistinguishable from a failed
+    lookup."""
+    from app.modules.master_data.driver.models import Driver
+    d = Driver.query.filter_by(employee_number="EMP-003").first()
+    _status, body = _detail(client, d.id, _token(client))
+    assert body["assigned_vehicles"] == []
