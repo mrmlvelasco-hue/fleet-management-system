@@ -30,6 +30,8 @@ from datetime import date, timedelta
 
 import pytest
 
+from app.modules.system_admin.models import SystemParameter
+
 from app.core.security.password import hash_password
 from app.core.security.registry import sync_permissions
 from app.modules.master_data.org.service import BranchService
@@ -615,3 +617,245 @@ def test_the_list_row_says_whether_a_photo_exists(db, client, drv_env):
 
     _status, body = _get(client, "/api/v1/drivers?q=EMP-003", _token(client))
     assert body["items"][0]["has_photo"] is False
+
+
+# ── Write ───────────────────────────────────────────────────────────────────
+
+def _writer_token(client, db, drv_env):
+    """A user holding driver.create and driver.update."""
+    from app.core.security.password import hash_password
+    from app.modules.user_management.models import Permission, Role, User
+
+    role = Role(name="Driver Editor")
+    role.permissions = Permission.query.filter(
+        Permission.code.in_(["driver.view", "driver.create",
+                             "driver.update"])).all()
+    u = User(username="drvwriter", email="dw@e.com",
+             password_hash=hash_password("secret123"), is_active=True)
+    u.roles = [role]
+    db.session.add_all([role, u])
+    db.session.commit()
+    return _token(client, "drvwriter")
+
+
+def _waive_photo(db):
+    """These tests exercise the FIELD handling, not the photo rule. The
+    rule itself has its own suite (test_driver_creation_parameters.py);
+    requiring a file in every one of these would make them all about
+    multipart encoding instead."""
+    row = SystemParameter.query.filter_by(
+        code="REQUIRE_ASSIGNEE_PHOTO").first()
+    if row is None:
+        row = SystemParameter(code="REQUIRE_ASSIGNEE_PHOTO", value="NO",
+                              data_type="BOOLEAN", group_name="DRIVER",
+                              description="Migration switch", is_active=True)
+        db.session.add(row)
+    else:
+        row.value = "NO"
+    db.session.commit()
+
+
+def _post(client, token, payload):
+    r = client.post("/api/v1/drivers", json=payload,
+                    headers={"Authorization": f"Bearer {token}"})
+    return r.status_code, json.loads(r.get_data(as_text=True))
+
+
+def test_create_requires_the_create_permission(db, client, drv_env):
+    """driver.view is not enough. Read-only users must not enrol staff."""
+    status, _ = _post(client, _token(client), {"first_name": "X"})
+    assert status == 403
+
+
+def test_create_rejects_anonymous(db, client, drv_env):
+    assert client.post("/api/v1/drivers", json={}).status_code == 401
+
+
+def test_create_returns_the_new_driver(db, client, drv_env):
+    _waive_photo(db)
+    t = _writer_token(client, db, drv_env)
+    status, body = _post(client, t, {
+        "employee_number": "NEW-001", "first_name": "New", "last_name": "Hire",
+        "branch_id": drv_env["manila"].id, "assignee_type": "CONSULTANT",
+    })
+    assert status == 201, body
+    assert body["employee_number"] == "NEW-001"
+    # The generated Person ID comes back, because it is what the record
+    # is known by afterwards and the client cannot derive it.
+    assert body["person_id"]
+
+
+def test_create_coerces_the_licence_expiry_date(db, client, drv_env):
+    """license_expiry is a date and JSON has no date type, so it arrives
+    as a string. Vehicles shipped a 500 on exactly this before the
+    coercion helper was extracted; Drivers uses the same helper rather
+    than repeating the mistake."""
+    _waive_photo(db)
+    t = _writer_token(client, db, drv_env)
+    status, body = _post(client, t, {
+        "employee_number": "NEW-002", "first_name": "Dated",
+        "last_name": "Driver", "branch_id": drv_env["manila"].id,
+        "assignee_type": "DRIVER", "license_number": "N-DATE",
+        "license_type": "PROFESSIONAL", "license_expiry": "2028-05-01",
+    })
+    assert status == 201, body
+    assert body["license_expiry"] == "2028-05-01"
+
+
+def test_a_malformed_date_is_a_field_error_not_a_500(db, client, drv_env):
+    _waive_photo(db)
+    t = _writer_token(client, db, drv_env)
+    status, body = _post(client, t, {
+        "employee_number": "NEW-003", "first_name": "Bad",
+        "last_name": "Date", "branch_id": drv_env["manila"].id,
+        "license_expiry": "01/05/2028",
+    })
+    assert status == 400, body
+    assert "license_expiry" in body["fields"]
+
+
+def test_a_missing_licence_is_a_field_error_not_a_500(db, client, drv_env):
+    """InvalidAssigneeError from the service becomes a 400 naming the
+    field, not an unhandled 500. The rule is the service's; only the
+    presentation belongs here."""
+    _param = SystemParameter(code="REQUIRE_DRIVER_LICENSE", value="YES",
+                             data_type="BOOLEAN", group_name="DRIVER",
+                             description="x", is_active=True)
+    db.session.add(_param)
+    db.session.commit()
+
+    _waive_photo(db)
+    t = _writer_token(client, db, drv_env)
+    status, body = _post(client, t, {
+        "employee_number": "NEW-004", "first_name": "No",
+        "last_name": "Licence", "branch_id": drv_env["manila"].id,
+        "assignee_type": "DRIVER",
+    })
+    assert status == 400, body
+    assert "license_number" in body["fields"]
+
+
+def test_a_duplicate_employee_number_is_a_field_error(db, client, drv_env):
+    _waive_photo(db)
+    t = _writer_token(client, db, drv_env)
+    status, body = _post(client, t, {
+        "employee_number": "EMP-001", "first_name": "Clash",
+        "last_name": "Number", "branch_id": drv_env["manila"].id,
+        "assignee_type": "CONSULTANT",
+    })
+    assert status == 400, body
+    assert "employee_number" in body["fields"]
+
+
+def test_create_ignores_fields_outside_the_allowlist(db, client, drv_env):
+    """An allow-list, not **payload. `person_id` is generated by the
+    service; letting a client set it would break the traceability the
+    generator exists to provide."""
+    _waive_photo(db)
+    t = _writer_token(client, db, drv_env)
+    _status, body = _post(client, t, {
+        "employee_number": "NEW-005", "first_name": "Allow",
+        "last_name": "List", "branch_id": drv_env["manila"].id,
+        "assignee_type": "CONSULTANT", "person_id": "PID-FORGED",
+        "id": 9999,
+    })
+    assert body["person_id"] != "PID-FORGED"
+    assert body["id"] != 9999
+
+
+def test_update_requires_the_update_permission(db, client, drv_env):
+    from app.modules.master_data.driver.models import Driver
+    d = Driver.query.filter_by(employee_number="EMP-001").first()
+    r = client.put(f"/api/v1/drivers/{d.id}", json={"position": "Lead"},
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 403
+
+
+def test_update_changes_only_what_was_sent(db, client, drv_env):
+    """A partial update must not blank the fields it omits. The form
+    posts whole sections; a sparse payload from anywhere else must not
+    silently clear the rest of the record."""
+    from app.modules.master_data.driver.models import Driver
+    t = _writer_token(client, db, drv_env)
+    d = Driver.query.filter_by(employee_number="EMP-001").first()
+
+    r = client.put(f"/api/v1/drivers/{d.id}", json={"position": "Lead Driver"},
+                   headers={"Authorization": f"Bearer {t}"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = json.loads(r.get_data(as_text=True))
+    assert body["position"] == "Lead Driver"
+    assert body["license_number"] == "N01-1111"
+
+
+def test_update_404s_outside_scope(db, client, drv_env):
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+    from app.modules.master_data.driver.models import Driver
+
+    t = _writer_token(client, db, drv_env)
+    cebu = Driver.query.filter_by(employee_number="EMP-002").first()
+    from app.modules.user_management.models import User
+    writer = User.query.filter_by(username="drvwriter").first()
+    UserOrgScopeService().assign(writer.id, scope_type="BRANCH",
+                                 branch_id=drv_env["manila"].id)
+    db.session.commit()
+
+    r = client.put(f"/api/v1/drivers/{cebu.id}", json={"position": "X"},
+                   headers={"Authorization": f"Bearer {t}"})
+    assert r.status_code == 404
+
+
+def test_create_accepts_multipart_with_a_photo(db, client, drv_env):
+    """The path that matters on a normally-configured install.
+
+    REQUIRE_ASSIGNEE_PHOTO defaults to strict and a photo can only
+    arrive as a file, so a JSON-only endpoint could never create a
+    driver once migration is over -- it would break at exactly the
+    moment the client stopped expecting breakage.
+    """
+    import io
+
+    _param = SystemParameter.query.filter_by(
+        code="REQUIRE_ASSIGNEE_PHOTO").first()
+    if _param:
+        _param.value = "YES"
+        db.session.commit()
+
+    t = _writer_token(client, db, drv_env)
+    r = client.post(
+        "/api/v1/drivers",
+        data={
+            "employee_number": "MP-001", "first_name": "Multi",
+            "last_name": "Part", "branch_id": str(drv_env["manila"].id),
+            "assignee_type": "CONSULTANT",
+            "photo": (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"0" * 64), "id.png"),
+        },
+        content_type="multipart/form-data",
+        headers={"Authorization": f"Bearer {t}"})
+    assert r.status_code == 201, r.get_data(as_text=True)
+    body = json.loads(r.get_data(as_text=True))
+    assert body["photo_attachment_id"] is not None
+
+
+def test_multipart_strings_are_still_coerced(db, client, drv_env):
+    """Every multipart value is a string, including branch_id and
+    license_expiry. Without coercion these reach the model as text and
+    reproduce the fault vehicles had."""
+    import io
+
+    t = _writer_token(client, db, drv_env)
+    r = client.post(
+        "/api/v1/drivers",
+        data={
+            "employee_number": "MP-002", "first_name": "Typed",
+            "last_name": "Fields", "branch_id": str(drv_env["manila"].id),
+            "assignee_type": "DRIVER", "license_number": "N-MP2",
+            "license_type": "PROFESSIONAL", "license_expiry": "2029-03-15",
+            "photo": (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"0" * 64), "id.png"),
+        },
+        content_type="multipart/form-data",
+        headers={"Authorization": f"Bearer {t}"})
+    assert r.status_code == 201, r.get_data(as_text=True)
+    body = json.loads(r.get_data(as_text=True))
+    assert body["license_expiry"] == "2029-03-15"
+    assert body["branch_id"] == drv_env["manila"].id
