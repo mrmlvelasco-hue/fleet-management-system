@@ -68,6 +68,45 @@ def _atd_json(a, *, detail=False):
     return data
 
 
+
+def _atd_print_extras(a, data):
+    """Enrich detail/print payload with driver, vehicle, requester, chain."""
+    driver = a.driver
+    data["driver_department"] = (
+        driver.department.name
+        if driver is not None and getattr(driver, "department", None)
+        else None)
+    data["driver_employee_number"] = (
+        getattr(driver, "employee_number", None) if driver else None)
+    data["driver_license_number"] = (
+        getattr(driver, "license_number", None) if driver else None)
+    vehicle = a.vehicle
+    data["vehicle_brand"] = getattr(vehicle, "brand", None) if vehicle else None
+    data["vehicle_model"] = getattr(vehicle, "model", None) if vehicle else None
+    requester = getattr(a, "requester", None)
+    data["requester_name"] = (
+        getattr(requester, "full_name", None)
+        or getattr(requester, "username", None)
+        if requester else None)
+    chain = []
+    inst = getattr(a, "approval_instance", None)
+    if inst is not None:
+        levels = getattr(inst, "levels", None) or getattr(inst, "level_actions", None) or []
+        for lvl in levels:
+            status = getattr(lvl, "status", None)
+            if status != "APPROVED":
+                continue
+            chain.append({
+                "status": status,
+                "acted_by_name": (
+                    getattr(lvl, "acted_by_name", None)
+                    or getattr(getattr(lvl, "acted_by", None), "full_name", None)
+                    or getattr(getattr(lvl, "acted_by", None), "username", None)
+                ),
+            })
+    data["approval_chain"] = chain
+    return data
+
 @bp.route("/atd", methods=["GET"])
 @api_auth_required("atd.view")
 def list_atd(api_user):
@@ -114,7 +153,8 @@ def get_atd(api_user, aid):
     a = ATDService().get_visible(aid, api_user)
     if a is None:
         return _not_found()
-    return jsonify(_atd_json(a, detail=True))
+    data = _atd_json(a, detail=True)
+    return jsonify(_atd_print_extras(a, data))
 
 
 @bp.route("/atd", methods=["POST"])
