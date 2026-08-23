@@ -91,6 +91,75 @@ def _availability(fleet_status: dict):
     return round(counts.get("ACTIVE", 0) / denominator * 100, 1)
 
 
+
+# ── Shared PM due calculation (serialized, short TTL) ───────────────────────
+# Parallel dashboard tabs each used to run get_all_due_vehicles() separately
+# (~seconds on a full schedule catalogue). Request-scoped cache cannot help
+# across concurrent HTTP requests. A short process TTL of *serialized*
+# rows is safe (no detached ORM) and collapses the three callers into one
+# computation for a few seconds of dashboard paint.
+
+import threading
+import time
+
+_DUE_LOCK = threading.Lock()
+_DUE_CACHE = {}  # key -> (expires_at, rows)
+_DUE_TTL_SEC = 12
+
+
+def _shared_due_rows(api_user, branch_id=None):
+    """DUE_SOON / OVERDUE rows visible to api_user, as plain dicts."""
+    from app.core.maintenance.due_calculation_service import (
+        PMDueCalculationService)
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+
+    key = (getattr(api_user, "id", None), branch_id)
+    now = time.time()
+    with _DUE_LOCK:
+        hit = _DUE_CACHE.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+
+    due = PMDueCalculationService().get_all_due_vehicles()
+    if branch_id is not None:
+        due = [d for d in due if d["vehicle"].branch_id == branch_id]
+    scope_svc = UserOrgScopeService()
+    due = [d for d in due
+           if scope_svc.covers(api_user.id, branch_id=d["vehicle"].branch_id)]
+    order = {"OVERDUE": 0, "DUE_SOON": 1}
+    due.sort(key=lambda d: order.get(d.get("status"), 2))
+
+    rows = []
+    for d in due:
+        v = d["vehicle"]
+        schedule = d.get("schedule")
+        m_type = getattr(schedule, "maintenance_type", None) if schedule else None
+        due_date = d.get("next_due_date")
+        rows.append({
+            "vehicle_id": v.id,
+            "plate_number": v.plate_number,
+            "conduction_number": v.conduction_number,
+            "vehicle": f"{v.brand or ''} {v.model or ''}".strip(),
+            "branch": v.branch.name if v.branch else None,
+            "branch_id": v.branch_id,
+            "maintenance_type": getattr(m_type, "name", None),
+            "current_odometer": v.current_odometer,
+            "due_odometer": d.get("next_due_km"),
+            "due_date": due_date.isoformat() if due_date else None,
+            "status": d.get("status"),
+        })
+
+    with _DUE_LOCK:
+        _DUE_CACHE[key] = (now + _DUE_TTL_SEC, rows)
+        # Bound cache size
+        if len(_DUE_CACHE) > 64:
+            expired = [k for k, (exp, _) in _DUE_CACHE.items() if exp <= now]
+            for k in expired:
+                _DUE_CACHE.pop(k, None)
+    return rows
+
+
 @bp.route("/dashboard/summary", methods=["GET"])
 @api_auth_required("vehicle.view")
 def dashboard_summary(api_user):
@@ -101,11 +170,12 @@ def dashboard_summary(api_user):
     dash = DashboardService()
     analytics = DashboardAnalyticsService()
     fleet_status = analytics.fleet_by_status(user=api_user, branch_id=branch_id)
+    # Shared with /due-maintenance — one due pass, not two.
+    due_rows = _shared_due_rows(api_user, branch_id)
 
     return jsonify({
         "fleet_count": dash.fleet_count(user=api_user, branch_id=branch_id),
-        "maintenance_due_count": dash.maintenance_due_count(
-            user=api_user, branch_id=branch_id),
+        "maintenance_due_count": len(due_rows),
         "approvals_pending_count": dash.approvals_pending_count(api_user),
         "registrations_expiring_count": dash.registrations_expiring_count(
             user=api_user, branch_id=branch_id),
@@ -227,43 +297,9 @@ def dashboard_due_maintenance(api_user):
                         "message": "limit must be an integer."}), 400
     limit = max(1, min(limit, 200))
 
-    from app.core.maintenance.due_calculation_service import (
-        PMDueCalculationService)
-    from app.modules.user_management.org_scope_service import (
-        UserOrgScopeService)
-
-    due = PMDueCalculationService().get_all_due_vehicles()
-    if branch_id is not None:
-        due = [d for d in due if d["vehicle"].branch_id == branch_id]
-    scope_svc = UserOrgScopeService()
-    due = [d for d in due
-           if scope_svc.covers(api_user.id, branch_id=d["vehicle"].branch_id)]
-
-    # OVERDUE first: on a dashboard the thing already late is the thing
-    # that needs to be seen, and a `limit` must not truncate it away in
-    # favour of something merely due soon.
-    order = {"OVERDUE": 0, "DUE_SOON": 1}
-    due.sort(key=lambda d: order.get(d.get("status"), 2))
-
-    items = []
-    for d in due[:limit]:
-        v = d["vehicle"]
-        schedule = d.get("schedule")
-        m_type = getattr(schedule, "maintenance_type", None)
-        due_date = d.get("next_due_date")
-        items.append({
-            "vehicle_id": v.id,
-            "plate_number": v.plate_number,
-            "conduction_number": v.conduction_number,
-            "vehicle": f"{v.brand} {v.model}".strip(),
-            "branch": v.branch.name if v.branch else None,
-            "maintenance_type": getattr(m_type, "name", None),
-            "current_odometer": v.current_odometer,
-            "due_odometer": d.get("next_due_km"),
-            "due_date": due_date.isoformat() if due_date else None,
-            "status": d.get("status"),
-        })
-    return jsonify({"items": items, "total": len(due)})
+    rows = _shared_due_rows(api_user, branch_id)
+    items = rows[:limit]
+    return jsonify({"items": items, "total": len(rows)})
 
 
 @bp.route("/dashboard/branches", methods=["GET"])
