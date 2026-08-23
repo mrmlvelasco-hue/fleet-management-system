@@ -207,3 +207,70 @@ def record_atd_odometer_in(api_user, aid):
     except Exception as e:
         return _conflict(str(e))
     return jsonify({"ok": True})
+
+
+@bp.route("/atd/<int:aid>/print", methods=["GET"])
+@api_auth_required("atd.print")
+def atd_print(api_user, aid):
+    """Print payload matching Jinja atd_print.html.
+
+    Two-copy gate-guard authorization: company letterhead, body text,
+    vehicle table, requester + approved approval levels, print stamp.
+    """
+    from datetime import datetime
+    from app.modules.transactions.atd.service import ATDService
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+
+    a = ATDService().get_visible(aid, api_user)
+    if a is None:
+        return _not_found()
+
+    company = CompanyProfileService().get()
+    data = _atd_json(a, detail=True)
+
+    # Extra print fields used by the official slip
+    driver = a.driver
+    data["driver_department"] = (
+        driver.department.name
+        if driver is not None and getattr(driver, "department", None)
+        else None)
+    data["driver_employee_number"] = getattr(driver, "employee_number", None) if driver else None
+    data["driver_license_number"] = getattr(driver, "license_number", None) if driver else None
+    vehicle = a.vehicle
+    data["vehicle_brand"] = getattr(vehicle, "brand", None) if vehicle else None
+    data["vehicle_model"] = getattr(vehicle, "model", None) if vehicle else None
+
+    requester = getattr(a, "requester", None)
+    data["requester_name"] = (
+        getattr(requester, "full_name", None) or getattr(requester, "username", None)
+        if requester else None)
+
+    chain = []
+    inst = getattr(a, "approval_instance", None)
+    if inst is not None:
+        levels = getattr(inst, "levels", None) or getattr(inst, "level_actions", None) or []
+        for lvl in levels:
+            status = getattr(lvl, "status", None)
+            if status != "APPROVED":
+                continue
+            chain.append({
+                "status": status,
+                "acted_by_name": (
+                    getattr(lvl, "acted_by_name", None)
+                    or getattr(getattr(lvl, "acted_by", None), "full_name", None)
+                    or getattr(getattr(lvl, "acted_by", None), "username", None)
+                ),
+            })
+    data["approval_chain"] = chain
+
+    return jsonify({
+        "atd": data,
+        "company": {
+            "company_name": getattr(company, "company_name", None),
+            "address_line": getattr(company, "address_line", None),
+            "city": getattr(company, "city", None),
+        } if company else {},
+        "generated_at": datetime.now().isoformat(),
+        "copies": 2,
+    })
