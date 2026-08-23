@@ -361,3 +361,65 @@ def deactivate_pm_scope_template(api_user, tid):
         return _not_found("PM scope template")
     PMScopeTemplateService().deactivate(tid)
     return jsonify({"ok": True})
+
+
+# ── PMS Profiles (grouped view of PM schedules by profile_code) ─────────────
+
+@bp.route("/pms-profiles", methods=["GET"])
+@api_auth_required("pmprofile.view")
+def list_pms_profiles(api_user):
+    from app.modules.maintenance_config.service import PMSProfileService
+    q = (request.args.get("q") or "").strip().lower()
+    profiles = PMSProfileService().list_profiles()
+    items = []
+    for p in profiles:
+        brand = p.get("vehicle_brand")
+        model = p.get("vehicle_model_ref")
+        row = {
+            "profile_code": p["profile_code"],
+            "description": p.get("description"),
+            "package_count": p.get("package_count", 0),
+            "vehicle_brand": brand.name if brand else None,
+            "vehicle_model": model.name if model else None,
+        }
+        if q and q not in " ".join(filter(None, [
+            row["profile_code"], row["description"],
+            row["vehicle_brand"], row["vehicle_model"],
+        ])).lower():
+            continue
+        items.append(row)
+    items.sort(key=lambda r: (r["profile_code"] or "").lower())
+    payload, err = _page(items)
+    return err if err else jsonify(payload)
+
+
+@bp.route("/pms-profiles/<path:profile_code>", methods=["GET"])
+@api_auth_required("pmprofile.view")
+def get_pms_profile(api_user, profile_code):
+    from app.modules.maintenance_config.service import PMSProfileService
+    packages = PMSProfileService().get_profile(profile_code)
+    if not packages:
+        return _not_found("PMS Profile")
+    first = packages[0]
+    return jsonify({
+        "profile_code": profile_code,
+        "description": first.profile_description,
+        "vehicle_brand": (
+            first.vehicle_brand.name if first.vehicle_brand else None),
+        "vehicle_model": (
+            first.vehicle_model_ref.name if first.vehicle_model_ref else None),
+        "packages": [
+            {
+                "id": pkg.id,
+                "sequence_position": pkg.sequence_position,
+                "maintenance_type": (
+                    pkg.maintenance_type.name if pkg.maintenance_type else None),
+                "trigger_mode": pkg.trigger_mode,
+                "interval_km": pkg.interval_km,
+                "interval_days": pkg.interval_days,
+                "priority": pkg.priority,
+                "is_active": bool(pkg.is_active),
+            }
+            for pkg in packages
+        ],
+    })
