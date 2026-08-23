@@ -283,3 +283,20 @@ def reference_departments(api_user):
         {"id": d.id, "code": d.code, "name": d.name,
          "branch_id": d.branch_id}
         for d in DepartmentService().list()]})
+
+
+
+@bp.route("/reference/vendors", methods=["GET"])
+@api_auth_required()
+def reference_vendors(api_user):
+    """Vendor dropdown for tire/battery forms.
+
+    Gated only on auth: the form needs the list to enrol stock; requiring
+    vendor.view would empty the dropdown for storekeepers who can create
+    tires but not maintain the vendor master.
+    """
+    from app.modules.master_data.vendor.service import VendorService
+    rows = VendorService().list(include_inactive=False)
+    return jsonify({"items": [
+        {"id": v.id, "code": getattr(v, "code", None), "name": v.name}
+        for v in rows]})

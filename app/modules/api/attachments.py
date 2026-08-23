@@ -38,12 +38,19 @@ def _visible_driver(driver_id, api_user):
     return DriverService().get_visible(driver_id, api_user)
 
 
+def _visible_tire(tire_id, api_user):
+    from app.modules.master_data.tire.service import TireService
+    return TireService().get_visible(tire_id, api_user)
+
+
 def _parent_visible(reference_table, reference_id, api_user):
     """Visibility of the parent record an attachment hangs off."""
     if reference_table == "vehicles":
         return _visible_vehicle(reference_id, api_user) is not None
     if reference_table == "drivers":
         return _visible_driver(reference_id, api_user) is not None
+    if reference_table == "tires":
+        return _visible_tire(reference_id, api_user) is not None
     return False
 
 
@@ -193,7 +200,8 @@ def delete_attachment(api_user, attachment_id):
     if att is None:
         return jsonify({"error": "not_found",
                         "message": "Attachment not found."}), 404
-    need = {"vehicles": "vehicle.update", "drivers": "driver.update"}.get(
+    need = {"vehicles": "vehicle.update", "drivers": "driver.update",
+            "tires": "tire.create"}.get(
         att.reference_table)
     if need and not _can(api_user, need):
         return jsonify({"error": "forbidden",
@@ -237,3 +245,33 @@ def upload_driver_attachment(api_user, driver_id):
         return _bad(str(exc))
     return jsonify(_attachment_json(attachment)), 201
 
+
+
+
+@bp.route("/tires/<int:tire_id>/attachments", methods=["GET"])
+@api_auth_required("tire.view")
+def tire_attachments(api_user, tire_id):
+    if _visible_tire(tire_id, api_user) is None:
+        return _not_found("Tire")
+    from app.core.attachments.attachment_service import AttachmentService
+    rows = AttachmentService().list_for("tires", tire_id)
+    return jsonify({"items": [_attachment_json(a) for a in rows]})
+
+
+@bp.route("/tires/<int:tire_id>/attachments", methods=["POST"])
+@api_auth_required("tire.create")
+def upload_tire_attachment(api_user, tire_id):
+    if _visible_tire(tire_id, api_user) is None:
+        return _not_found("Tire")
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+    from app.core.attachments.attachment_service import (AttachmentError,
+                                                         AttachmentService)
+    try:
+        attachment = AttachmentService().upload(
+            file, "tires", tire_id, user=api_user,
+            document_type=(request.form.get("document_type") or None))
+    except AttachmentError as exc:
+        return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
