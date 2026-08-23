@@ -428,6 +428,54 @@ def _person_label(user):
     return last or first or user.username
 
 
+
+
+@bp.route("/dashboard/bootstrap", methods=["GET"])
+@api_auth_required("vehicle.view")
+def dashboard_bootstrap(api_user):
+    """One-shot critical-path payload: summary + fleet status + due list.
+
+    Parallel clients previously opened 3 HTTP connections that each paid
+    fixed overhead and (for summary + due) re-ran the same due calc when
+    the process TTL had not warmed. A single response shares one
+    `_shared_due_rows` pass and one fleet_by_status query.
+    """
+    branch_id, error = _requested_branch_id(api_user)
+    if error:
+        return error
+    try:
+        limit = int(request.args.get("limit", 20))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_request",
+                        "message": "limit must be an integer."}), 400
+    limit = max(1, min(limit, 200))
+
+    dash = DashboardService()
+    analytics = DashboardAnalyticsService()
+    fleet_status = analytics.fleet_by_status(user=api_user, branch_id=branch_id)
+    due_rows = _shared_due_rows(api_user, branch_id)
+
+    return jsonify({
+        "summary": {
+            "fleet_count": dash.fleet_count(user=api_user, branch_id=branch_id),
+            "maintenance_due_count": len(due_rows),
+            "approvals_pending_count": dash.approvals_pending_count(api_user),
+            "registrations_expiring_count": dash.registrations_expiring_count(
+                user=api_user, branch_id=branch_id),
+            "tire_stock_count": dash.tire_stock_count(
+                user=api_user, branch_id=branch_id),
+            "battery_stock_count": dash.battery_stock_count(
+                user=api_user, branch_id=branch_id),
+            "availability_percentage": _availability(fleet_status),
+            "branch_id": branch_id,
+        },
+        "fleet_status": fleet_status,
+        "due_maintenance": {
+            "items": due_rows[:limit],
+            "total": len(due_rows),
+        },
+    })
+
 @bp.route("/dashboard/due-registration", methods=["GET"])
 @api_auth_required("vehicle.view")
 def dashboard_due_registration(api_user):
