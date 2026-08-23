@@ -243,7 +243,8 @@ def drivers_export(api_user):
 
 
 def _emergency_contacts(driver):
-    """Related Emergency Contact records, keyed by person_record_id.
+    """Related Emergency Contact records, keyed by driver id
+    (person_record_id FK → drivers.id).
 
     Separate from the driver's own emergency_contact_person /
     _number columns, which are ALSO shown under the same heading in
@@ -257,7 +258,7 @@ def _emergency_contacts(driver):
          "contact_name": c.contact_name,
          "relationship_type": c.relationship_type,
          "contact_number": c.contact_number}
-        for c in EmergencyContactService().list_for_person(driver.person_id)]
+        for c in EmergencyContactService().list_for_person(driver.id)]
 
 
 def _assigned_vehicles(driver):
@@ -530,3 +531,98 @@ def update_driver(api_user, driver_id):
         return _validation_response(exc)
 
     return jsonify(_serialise_detail(driver))
+
+
+
+@bp.route("/drivers/<int:driver_id>/print", methods=["GET"])
+@api_auth_required("driver.view")
+def driver_print(api_user, driver_id):
+    """Everything the printable driver sheet needs.
+
+    Same detail payload the screen uses, plus company letterhead and a
+    timestamp. The React client lays it out; a second server-rendered
+    HTML definition of the record would drift from this one.
+    """
+    from datetime import datetime
+    from app.modules.master_data.driver.service import DriverService
+
+    d = DriverService().get_visible(driver_id, api_user)
+    if d is None:
+        return jsonify({"error": "not_found",
+                        "message": "Driver not found or not visible to "
+                                   "this account."}), 404
+
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    company = CompanyProfileService().get()
+
+    return jsonify({
+        "driver": _serialise_detail(d),
+        "company": {
+            "company_name": getattr(company, "company_name", None),
+            "address_line": getattr(company, "address_line", None),
+            "city": getattr(company, "city", None),
+        } if company else {},
+        "generated_at": datetime.now().isoformat(),
+    })
+
+
+@bp.route("/drivers/<int:driver_id>/emergency-contacts", methods=["POST"])
+@api_auth_required("driver.update")
+def driver_emergency_contact_add(api_user, driver_id):
+    """Add a related emergency contact on an existing driver.
+
+    Edit-only, matching Jinja: create has no parent id to attach to.
+    person_record_id is the driver row id (drivers.id).
+    """
+    from app.modules.master_data.driver.service import (
+        DriverService, EmergencyContactService)
+
+    if DriverService().get_visible(driver_id, api_user) is None:
+        return jsonify({"error": "not_found",
+                        "message": "Driver not found or not visible to "
+                                   "this account."}), 404
+
+    payload, _ = _read_payload()
+    name = (payload.get("contact_name") or "").strip()
+    if not name:
+        return jsonify({"error": "validation",
+                        "message": "Contact name is required.",
+                        "fields": {"contact_name": "Contact name is required."}}), 400
+
+    contact = EmergencyContactService().create(
+        person_record_id=driver_id,
+        contact_name=name,
+        relationship_type=(payload.get("relationship_type") or None) or None,
+        contact_number=(payload.get("contact_number") or None) or None,
+    )
+    return jsonify({
+        "id": contact.id,
+        "contact_name": contact.contact_name,
+        "relationship_type": contact.relationship_type,
+        "contact_number": contact.contact_number,
+    }), 201
+
+
+@bp.route("/drivers/<int:driver_id>/emergency-contacts/<int:contact_id>",
+          methods=["DELETE"])
+@api_auth_required("driver.update")
+def driver_emergency_contact_delete(api_user, driver_id, contact_id):
+    """Soft-delete a related emergency contact."""
+    from app.modules.master_data.driver.service import (
+        DriverService, EmergencyContactService)
+    from app.modules.master_data.driver.models import EmergencyContact
+
+    if DriverService().get_visible(driver_id, api_user) is None:
+        return jsonify({"error": "not_found",
+                        "message": "Driver not found or not visible to "
+                                   "this account."}), 404
+
+    contact = EmergencyContact.query.filter_by(
+        id=contact_id, person_record_id=driver_id).first()
+    if contact is None:
+        return jsonify({"error": "not_found",
+                        "message": "Emergency contact not found."}), 404
+
+    EmergencyContactService().delete(contact_id)
+    return jsonify({"ok": True})
