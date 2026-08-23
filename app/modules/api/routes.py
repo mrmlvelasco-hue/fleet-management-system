@@ -305,31 +305,4 @@ def vehicle_pm_status(api_user, vehicle_id):
     return jsonify(_vehicle_json(vehicle, include_pm=True)["pm_status"])
 
 
-@bp.route("/maintenance-orders", methods=["GET"])
-@api_auth_required("maintenanceorder.view")
-def list_maintenance_orders(api_user):
-    from app.modules.transactions.maintenance_order.service import (
-        MaintenanceOrderService)
-    status = request.args.get("status")
-    orders = MaintenanceOrderService().list(user=api_user)
-    if status:
-        orders = [o for o in orders if o.status == status.upper()]
-    limit = min(request.args.get("limit", default=100, type=int), 500)
-    return jsonify({
-        "count": len(orders),
-        "results": [{
-            "id": o.id,
-            "document_number": o.document_number,
-            "status": o.status,
-            "vehicle_id": o.vehicle_id,
-            "plate_number": (o.vehicle.plate_number
-                            or o.vehicle.conduction_number) if o.vehicle else None,
-            "maintenance_type": (o.maintenance_type.name
-                                if o.maintenance_type else None),
-            "scheduled_date": (o.scheduled_date.isoformat()
-                              if o.scheduled_date else None),
-            "completed_date": (o.completed_date.isoformat()
-                              if o.completed_date else None),
-            "odometer_at_service": o.odometer_at_service,
-        } for o in orders[:limit]],
-    })
+# list_maintenance_orders moved to api/maintenance_orders.py

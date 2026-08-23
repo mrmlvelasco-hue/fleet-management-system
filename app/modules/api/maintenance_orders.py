@@ -1,0 +1,473 @@
+"""Maintenance Order API for React — list, detail, create, lifecycle, checklist, parts."""
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+
+from flask import jsonify, request
+
+from app.modules.api.auth import api_auth_required
+from app.modules.api.routes import bp
+
+
+def _bad(message, code=400):
+    return jsonify({"error": "bad_request", "message": message}), code
+
+
+def _not_found(label="Maintenance Order"):
+    return jsonify({"error": "not_found", "message": f"{label} not found."}), 404
+
+
+def _validation(message, field="_"):
+    return jsonify({"error": "validation", "message": message,
+                    "fields": {field: message}}), 400
+
+
+def _conflict(message):
+    return jsonify({"error": "conflict", "message": message}), 409
+
+
+def _iso(d):
+    if d is None:
+        return None
+    if hasattr(d, "isoformat"):
+        return d.isoformat()
+    return str(d)
+
+
+def _dec(v):
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _order_json(o, *, detail=False):
+    plate = None
+    if o.vehicle:
+        plate = o.vehicle.plate_number or o.vehicle.conduction_number
+    data = {
+        "id": o.id,
+        "document_number": o.document_number,
+        "status": o.status,
+        "order_category": o.order_category,
+        "vehicle_id": o.vehicle_id,
+        "plate_number": plate,
+        "vehicle_label": (
+            f"{o.vehicle.brand or ''} {o.vehicle.model or ''}".strip()
+            if o.vehicle else None),
+        "maintenance_type_id": o.maintenance_type_id,
+        "maintenance_type": (
+            o.maintenance_type.name if o.maintenance_type else None),
+        "transaction_type_id": o.transaction_type_id,
+        "transaction_type": (
+            o.transaction_type.name if o.transaction_type else None),
+        "maintenance_class_label": getattr(o, "maintenance_class_label", None),
+        "scheduled_date": _iso(o.scheduled_date),
+        "completed_date": _iso(o.completed_date),
+        "odometer_at_service": o.odometer_at_service,
+        "estimated_cost": _dec(o.estimated_cost),
+        "actual_cost": _dec(o.actual_cost),
+        "assigned_mechanic": o.assigned_mechanic,
+        "vendor_id": o.vendor_id,
+        "vendor": o.vendor.name if getattr(o, "vendor", None) else None,
+        "description": o.description,
+        "created_at": _iso(getattr(o, "created_at", None)),
+    }
+    if detail:
+        data.update({
+            "scope_template_id": o.scope_template_id,
+            "pm_schedule_id": o.pm_schedule_id,
+            "driver_id": o.driver_id,
+            "driver": (
+                o.driver.full_name if getattr(o, "driver", None) else None),
+            "destination_branch_id": o.destination_branch_id,
+            "origin_branch_id": o.origin_branch_id,
+            "assignment_classification": o.assignment_classification,
+            "disposal_value": _dec(o.disposal_value),
+            "disposal_recipient": o.disposal_recipient,
+            "disposal_reference_number": o.disposal_reference_number,
+            "transfer_reference_number": o.transfer_reference_number,
+            "checklist_items": [
+                {
+                    "id": i.id,
+                    "activity_code": i.activity_code,
+                    "activity_description": i.activity_description,
+                    "is_done": bool(i.is_done),
+                    "sort_order": i.sort_order,
+                    "done_at": _iso(i.done_at),
+                }
+                for i in (o.checklist_items or [])
+            ],
+            "parts": [
+                {
+                    "id": p.id,
+                    "part_number": p.part_number,
+                    "part_description": p.part_description,
+                    "specification": p.specification,
+                    "uom": p.uom,
+                    "quantity": _dec(p.quantity),
+                    "estimated_unit_cost": _dec(p.estimated_unit_cost),
+                    "estimated_total": _dec(p.estimated_total),
+                    "remarks": p.remarks,
+                }
+                for p in (getattr(o, "parts", None) or [])
+            ],
+            "editable": None,  # filled by caller with service
+        })
+    return data
+
+
+@bp.route("/maintenance-orders", methods=["GET"])
+@api_auth_required("maintenanceorder.view")
+def list_maintenance_orders_v2(api_user):
+    """Paginated list. Replaces the thin results shape used by the dashboard
+    widget with a full list payload for the React screen."""
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+
+    try:
+        page = int(request.args.get("page", 1))
+        page_size = int(request.args.get("page_size", 25))
+    except (TypeError, ValueError):
+        return _bad("page and page_size must be integers.")
+    page = max(1, page)
+    page_size = max(1, min(page_size, 100))
+
+    q = (request.args.get("q") or "").strip().lower()
+    status = (request.args.get("status") or "").strip().upper() or None
+    cls = (request.args.get("maintenance_class") or "").strip().upper() or None
+
+    svc = MaintenanceOrderService()
+    extra = []
+    if cls:
+        extra.append(svc.maintenance_class_clause(cls))
+
+    # Prefer list_filtered when available
+    if hasattr(svc, "list_filtered"):
+        rows, pagination = svc.list_filtered(
+            user=api_user, page=page, per_page=page_size,
+            search=q or None, status=status,
+            extra_filters=extra or None)
+        total = pagination.total
+        items = [_order_json(o) for o in rows]
+        return jsonify({
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "pages": max(1, pagination.pages or 1),
+            "count": total,
+            "results": items,
+        })
+
+    orders = svc.list(user=api_user)
+    if status:
+        orders = [o for o in orders if o.status == status]
+    if q:
+        def _blob(o):
+            return " ".join(filter(None, [
+                o.document_number,
+                o.vehicle.plate_number if o.vehicle else None,
+                o.vehicle.conduction_number if o.vehicle else None,
+                o.maintenance_type.name if o.maintenance_type else None,
+                o.transaction_type.name if o.transaction_type else None,
+                o.status,
+            ])).lower()
+        orders = [o for o in orders if q in _blob(o)]
+    if cls:
+        # already filtered via clause if list_filtered; here filter property
+        orders = [
+            o for o in orders
+            if (getattr(o, "maintenance_class", None) or "").upper() == cls
+        ]
+    total = len(orders)
+    start = (page - 1) * page_size
+    slice_ = orders[start:start + page_size]
+    return jsonify({
+        "items": [_order_json(o) for o in slice_],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": max(1, (total + page_size - 1) // page_size),
+        # backward-compatible keys for older callers
+        "count": total,
+        "results": [_order_json(o) for o in slice_],
+    })
+
+
+@bp.route("/maintenance-orders/<int:oid>", methods=["GET"])
+@api_auth_required("maintenanceorder.view")
+def get_maintenance_order(api_user, oid):
+    from app.modules.transactions.maintenance_order.models import MaintenanceOrder
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+    from app.extensions import db
+    from sqlalchemy.orm import joinedload, selectinload
+
+    o = (db.session.query(MaintenanceOrder)
+         .options(
+             joinedload(MaintenanceOrder.vehicle),
+             joinedload(MaintenanceOrder.maintenance_type),
+             joinedload(MaintenanceOrder.transaction_type),
+             joinedload(MaintenanceOrder.vendor),
+             joinedload(MaintenanceOrder.driver),
+             selectinload(MaintenanceOrder.checklist_items),
+             selectinload(MaintenanceOrder.parts),
+         )
+         .filter_by(id=oid)
+         .first())
+    if o is None:
+        return _not_found()
+    data = _order_json(o, detail=True)
+    data["editable"] = MaintenanceOrderService().editable_scope(o)
+    return jsonify(data)
+
+
+@bp.route("/maintenance-orders", methods=["POST"])
+@api_auth_required("maintenanceorder.create")
+def create_maintenance_order(api_user):
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService, InvalidOrderCategoryError,
+        InvalidOrderStateError)
+
+    p = request.get_json(silent=True) or {}
+    try:
+        vehicle_id = int(p["vehicle_id"])
+    except (KeyError, TypeError, ValueError):
+        return _validation("vehicle_id is required.", "vehicle_id")
+    sched = p.get("scheduled_date")
+    if not sched:
+        return _validation("scheduled_date is required.", "scheduled_date")
+    try:
+        scheduled_date = date.fromisoformat(str(sched)[:10])
+    except ValueError:
+        return _validation("scheduled_date must be YYYY-MM-DD.", "scheduled_date")
+
+    def _int(key):
+        v = p.get(key)
+        if v in (None, ""):
+            return None
+        return int(v)
+
+    def _cost(key):
+        v = p.get(key)
+        if v in (None, ""):
+            return None
+        try:
+            return Decimal(str(v))
+        except (InvalidOperation, ValueError):
+            return None
+
+    try:
+        order = MaintenanceOrderService().create(
+            vehicle_id=vehicle_id,
+            scheduled_date=scheduled_date,
+            user=api_user,
+            order_category=(p.get("order_category") or "MAINTENANCE"),
+            maintenance_type_id=_int("maintenance_type_id"),
+            transaction_type_id=_int("transaction_type_id"),
+            scope_template_id=_int("scope_template_id"),
+            pm_schedule_id=_int("pm_schedule_id"),
+            description=p.get("description") or None,
+            odometer_at_service=_int("odometer_at_service"),
+            assigned_mechanic=p.get("assigned_mechanic") or None,
+            vendor_id=_int("vendor_id"),
+            estimated_cost=_cost("estimated_cost"),
+            driver_id=_int("driver_id"),
+            destination_branch_id=_int("destination_branch_id"),
+            disposal_value=_cost("disposal_value"),
+            disposal_recipient=p.get("disposal_recipient") or None,
+            assignment_classification=p.get("assignment_classification") or None,
+        )
+    except InvalidOrderCategoryError as e:
+        return _validation(str(e), "order_category")
+    except InvalidOrderStateError as e:
+        return _conflict(str(e))
+    except Exception as e:
+        return _validation(str(e))
+
+    return jsonify(_order_json(order, detail=True)), 201
+
+
+@bp.route("/maintenance-orders/<int:oid>", methods=["PUT", "PATCH"])
+@api_auth_required("maintenanceorder.update")
+def update_maintenance_order(api_user, oid):
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService, InvalidOrderStateError)
+    p = request.get_json(silent=True) or {}
+    fields = {}
+    for k in (
+        "scheduled_date", "odometer_at_service", "estimated_cost",
+        "maintenance_type_id", "transaction_type_id",
+        "assignment_classification", "assigned_mechanic", "description",
+        "vendor_id",
+    ):
+        if k in p:
+            fields[k] = p[k]
+    try:
+        order = MaintenanceOrderService().update(oid, user=api_user, **fields)
+    except InvalidOrderStateError as e:
+        return _conflict(str(e))
+    if order is None:
+        return _not_found()
+    return jsonify(_order_json(order, detail=True))
+
+
+@bp.route("/maintenance-orders/<int:oid>/submit", methods=["POST"])
+@api_auth_required("maintenanceorder.submit")
+def submit_maintenance_order(api_user, oid):
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+    try:
+        MaintenanceOrderService().submit(oid, api_user)
+    except Exception as e:
+        return _conflict(str(e))
+    return jsonify({"ok": True})
+
+
+@bp.route("/maintenance-orders/<int:oid>/start-work", methods=["POST"])
+@api_auth_required("maintenanceorder.update")
+def start_work_maintenance_order(api_user, oid):
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService, InvalidOrderStateError)
+    try:
+        MaintenanceOrderService().start_work(oid)
+    except InvalidOrderStateError as e:
+        return _conflict(str(e))
+    return jsonify({"ok": True})
+
+
+@bp.route("/maintenance-orders/<int:oid>/complete", methods=["POST"])
+@api_auth_required("maintenanceorder.complete")
+def complete_maintenance_order(api_user, oid):
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService, IncompleteChecklistError,
+        InvalidOrderStateError)
+    p = request.get_json(silent=True) or {}
+    completed_date = p.get("completed_date") or date.today().isoformat()
+    try:
+        cd = date.fromisoformat(str(completed_date)[:10])
+    except ValueError:
+        return _validation("completed_date must be YYYY-MM-DD.", "completed_date")
+    actual_cost = p.get("actual_cost")
+    try:
+        MaintenanceOrderService().complete(oid, actual_cost, cd)
+    except IncompleteChecklistError as e:
+        return _conflict(str(e))
+    except InvalidOrderStateError as e:
+        return _conflict(str(e))
+    except Exception as e:
+        return _conflict(str(e))
+    return jsonify({"ok": True})
+
+
+@bp.route("/maintenance-orders/<int:oid>/cancel", methods=["POST"])
+@api_auth_required("maintenanceorder.cancel")
+def cancel_maintenance_order(api_user, oid):
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+    p = request.get_json(silent=True) or {}
+    try:
+        MaintenanceOrderService().cancel(oid, api_user, remarks=p.get("remarks"))
+    except Exception as e:
+        return _conflict(str(e))
+    return jsonify({"ok": True})
+
+
+@bp.route("/maintenance-orders/<int:oid>/checklist/<int:item_id>", methods=["POST"])
+@api_auth_required("maintenanceorder.update")
+def toggle_checklist_item(api_user, oid, item_id):
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService, InvalidOrderStateError)
+    p = request.get_json(silent=True) or {}
+    done = bool(p.get("done", True))
+    try:
+        MaintenanceOrderService().toggle_checklist_item(item_id, done, api_user)
+    except InvalidOrderStateError as e:
+        return _conflict(str(e))
+    return jsonify({"ok": True})
+
+
+@bp.route("/maintenance-orders/<int:oid>/checklist/mark-all", methods=["POST"])
+@api_auth_required("maintenanceorder.update")
+def mark_all_checklist(api_user, oid):
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService, InvalidOrderStateError)
+    p = request.get_json(silent=True) or {}
+    done = bool(p.get("done", True))
+    try:
+        MaintenanceOrderService().mark_all_checklist_items(oid, done, api_user)
+    except InvalidOrderStateError as e:
+        return _conflict(str(e))
+    return jsonify({"ok": True})
+
+
+@bp.route("/maintenance-orders/<int:oid>/parts", methods=["POST"])
+@api_auth_required("maintenanceorder.update")
+def add_mo_part(api_user, oid):
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService, InvalidOrderStateError)
+    p = request.get_json(silent=True) or {}
+    desc = (p.get("part_description") or "").strip()
+    if not desc:
+        return _validation("part_description is required.", "part_description")
+    try:
+        part = MaintenanceOrderService().add_part(
+            oid,
+            part_description=desc,
+            quantity=p.get("quantity", 1),
+            estimated_unit_cost=p.get("estimated_unit_cost", 0),
+            part_number=p.get("part_number"),
+            specification=p.get("specification"),
+            uom=p.get("uom"),
+            remarks=p.get("remarks"),
+        )
+    except InvalidOrderStateError as e:
+        return _conflict(str(e))
+    except TypeError:
+        # older signature without optional kwargs
+        try:
+            part = MaintenanceOrderService().add_part(
+                oid,
+                part_description=desc,
+                quantity=p.get("quantity", 1),
+                estimated_unit_cost=p.get("estimated_unit_cost", 0),
+            )
+        except Exception as e:
+            return _conflict(str(e))
+    return jsonify({"id": part.id if part else None, "ok": True}), 201
+
+
+@bp.route("/maintenance-orders/<int:oid>/parts/<int:part_id>", methods=["DELETE"])
+@api_auth_required("maintenanceorder.update")
+def remove_mo_part(api_user, oid, part_id):
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService, InvalidOrderStateError)
+    try:
+        MaintenanceOrderService().remove_part(part_id)
+    except InvalidOrderStateError as e:
+        return _conflict(str(e))
+    return jsonify({"ok": True})
+
+
+@bp.route("/mo-transaction-types", methods=["GET"])
+@api_auth_required("maintenanceorder.view")
+def list_mo_transaction_types(api_user):
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    cat = request.args.get("order_category")
+    rows = TransactionTypeService().list(
+        order_category=cat, include_inactive=False)
+    return jsonify({
+        "items": [
+            {
+                "id": t.id,
+                "code": t.code,
+                "name": t.name,
+                "order_category": t.order_category,
+                "group": t.group,
+            }
+            for t in rows
+        ]
+    })
