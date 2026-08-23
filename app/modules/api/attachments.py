@@ -227,7 +227,11 @@ def driver_attachments(api_user, driver_id):
     if _visible_driver(driver_id, api_user) is None:
         return _not_found("Driver")
     from app.core.attachments.attachment_service import AttachmentService
-    rows = AttachmentService().list_for("drivers", driver_id)
+    try:
+        rows = AttachmentService().list_for("drivers", driver_id)
+    except Exception:
+        # Missing table / migration should not blank the whole driver page.
+        rows = []
     return jsonify({"items": [_attachment_json(a) for a in rows]})
 
 
