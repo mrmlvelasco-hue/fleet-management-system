@@ -69,8 +69,11 @@ def _atd_json(a, *, detail=False):
 
 
 
-def _atd_print_extras(a, data):
-    """Enrich detail/print payload with driver, vehicle, requester, chain."""
+def _atd_print_extras(a, data, api_user=None):
+    """Enrich detail/print payload with driver, vehicle, requester, full
+    approval line (same shape as Jinja approval_chain helper)."""
+    from app.core.approval.engine import ApprovalEngine
+
     driver = a.driver
     data["driver_department"] = (
         driver.department.name
@@ -83,27 +86,39 @@ def _atd_print_extras(a, data):
     vehicle = a.vehicle
     data["vehicle_brand"] = getattr(vehicle, "brand", None) if vehicle else None
     data["vehicle_model"] = getattr(vehicle, "model", None) if vehicle else None
+
     requester = getattr(a, "requester", None)
     data["requester_name"] = (
         getattr(requester, "full_name", None)
         or getattr(requester, "username", None)
         if requester else None)
-    chain = []
+    data["requester_branch"] = (
+        requester.branch.name
+        if requester is not None and getattr(requester, "branch", None)
+        else None)
+
     inst = getattr(a, "approval_instance", None)
+    engine = ApprovalEngine()
+    chain = []
     if inst is not None:
-        levels = getattr(inst, "levels", None) or getattr(inst, "level_actions", None) or []
-        for lvl in levels:
-            status = getattr(lvl, "status", None)
-            if status != "APPROVED":
-                continue
+        for entry in engine.get_approval_chain(inst):
+            acted_at = entry.get("acted_at")
             chain.append({
-                "status": status,
-                "acted_by_name": (
-                    getattr(lvl, "acted_by_name", None)
-                    or getattr(getattr(lvl, "acted_by", None), "full_name", None)
-                    or getattr(getattr(lvl, "acted_by", None), "username", None)
-                ),
+                "level_number": entry.get("level_number"),
+                "approver_label": entry.get("approver_label"),
+                "status": entry.get("status"),  # APPROVED|REJECTED|RETURNED|CURRENT|WAITING
+                "acted_by_name": entry.get("acted_by_name"),
+                "acted_at": acted_at.isoformat() if acted_at is not None else None,
+                "remarks": entry.get("remarks"),
             })
+        data["approval_instance_status"] = inst.status
+        data["approval_current_level"] = inst.current_level
+        data["can_act"] = bool(
+            api_user and engine.is_eligible_approver(inst, api_user))
+    else:
+        data["approval_instance_status"] = None
+        data["approval_current_level"] = None
+        data["can_act"] = False
     data["approval_chain"] = chain
     return data
 
@@ -154,7 +169,7 @@ def get_atd(api_user, aid):
     if a is None:
         return _not_found()
     data = _atd_json(a, detail=True)
-    return jsonify(_atd_print_extras(a, data))
+    return jsonify(_atd_print_extras(a, data, api_user=api_user))
 
 
 @bp.route("/atd", methods=["POST"])
@@ -314,3 +329,45 @@ def atd_print(api_user, aid):
         "generated_at": datetime.now().isoformat(),
         "copies": 2,
     })
+
+
+@bp.route("/atd/<int:aid>/approve", methods=["POST"])
+@api_auth_required("atd.view")  # eligibility enforced by engine
+def approve_atd(api_user, aid):
+    from app.modules.transactions.atd.service import ATDService
+    p = request.get_json(silent=True) or {}
+    try:
+        ATDService().approve(aid, api_user, remarks=p.get("remarks"))
+    except Exception as e:
+        return _conflict(str(e))
+    a = ATDService().get_visible(aid, api_user)
+    data = _atd_json(a, detail=True)
+    return jsonify(_atd_print_extras(a, data, api_user=api_user))
+
+
+@bp.route("/atd/<int:aid>/reject", methods=["POST"])
+@api_auth_required("atd.view")
+def reject_atd(api_user, aid):
+    from app.modules.transactions.atd.service import ATDService
+    p = request.get_json(silent=True) or {}
+    try:
+        ATDService().reject(aid, api_user, remarks=p.get("remarks"))
+    except Exception as e:
+        return _conflict(str(e))
+    a = ATDService().get_visible(aid, api_user)
+    data = _atd_json(a, detail=True)
+    return jsonify(_atd_print_extras(a, data, api_user=api_user))
+
+
+@bp.route("/atd/<int:aid>/return", methods=["POST"])
+@api_auth_required("atd.view")
+def return_atd(api_user, aid):
+    from app.modules.transactions.atd.service import ATDService
+    p = request.get_json(silent=True) or {}
+    try:
+        ATDService().return_document(aid, api_user, remarks=p.get("remarks"))
+    except Exception as e:
+        return _conflict(str(e))
+    a = ATDService().get_visible(aid, api_user)
+    data = _atd_json(a, detail=True)
+    return jsonify(_atd_print_extras(a, data, api_user=api_user))
