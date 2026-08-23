@@ -403,10 +403,11 @@ def deactivate_vehicle_type(api_user, type_id):
 
 # ── Vehicle Brands ──────────────────────────────────────────────────────────
 
-def _brand_json(b):
+def _brand_json(b, model_count=0):
     return {
         "id": b.id,
         "name": b.name,
+        "model_count": int(model_count or 0),
         "is_active": bool(b.is_active),
     }
 
@@ -421,7 +422,15 @@ def list_vehicle_brands_master(api_user):
     rows = VehicleBrandService().list(include_inactive=True)
     if q:
         rows = [b for b in rows if q in (b.name or "").lower()]
-    payload, err = _page([_brand_json(b) for b in rows])
+    from sqlalchemy import func
+    from app.extensions import db
+    from app.modules.master_data.vehicle_brand.models import VehicleModel
+    counts = dict(
+        db.session.query(VehicleModel.brand_id, func.count(VehicleModel.id))
+        .group_by(VehicleModel.brand_id)
+        .all()
+    )
+    payload, err = _page([_brand_json(b, counts.get(b.id, 0)) for b in rows])
     return err if err else jsonify(payload)
 
 
@@ -578,13 +587,14 @@ def deactivate_vehicle_model(api_user, model_id):
 
 # ── Maintenance Types ───────────────────────────────────────────────────────
 
-def _mtype_json(t):
+def _mtype_json(t, pm_template_count=0):
     return {
         "id": t.id,
         "code": t.code,
         "name": t.name,
         "category": t.category,
         "description": t.description,
+        "pm_template_count": int(pm_template_count or 0),
         "is_active": bool(t.is_active),
     }
 
@@ -598,7 +608,15 @@ def list_maintenance_types(api_user):
     if q:
         rows = [t for t in rows if q in " ".join(filter(None, [
             t.code, t.name, t.category, t.description])).lower()]
-    payload, err = _page([_mtype_json(t) for t in rows])
+    from sqlalchemy import func
+    from app.extensions import db
+    from app.modules.maintenance_config.models import PMSchedule
+    counts = dict(
+        db.session.query(PMSchedule.maintenance_type_id, func.count(PMSchedule.id))
+        .group_by(PMSchedule.maintenance_type_id)
+        .all()
+    )
+    payload, err = _page([_mtype_json(t, counts.get(t.id, 0)) for t in rows])
     return err if err else jsonify(payload)
 
 
@@ -658,4 +676,178 @@ def deactivate_maintenance_type(api_user, type_id):
     if MaintenanceTypeService().get(type_id) is None:
         return _not_found("Maintenance type")
     MaintenanceTypeService().deactivate(type_id)
+    return jsonify({"ok": True})
+
+
+# ── Registration Templates ──────────────────────────────────────────────────
+
+def _regtmpl_json(t):
+    match = "All Vehicles"
+    if t.vehicle_brand:
+        match = t.vehicle_brand.name
+        if getattr(t, "vehicle_model_ref", None):
+            match = f"{match} {t.vehicle_model_ref.name}"
+    elif t.vehicle_type:
+        match = t.vehicle_type.name
+    return {
+        "id": t.id,
+        "match_label": match,
+        "vehicle_type_id": t.vehicle_type_id,
+        "vehicle_brand_id": t.vehicle_brand_id,
+        "vehicle_model_id": t.vehicle_model_id,
+        "interval_years": t.interval_years,
+        "next_generation_policy": t.next_generation_policy,
+        "priority": t.priority,
+        "notify_before_days": t.notify_before_days,
+        "is_active": bool(t.is_active),
+    }
+
+
+@bp.route("/registration-templates", methods=["GET"])
+@api_auth_required("registrationtemplate.view")
+def list_registration_templates(api_user):
+    from app.modules.registration_config.service import RegistrationTemplateService
+    q = (request.args.get("q") or "").strip().lower()
+    rows = RegistrationTemplateService().list(include_inactive=True)
+    items = []
+    for t in rows:
+        row = _regtmpl_json(t)
+        if q and q not in " ".join(filter(None, [
+            row["match_label"], str(row["interval_years"]),
+            row["next_generation_policy"], row["priority"],
+        ])).lower():
+            continue
+        items.append(row)
+    payload, err = _page(items)
+    return err if err else jsonify(payload)
+
+
+@bp.route("/registration-templates/<int:tid>", methods=["GET"])
+@api_auth_required("registrationtemplate.view")
+def get_registration_template(api_user, tid):
+    from app.modules.registration_config.service import RegistrationTemplateService
+    t = RegistrationTemplateService().get_by_id(tid)
+    if t is None:
+        return _not_found("Registration template")
+    return jsonify(_regtmpl_json(t))
+
+
+@bp.route("/registration-templates", methods=["POST"])
+@api_auth_required("registrationtemplate.create")
+def create_registration_template(api_user):
+    from app.modules.registration_config.service import RegistrationTemplateService
+    p = request.get_json(silent=True) or {}
+    def _int(k):
+        v = p.get(k)
+        if v in (None, ""):
+            return None
+        return int(v)
+    try:
+        t = RegistrationTemplateService().create(
+            vehicle_type_id=_int("vehicle_type_id"),
+            vehicle_brand_id=_int("vehicle_brand_id"),
+            vehicle_model_id=_int("vehicle_model_id"),
+            interval_years=int(p.get("interval_years") or 3),
+            next_generation_policy=p.get("next_generation_policy") or "AUTO_SCHEDULE",
+            notify_before_days=_int("notify_before_days"),
+            priority=p.get("priority") or "MEDIUM",
+            items=p.get("items") or [],
+        )
+    except Exception as e:
+        return _validation(str(e))
+    return jsonify(_regtmpl_json(t)), 201
+
+
+@bp.route("/registration-templates/<int:tid>", methods=["PUT", "PATCH"])
+@api_auth_required("registrationtemplate.update")
+def update_registration_template(api_user, tid):
+    from app.modules.registration_config.service import RegistrationTemplateService
+    p = request.get_json(silent=True) or {}
+    fields = {}
+    for k in ("vehicle_type_id", "vehicle_brand_id", "vehicle_model_id",
+              "interval_years", "next_generation_policy", "notify_before_days",
+              "priority", "items"):
+        if k in p:
+            fields[k] = p[k]
+    try:
+        t = RegistrationTemplateService().update(tid, **fields)
+    except Exception as e:
+        return _validation(str(e))
+    if t is None:
+        return _not_found("Registration template")
+    return jsonify(_regtmpl_json(t))
+
+
+@bp.route("/registration-templates/<int:tid>/deactivate", methods=["POST"])
+@api_auth_required("registrationtemplate.delete")
+def deactivate_registration_template(api_user, tid):
+    from app.modules.registration_config.service import RegistrationTemplateService
+    if RegistrationTemplateService().get_by_id(tid) is None:
+        return _not_found("Registration template")
+    RegistrationTemplateService().deactivate(tid)
+    return jsonify({"ok": True})
+
+
+# ── MO Transaction Types (admin master) ─────────────────────────────────────
+
+def _mott_json(t):
+    return {
+        "id": t.id,
+        "code": t.code,
+        "name": t.name,
+        "order_category": t.order_category,
+        "group": t.group,
+        "is_active": bool(t.is_active),
+    }
+
+
+@bp.route("/mo-transaction-types/admin", methods=["GET"])
+@api_auth_required("motransactiontype.view")
+def list_mo_transaction_types_admin(api_user):
+    """Admin list including inactive — distinct from dropdown endpoint."""
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    q = (request.args.get("q") or "").strip().lower()
+    rows = TransactionTypeService().list(include_inactive=True)
+    if q:
+        rows = [t for t in rows if q in " ".join(filter(None, [
+            t.code, t.name, t.order_category, t.group])).lower()]
+    payload, err = _page([_mott_json(t) for t in rows])
+    return err if err else jsonify(payload)
+
+
+@bp.route("/mo-transaction-types/admin", methods=["POST"])
+@api_auth_required("motransactiontype.create")
+def create_mo_transaction_type(api_user):
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    p = request.get_json(silent=True) or {}
+    code = (p.get("code") or "").strip()
+    name = (p.get("name") or "").strip()
+    cat = (p.get("order_category") or "").strip().upper()
+    if not code or not name or cat not in ("MAINTENANCE", "OPERATIONAL"):
+        return _validation(
+            "code, name, and order_category (MAINTENANCE|OPERATIONAL) required.")
+    t = TransactionTypeService().create(
+        code=code, name=name, order_category=cat,
+        group=(p.get("group") or None),
+        sort_order=int(p.get("sort_order") or 0))
+    return jsonify(_mott_json(t)), 201
+
+
+@bp.route("/mo-transaction-types/admin/<int:tt_id>/deactivate", methods=["POST"])
+@api_auth_required("motransactiontype.delete")
+def deactivate_mo_transaction_type(api_user, tt_id):
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    TransactionTypeService().deactivate(tt_id)
+    return jsonify({"ok": True})
+
+
+@bp.route("/mo-transaction-types/admin/<int:tt_id>/reactivate", methods=["POST"])
+@api_auth_required("motransactiontype.create")
+def reactivate_mo_transaction_type(api_user, tt_id):
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    TransactionTypeService().reactivate(tt_id)
     return jsonify({"ok": True})
