@@ -43,6 +43,11 @@ def _visible_tire(tire_id, api_user):
     return TireService().get_visible(tire_id, api_user)
 
 
+def _visible_battery(battery_id, api_user):
+    from app.modules.master_data.battery.service import BatteryService
+    return BatteryService().get_visible(battery_id, api_user)
+
+
 def _parent_visible(reference_table, reference_id, api_user):
     """Visibility of the parent record an attachment hangs off."""
     if reference_table == "vehicles":
@@ -51,6 +56,8 @@ def _parent_visible(reference_table, reference_id, api_user):
         return _visible_driver(reference_id, api_user) is not None
     if reference_table == "tires":
         return _visible_tire(reference_id, api_user) is not None
+    if reference_table == "batteries":
+        return _visible_battery(reference_id, api_user) is not None
     return False
 
 
@@ -201,7 +208,7 @@ def delete_attachment(api_user, attachment_id):
         return jsonify({"error": "not_found",
                         "message": "Attachment not found."}), 404
     need = {"vehicles": "vehicle.update", "drivers": "driver.update",
-            "tires": "tire.create"}.get(
+            "tires": "tire.create", "batteries": "battery.create"}.get(
         att.reference_table)
     if need and not _can(api_user, need):
         return jsonify({"error": "forbidden",
@@ -271,6 +278,36 @@ def upload_tire_attachment(api_user, tire_id):
     try:
         attachment = AttachmentService().upload(
             file, "tires", tire_id, user=api_user,
+            document_type=(request.form.get("document_type") or None))
+    except AttachmentError as exc:
+        return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
+
+
+
+@bp.route("/batteries/<int:battery_id>/attachments", methods=["GET"])
+@api_auth_required("battery.view")
+def battery_attachments(api_user, battery_id):
+    if _visible_battery(battery_id, api_user) is None:
+        return _not_found("Battery")
+    from app.core.attachments.attachment_service import AttachmentService
+    rows = AttachmentService().list_for("batteries", battery_id)
+    return jsonify({"items": [_attachment_json(a) for a in rows]})
+
+
+@bp.route("/batteries/<int:battery_id>/attachments", methods=["POST"])
+@api_auth_required("battery.create")
+def upload_battery_attachment(api_user, battery_id):
+    if _visible_battery(battery_id, api_user) is None:
+        return _not_found("Battery")
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+    from app.core.attachments.attachment_service import (AttachmentError,
+                                                         AttachmentService)
+    try:
+        attachment = AttachmentService().upload(
+            file, "batteries", battery_id, user=api_user,
             document_type=(request.form.get("document_type") or None))
     except AttachmentError as exc:
         return _bad(str(exc))
