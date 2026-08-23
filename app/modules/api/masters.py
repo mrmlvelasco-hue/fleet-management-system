@@ -481,3 +481,181 @@ def deactivate_vehicle_brand(api_user, brand_id):
         return _not_found("Vehicle brand")
     VehicleBrandService().deactivate(brand_id)
     return jsonify({"ok": True})
+
+
+# ── Vehicle Models ──────────────────────────────────────────────────────────
+
+def _model_json(m):
+    return {
+        "id": m.id,
+        "name": m.name,
+        "brand_id": m.brand_id,
+        "brand": m.brand.name if m.brand else None,
+        "is_active": bool(m.is_active),
+    }
+
+
+@bp.route("/vehicle-models", methods=["GET"])
+@api_auth_required("vehiclemodel.view")
+def list_vehicle_models(api_user):
+    from app.modules.master_data.vehicle_brand.service import VehicleModelService
+    q = (request.args.get("q") or "").strip().lower()
+    try:
+        brand_id = request.args.get("brand_id")
+        brand_id = int(brand_id) if brand_id else None
+    except (TypeError, ValueError):
+        return _bad("brand_id must be an integer.")
+    rows = VehicleModelService().list(brand_id=brand_id, include_inactive=True)
+    if q:
+        rows = [m for m in rows if q in " ".join(filter(None, [
+            m.name, m.brand.name if m.brand else None])).lower()]
+    payload, err = _page([_model_json(m) for m in rows])
+    return err if err else jsonify(payload)
+
+
+@bp.route("/vehicle-models/<int:model_id>", methods=["GET"])
+@api_auth_required("vehiclemodel.view")
+def get_vehicle_model(api_user, model_id):
+    from app.modules.master_data.vehicle_brand.models import VehicleModel
+    from app.extensions import db
+    m = db.session.get(VehicleModel, model_id)
+    if m is None:
+        return _not_found("Vehicle model")
+    return jsonify(_model_json(m))
+
+
+@bp.route("/vehicle-models", methods=["POST"])
+@api_auth_required("vehiclemodel.create")
+def create_vehicle_model(api_user):
+    from app.modules.master_data.vehicle_brand.service import (
+        VehicleModelService, DuplicateModelError)
+    p = request.get_json(silent=True) or {}
+    name = (p.get("name") or "").strip()
+    try:
+        brand_id = int(p["brand_id"]) if p.get("brand_id") not in (None, "") else None
+    except (TypeError, ValueError):
+        return _validation("brand_id must be an integer.", "brand_id")
+    if not name:
+        return _validation("name is required.", "name")
+    if not brand_id:
+        return _validation("brand_id is required.", "brand_id")
+    try:
+        m = VehicleModelService().create(brand_id=brand_id, name=name)
+    except DuplicateModelError as e:
+        return _validation(str(e), "name")
+    return jsonify(_model_json(m)), 201
+
+
+@bp.route("/vehicle-models/<int:model_id>", methods=["PUT", "PATCH"])
+@api_auth_required("vehiclemodel.update")
+def update_vehicle_model(api_user, model_id):
+    from app.modules.master_data.vehicle_brand.service import (
+        VehicleModelService, DuplicateModelError)
+    p = request.get_json(silent=True) or {}
+    name = (p.get("name") or "").strip()
+    if not name:
+        return _validation("name is required.", "name")
+    try:
+        m = VehicleModelService().update(model_id, name=name)
+    except DuplicateModelError as e:
+        return _validation(str(e), "name")
+    if m is None:
+        return _not_found("Vehicle model")
+    return jsonify(_model_json(m))
+
+
+@bp.route("/vehicle-models/<int:model_id>/deactivate", methods=["POST"])
+@api_auth_required("vehiclemodel.delete")
+def deactivate_vehicle_model(api_user, model_id):
+    from app.modules.master_data.vehicle_brand.service import VehicleModelService
+    from app.modules.master_data.vehicle_brand.models import VehicleModel
+    from app.extensions import db
+    if db.session.get(VehicleModel, model_id) is None:
+        return _not_found("Vehicle model")
+    VehicleModelService().deactivate(model_id)
+    return jsonify({"ok": True})
+
+
+# ── Maintenance Types ───────────────────────────────────────────────────────
+
+def _mtype_json(t):
+    return {
+        "id": t.id,
+        "code": t.code,
+        "name": t.name,
+        "category": t.category,
+        "description": t.description,
+        "is_active": bool(t.is_active),
+    }
+
+
+@bp.route("/maintenance-types", methods=["GET"])
+@api_auth_required("maintenancetype.view")
+def list_maintenance_types(api_user):
+    from app.modules.master_data.reference.service import MaintenanceTypeService
+    q = (request.args.get("q") or "").strip().lower()
+    rows = MaintenanceTypeService().list(include_inactive=True)
+    if q:
+        rows = [t for t in rows if q in " ".join(filter(None, [
+            t.code, t.name, t.category, t.description])).lower()]
+    payload, err = _page([_mtype_json(t) for t in rows])
+    return err if err else jsonify(payload)
+
+
+@bp.route("/maintenance-types/<int:type_id>", methods=["GET"])
+@api_auth_required("maintenancetype.view")
+def get_maintenance_type(api_user, type_id):
+    from app.modules.master_data.reference.service import MaintenanceTypeService
+    t = MaintenanceTypeService().get(type_id)
+    if t is None:
+        return _not_found("Maintenance type")
+    return jsonify(_mtype_json(t))
+
+
+@bp.route("/maintenance-types", methods=["POST"])
+@api_auth_required("maintenancetype.create")
+def create_maintenance_type(api_user):
+    from app.modules.master_data.reference.service import MaintenanceTypeService
+    from app.modules.master_data.org.service import DuplicateCodeError
+    p = request.get_json(silent=True) or {}
+    code = (p.get("code") or "").strip()
+    name = (p.get("name") or "").strip()
+    category = (p.get("category") or "").strip()
+    if not code:
+        return _validation("code is required.", "code")
+    if not name:
+        return _validation("name is required.", "name")
+    if not category:
+        return _validation("category is required.", "category")
+    try:
+        t = MaintenanceTypeService().create(
+            code=code, name=name, category=category,
+            description=(p.get("description") or None))
+    except DuplicateCodeError as e:
+        return _validation(str(e), "code")
+    return jsonify(_mtype_json(t)), 201
+
+
+@bp.route("/maintenance-types/<int:type_id>", methods=["PUT", "PATCH"])
+@api_auth_required("maintenancetype.update")
+def update_maintenance_type(api_user, type_id):
+    from app.modules.master_data.reference.service import MaintenanceTypeService
+    p = request.get_json(silent=True) or {}
+    fields = {}
+    for k in ("name", "category", "description"):
+        if k in p:
+            fields[k] = (p[k].strip() if isinstance(p[k], str) else p[k]) or None
+    t = MaintenanceTypeService().update(type_id, **fields)
+    if t is None:
+        return _not_found("Maintenance type")
+    return jsonify(_mtype_json(t))
+
+
+@bp.route("/maintenance-types/<int:type_id>/deactivate", methods=["POST"])
+@api_auth_required("maintenancetype.delete")
+def deactivate_maintenance_type(api_user, type_id):
+    from app.modules.master_data.reference.service import MaintenanceTypeService
+    if MaintenanceTypeService().get(type_id) is None:
+        return _not_found("Maintenance type")
+    MaintenanceTypeService().deactivate(type_id)
+    return jsonify({"ok": True})
