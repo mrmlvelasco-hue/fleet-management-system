@@ -626,3 +626,24 @@ def driver_emergency_contact_delete(api_user, driver_id, contact_id):
 
     EmergencyContactService().delete(contact_id)
     return jsonify({"ok": True})
+
+
+
+@bp.route("/drivers/<int:driver_id>/deactivate", methods=["POST"])
+@api_auth_required("driver.delete")
+def deactivate_driver(api_user, driver_id):
+    """Soft-deactivate a driver (is_active=False).
+
+    Matches Jinja master_data.driver_deactivate. Status can still be
+    ACTIVE/SUSPENDED/INACTIVE independently; this removes the row from
+    the default active roster.
+    """
+    from app.modules.master_data.driver.service import DriverService
+
+    svc = DriverService()
+    if svc.get_visible(driver_id, api_user) is None:
+        return jsonify({"error": "not_found",
+                        "message": "Driver not found or not visible to "
+                                   "this account."}), 404
+    svc.deactivate(driver_id)
+    return jsonify({"ok": True})

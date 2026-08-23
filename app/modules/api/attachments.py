@@ -1,7 +1,7 @@
-"""Attachment endpoints for the React vehicle screens.
+"""Attachment endpoints for React master-data screens.
 
-Flask exposes upload / list / download / delete on the vehicle detail and
-form pages; React inherits all four.
+Flask exposes upload / list / download / delete on vehicle and driver
+detail/form pages; React inherits the same behaviour.
 
 Every rule about what may be uploaded lives in AttachmentService, driven
 by System Parameters (ATTACHMENT_ALLOWED_EXTENSIONS,
@@ -27,10 +27,36 @@ def _bad(message, code=400, kind="validation"):
     return jsonify({"error": kind, "message": message}), code
 
 
-def _not_found():
+def _not_found(kind="Record"):
     return jsonify({"error": "not_found",
-                    "message": "Vehicle not found or not visible to "
+                    "message": f"{kind} not found or not visible to "
                                "this account."}), 404
+
+
+def _visible_driver(driver_id, api_user):
+    from app.modules.master_data.driver.service import DriverService
+    return DriverService().get_visible(driver_id, api_user)
+
+
+def _parent_visible(reference_table, reference_id, api_user):
+    """Visibility of the parent record an attachment hangs off."""
+    if reference_table == "vehicles":
+        return _visible_vehicle(reference_id, api_user) is not None
+    if reference_table == "drivers":
+        return _visible_driver(reference_id, api_user) is not None
+    return False
+
+
+def _can(api_user, code: str) -> bool:
+    check = getattr(api_user, "has_permission", None)
+    if callable(check):
+        return bool(check(code))
+    # Some User shapes expose permissions as a set/list of codes.
+    perms = getattr(api_user, "permissions", None) or []
+    if isinstance(perms, (set, list, tuple)):
+        return code in perms
+    return False
+
 
 
 def _attachment_json(a):
@@ -113,11 +139,11 @@ def upload_vehicle_attachment(api_user, vehicle_id):
 
 
 def _attachment_for(attachment_id, api_user):
-    """Load an attachment, enforcing the parent vehicle's visibility.
+    """Load an attachment, enforcing the parent record's visibility.
 
-    Checked through the vehicle rather than the attachment row, because
+    Checked through the parent rather than the attachment row, because
     the attachment carries no scope of its own -- its confidentiality is
-    entirely the parent record's.
+    entirely the parent record's (vehicle or driver).
     """
     from app.extensions import db
     from app.core.models.attachment import Attachment
@@ -125,15 +151,20 @@ def _attachment_for(attachment_id, api_user):
     att = db.session.get(Attachment, attachment_id)
     if att is None or not att.is_active:
         return None
-    if att.reference_table == "vehicles":
-        if _visible_vehicle(att.reference_id, api_user) is None:
-            return None
+    if not _parent_visible(att.reference_table, att.reference_id, api_user):
+        return None
     return att
 
 
 @bp.route("/attachments/<int:attachment_id>/download", methods=["GET"])
-@api_auth_required("vehicle.view")
+@api_auth_required()
 def download_attachment(api_user, attachment_id):
+    """Download any attachment the caller can see via its parent.
+
+    Permission is the parent's view right (vehicle.view or driver.view),
+    enforced inside _attachment_for via visibility rather than a single
+    hardcoded code -- a driver-only account must still open photographs.
+    """
     att = _attachment_for(attachment_id, api_user)
     if att is None:
         return jsonify({"error": "not_found",
@@ -155,14 +186,54 @@ def download_attachment(api_user, attachment_id):
 
 
 @bp.route("/attachments/<int:attachment_id>", methods=["DELETE"])
-@api_auth_required("vehicle.update")
+@api_auth_required()
 def delete_attachment(api_user, attachment_id):
+    """Soft-delete. Parent update permission required."""
     att = _attachment_for(attachment_id, api_user)
     if att is None:
         return jsonify({"error": "not_found",
                         "message": "Attachment not found."}), 404
+    need = {"vehicles": "vehicle.update", "drivers": "driver.update"}.get(
+        att.reference_table)
+    if need and not _can(api_user, need):
+        return jsonify({"error": "forbidden",
+                        "message": "You do not have permission to remove "
+                                   "this attachment."}), 403
     from app.core.attachments.attachment_service import AttachmentService
     # Soft delete, as the service does: the row survives so the audit
     # trail still has something to point at.
     AttachmentService().delete(attachment_id, user=api_user)
     return jsonify({"ok": True})
+
+
+@bp.route("/drivers/<int:driver_id>/attachments", methods=["GET"])
+@api_auth_required("driver.view")
+def driver_attachments(api_user, driver_id):
+    if _visible_driver(driver_id, api_user) is None:
+        return _not_found("Driver")
+    from app.core.attachments.attachment_service import AttachmentService
+    rows = AttachmentService().list_for("drivers", driver_id)
+    return jsonify({"items": [_attachment_json(a) for a in rows]})
+
+
+@bp.route("/drivers/<int:driver_id>/attachments", methods=["POST"])
+@api_auth_required("driver.update")
+def upload_driver_attachment(api_user, driver_id):
+    """Attach a document to a driver. Requires driver.update."""
+    if _visible_driver(driver_id, api_user) is None:
+        return _not_found("Driver")
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+
+    from app.core.attachments.attachment_service import (AttachmentError,
+                                                         AttachmentService)
+    try:
+        attachment = AttachmentService().upload(
+            file, "drivers", driver_id, user=api_user,
+            document_type=(request.form.get("document_type") or None))
+    except AttachmentError as exc:
+        return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
+
