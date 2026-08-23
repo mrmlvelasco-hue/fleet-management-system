@@ -214,7 +214,9 @@ def _scope_json(t, *, detail=False):
         "maintenance_type": (
             t.maintenance_type.name if t.maintenance_type else None),
         "pm_schedule_id": t.pm_schedule_id,
-        "item_count": len(t.items) if t.items is not None else 0,
+        # item_count is filled by the list endpoint via GROUP BY; avoid
+        # len(t.items) here — that would lazy-load every activity row.
+        "item_count": 0,
         "is_active": bool(t.is_active),
     }
     if detail:
@@ -239,32 +241,65 @@ def _scope_json(t, *, detail=False):
 @bp.route("/pm-scope-templates", methods=["GET"])
 @api_auth_required("pmscopetemplate.view")
 def list_pm_scope_templates(api_user):
+    """Server-side page of scope templates (never load all activity rows).
+
+    Large VEMS imports put tens of thousands of PMScopeItem rows behind a
+    few thousand templates. list_paginated counts activities only for the
+    current page of templates — O(page) not O(all items).
+    """
     from app.modules.maintenance_config.service import PMScopeTemplateService
-    q = (request.args.get("q") or "").strip().lower()
-    # list_with_counts avoids loading 100k items for the index
-    pairs = PMScopeTemplateService().list_with_counts(include_inactive=True)
+    try:
+        page = int(request.args.get("page", 1))
+        page_size = int(request.args.get("page_size", 25))
+    except (TypeError, ValueError):
+        return _bad("page and page_size must be integers.")
+    page = max(1, page)
+    page_size = max(1, min(page_size, 200))
+    q = (request.args.get("q") or "").strip() or None
+    mt = request.args.get("maintenance_type_id")
+    try:
+        mt_id = int(mt) if mt not in (None, "") else None
+    except (TypeError, ValueError):
+        return _validation("maintenance_type_id must be an integer.",
+                           "maintenance_type_id")
+    include_inactive = (request.args.get("include_inactive") or "1") not in (
+        "0", "false", "False")
+
+    pairs, pagination = PMScopeTemplateService().list_paginated(
+        page=page, per_page=page_size, search=q,
+        maintenance_type_id=mt_id, include_inactive=include_inactive)
     items = []
     for tmpl, count in pairs:
-        if q and q not in " ".join(filter(None, [
-            tmpl.name, tmpl.description,
-            tmpl.maintenance_type.name if tmpl.maintenance_type else None,
-        ])).lower():
-            continue
         row = _scope_json(tmpl)
-        row["item_count"] = count
+        row["item_count"] = count  # never len(tmpl.items) on the list path
         items.append(row)
-    payload, err = _page(items)
-    return err if err else jsonify(payload)
+    return jsonify({
+        "items": items,
+        "total": pagination.total,
+        "page": page,
+        "page_size": page_size,
+        "pages": max(1, pagination.pages or 1),
+    })
 
 
 @bp.route("/pm-scope-templates/<int:tid>", methods=["GET"])
 @api_auth_required("pmscopetemplate.view")
 def get_pm_scope_template(api_user, tid):
     from app.modules.maintenance_config.service import PMScopeTemplateService
-    t = PMScopeTemplateService().get_by_id(tid)
+    from app.modules.maintenance_config.models import PMScopeTemplate
+    from sqlalchemy.orm import selectinload
+    from app.extensions import db
+    t = (
+        db.session.query(PMScopeTemplate)
+        .options(selectinload(PMScopeTemplate.items))
+        .filter_by(id=tid)
+        .first()
+    )
     if t is None:
         return _not_found("PM scope template")
-    return jsonify(_scope_json(t, detail=True))
+    data = _scope_json(t, detail=True)
+    data["item_count"] = len(data.get("items") or [])
+    return jsonify(data)
 
 
 @bp.route("/pm-scope-templates", methods=["POST"])
