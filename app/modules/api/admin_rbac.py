@@ -433,3 +433,161 @@ def list_approval_matrix(api_user):
             "is_active": bool(m.is_active),
         })
     return jsonify({"items": items, "total": len(items)})
+
+
+@bp.route("/admin/approval-paths", methods=["POST"])
+@api_auth_required("approvalpath.create")
+def create_approval_path(api_user):
+    from app.modules.approval_config.service import ApprovalPathService
+    p = request.get_json(silent=True) or {}
+    name = (p.get("name") or "").strip()
+    if not name:
+        return _validation("name is required.", "name")
+    levels = p.get("levels") or []
+    # Normalize levels payload
+    norm = []
+    for i, lv in enumerate(levels, start=1):
+        norm.append({
+            "level_number": int(lv.get("level_number") or i),
+            "approver_type": (lv.get("approver_type") or "ROLE").upper(),
+            "role_id": lv.get("role_id") or None,
+            "user_id": lv.get("user_id") or None,
+        })
+    try:
+        path = ApprovalPathService().create(
+            name=name,
+            description=(p.get("description") or "").strip() or None,
+            levels=norm,
+        )
+    except Exception as e:
+        return _conflict(str(e))
+    return jsonify(_path_json(path, detail=True)), 201
+
+
+@bp.route("/admin/approval-paths/<int:pid>", methods=["PUT", "PATCH"])
+@api_auth_required("approvalpath.update")
+def update_approval_path(api_user, pid):
+    from app.modules.approval_config.service import ApprovalPathService
+    p = request.get_json(silent=True) or {}
+    kwargs = {}
+    if "name" in p:
+        kwargs["name"] = (p.get("name") or "").strip()
+    if "description" in p:
+        kwargs["description"] = (p.get("description") or "").strip() or None
+    if "levels" in p:
+        norm = []
+        for i, lv in enumerate(p.get("levels") or [], start=1):
+            norm.append({
+                "level_number": int(lv.get("level_number") or i),
+                "approver_type": (lv.get("approver_type") or "ROLE").upper(),
+                "role_id": lv.get("role_id") or None,
+                "user_id": lv.get("user_id") or None,
+            })
+        kwargs["levels"] = norm
+    try:
+        path = ApprovalPathService().update(pid, **kwargs)
+    except Exception as e:
+        return _conflict(str(e))
+    if path is None:
+        return _not_found("Approval path")
+    return jsonify(_path_json(path, detail=True))
+
+
+@bp.route("/admin/approval-paths/<int:pid>/deactivate", methods=["POST"])
+@api_auth_required("approvalpath.delete")
+def deactivate_approval_path(api_user, pid):
+    from app.modules.approval_config.service import ApprovalPathService
+    ApprovalPathService().deactivate(pid)
+    return jsonify({"ok": True})
+
+
+@bp.route("/admin/approval-matrix", methods=["POST"])
+@api_auth_required("approvalmatrix.create")
+def create_approval_matrix(api_user):
+    from app.modules.approval_config.service import ApprovalMatrixService
+    p = request.get_json(silent=True) or {}
+    if not p.get("document_type_id"):
+        return _validation("document_type_id is required.", "document_type_id")
+    if not p.get("approval_path_id"):
+        return _validation("approval_path_id is required.", "approval_path_id")
+    try:
+        m = ApprovalMatrixService().create(
+            document_type_id=int(p["document_type_id"]),
+            approval_path_id=int(p["approval_path_id"]),
+            min_amount=p.get("min_amount"),
+            max_amount=p.get("max_amount"),
+            effective_from=p.get("effective_from") or None,
+            effective_to=p.get("effective_to") or None,
+        )
+    except Exception as e:
+        return _conflict(str(e))
+    return jsonify({"id": m.id, "ok": True}), 201
+
+
+@bp.route("/admin/approval-matrix/<int:mid>", methods=["PUT", "PATCH"])
+@api_auth_required("approvalmatrix.update")
+def update_approval_matrix(api_user, mid):
+    from app.modules.approval_config.service import ApprovalMatrixService
+    p = request.get_json(silent=True) or {}
+    try:
+        m = ApprovalMatrixService().update(mid, **{
+            k: p[k] for k in (
+                "document_type_id", "approval_path_id",
+                "min_amount", "max_amount",
+                "effective_from", "effective_to",
+            ) if k in p
+        })
+    except Exception as e:
+        return _conflict(str(e))
+    if m is None:
+        return _not_found("Approval matrix")
+    return jsonify({"id": m.id, "ok": True})
+
+
+@bp.route("/admin/approval-matrix/<int:mid>/deactivate", methods=["POST"])
+@api_auth_required("approvalmatrix.delete")
+def deactivate_approval_matrix(api_user, mid):
+    from app.modules.approval_config.service import ApprovalMatrixService
+    ApprovalMatrixService().deactivate(mid)
+    return jsonify({"ok": True})
+
+
+@bp.route("/admin/document-types", methods=["GET"])
+@api_auth_required("doctype.view")
+def list_document_types(api_user):
+    from app.modules.document_config.models import DocumentType
+    rows = DocumentType.query.order_by(DocumentType.code).all()
+    return jsonify({
+        "items": [{
+            "id": d.id,
+            "code": d.code,
+            "name": d.name,
+            "requires_approval": bool(d.requires_approval),
+            "auto_numbering": bool(d.auto_numbering),
+            "is_active": bool(d.is_active),
+        } for d in rows],
+        "total": len(rows),
+    })
+
+
+@bp.route("/admin/numbering", methods=["POST"])
+@api_auth_required("numbering.create")
+def create_numbering(api_user):
+    from app.modules.document_config.service import NumberingSchemeService
+    p = request.get_json(silent=True) or {}
+    if not p.get("document_type_id"):
+        return _validation("document_type_id is required.", "document_type_id")
+    try:
+        s = NumberingSchemeService().create(
+            document_type_id=int(p["document_type_id"]),
+            prefix=p.get("prefix") or "",
+            suffix=p.get("suffix") or "",
+            include_year=bool(p.get("include_year", True)),
+            include_month=bool(p.get("include_month", False)),
+            digit_count=int(p.get("digit_count") or 6),
+            separator=p.get("separator") or "-",
+            reset_policy=p.get("reset_policy") or "YEARLY",
+        )
+    except Exception as e:
+        return _conflict(str(e))
+    return jsonify(_scheme_json(s)), 201
