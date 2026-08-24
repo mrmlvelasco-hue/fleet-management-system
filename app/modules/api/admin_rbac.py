@@ -552,22 +552,98 @@ def deactivate_approval_matrix(api_user, mid):
     return jsonify({"ok": True})
 
 
+def _doctype_json(d):
+    return {
+        "id": d.id,
+        "code": d.code,
+        "name": d.name,
+        "description": d.description,
+        "requires_approval": bool(d.requires_approval),
+        "auto_numbering": bool(d.auto_numbering),
+        "printable": bool(d.printable),
+        "mobile_available": bool(d.mobile_available),
+        "attachment_allowed": bool(d.attachment_allowed),
+        "is_active": bool(d.is_active),
+    }
+
+
 @bp.route("/admin/document-types", methods=["GET"])
 @api_auth_required("doctype.view")
 def list_document_types(api_user):
     from app.modules.document_config.models import DocumentType
     rows = DocumentType.query.order_by(DocumentType.code).all()
     return jsonify({
-        "items": [{
-            "id": d.id,
-            "code": d.code,
-            "name": d.name,
-            "requires_approval": bool(d.requires_approval),
-            "auto_numbering": bool(d.auto_numbering),
-            "is_active": bool(d.is_active),
-        } for d in rows],
+        "items": [_doctype_json(d) for d in rows],
         "total": len(rows),
     })
+
+
+@bp.route("/admin/document-types/<int:did>", methods=["GET"])
+@api_auth_required("doctype.view")
+def get_document_type(api_user, did):
+    from app.modules.document_config.models import DocumentType
+    from app.extensions import db
+    d = db.session.get(DocumentType, did)
+    if d is None:
+        return _not_found("Document type")
+    return jsonify(_doctype_json(d))
+
+
+@bp.route("/admin/document-types", methods=["POST"])
+@api_auth_required("doctype.create")
+def create_document_type(api_user):
+    from app.modules.document_config.service import DocumentTypeService
+    p = request.get_json(silent=True) or {}
+    code = (p.get("code") or "").strip().upper()
+    name = (p.get("name") or "").strip()
+    if not code:
+        return _validation("code is required.", "code")
+    if not name:
+        return _validation("name is required.", "name")
+    try:
+        d = DocumentTypeService().create(
+            code=code,
+            name=name,
+            description=(p.get("description") or "").strip() or None,
+            requires_approval=bool(p.get("requires_approval")),
+            auto_numbering=bool(p.get("auto_numbering")),
+            printable=bool(p.get("printable")),
+            mobile_available=bool(p.get("mobile_available")),
+            attachment_allowed=bool(p.get("attachment_allowed")),
+        )
+    except Exception as e:
+        return _conflict(str(e))
+    return jsonify(_doctype_json(d)), 201
+
+
+@bp.route("/admin/document-types/<int:did>", methods=["PUT", "PATCH"])
+@api_auth_required("doctype.update")
+def update_document_type(api_user, did):
+    from app.modules.document_config.service import DocumentTypeService
+    p = request.get_json(silent=True) or {}
+    fields = {}
+    for k in ("name", "description"):
+        if k in p:
+            fields[k] = (p.get(k) or "").strip() or None
+    for k in ("requires_approval", "auto_numbering", "printable",
+              "mobile_available", "attachment_allowed"):
+        if k in p:
+            fields[k] = bool(p[k])
+    try:
+        d = DocumentTypeService().update(did, **fields)
+    except Exception as e:
+        return _conflict(str(e))
+    if d is None:
+        return _not_found("Document type")
+    return jsonify(_doctype_json(d))
+
+
+@bp.route("/admin/document-types/<int:did>/deactivate", methods=["POST"])
+@api_auth_required("doctype.delete")
+def deactivate_document_type(api_user, did):
+    from app.modules.document_config.service import DocumentTypeService
+    DocumentTypeService().deactivate(did)
+    return jsonify({"ok": True})
 
 
 @bp.route("/admin/numbering", methods=["POST"])
