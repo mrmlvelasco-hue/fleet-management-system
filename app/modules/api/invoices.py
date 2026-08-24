@@ -96,6 +96,16 @@ def _invoice_json(inv, detail=False):
         "maintenance_order_id": inv.maintenance_order_id,
         "vendor_id": inv.vendor_id,
         "vendor": inv.vendor.name if inv.vendor else None,
+        # Feeds the Vendor Information card the client's own invoice
+        # detail template shows. The summary/list payload deliberately
+        # keeps only the name; these travel on the DETAIL payload only,
+        # matching where Flask puts them.
+        "vendor_code": inv.vendor.code if inv.vendor else None,
+        "vendor_contact_person": (
+            inv.vendor.contact_person if inv.vendor else None),
+        "vendor_phone": inv.vendor.phone if inv.vendor else None,
+        "vendor_email": inv.vendor.email if inv.vendor else None,
+        "vendor_address": inv.vendor.address if inv.vendor else None,
         "invoice_number": inv.invoice_number,
         "invoice_date": inv.invoice_date.isoformat()
         if inv.invoice_date else None,

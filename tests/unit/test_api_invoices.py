@@ -437,3 +437,64 @@ def test_a_non_numeric_quantity_is_a_field_error(db, client, inv_env):
     })
     assert status == 400, body
     assert "quantity" in body.get("fields", {})
+
+
+# ── Header/vendor detail visible after creation ─────────────────────────────
+
+def test_the_list_endpoint_shows_a_line_was_added_via_the_total_but_not_its_content(
+        db, client, inv_env):
+    """Documents the exact bug reported: a user added a line, the header
+    total updated (proving the write succeeded), but the invoice CARD
+    showed 'No line items yet' regardless -- because the LIST endpoint
+    (GET /maintenance-orders/<id>/invoices) has never included lines.
+    Only the single-invoice GET does. The client rendered `lines` from
+    the list response and it was always undefined."""
+    t = _token(client)
+    _status, inv = _header(client, t, inv_env)
+    _post(client, f"/api/v1/invoices/{inv['id']}/lines", t, {
+        "part_description": "Engine oil", "expense_category": "PARTS",
+        "charged_to": "COMPANY", "quantity": 1, "unit_cost": 500})
+
+    _status, listed = _get(
+        client, f"/api/v1/maintenance-orders/{inv_env['order'].id}/invoices",
+        t)
+    assert "lines" not in listed["items"][0]
+    # 500 line + 12% VAT (the header's own default), not the raw line
+    # amount -- confirms the total is real, not a leftover from a
+    # previous test's fixture.
+    assert float(listed["items"][0]["total_invoice_amount"]) == 560.0
+
+    _status, full = _get(client, f"/api/v1/invoices/{inv['id']}", t)
+    assert len(full["lines"]) == 1
+
+
+def test_detail_carries_the_full_header_and_vendor_fields(db, client, inv_env):
+    """maintenanceinvoice_detail.html shows an Invoice Header card (OR,
+    PO, DR/RR, VAT type + %, currency) and a Vendor Information card
+    (name, code, contact person, phone, email, address). React's
+    expanded invoice card had none of this: only the summary line
+    (number, vendor NAME, date, total, status) that the list already
+    carries."""
+    from app.modules.master_data.vendor.service import VendorService
+
+    vendor = VendorService().create(
+        code="VEND-FULL", name="Full Motors", vendor_type="SERVICES",
+        email="full@v.com", contact_person="Ana", phone="0917-000",
+        address="123 Rizal St")
+    db.session.commit()
+
+    t = _token(client)
+    _status, inv = _post(client, "/api/v1/invoices", t, {
+        "maintenance_order_id": inv_env["order"].id, "vendor_id": vendor.id,
+        "invoice_number": "INV-FULL", "invoice_date": date.today().isoformat(),
+        "or_number": "OR-1", "po_number": "PO-1", "dr_number": "DR-1",
+        "vat_type": "VAT_EXCLUSIVE", "vat_percentage": "12",
+    })
+    assert inv["or_number"] == "OR-1"
+    assert inv["po_number"] == "PO-1"
+    assert inv["dr_number"] == "DR-1"
+    assert inv["vendor_code"] == "VEND-FULL"
+    assert inv["vendor_contact_person"] == "Ana"
+    assert inv["vendor_phone"] == "0917-000"
+    assert inv["vendor_email"] == "full@v.com"
+    assert inv["vendor_address"] == "123 Rizal St"
