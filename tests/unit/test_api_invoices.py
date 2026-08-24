@@ -108,7 +108,12 @@ def _header(client, token, inv_env, number="INV-001"):
         "vendor_id": inv_env["vendor"].id,
         "invoice_number": number,
         "invoice_date": date.today().isoformat(),
-        "vat_type": "VAT_EXCLUSIVE", "vat_percentage": 12,
+        # A STRING, matching the real client: the form holds every
+        # value in React state as text and JSON.stringify sends it as
+        # such. A Python int here would never exercise the crash this
+        # module was reported for -- int(":.2f") formats fine, and the
+        # test would pass while the real payload still 500'd.
+        "vat_type": "VAT_EXCLUSIVE", "vat_percentage": "12",
     })
 
 
@@ -336,3 +341,99 @@ def test_generate_pr_requires_the_create_permission(db, client, inv_env):
         f"/api/v1/maintenance-orders/{inv_env['order'].id}/generate-pr",
         _token(client, "invviewer"))
     assert status == 403
+
+
+# ── Reproduction: reported 500 on create ────────────────────────────────────
+
+def test_create_does_not_500_reproduction(db, client, inv_env):
+    """Reported by the client:
+
+        ValueError: Unknown format code 'f' for object of type 'str'
+        _money() -> f"{v:.2f}"  on inv.vat_percentage
+
+    vat_percentage was never added to the invoice Coercer's decimal map.
+    JSON has no numeric type for a value the client may format as
+    "12" or "12.00", so it arrived as a STRING and was stored on the
+    Numeric column as-is -- the write succeeds silently, and the
+    response then tries to format that string with :.2f and 500s.
+
+    This is the same fault class vehicles had before the shared Coercer
+    existed: a write that succeeds and then fails while reporting its
+    own result, because the value reached storage without being
+    converted to the type the column expects.
+    """
+    status, body = _header(client, _token(client), inv_env)
+    assert status == 201, body
+    assert body["vat_percentage"] == "12.00"
+
+
+def test_vat_percentage_is_decimal_not_float(db, client, inv_env):
+    """Decimal, never float, for the same reason every other money field
+    in this codebase is: float("0.1") + float("0.2") is not 0.3, and a
+    VAT rate that drifts is a wrong invoice total."""
+    from decimal import Decimal
+    from app.modules.transactions.maintenance_invoice.models import (
+        MaintenanceInvoice)
+
+    status, body = _header(client, _token(client), inv_env)
+    assert status == 201, body
+    inv = MaintenanceInvoice.query.filter_by(id=body["id"]).first()
+    assert isinstance(inv.vat_percentage, Decimal)
+
+
+def test_a_non_numeric_vat_percentage_is_a_field_error_not_a_500(db, client,
+                                                                inv_env):
+    t = _token(client)
+    status, body = _post(client, "/api/v1/invoices", t, {
+        "maintenance_order_id": inv_env["order"].id,
+        "vendor_id": inv_env["vendor"].id, "invoice_number": "INV-BADVAT",
+        "invoice_date": date.today().isoformat(),
+        "vat_percentage": "not-a-number",
+    })
+    assert status == 400, body
+    assert "vat_percentage" in body.get("fields", {})
+
+
+# ── Same fault, line items: quantity / unit_cost / discount ────────────────
+
+def test_add_line_does_not_500_on_string_numerics(db, client, inv_env):
+    """Same bug as vat_percentage, one endpoint over. quantity, unit_cost
+    and discount are Numeric columns; the real client sends every value
+    as a string, and none of the three were coerced."""
+    t = _token(client)
+    _status, inv = _header(client, t, inv_env)
+    status, body = _post(client, f"/api/v1/invoices/{inv['id']}/lines", t, {
+        "part_description": "Engine oil", "expense_category": "PARTS",
+        "charged_to": "COMPANY",
+        "quantity": "2", "unit_cost": "1000.50", "discount": "50",
+    })
+    assert status == 201, body
+    assert body["quantity"] == "2.00"
+    assert body["unit_cost"] == "1000.50"
+
+
+def test_line_numerics_are_decimal_in_storage(db, client, inv_env):
+    from decimal import Decimal
+    from app.modules.transactions.maintenance_invoice.models import (
+        MaintenanceInvoiceLine)
+
+    t = _token(client)
+    _status, inv = _header(client, t, inv_env)
+    _status, line = _post(client, f"/api/v1/invoices/{inv['id']}/lines", t, {
+        "part_description": "Engine oil", "expense_category": "PARTS",
+        "charged_to": "COMPANY", "quantity": "2", "unit_cost": "1000.50",
+    })
+    row = MaintenanceInvoiceLine.query.filter_by(id=line["id"]).first()
+    assert isinstance(row.quantity, Decimal)
+    assert isinstance(row.unit_cost, Decimal)
+
+
+def test_a_non_numeric_quantity_is_a_field_error(db, client, inv_env):
+    t = _token(client)
+    _status, inv = _header(client, t, inv_env)
+    status, body = _post(client, f"/api/v1/invoices/{inv['id']}/lines", t, {
+        "part_description": "Engine oil", "expense_category": "PARTS",
+        "charged_to": "COMPANY", "quantity": "two",
+    })
+    assert status == 400, body
+    assert "quantity" in body.get("fields", {})

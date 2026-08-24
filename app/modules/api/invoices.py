@@ -25,6 +25,17 @@ from app.modules.api.routes import bp
 _COERCER = Coercer(
     ints={"maintenance_order_id": "Maintenance Order",
           "vendor_id": "Supplier / Vendor"},
+    # Reported by the client: creating an invoice 500'd with
+    #   ValueError: Unknown format code 'f' for object of type 'str'
+    # vat_percentage was never added here, so the JSON string "12"
+    # reached the Numeric column uncoerced. SQLAlchemy silently
+    # converts it on FLUSH, so the write itself succeeded -- the row was
+    # correct -- but the in-memory object still held the string, and
+    # _money() tried to format that string with :.2f while building the
+    # 201 response. Same fault class vehicles had before the shared
+    # Coercer existed: a write that succeeds and then fails while
+    # reporting its own result.
+    decimals={"vat_percentage": "VAT %"},
     dates={"invoice_date": "Invoice Date"},
 )
 
@@ -33,6 +44,12 @@ _HEADER_FIELDS = [
     "vat_type", "vat_percentage", "or_number", "po_number", "dr_number",
     "currency",
 ]
+
+
+def _validation(exc):
+    field = getattr(exc, "field", "_")
+    return jsonify({"error": "validation", "message": str(exc),
+                    "fields": {field: str(exc)}}), 400
 
 
 def _bad(message, field=None):
@@ -119,7 +136,7 @@ def create_invoice(api_user):
     try:
         fields = _COERCER.fields(payload, _HEADER_FIELDS)
     except FieldValueError as exc:
-        return _bad(str(exc), exc.field)
+        return _validation(exc)
 
     for required in ("maintenance_order_id", "vendor_id", "invoice_number",
                      "invoice_date"):
@@ -188,6 +205,24 @@ def add_invoice_line(api_user, iid):
         if not payload.get(required):
             return _bad(f"{required.replace('_', ' ').title()} is required.",
                         required)
+
+    # quantity/unit_cost/discount are validated for shape here, even
+    # though add_line() already casts them to Decimal internally --
+    # that cast raises decimal.InvalidOperation on a bad string, which
+    # is the CALLER's mistake, not a conflict with the invoice's state.
+    # Left to the generic except-Exception handler below, it surfaced
+    # as an opaque 409 ("[<class 'decimal.ConversionSyntax'>]") that
+    # named no field and used the wrong status code for bad input.
+    from decimal import Decimal, InvalidOperation
+    for numeric_field, label in (("quantity", "Quantity"),
+                                 ("unit_cost", "Unit Cost"),
+                                 ("discount", "Discount")):
+        if numeric_field not in payload:
+            continue
+        try:
+            Decimal(str(payload[numeric_field]))
+        except InvalidOperation:
+            return _bad(f"{label} must be a number.", numeric_field)
 
     svc = MaintenanceInvoiceService()
     try:
