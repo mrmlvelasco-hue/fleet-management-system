@@ -471,3 +471,101 @@ def list_mo_transaction_types(api_user):
             for t in rows
         ]
     })
+
+
+@bp.route("/maintenance-orders/<int:oid>/cost-summary", methods=["GET"])
+@api_auth_required("maintenanceorder.view")
+def maintenance_order_cost_summary(api_user, oid):
+    """Actual cost for one order, grouped by the expense category used.
+
+    The Cost Summary panel was drawn with three fixed rows -- Parts,
+    Labor, Shop supplies -- and only the first two exist as stored
+    fields on the invoice header:
+
+        total_parts_cost = sum(line_amount where category == "PARTS")
+        total_labor_cost = sum(line_amount where category == "LABOR")
+
+    But EXPENSE_CATEGORY has nine values (PARTS, LABOR, TIRES, BATTERY,
+    OIL, LUBRICANTS, EXTERNAL_SERVICES, TOWING, MISC). Seven of them are
+    invisible in that header: a TOWING line lands in net_amount and
+    total_invoice_amount, and under neither named row.
+
+    So three fixed rows would present a breakdown that DOES NOT SUM TO
+    THE TOTAL, on a document that authorises payment -- leaving money
+    belonging to no row and nothing on screen to explain it.
+
+    Grouping by the category actually used keeps every row real and
+    makes the rows reconcile by construction. It also needs no schema
+    change: expense_category is already NOT NULL on every line.
+
+    A category with no lines is ABSENT, not zero. A zero row invites the
+    reader to wonder what was meant to be there; absence says the
+    invoice had none.
+
+    Spans every invoice on the order. An MO can carry several -- parts
+    from one supplier, labour from another -- and reading only the first
+    would understate the spend being approved.
+
+    Category rows are NET. VAT belongs to the invoice rather than to any
+    category, and folding it into the rows would make them disagree with
+    the invoice they came from, so it is reported separately.
+    """
+    from decimal import Decimal
+
+    from app.modules.system_admin.services.lookup_service import LookupService
+    from app.modules.transactions.maintenance_invoice.models import (
+        MaintenanceInvoiceLine)
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+
+    order = MaintenanceOrder.query.filter_by(id=oid).first()
+    if order is None:
+        return _not_found()
+
+    invoice_ids = [inv.id for inv in order.invoices]
+    lines = (MaintenanceInvoiceLine.query
+             .filter(MaintenanceInvoiceLine.invoice_id.in_(invoice_ids))
+             .all()) if invoice_ids else []
+
+    # Labels come from the EXPENSE_CATEGORY lookup, not a map in code, so
+    # a category renamed in Lookup Maintenance changes here too. Falls
+    # back to the raw code rather than hiding a row whose lookup entry
+    # was removed -- an unlabelled amount is still money.
+    labels = {row.code: row.description
+              for row in LookupService().get_by_type_with_fallback(
+                  "EXPENSE_CATEGORY")}
+
+    totals = {}
+    for line in lines:
+        code = line.expense_category
+        totals[code] = totals.get(code, Decimal("0")) + (
+            line.line_amount or Decimal("0"))
+
+    by_category = [
+        {"category": code,
+         "label": labels.get(code, code),
+         "amount": f"{amount:.2f}"}
+        # Largest first: on a summary an approver skims, the number that
+        # decides the answer should not be last.
+        for code, amount in sorted(totals.items(), key=lambda kv: -kv[1])
+    ]
+
+    def _sum(attr):
+        return sum((getattr(inv, attr) or Decimal("0"))
+                   for inv in order.invoices) or Decimal("0")
+
+    return jsonify({
+        "by_category": by_category,
+        "net_amount": f"{_sum('net_amount'):.2f}",
+        "total_vat": f"{_sum('total_vat'):.2f}",
+        "total_discount": f"{_sum('total_discount'):.2f}",
+        "gross_amount": f"{_sum('gross_amount'):.2f}",
+        "total_invoice_amount": f"{_sum('total_invoice_amount'):.2f}",
+        # Carried alongside so the panel is readable BEFORE any invoice
+        # exists -- which is exactly when approval happens.
+        "estimated_cost": (f"{order.estimated_cost:.2f}"
+                           if order.estimated_cost is not None else None),
+        "actual_cost": (f"{order.actual_cost:.2f}"
+                        if order.actual_cost is not None else None),
+        "invoice_count": len(invoice_ids),
+    })
