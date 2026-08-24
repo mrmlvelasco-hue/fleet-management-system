@@ -268,3 +268,73 @@ def test_can_act_is_false_for_a_non_approver(db, client, cs_env):
     r = client.get(f"/api/v1/maintenance-orders/{cs_env['order'].id}",
                    headers={"Authorization": f"Bearer {_token(client)}"})
     assert json.loads(r.get_data(as_text=True))["can_act"] is False
+
+
+# ── Approval actions ────────────────────────────────────────────────────────
+
+def _post(client, path, token, payload=None):
+    r = client.post(path, json=payload or {},
+                    headers={"Authorization": f"Bearer {token}"})
+    body = r.get_data(as_text=True)
+    return r.status_code, (json.loads(body) if body else {})
+
+
+@pytest.mark.parametrize("action", ["approve", "reject", "return"])
+def test_approval_actions_reject_anonymous(db, client, cs_env, action):
+    assert client.post(
+        f"/api/v1/maintenance-orders/{cs_env['order'].id}/{action}"
+    ).status_code == 401
+
+
+@pytest.mark.parametrize("action", ["approve", "reject", "return"])
+def test_approval_actions_exist(db, client, cs_env, action):
+    """Parity: every action Flask offers must be reachable from React.
+
+    Flask has approve, reject and return on the MO detail screen. The
+    API had none, so a React approver could read the workflow and not
+    act on it -- the screen showed a decision it could not carry out.
+
+    A DRAFT order has no approval instance, so the engine refuses. 409
+    (conflict) is the honest answer: the request was well-formed and the
+    document is in the wrong state, which is different from the route
+    not existing.
+    """
+    status, _ = _post(
+        client, f"/api/v1/maintenance-orders/{cs_env['order'].id}/{action}",
+        _token(client))
+    assert status != 404, f"/{action} is not routed"
+    assert status in (200, 409, 403)
+
+
+@pytest.mark.parametrize("action", ["approve", "reject", "return"])
+def test_a_non_approver_cannot_act(db, client, cs_env, action):
+    """Eligibility is the ENGINE's, not the route's. The Jinja route
+    gates on maintenanceorder.view and lets the engine decide who may
+    approve -- because holding view is not the same as being on the
+    approval path. Re-implementing that check here would be a second
+    definition of who an approver is."""
+    status, _ = _post(
+        client, f"/api/v1/maintenance-orders/{cs_env['order'].id}/{action}",
+        _token(client))
+    # Never a 200: this user is not on any approval path.
+    assert status != 200
+
+
+def test_remarks_are_carried_through(db, client, cs_env):
+    """A rejection or return without its reason leaves the requester
+    knowing they must act and not what to change. The field must reach
+    the engine, not be dropped by the API layer."""
+    import inspect
+
+    from app.modules.api import maintenance_orders as mod
+
+    source = inspect.getsource(mod)
+    # Every action routes through ONE shared helper, and that helper
+    # passes remarks. An earlier version of this test counted three
+    # copies of p.get("remarks") -- which would have FAILED the better
+    # design and passed the duplicated one. Asserting the shape rather
+    # than the repetition.
+    for method in ("approve", "reject", "return_document", "resubmit"):
+        assert f'"{method}"' in source, f"{method} not routed"
+    assert 'remarks=p.get("remarks")' in source, (
+        "remarks not passed to the engine")

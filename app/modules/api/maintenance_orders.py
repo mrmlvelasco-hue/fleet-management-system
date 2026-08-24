@@ -618,3 +618,82 @@ def _attach_approval_chain(data, order, api_user):
         data["can_act"] = False
     data["approval_chain"] = chain
     return data
+
+
+# ── Approval actions ────────────────────────────────────────────────────────
+#
+# Flask offers approve, reject and return on the MO detail screen. The
+# API had none, so a React approver could READ the workflow and not act
+# on it -- the screen showed a decision it could not carry out.
+#
+# Gated on `maintenanceorder.view`, exactly as the Jinja routes are,
+# with ELIGIBILITY left to the ApprovalEngine. Holding view is not the
+# same as being on the approval path, and re-checking eligibility here
+# would be a second definition of who an approver is -- one that would
+# drift from the engine the moment an approval path changed.
+#
+# Each returns the refreshed detail payload, including the recomputed
+# approval chain, so the screen updates from the response rather than
+# re-fetching and briefly showing a stale workflow.
+
+
+def _approval_action(api_user, oid, method_name):
+    """Shared body for approve / reject / return.
+
+    Errors from the engine are 409, not 400: the request was
+    well-formed and the DOCUMENT is in the wrong state, or the caller is
+    not the approver. That is a conflict with reality, not malformed
+    input, and telling the client "bad request" would send someone
+    checking their payload for a fault that is not there.
+    """
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+
+    svc = MaintenanceOrderService()
+    if MaintenanceOrder.query.filter_by(id=oid).first() is None:
+        return _not_found()
+
+    p = request.get_json(silent=True) or {}
+    try:
+        # remarks travels on every action. A rejection or return without
+        # its reason leaves the requester knowing they must act and not
+        # what to change.
+        getattr(svc, method_name)(oid, user=api_user,
+                                  remarks=p.get("remarks"))
+    except Exception as e:
+        return _conflict(str(e))
+
+    o = MaintenanceOrder.query.filter_by(id=oid).first()
+    data = _order_json(o, detail=True)
+    data["editable"] = svc.editable_scope(o)
+    _attach_approval_chain(data, o, api_user)
+    return jsonify(data)
+
+
+@bp.route("/maintenance-orders/<int:oid>/approve", methods=["POST"])
+@api_auth_required("maintenanceorder.view")  # eligibility: ApprovalEngine
+def approve_maintenance_order(api_user, oid):
+    return _approval_action(api_user, oid, "approve")
+
+
+@bp.route("/maintenance-orders/<int:oid>/reject", methods=["POST"])
+@api_auth_required("maintenanceorder.view")
+def reject_maintenance_order(api_user, oid):
+    return _approval_action(api_user, oid, "reject")
+
+
+@bp.route("/maintenance-orders/<int:oid>/return", methods=["POST"])
+@api_auth_required("maintenanceorder.view")
+def return_maintenance_order(api_user, oid):
+    return _approval_action(api_user, oid, "return_document")
+
+
+@bp.route("/maintenance-orders/<int:oid>/resubmit", methods=["POST"])
+@api_auth_required("maintenanceorder.update")
+def resubmit_maintenance_order(api_user, oid):
+    """RETURNED orders go back for approval after correction. Without
+    this a returned order is a dead end in React: the requester can see
+    why it came back and has no way to send it on again."""
+    return _approval_action(api_user, oid, "resubmit")
