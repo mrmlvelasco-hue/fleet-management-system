@@ -617,6 +617,21 @@ def _attach_approval_chain(data, order, api_user):
         data["approval_current_level"] = None
         data["can_act"] = False
     data["approval_chain"] = chain
+
+    # Flask gates Submit on `not item.approval_instance`. Knowing the
+    # instance EXISTS is different from knowing its status: a rejected
+    # order has a status and still must not be submittable again.
+    data["has_approval_instance"] = inst is not None
+
+    # Flask shows Cancel only to the requester
+    # (`item.requester.id == current_user.id`). Sent as a DECISION, not
+    # as an id to compare: the client should not do identity arithmetic
+    # to decide whether a destructive button appears, and shipping the
+    # requester's user id to every reader discloses more than the
+    # question needs.
+    data["is_requester"] = bool(
+        api_user is not None
+        and getattr(order, "requested_by", None) == getattr(api_user, "id", None))
     return data
 
 

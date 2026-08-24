@@ -338,3 +338,32 @@ def test_remarks_are_carried_through(db, client, cs_env):
         assert f'"{method}"' in source, f"{method} not routed"
     assert 'remarks=p.get("remarks")' in source, (
         "remarks not passed to the engine")
+
+
+def test_detail_says_whether_the_reader_is_the_requester(db, client, cs_env):
+    """Flask shows Cancel only to the requester
+    (`item.requester.id == current_user.id`). React could not apply that
+    rule: the payload carried neither the requester's id nor a flag.
+
+    Sent as a DECISION rather than as an id to compare. The client
+    should not be doing identity arithmetic to decide whether a
+    destructive button appears -- and comparing ids client-side would
+    also mean shipping the requester's user id to every reader.
+    """
+    r = client.get(f"/api/v1/maintenance-orders/{cs_env['order'].id}",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    body = json.loads(r.get_data(as_text=True))
+    assert "is_requester" in body
+    # This order was created with user=None, so nobody is its requester.
+    assert body["is_requester"] is False
+
+
+def test_detail_carries_the_approval_instance_presence(db, client, cs_env):
+    """Flask gates Submit on `not item.approval_instance` -- an order
+    already in the workflow must not be submittable twice. React needs
+    to know the instance EXISTS, which is different from knowing its
+    status: a rejected order has a status and still must not resubmit
+    via Submit."""
+    r = client.get(f"/api/v1/maintenance-orders/{cs_env['order'].id}",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert "has_approval_instance" in json.loads(r.get_data(as_text=True))
