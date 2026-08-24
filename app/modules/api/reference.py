@@ -300,3 +300,144 @@ def reference_vendors(api_user):
     return jsonify({"items": [
         {"id": v.id, "code": getattr(v, "code", None), "name": v.name}
         for v in rows]})
+
+
+# ── Searchable pickers ──────────────────────────────────────────────────────
+#
+# Twelve dropdowns in React load their options with a hard page-size cap
+# and render them into a plain <select>. At 5,000 vehicles the ATD form
+# could select 100 of them; the rest were unreachable and nothing on
+# screen said so, so the dropdown looked complete and a missing plate
+# read as "not enrolled".
+#
+# These endpoints SEARCH instead of enumerating, so the cap stops being
+# a cap on what is SELECTABLE and becomes only a cap on how many matches
+# are shown at once -- and `has_more` makes even that visible.
+#
+# They are the bearer-token equivalent of Flask's api_search, which is
+# @login_required and therefore unreachable from React. Same job, same
+# labels, different auth.
+
+#: Matches at once. Enough that a reasonable search resolves, few enough
+#: that the list stays scannable. Paired with has_more, never silent.
+_PICKER_LIMIT = 25
+
+
+@bp.route("/reference/vehicles", methods=["GET"])
+@api_auth_required("vehicle.view")
+def reference_vehicles(api_user):
+    """Vehicle picker, searched server-side.
+
+    Matches plate, conduction number, brand and model, because a user
+    reaches for whichever identifier they have to hand -- a plate-only
+    search sends someone hunting for a conduction number they were
+    handed on paper.
+
+    No query returns a FIRST PAGE rather than nothing: an empty picker
+    on focus reads as "no vehicles enrolled", and on a small fleet the
+    vehicle is usually right there.
+
+    DISPOSED vehicles are excluded. A retired vehicle must not be
+    selectable on a new trip ticket or maintenance order; it stays
+    visible in the register, which is a different question from "may I
+    raise work against it".
+
+    Scoping is VehicleService's, so the picker cannot offer a vehicle
+    the caller could not open.
+    """
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    q = (request.args.get("q") or "").strip()
+
+    # list_page filters and scopes in SQL. page_size is a DISPLAY cap
+    # here, not a limit on what is reachable -- the search is what
+    # reaches.
+    rows, total = VehicleService().list_page(
+        user=api_user, q=q or None, page=1, page_size=_PICKER_LIMIT,
+        sort="plate", direction="asc", include_disposed=False)
+
+    def label(v):
+        # Plate first: it is what is painted on the vehicle and what
+        # someone is holding a job sheet for. Falls back to the
+        # conduction number, since a new vehicle has one before a plate
+        # is issued and "— Toyota" would make every unplated vehicle
+        # look identical.
+        ident = v.plate_number or v.conduction_number or f"#{v.id}"
+        make = " ".join(x for x in (v.brand, v.model) if x)
+        year = f" ({v.year})" if v.year else ""
+        return f"{ident} — {make}{year}" if make else ident
+
+    return jsonify({
+        "items": [
+            {"id": v.id,
+             "plate_number": v.plate_number,
+             "conduction_number": v.conduction_number,
+             "label": label(v),
+             "branch": v.branch.name if v.branch else None,
+             "status": v.status}
+            for v in rows],
+        # A cap on DISPLAY is fine; a cap that hides its own existence is
+        # what the old dropdown did. This lets the picker say "keep
+        # typing" instead of implying the list is complete.
+        "has_more": total > len(rows),
+        "total": total,
+    })
+
+
+@bp.route("/reference/branches", methods=["GET"])
+@api_auth_required()
+def reference_branches(api_user):
+    """Branch picker.
+
+    Gated on auth only, matching the reasoning already recorded on
+    /reference/vendors: a form needs the list to be fillable, and
+    requiring branch.view would empty the dropdown for everyone who
+    works in a branch without maintaining the branch master.
+    """
+    from app.modules.master_data.org.service import BranchService
+
+    q = (request.args.get("q") or "").strip().lower()
+    rows = BranchService().list()
+    if q:
+        rows = [b for b in rows
+                if q in (b.name or "").lower() or q in (b.code or "").lower()]
+    return jsonify({
+        "items": [{"id": b.id, "code": b.code, "name": b.name,
+                   "label": f"{b.code} — {b.name}" if b.code else b.name}
+                  for b in rows[:_PICKER_LIMIT]],
+        "has_more": len(rows) > _PICKER_LIMIT,
+        "total": len(rows),
+    })
+
+
+@bp.route("/reference/users", methods=["GET"])
+@api_auth_required()
+def reference_users(api_user):
+    """User picker — notify-on-comment, approver override.
+
+    INACTIVE users are excluded. Assigning work to, or notifying,
+    someone who has left is the same fault as offering a deactivated
+    driver: the record looks complete and the person never sees it.
+    """
+    from app.modules.user_management.models import User
+
+    q = (request.args.get("q") or "").strip().lower()
+    query = User.query.filter_by(is_active=True)
+    rows = query.order_by(User.username).all()
+    if q:
+        rows = [u for u in rows
+                if q in (u.username or "").lower()
+                or q in (u.first_name or "").lower()
+                or q in (u.last_name or "").lower()
+                or q in (u.email or "").lower()]
+
+    def label(u):
+        full = " ".join(x for x in (u.first_name, u.last_name) if x)
+        return f"{full} ({u.username})" if full else u.username
+
+    return jsonify({
+        "items": [{"id": u.id, "username": u.username, "label": label(u)}
+                  for u in rows[:_PICKER_LIMIT]],
+        "has_more": len(rows) > _PICKER_LIMIT,
+        "total": len(rows),
+    })
