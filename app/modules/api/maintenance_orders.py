@@ -221,6 +221,7 @@ def get_maintenance_order(api_user, oid):
         return _not_found()
     data = _order_json(o, detail=True)
     data["editable"] = MaintenanceOrderService().editable_scope(o)
+    _attach_approval_chain(data, o, api_user)
     return jsonify(data)
 
 
@@ -569,3 +570,51 @@ def maintenance_order_cost_summary(api_user, oid):
                         if order.actual_cost is not None else None),
         "invoice_count": len(invoice_ids),
     })
+
+
+def _attach_approval_chain(data, order, api_user):
+    """Approval workflow for the detail screen's right panel.
+
+    Same shape ATD already returns, built from the same
+    ApprovalEngine.get_approval_chain(). Mirrored rather than
+    reinvented: two shapes for one concept would mean two React
+    components rendering the same workflow differently, and an approver
+    seeing a different chain on ATD than on MO has no way to tell which
+    one is right.
+
+    A DRAFT order has no approval instance. That is the normal state of
+    every order before submission, so the chain comes back EMPTY and the
+    panel renders "not yet submitted" rather than failing.
+
+    `can_act` drives whether the decision buttons appear. It asks the
+    engine, not the payload -- offering Approve and Reject to someone
+    who then gets a 403 tells them the system is broken, when in fact
+    they were never the approver.
+    """
+    from app.core.approval.engine import ApprovalEngine
+
+    inst = getattr(order, "approval_instance", None)
+    engine = ApprovalEngine()
+    chain = []
+    if inst is not None:
+        for entry in engine.get_approval_chain(inst):
+            acted_at = entry.get("acted_at")
+            chain.append({
+                "level_number": entry.get("level_number"),
+                "approver_label": entry.get("approver_label"),
+                # APPROVED | REJECTED | RETURNED | CURRENT | WAITING
+                "status": entry.get("status"),
+                "acted_by_name": entry.get("acted_by_name"),
+                "acted_at": acted_at.isoformat() if acted_at else None,
+                "remarks": entry.get("remarks"),
+            })
+        data["approval_instance_status"] = inst.status
+        data["approval_current_level"] = inst.current_level
+        data["can_act"] = bool(
+            api_user and engine.is_eligible_approver(inst, api_user))
+    else:
+        data["approval_instance_status"] = None
+        data["approval_current_level"] = None
+        data["can_act"] = False
+    data["approval_chain"] = chain
+    return data

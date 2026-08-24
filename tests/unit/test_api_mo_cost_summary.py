@@ -224,3 +224,47 @@ def test_vat_and_gross_are_reported_separately(db, client, cs_env):
 def test_404_for_an_order_outside_scope(db, client, cs_env):
     status, _ = _summary(client, 999999, _token(client))
     assert status == 404
+
+
+# ── Approval chain on MO detail ─────────────────────────────────────────────
+
+def test_mo_detail_carries_the_approval_chain(db, client, cs_env):
+    """The MO detail screen's right panel shows the approval workflow --
+    who approved, who is next, and what they said.
+
+    ATD already exposes exactly this, built from
+    ApprovalEngine.get_approval_chain(). Mirrored rather than
+    reinvented: two shapes for one concept would mean two React
+    components rendering the same workflow differently, and an approver
+    seeing a different chain on ATD than on MO has no way to know which
+    is right.
+    """
+    r = client.get(f"/api/v1/maintenance-orders/{cs_env['order'].id}",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert r.status_code == 200
+    body = json.loads(r.get_data(as_text=True))
+    for key in ("approval_chain", "approval_instance_status",
+                "approval_current_level", "can_act"):
+        assert key in body, f"{key} missing from MO detail"
+
+
+def test_an_unsubmitted_order_has_an_empty_chain_not_an_error(db, client,
+                                                              cs_env):
+    """A DRAFT order has no approval instance. That is the normal state
+    of every order before submission, so it returns an empty chain --
+    the panel then renders "not yet submitted" rather than failing."""
+    r = client.get(f"/api/v1/maintenance-orders/{cs_env['order'].id}",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    body = json.loads(r.get_data(as_text=True))
+    assert body["approval_chain"] == []
+    assert body["approval_instance_status"] is None
+    assert body["can_act"] is False
+
+
+def test_can_act_is_false_for_a_non_approver(db, client, cs_env):
+    """Drives whether the decision buttons render. A viewer offered
+    Approve and Reject that then 403 has been told the system is
+    broken."""
+    r = client.get(f"/api/v1/maintenance-orders/{cs_env['order'].id}",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    assert json.loads(r.get_data(as_text=True))["can_act"] is False
