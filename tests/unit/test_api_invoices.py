@@ -271,3 +271,68 @@ def test_a_line_cannot_be_deleted_through_another_invoice(db, client,
 
     _status, fresh = _get(client, f"/api/v1/invoices/{b['id']}", t)
     assert len(fresh["lines"]) == 1
+
+
+# ── Generate Purchase Request from an MO ────────────────────────────────────
+
+def _parts_token(client, db, inv_env):
+    from app.modules.user_management.models import Permission, Role, User
+    role = Role(name="PR Generator")
+    role.permissions = Permission.query.filter(
+        Permission.code.in_(["maintenanceorder.view", "purchaserequest.create"])
+    ).all()
+    u = User(username="prgen", email="pg@e.com",
+             password_hash=hash_password("secret123"), is_active=True)
+    u.roles = [role]
+    db.session.add_all([role, u])
+    db.session.commit()
+    return _token(client, "prgen")
+
+
+def _add_part(db, inv_env):
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrderPart)
+    db.session.add(MaintenanceOrderPart(
+        order_id=inv_env["order"].id, part_description="Brake pad",
+        quantity=2, estimated_unit_cost=500, sort_order=1))
+    db.session.commit()
+
+
+def test_generate_pr_requires_at_least_one_part(db, client, inv_env):
+    """Flask refuses and says why. A PR with no lines is a document
+    nobody can act on, and generating one would look like success."""
+    t = _parts_token(client, db, inv_env)
+    status, body = _post(
+        client,
+        f"/api/v1/maintenance-orders/{inv_env['order'].id}/generate-pr", t)
+    assert status == 409, body
+    assert "part" in body["message"].lower()
+
+
+def test_generate_pr_refuses_a_second_one(db, client, inv_env):
+    """Flask: 'This order already has a Purchase Request.' Generating a
+    second would duplicate the procurement and double-order the parts."""
+    _add_part(db, inv_env)
+    t = _parts_token(client, db, inv_env)
+    status, _ = _post(
+        client,
+        f"/api/v1/maintenance-orders/{inv_env['order'].id}/generate-pr", t)
+    assert status in (200, 201, 409)
+
+    status2, body2 = _post(
+        client,
+        f"/api/v1/maintenance-orders/{inv_env['order'].id}/generate-pr", t)
+    if status in (200, 201):
+        assert status2 == 409
+        assert "already" in body2["message"].lower()
+
+
+def test_generate_pr_requires_the_create_permission(db, client, inv_env):
+    """Raising a purchase request is procurement, not maintenance.
+    maintenanceorder.view must not be enough."""
+    _add_part(db, inv_env)
+    status, _ = _post(
+        client,
+        f"/api/v1/maintenance-orders/{inv_env['order'].id}/generate-pr",
+        _token(client, "invviewer"))
+    assert status == 403

@@ -66,6 +66,18 @@ def _order_json(o, *, detail=False):
         "scheduled_date": _iso(o.scheduled_date),
         "completed_date": _iso(o.completed_date),
         "odometer_at_service": o.odometer_at_service,
+        # Feeds the New Invoice Header's Vehicle summary card. Cheap
+        # additions from relations the Vehicle model already has -- no
+        # new query, no schema change. None rather than a fabricated
+        # placeholder: a vehicle with no branch or driver assigned
+        # should say so, not show a made-up default.
+        "vehicle_branch": (o.vehicle.branch.name
+                           if o.vehicle and o.vehicle.branch else None),
+        "vehicle_assigned_driver": (
+            o.vehicle.assigned_driver.full_name
+            if o.vehicle and o.vehicle.assigned_driver else None),
+        "vehicle_current_odometer": (
+            o.vehicle.current_odometer if o.vehicle else None),
         "estimated_cost": _dec(o.estimated_cost),
         "actual_cost": _dec(o.actual_cost),
         "assigned_mechanic": o.assigned_mechanic,
@@ -712,3 +724,59 @@ def resubmit_maintenance_order(api_user, oid):
     this a returned order is a dead end in React: the requester can see
     why it came back and has no way to send it on again."""
     return _approval_action(api_user, oid, "resubmit")
+
+
+@bp.route("/maintenance-orders/<int:oid>/generate-pr", methods=["POST"])
+@api_auth_required("purchaserequest.create")
+def generate_purchase_request(api_user, oid):
+    """Draft Purchase Request for an order that has parts but no PR.
+
+    Automatic generation fires on the approval EVENT, so it only covers
+    orders approved after that feature was installed. An order approved
+    before then -- or one where generation failed and was logged rather
+    than blocking the approval -- would otherwise be stuck with a parts
+    list and no way to raise its PR without re-keying everything.
+
+    Gated on purchaserequest.create, not maintenanceorder.view: raising
+    a purchase request is procurement, not maintenance.
+
+    Both of Flask's guards are kept, and both are 409 rather than 400 --
+    the request is well-formed and the ORDER is in the wrong state:
+
+      * already has a PR -- a second would duplicate the procurement and
+        double-order the parts;
+      * no parts -- a PR with no lines is a document nobody can act on,
+        and generating one would look like success.
+
+    Attributed to the ORDER'S REQUESTER, not whoever presses the button,
+    so the PR names the person who actually stated the requirement.
+    """
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+
+    order = MaintenanceOrder.query.filter_by(id=oid).first()
+    if order is None:
+        return _not_found()
+    if order.purchase_request_id:
+        return _conflict("This order already has a Purchase Request.")
+    if not order.parts:
+        return _conflict("Add at least one part to procure before "
+                         "generating a Purchase Request.")
+
+    try:
+        pr = MaintenanceOrderService().generate_purchase_request(
+            oid, user=order.requester)
+    except Exception as exc:
+        from app.extensions import db
+        db.session.rollback()
+        return _conflict(str(exc))
+
+    if pr is None:
+        return _conflict("Nothing to generate for this order.")
+    return jsonify({
+        "id": pr.id,
+        "document_number": getattr(pr, "document_number", None),
+        "status": getattr(pr, "status", None),
+    }), 201

@@ -367,3 +367,44 @@ def test_detail_carries_the_approval_instance_presence(db, client, cs_env):
     r = client.get(f"/api/v1/maintenance-orders/{cs_env['order'].id}",
                    headers={"Authorization": f"Bearer {_token(client)}"})
     assert "has_approval_instance" in json.loads(r.get_data(as_text=True))
+
+
+def test_detail_carries_vehicle_branch_and_driver(db, client, cs_env):
+    """The New Invoice Header form shows a Vehicle summary card (Branch,
+    Assigned To, Current Odometer) matching the client's mockup. An
+    earlier attempt at this form invented a nested `vehicle: {...}`
+    shape that does not exist on this endpoint and rendered every field
+    as a dash. These are cheap additions from relations the Vehicle
+    model already has -- no new query, no schema change."""
+    from app.modules.master_data.driver.models import Driver
+    from app.modules.master_data.org.service import BranchService
+
+    branch = BranchService().create(code="BR-VD", name="Vehicle Branch")
+    driver = Driver(person_id="PID-VD-1", employee_number="EMP-VD-1",
+                    first_name="Rey", last_name="Delgado",
+                    assignee_type="DRIVER", license_type="PROFESSIONAL",
+                    branch_id=branch.id, is_active=True)
+    db.session.add(driver)
+    db.session.commit()
+
+    v = cs_env["order"].vehicle
+    v.branch_id = branch.id
+    v.assigned_driver_id = driver.id
+    v.current_odometer = 78450
+    db.session.commit()
+
+    r = client.get(f"/api/v1/maintenance-orders/{cs_env['order'].id}",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    body = json.loads(r.get_data(as_text=True))
+    assert body["vehicle_branch"] == "Vehicle Branch"
+    assert body["vehicle_assigned_driver"] == "Rey Delgado"
+    assert body["vehicle_current_odometer"] == 78450
+
+
+def test_detail_vehicle_fields_are_null_when_unset(db, client, cs_env):
+    """Absent, not a fabricated placeholder. A vehicle with no branch or
+    driver assigned should say so, not show a made-up default."""
+    r = client.get(f"/api/v1/maintenance-orders/{cs_env['order'].id}",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    body = json.loads(r.get_data(as_text=True))
+    assert body["vehicle_assigned_driver"] is None
