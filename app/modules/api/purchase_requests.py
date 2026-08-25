@@ -1,0 +1,293 @@
+"""Purchase Request API.
+
+The module the API had zero endpoints for. Confirmed against Flask's
+real model, form, list and detail templates before writing anything --
+a client mockup for this module showed eight fields (category, priority,
+branch, linked-MO-as-a-field, vehicle, VAT, part number, unit of
+measure) that do not exist anywhere in Flask. None of them are built
+here; see tests/unit/test_api_purchase_requests.py's own docstring for
+the full audit.
+
+Every rule stays in PurchaseRequestService: numbering, amount recompute,
+the DRAFT-only line-editing guard, and the shared submit/approve/reject/
+return/cancel lifecycle it inherits from BaseTransactionService --
+already proven correct for Maintenance Orders. The API computes no
+totals of its own.
+"""
+from flask import jsonify, request
+
+from app.modules.api.auth import api_auth_required
+from app.modules.api.coercion import Coercer, FieldValueError
+from app.modules.api.routes import bp
+
+_HEADER_COERCER = Coercer(
+    ints={"department_id": "Department", "vendor_id": "Preferred Supplier"},
+    dates={"needed_by_date": "Needed By Date"},
+)
+_HEADER_FIELDS = ["description", "department_id", "vendor_id",
+                  "justification", "needed_by_date"]
+
+_LINE_COERCER = Coercer(
+    decimals={"quantity": "Quantity", "unit_cost": "Unit Cost"},
+)
+
+
+def _bad(message, field=None):
+    return jsonify({"error": "validation", "message": message,
+                    "fields": {field or "_": message}}), 400
+
+
+def _not_found(label="Purchase Request"):
+    return jsonify({"error": "not_found",
+                    "message": f"{label} not found."}), 404
+
+
+def _conflict(message):
+    return jsonify({"error": "conflict", "message": message}), 409
+
+
+def _money(v):
+    return None if v is None else f"{v:.2f}"
+
+
+def _line_json(line):
+    return {
+        "id": line.id,
+        "item_description": line.item_description,
+        "quantity": _money(line.quantity),
+        "unit_cost": _money(line.unit_cost),
+        "line_total": _money(line.line_total),
+    }
+
+
+def _linked_mo(pr_id):
+    """The mockup's "Linked MO" field, derived correctly.
+
+    PurchaseRequest has no column pointing at a MaintenanceOrder --
+    MaintenanceOrder.purchase_request_id points the OTHER way, with no
+    backref. So this is a query for the order referencing this PR, not
+    a field read off the PR itself.
+    """
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    return MaintenanceOrder.query.filter_by(purchase_request_id=pr_id).first()
+
+
+def _pr_json(pr, *, detail=False):
+    data = {
+        "id": pr.id,
+        "document_number": pr.document_number,
+        "description": pr.description,
+        "department": pr.department.name if pr.department else None,
+        "department_id": pr.department_id,
+        "vendor": pr.vendor.name if pr.vendor else None,
+        "vendor_id": pr.vendor_id,
+        "justification": pr.justification,
+        "needed_by_date": (pr.needed_by_date.isoformat()
+                           if pr.needed_by_date else None),
+        "amount": _money(pr.amount),
+        "status": pr.status,
+        "requested_by": pr.requester.username if pr.requester else None,
+        # Locked once submitted, matching LineManagementError's own
+        # rule. Sent as a decision so the client disables entry rather
+        # than letting someone type a line that will be refused.
+        "locked": pr.approval_instance_id is not None or pr.status != "DRAFT",
+    }
+    if detail:
+        data["lines"] = [_line_json(l) for l in pr.lines]
+        mo = _linked_mo(pr.id)
+        data["linked_mo_id"] = mo.id if mo else None
+        data["linked_mo_document_number"] = mo.document_number if mo else None
+    return data
+
+
+@bp.route("/purchase-requests", methods=["GET"])
+@api_auth_required("purchaserequest.view")
+def list_purchase_requests(api_user):
+    from app.modules.transactions.purchase_request.service import (
+        PurchaseRequestService)
+
+    page = request.args.get("page", 1, type=int)
+    page_size = min(request.args.get("page_size", 25, type=int), 100)
+    q = request.args.get("q")
+    status = request.args.get("status")
+
+    rows, pagination = PurchaseRequestService().list_filtered(
+        user=api_user, search=q or None, status=status or None,
+        page=page, per_page=page_size)
+    return jsonify({
+        "items": [_pr_json(pr) for pr in rows],
+        "total": pagination.total, "page": page, "page_size": page_size,
+        "pages": pagination.pages,
+    })
+
+
+@bp.route("/purchase-requests", methods=["POST"])
+@api_auth_required("purchaserequest.create")
+def create_purchase_request(api_user):
+    """A Purchase Request, with its lines created up front -- the
+    service's own contract, unlike invoices where the header exists
+    before lines can reference it. At least one line is required: a
+    PR requesting nothing is not a real request.
+    """
+    from app.modules.transactions.purchase_request.service import (
+        PurchaseRequestService)
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        fields = _HEADER_COERCER.fields(payload, _HEADER_FIELDS)
+    except FieldValueError as exc:
+        return _bad(str(exc), exc.field)
+
+    if not fields.get("description"):
+        return _bad("Description is required.", "description")
+    if not fields.get("justification"):
+        return _bad("Justification is required.", "justification")
+
+    raw_lines = payload.get("lines") or []
+    if not raw_lines:
+        return _bad("At least one line item is required.", "lines")
+
+    lines = []
+    for i, raw in enumerate(raw_lines):
+        if not raw.get("item_description"):
+            return _bad(f"Line {i + 1}: description is required.", "lines")
+        try:
+            coerced = _LINE_COERCER.fields(raw, ["quantity", "unit_cost"])
+        except FieldValueError as exc:
+            return _bad(f"Line {i + 1}: {exc}", "lines")
+        lines.append({"item_description": raw["item_description"],
+                      "quantity": coerced.get("quantity", 1),
+                      "unit_cost": coerced.get("unit_cost", 0)})
+
+    try:
+        pr = PurchaseRequestService().create(user=api_user, lines=lines,
+                                             **fields)
+    except Exception as exc:
+        return _conflict(str(exc))
+    return jsonify(_pr_json(pr, detail=True)), 201
+
+
+@bp.route("/purchase-requests/<int:pid>", methods=["GET"])
+@api_auth_required("purchaserequest.view")
+def purchase_request_detail(api_user, pid):
+    from app.modules.transactions.purchase_request.models import (
+        PurchaseRequest)
+
+    pr = PurchaseRequest.query.filter_by(id=pid).first()
+    if pr is None:
+        return _not_found()
+    return jsonify(_pr_json(pr, detail=True))
+
+
+@bp.route("/purchase-requests/<int:pid>/lines", methods=["POST"])
+@api_auth_required("purchaserequest.update")
+def add_purchase_request_line(api_user, pid):
+    from app.modules.transactions.purchase_request.service import (
+        LineManagementError, PurchaseRequestService)
+
+    payload = request.get_json(silent=True) or {}
+    if not payload.get("item_description"):
+        return _bad("Description is required.", "item_description")
+    try:
+        fields = _LINE_COERCER.fields(payload, ["quantity", "unit_cost"])
+    except FieldValueError as exc:
+        return _bad(str(exc), exc.field)
+
+    try:
+        pr = PurchaseRequestService().add_line(
+            pid, item_description=payload["item_description"],
+            quantity=fields.get("quantity", 1),
+            unit_cost=fields.get("unit_cost", 0))
+    except LineManagementError as exc:
+        return _conflict(str(exc))
+    except Exception as exc:
+        return _conflict(str(exc))
+    if pr is None:
+        return _not_found()
+    return jsonify(_pr_json(pr, detail=True)), 201
+
+
+@bp.route("/purchase-requests/<int:pid>/lines/<int:line_id>",
+         methods=["DELETE"])
+@api_auth_required("purchaserequest.update")
+def remove_purchase_request_line(api_user, pid, line_id):
+    from app.modules.transactions.purchase_request.models import (
+        PurchaseRequest, PurchaseRequestLine)
+    from app.modules.transactions.purchase_request.service import (
+        LineManagementError, PurchaseRequestService)
+
+    # The service's remove_line takes only a line id, same shape as
+    # invoices' remove_line, and the same ownership gap applies: the
+    # URL asserts a relationship the service does not verify.
+    line = PurchaseRequestLine.query.filter_by(id=line_id).first()
+    if line is None or line.pr_id != pid:
+        return _not_found("Purchase Request line")
+
+    try:
+        PurchaseRequestService().remove_line(line_id)
+    except LineManagementError as exc:
+        return _conflict(str(exc))
+
+    pr = PurchaseRequest.query.filter_by(id=pid).first()
+    return jsonify(_pr_json(pr, detail=True))
+
+
+def _lifecycle_action(api_user, pid, method_name):
+    from app.modules.transactions.purchase_request.models import (
+        PurchaseRequest)
+    from app.modules.transactions.purchase_request.service import (
+        PurchaseRequestService)
+
+    svc = PurchaseRequestService()
+    if PurchaseRequest.query.filter_by(id=pid).first() is None:
+        return _not_found()
+
+    p = request.get_json(silent=True) or {}
+    try:
+        if method_name == "mark_ordered":
+            svc.mark_ordered(pid)
+        else:
+            getattr(svc, method_name)(pid, user=api_user,
+                                      remarks=p.get("remarks"))
+    except Exception as exc:
+        return _conflict(str(exc))
+
+    pr = PurchaseRequest.query.filter_by(id=pid).first()
+    return jsonify(_pr_json(pr, detail=True))
+
+
+@bp.route("/purchase-requests/<int:pid>/submit", methods=["POST"])
+@api_auth_required("purchaserequest.update")
+def submit_purchase_request(api_user, pid):
+    return _lifecycle_action(api_user, pid, "submit")
+
+
+@bp.route("/purchase-requests/<int:pid>/approve", methods=["POST"])
+@api_auth_required("purchaserequest.view")
+def approve_purchase_request(api_user, pid):
+    return _lifecycle_action(api_user, pid, "approve")
+
+
+@bp.route("/purchase-requests/<int:pid>/reject", methods=["POST"])
+@api_auth_required("purchaserequest.view")
+def reject_purchase_request(api_user, pid):
+    return _lifecycle_action(api_user, pid, "reject")
+
+
+@bp.route("/purchase-requests/<int:pid>/return", methods=["POST"])
+@api_auth_required("purchaserequest.view")
+def return_purchase_request(api_user, pid):
+    return _lifecycle_action(api_user, pid, "return_document")
+
+
+@bp.route("/purchase-requests/<int:pid>/cancel", methods=["POST"])
+@api_auth_required("purchaserequest.update")
+def cancel_purchase_request(api_user, pid):
+    return _lifecycle_action(api_user, pid, "cancel")
+
+
+@bp.route("/purchase-requests/<int:pid>/mark-ordered", methods=["POST"])
+@api_auth_required("purchaserequest.update")
+def mark_purchase_request_ordered(api_user, pid):
+    return _lifecycle_action(api_user, pid, "mark_ordered")
