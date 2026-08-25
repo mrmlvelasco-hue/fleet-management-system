@@ -373,3 +373,30 @@ def test_a_line_cannot_be_deleted_through_another_pr(db, client, pr_env):
 
     _status, fresh_b = _get(client, f"/api/v1/purchase-requests/{b['id']}", t)
     assert len(fresh_b["lines"]) == 2
+
+
+# ── Summary (stat chips) ─────────────────────────────────────────────────────
+
+def test_summary_counts_by_status_and_totals_value(db, client, pr_env):
+    _post(client, "/api/v1/purchase-requests", _token(client),
+         _pr_payload(pr_env))
+    status, body = _get(client, "/api/v1/purchase-requests/summary",
+                        _token(client))
+    assert status == 200
+    assert body["total"] == 1
+    assert body["draft"] == 1
+    # 12*850 + 4*1450 = 16000.
+    assert float(body["total_value"]) == 16000.0
+
+
+def test_summary_requires_view_permission(db, client, pr_env):
+    from app.modules.user_management.models import Role, User
+    role = Role(name="No PR Access")
+    user = User(username="noprsum", email="nps@e.com",
+                password_hash=hash_password("secret123"), is_active=True)
+    user.roles = [role]
+    db.session.add_all([role, user])
+    db.session.commit()
+    status, _ = _get(client, "/api/v1/purchase-requests/summary",
+                     _token(client, "noprsum"))
+    assert status == 403

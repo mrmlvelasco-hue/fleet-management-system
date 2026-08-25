@@ -291,3 +291,38 @@ def cancel_purchase_request(api_user, pid):
 @api_auth_required("purchaserequest.update")
 def mark_purchase_request_ordered(api_user, pid):
     return _lifecycle_action(api_user, pid, "mark_ordered")
+
+
+@bp.route("/purchase-requests/summary", methods=["GET"])
+@api_auth_required("purchaserequest.view")
+def purchase_requests_summary(api_user):
+    """Stat counts and total value for the list screen's tile row.
+
+    Status is read directly from PurchaseRequest.status, which already
+    carries the full physical lifecycle (DRAFT/PENDING/APPROVED/
+    ORDERED/RECEIVED/REJECTED/RETURNED/CANCELLED) -- unlike Maintenance
+    Orders, this model does not need a separate approval-status count,
+    because "PENDING" already means "submitted, awaiting a decision" as
+    a status value in its own right.
+    """
+    from app.modules.transactions.purchase_request.service import (
+        PurchaseRequestService)
+
+    rows, _pagination = PurchaseRequestService().list_filtered(
+        user=api_user, page=1, per_page=100000)
+
+    def count(status):
+        return sum(1 for r in rows if r.status == status)
+
+    return jsonify({
+        "total": len(rows),
+        "draft": count("DRAFT"),
+        "pending": count("PENDING"),
+        "approved": count("APPROVED"),
+        "ordered": count("ORDERED"),
+        "received": count("RECEIVED"),
+        "rejected": count("REJECTED"),
+        "returned": count("RETURNED"),
+        "cancelled": count("CANCELLED"),
+        "total_value": f"{sum((r.amount or 0) for r in rows):.2f}",
+    })
