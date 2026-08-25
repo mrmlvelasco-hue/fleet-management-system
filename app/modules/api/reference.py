@@ -274,15 +274,44 @@ def reference_drivers(api_user):
 
 
 @bp.route("/reference/departments", methods=["GET"])
-@api_auth_required("vehicle.view")
+@api_auth_required()
 def reference_departments(api_user):
-    """Departments for the assignment section. `department_id` is
-    already in the write allowlist but had no way to be populated."""
+    """Departments for the assignment section.
+
+    Gated on auth only, matching the same reasoning already recorded on
+    /reference/vendors. Was vehicle.view -- an accident of whichever
+    screen first needed this list, since Department is general
+    org-structure reference data several forms need (vehicle
+    assignment, drivers, and now Purchase Requests). A PR clerk with no
+    vehicle permissions could not otherwise populate their own
+    creation form's Department field, which is unrelated to vehicles
+    at all.
+
+    Carries branch_id and branch_name, and accepts an optional
+    ?branch_id= filter -- the real hierarchy Department already has
+    (branch_id has been a column on it all along; this was never a
+    schema gap). Without either, a form with many departments across
+    several branches shows duplicate-looking names with no way to tell
+    them apart: "Fleet Operations" at Manila Hub and "Fleet Operations"
+    at Cebu Hub are two different rows, and a flat list renders them
+    identically.
+
+    Filtering to one branch is the real fix, not merely labelling the
+    duplicates: a client that knows which branch it cares about (the
+    New Purchase Request form, once a branch is chosen) gets exactly
+    that branch's departments, not the whole company's list to scan.
+    """
     from app.modules.master_data.org.service import DepartmentService
+
+    branch_id = request.args.get("branch_id", type=int)
+    rows = DepartmentService().list()
+    if branch_id is not None:
+        rows = [d for d in rows if d.branch_id == branch_id]
     return jsonify({"items": [
         {"id": d.id, "code": d.code, "name": d.name,
-         "branch_id": d.branch_id}
-        for d in DepartmentService().list()]})
+         "branch_id": d.branch_id,
+         "branch_name": d.branch.name if d.branch else None}
+        for d in rows]})
 
 
 

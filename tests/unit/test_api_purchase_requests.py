@@ -495,3 +495,45 @@ def test_create_without_an_mo_id_is_unlinked_as_before(db, client, pr_env):
                          _pr_payload(pr_env))
     assert status == 201, body
     assert body["linked_mo_id"] is None
+
+
+# ── Department reference: branch context and filtering ──────────────────────
+
+def test_departments_carry_the_branch_name_to_disambiguate_duplicates(
+        db, client, pr_env):
+    """Two branches can each have their own department named the same
+    thing -- "Fleet Operations" at Manila Hub and at Cebu Hub are
+    different rows. A flat dropdown showing "Fleet Operations" twice
+    with no branch context is unusable at any real scale."""
+    from app.modules.master_data.org.service import BranchService, DepartmentService
+
+    other_branch = BranchService().create(code="BR-DEPT2", name="Cebu Hub")
+    DepartmentService().create(code="DEPT-DUP", name="Fleet Operations",
+                              branch_id=other_branch.id)
+    db.session.commit()
+
+    r = client.get("/api/v1/reference/departments",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    body = json.loads(r.get_data(as_text=True))
+    names = {d["branch_name"] for d in body["items"]}
+    assert pr_env["branch"].name in names
+    assert "Cebu Hub" in names
+
+
+def test_departments_can_be_filtered_to_one_branch(db, client, pr_env):
+    """The hierarchy: pick a branch first, and the department list
+    narrows to just that branch's departments -- exactly what removes
+    the duplicate-looking entries rather than merely labelling them."""
+    from app.modules.master_data.org.service import BranchService, DepartmentService
+
+    other_branch = BranchService().create(code="BR-DEPT3", name="Davao Hub")
+    DepartmentService().create(code="DEPT-DAVAO", name="Fleet Operations",
+                              branch_id=other_branch.id)
+    db.session.commit()
+
+    r = client.get(
+        f"/api/v1/reference/departments?branch_id={pr_env['branch'].id}",
+        headers={"Authorization": f"Bearer {_token(client)}"})
+    body = json.loads(r.get_data(as_text=True))
+    assert all(d["branch_id"] == pr_env["branch"].id for d in body["items"])
+    assert len(body["items"]) == 1
