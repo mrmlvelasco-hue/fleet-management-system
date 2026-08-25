@@ -192,6 +192,18 @@ def create_purchase_request(api_user):
             order.purchase_request_id = pr.id
             from app.extensions import db
             db.session.commit()
+            # Reproduced directly: without this, a caller that had
+            # already read `order` earlier in the SAME session (which
+            # this endpoint's own caller may do, and which this
+            # project's test harness does across multiple client.*()
+            # calls sharing one app context) sees `order.purchase_request`
+            # as still None afterward -- the FK column updates
+            # correctly, but a previously-lazy-loaded relationship on
+            # an already-identity-mapped object does not silently
+            # re-resolve itself just because a commit happened
+            # elsewhere. expire() forces the NEXT access to re-query
+            # rather than trust a cache that predates this write.
+            db.session.expire(order, ["purchase_request"])
     except Exception as exc:
         return _conflict(str(exc))
     return jsonify(_pr_json(pr, detail=True)), 201

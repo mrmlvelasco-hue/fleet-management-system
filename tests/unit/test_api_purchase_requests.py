@@ -537,3 +537,51 @@ def test_departments_can_be_filtered_to_one_branch(db, client, pr_env):
     body = json.loads(r.get_data(as_text=True))
     assert all(d["branch_id"] == pr_env["branch"].id for d in body["items"])
     assert len(body["items"]) == 1
+
+
+def test_full_link_roundtrip_survives_a_shared_session(db, client, pr_env):
+    """Reproduces exactly what a user does: create an MO, raise a PR
+    from its 'New Purchase Request' button, then re-read the MO.
+
+    Found by actually running this sequence rather than trusting the
+    unit-level tests above: pr_id updated correctly after linking, but
+    pr_document_number stayed None. order.purchase_request_id (the raw
+    FK) and order.purchase_request (the RELATIONSHIP) do not
+    necessarily go stale together -- a caller that read the order
+    BEFORE the link was created, in the same session, can hold a
+    lazy-loaded relationship cached as None from that earlier read,
+    and setting the FK plus committing elsewhere does not retroactively
+    invalidate a cache that already existed on a different reference to
+    the same row.
+
+    Fixed with db.session.expire(order, ["purchase_request"]) right
+    after the write, forcing the next access to re-query rather than
+    trust a cache that predates it.
+    """
+    order = MaintenanceOrderService().create(
+        vehicle_id=pr_env["vehicle"].id, maintenance_type_id=pr_env["mt"].id,
+        scheduled_date=date.today(), user=None)
+    db.session.commit()
+    t = _token(client)
+
+    # Read the order BEFORE linking -- this is what makes the bug
+    # reproducible: it is what populates the stale relationship cache
+    # that the fix has to invalidate.
+    _status, before = _get(client, f"/api/v1/maintenance-orders/{order.id}", t)
+    assert before["pr_id"] is None
+
+    _status, pr = _post(client, "/api/v1/purchase-requests", t,
+                        _pr_payload(pr_env, maintenance_order_id=order.id))
+    assert pr["linked_mo_id"] == order.id
+
+    _status, after = _get(client, f"/api/v1/maintenance-orders/{order.id}", t)
+    assert after["pr_id"] == pr["id"]
+    assert after["pr_document_number"] == pr["document_number"]
+
+    _status, mo_list = _get(client, "/api/v1/maintenance-orders", t)
+    row = next(r for r in mo_list["items"] if r["id"] == order.id)
+    assert row["pr_document_number"] == pr["document_number"]
+
+    _status, pr_detail = _get(
+        client, f"/api/v1/purchase-requests/{pr['id']}", t)
+    assert pr_detail["linked_mo_document_number"] == order.document_number
