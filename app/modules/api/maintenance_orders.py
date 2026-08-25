@@ -90,6 +90,7 @@ def _order_json(o, *, detail=False):
         # generate either, and deciding what "none" looks like (an em
         # dash, blank, etc.) is a presentation choice for the client,
         # not something the API should bake in.
+        "pr_id": o.purchase_request_id,
         "pr_document_number": (
             o.purchase_request.document_number
             if getattr(o, "purchase_request", None) else None),

@@ -308,3 +308,27 @@ def test_list_row_carries_the_requesters_name(db, client, mol_env):
     _status, body = _get(client, "/api/v1/maintenance-orders", _token(client))
     row = next(r for r in body["items"] if r["id"] == order.id)
     assert row["requested_by"] is not None
+
+
+def test_detail_carries_the_purchase_request_id_for_linking(db, client,
+                                                            mol_env):
+    """pr_document_number alone cannot build a link to the PR detail
+    screen -- the id is needed. Both travel together so the client
+    never has to guess or search for one from the other."""
+    _ensure_doc_type("PR")
+    from app.modules.transactions.purchase_request.models import (
+        PurchaseRequest)
+
+    order = _order(db, mol_env)
+    pr = PurchaseRequest(document_number="PR-2026-000222",
+                         requested_by=mol_env["user"].id, status="DRAFT")
+    db.session.add(pr)
+    db.session.flush()
+    order.purchase_request_id = pr.id
+    db.session.commit()
+
+    r = client.get(f"/api/v1/maintenance-orders/{order.id}",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    body = json.loads(r.get_data(as_text=True))
+    assert body["pr_id"] == pr.id
+    assert body["pr_document_number"] == "PR-2026-000222"
