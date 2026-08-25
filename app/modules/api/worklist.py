@@ -29,6 +29,14 @@ from app.modules.api.routes import bp
 #: ships, never guessed at ahead of the screen existing.
 _REACT_ROUTE_MAP = {
     "maintenance_orders": "/maintenance-orders/{id}",
+    # Added after the client found this exact gap: the PR detail screen
+    # (react-v72/73) had existed for two commits before this map was
+    # updated, so every PR approval task kept showing "Not yet
+    # available here" for a screen that was already built and working.
+    # A route map that has to be remembered separately from the screen
+    # it points at will drift; nothing enforces the two stay in sync
+    # except a human noticing, which is what happened here.
+    "purchase_requests": "/purchase-requests/{id}",
 }
 
 

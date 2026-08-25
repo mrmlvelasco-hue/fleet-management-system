@@ -214,3 +214,37 @@ def test_a_task_not_assigned_to_this_user_is_not_listed(db, client, wl_env):
                         _token(client, "wlother"))
     assert status == 200
     assert body["items"] == []
+
+
+def test_a_purchase_request_task_now_resolves_to_the_real_screen(db, client,
+                                                                 wl_env):
+    """purchase_requests was missing from _REACT_ROUTE_MAP even after
+    the PR detail screen (react-v72) shipped -- the worklist kept
+    showing "Not yet available here" for a screen that had existed for
+    two whole commits. Caught by the client clicking it, not by this
+    test suite, because nothing here checked the map stayed in sync
+    with what got built."""
+    from app.core.approval.models import ApprovalInstance, ApprovalTask
+    from app.modules.document_config.models import DocumentType
+
+    dt = DocumentType.query.filter_by(code="MO").first()
+    inst = ApprovalInstance(document_type_id=dt.id,
+                            reference_table="purchase_requests",
+                            reference_id=5, status="PENDING",
+                            current_level=1)
+    db.session.add(inst)
+    db.session.flush()
+    db.session.add(ApprovalTask(
+        approval_instance_id=inst.id, level_number=1, document_type_id=dt.id,
+        document_number="PR-2026-000005", reference_table="purchase_requests",
+        reference_id=5, assigned_user_id=wl_env["approver"].id,
+        status="PENDING"))
+    db.session.commit()
+
+    status, body = _get(client, "/api/v1/worklist/pending-approvals",
+                        _token(client))
+    assert status == 200
+    pr_items = [i for i in body["items"]
+               if i["reference_table"] == "purchase_requests"]
+    assert len(pr_items) == 1
+    assert pr_items[0]["url"] == "/purchase-requests/5"
