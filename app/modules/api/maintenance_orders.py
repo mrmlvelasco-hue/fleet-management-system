@@ -42,6 +42,12 @@ def _dec(v):
         return None
 
 
+def _attachment_count(order_id):
+    from app.core.models.attachment import Attachment
+    return Attachment.query.filter_by(
+        reference_table="maintenance_orders", reference_id=order_id).count()
+
+
 def _order_json(o, *, detail=False):
     plate = None
     if o.vehicle:
@@ -78,6 +84,25 @@ def _order_json(o, *, detail=False):
             if o.vehicle and o.vehicle.assigned_driver else None),
         "vehicle_current_odometer": (
             o.vehicle.current_odometer if o.vehicle else None),
+        # PR / Invoice column. purchase_request_id already exists on
+        # the model; invoices are already linked via backref. None
+        # rather than a placeholder string -- most orders never
+        # generate either, and deciding what "none" looks like (an em
+        # dash, blank, etc.) is a presentation choice for the client,
+        # not something the API should bake in.
+        "pr_document_number": (
+            o.purchase_request.document_number
+            if getattr(o, "purchase_request", None) else None),
+        "invoice_document_number": (
+            sorted(o.invoices, key=lambda i: i.id)[-1].document_number
+            if getattr(o, "invoices", None) else None),
+        # Docs column. Attachment is the same generic reference-table /
+        # reference-id model used everywhere else; no new mechanism.
+        # Zero is the honest count when there are none -- a missing key
+        # would make the client guess whether zero or "not loaded" is
+        # meant.
+        "attachment_count": _attachment_count(o.id),
+        "requested_by": o.requester.username if o.requester else None,
         "estimated_cost": _dec(o.estimated_cost),
         "actual_cost": _dec(o.actual_cost),
         "assigned_mechanic": o.assigned_mechanic,
@@ -780,3 +805,64 @@ def generate_purchase_request(api_user, oid):
         "document_number": getattr(pr, "document_number", None),
         "status": getattr(pr, "status", None),
     }), 201
+
+
+@bp.route("/maintenance-orders/summary", methods=["GET"])
+@api_auth_required("maintenanceorder.view")
+def maintenance_orders_summary(api_user):
+    """Stat counts for the list screen's tile row.
+
+    Built from a client mockup showing seven tiles (Total, For Approval,
+    Submitted, Approved, Draft, Completed, Rejected). Two things in it
+    are NOT built here, deliberately:
+
+      * A Priority split. No such column exists on MaintenanceOrder, and
+        Flask's own list route has no priority filter either
+        (_txn_list_context). Inventing one would be exactly the kind of
+        hardcoded, undecided business rule this project's own governing
+        rule says not to add.
+      * Treating "For Approval" and "Submitted" as different states.
+        The real vocabulary (ApprovalInstance.status: PENDING /
+        APPROVED / REJECTED / RETURNED / CANCELLED) has no state
+        matching one of those two labels -- they are almost certainly
+        the same PENDING state under two names in the mockup, or one
+        means "pending at MY level" specifically. Guessing which would
+        present an invented distinction as a real one.
+
+    What IS built: the MO's own PHYSICAL status (draft / in_progress /
+    completed / cancelled) counted separately from its APPROVAL status
+    (pending_approval / approved / rejected / returned), because an
+    order can be COMPLETED and have also been APPROVED earlier -- two
+    different facts about the same order that a flat seven-tile list
+    cannot represent without double-counting or losing one of them.
+
+    An order with no approval instance at all (most orders, since
+    submission is optional) counts toward NEITHER approval bucket --
+    those describe orders that entered the workflow, not every order
+    that exists.
+    """
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+
+    rows, _total = MaintenanceOrderService().list_filtered(
+        user=api_user, page=1, per_page=100000)
+
+    def physical(status):
+        return sum(1 for o in rows if o.status == status)
+
+    def approval(status):
+        return sum(1 for o in rows
+                   if o.approval_instance
+                   and o.approval_instance.status == status)
+
+    return jsonify({
+        "total": len(rows),
+        "draft": physical("DRAFT"),
+        "in_progress": physical("IN_PROGRESS"),
+        "completed": physical("COMPLETED"),
+        "cancelled": physical("CANCELLED"),
+        "pending_approval": approval("PENDING"),
+        "approved": approval("APPROVED"),
+        "rejected": approval("REJECTED"),
+        "returned": approval("RETURNED"),
+    })
