@@ -438,3 +438,60 @@ def test_is_requester_reflects_who_created_it(db, client, pr_env):
         client, f"/api/v1/purchase-requests/{pr_body['id']}",
         _token(client, "prviewer"))
     assert detail2["is_requester"] is False
+
+
+# ── Creating a PR linked to an MO (the "New PR" entry point) ────────────────
+
+def test_create_can_link_to_an_mo(db, client, pr_env):
+    """The "New Purchase Request" entry point from the MO screen: a
+    MANUALLY created PR that still ends up linked, the same way
+    generate_purchase_request links one automatically. Without this,
+    "New PR under MO" would create a PR with no way back to the order
+    that prompted it."""
+    order = MaintenanceOrderService().create(
+        vehicle_id=pr_env["vehicle"].id, maintenance_type_id=pr_env["mt"].id,
+        scheduled_date=date.today(), user=None)
+    db.session.commit()
+
+    status, body = _post(client, "/api/v1/purchase-requests", _token(client),
+                         _pr_payload(pr_env, maintenance_order_id=order.id))
+    assert status == 201, body
+    assert body["linked_mo_id"] == order.id
+
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    fresh = MaintenanceOrder.query.filter_by(id=order.id).first()
+    assert fresh.purchase_request_id == body["id"]
+
+
+def test_create_refuses_to_link_an_mo_that_already_has_a_pr(db, client,
+                                                            pr_env):
+    """Same guard as generate_purchase_request: a second PR would
+    duplicate the procurement and double-order the same parts."""
+    order = MaintenanceOrderService().create(
+        vehicle_id=pr_env["vehicle"].id, maintenance_type_id=pr_env["mt"].id,
+        scheduled_date=date.today(), user=None)
+    db.session.commit()
+    _status, first = _post(client, "/api/v1/purchase-requests",
+                           _token(client),
+                           _pr_payload(pr_env, maintenance_order_id=order.id))
+    assert _status == 201, first
+
+    status, body = _post(client, "/api/v1/purchase-requests", _token(client),
+                         _pr_payload(pr_env, maintenance_order_id=order.id))
+    assert status == 409, body
+
+
+def test_create_with_an_unknown_mo_id_is_a_field_error(db, client, pr_env):
+    status, body = _post(client, "/api/v1/purchase-requests", _token(client),
+                         _pr_payload(pr_env, maintenance_order_id=999999))
+    assert status == 400, body
+
+
+def test_create_without_an_mo_id_is_unlinked_as_before(db, client, pr_env):
+    """The default path -- a standalone PR, matching Flask's own form,
+    which has no MO field at all. Must not break."""
+    status, body = _post(client, "/api/v1/purchase-requests", _token(client),
+                         _pr_payload(pr_env))
+    assert status == 201, body
+    assert body["linked_mo_id"] is None

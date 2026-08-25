@@ -160,9 +160,38 @@ def create_purchase_request(api_user):
                       "quantity": coerced.get("quantity", 1),
                       "unit_cost": coerced.get("unit_cost", 0)})
 
+    # Optional MO link -- the "New Purchase Request" entry point from
+    # the MO screen. Not a PurchaseRequestService.create() argument
+    # (there is no maintenance_order_id column on PR; the link is
+    # MaintenanceOrder.purchase_request_id, set from the OTHER side),
+    # so it is validated and applied here, after a successful create,
+    # mirroring generate_purchase_request's own two guards exactly:
+    # an order may not already have a PR, and the order must exist.
+    mo_id = payload.get("maintenance_order_id")
+    order = None
+    if mo_id is not None:
+        from app.modules.transactions.maintenance_order.models import (
+            MaintenanceOrder)
+        try:
+            mo_id = int(mo_id)
+        except (TypeError, ValueError):
+            return _bad("Maintenance Order id must be a number.",
+                       "maintenance_order_id")
+        order = MaintenanceOrder.query.filter_by(id=mo_id).first()
+        if order is None:
+            return _bad("That Maintenance Order was not found.",
+                       "maintenance_order_id")
+        if order.purchase_request_id:
+            return _conflict(
+                "This Maintenance Order already has a Purchase Request.")
+
     try:
         pr = PurchaseRequestService().create(user=api_user, lines=lines,
                                              **fields)
+        if order is not None:
+            order.purchase_request_id = pr.id
+            from app.extensions import db
+            db.session.commit()
     except Exception as exc:
         return _conflict(str(exc))
     return jsonify(_pr_json(pr, detail=True)), 201
