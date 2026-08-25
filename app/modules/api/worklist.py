@@ -1,0 +1,70 @@
+"""Cross-document pending-approvals worklist.
+
+Reported: the dashboard's "For My Action" panel sent Pending Approvals
+to /approvals and Due for Maintenance to /reports/due-maintenance --
+both placeholder routes with nothing behind them.
+
+Flask's own dashboard has no separate /approvals page either --
+"Pending Approvals" is `#for-my-action`, an anchor to a worklist
+rendered inline on the dashboard, where each task links to its actual
+document via resolve_task_url(). This endpoint is that same mechanism
+exposed to a bearer-token client: ApprovalTaskService.list_for_user()
+already does the eligibility, org-scope and dedup work, so it is reused
+rather than reimplemented.
+
+URL resolution mirrors task_url_resolver.py's own _ROUTE_MAP, but only
+for reference_table values React has a built screen for
+(maintenance_orders). Everything else resolves to None -- exactly what
+task_url_resolver's own docstring says about tables it does not
+recognise ("future modules simply won't be clickable until added"),
+not an error and not invented.
+"""
+from flask import jsonify
+
+from app.modules.api.auth import api_auth_required
+from app.modules.api.routes import bp
+
+#: Only tables with a real React detail screen. Extend this the same
+#: way task_url_resolver.py is extended -- one entry per module as it
+#: ships, never guessed at ahead of the screen existing.
+_REACT_ROUTE_MAP = {
+    "maintenance_orders": "/maintenance-orders/{id}",
+}
+
+
+def _task_url(task):
+    template = _REACT_ROUTE_MAP.get(task.reference_table)
+    if template is None:
+        return None
+    return template.format(id=task.reference_id)
+
+
+@bp.route("/worklist/pending-approvals", methods=["GET"])
+@api_auth_required()
+def pending_approvals(api_user):
+    """PENDING tasks this user can act on, across every document type.
+
+    Gated on auth only, not a specific permission: eligibility is
+    entirely ApprovalTaskService's (direct assignment, or role + org
+    scope), and a second permission check here would be a second,
+    potentially drifting definition of who may see their own worklist.
+    """
+    from app.core.approval.task_service import ApprovalTaskService
+
+    tasks = ApprovalTaskService().list_for_user(api_user)
+    return jsonify({"items": [
+        {
+            "id": t.id,
+            "reference_table": t.reference_table,
+            "reference_id": t.reference_id,
+            "document_number": t.document_number,
+            "document_type": t.document_type.name if t.document_type else None,
+            "level_number": t.level_number,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            # None rather than a guess: a table this map does not cover
+            # yet still gets LISTED (the document number is still
+            # useful information) but is not made a dead or wrong link.
+            "url": _task_url(t),
+        }
+        for t in tasks
+    ]})
