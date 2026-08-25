@@ -400,3 +400,41 @@ def test_summary_requires_view_permission(db, client, pr_env):
     status, _ = _get(client, "/api/v1/purchase-requests/summary",
                      _token(client, "noprsum"))
     assert status == 403
+
+
+def test_resubmit_is_routed(db, client, pr_env):
+    _status, pr_body = _post(client, "/api/v1/purchase-requests",
+                             _token(client), _pr_payload(pr_env))
+    status, _ = _post(
+        client, f"/api/v1/purchase-requests/{pr_body['id']}/resubmit",
+        _token(client))
+    assert status != 404
+
+
+# ── Detail: approval chain + action-visibility decisions ────────────────────
+
+def test_detail_carries_the_approval_chain_shape(db, client, pr_env):
+    """Same shape Maintenance Orders already return, so ApprovalWorkflow
+    (React) renders both without a second component."""
+    _status, pr_body = _post(client, "/api/v1/purchase-requests",
+                             _token(client), _pr_payload(pr_env))
+    _status, detail = _get(
+        client, f"/api/v1/purchase-requests/{pr_body['id']}", _token(client))
+    for key in ("approval_chain", "approval_instance_status",
+               "can_act", "has_approval_instance", "is_requester"):
+        assert key in detail, f"{key} missing"
+    assert detail["approval_chain"] == []
+    assert detail["has_approval_instance"] is False
+
+
+def test_is_requester_reflects_who_created_it(db, client, pr_env):
+    _status, pr_body = _post(client, "/api/v1/purchase-requests",
+                             _token(client), _pr_payload(pr_env))
+    _status, detail = _get(
+        client, f"/api/v1/purchase-requests/{pr_body['id']}", _token(client))
+    assert detail["is_requester"] is True
+
+    _status, detail2 = _get(
+        client, f"/api/v1/purchase-requests/{pr_body['id']}",
+        _token(client, "prviewer"))
+    assert detail2["is_requester"] is False

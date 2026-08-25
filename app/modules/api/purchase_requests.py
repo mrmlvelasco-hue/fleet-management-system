@@ -177,7 +177,59 @@ def purchase_request_detail(api_user, pid):
     pr = PurchaseRequest.query.filter_by(id=pid).first()
     if pr is None:
         return _not_found()
-    return jsonify(_pr_json(pr, detail=True))
+    data = _pr_json(pr, detail=True)
+    _attach_approval_chain(data, pr, api_user)
+    return jsonify(data)
+
+
+def _attach_approval_chain(data, pr, api_user):
+    """Same shape Maintenance Orders already attach
+    (app/modules/api/maintenance_orders.py::_attach_approval_chain),
+    duplicated rather than shared under this build's time budget --
+    both read requester/approval_instance off their own model, which
+    differ enough (MaintenanceOrder vs PurchaseRequest) that extracting
+    a common helper safely wants its own pass rather than a rushed one
+    here. Flagged so it does not look like an oversight.
+
+    is_requester and has_approval_instance are DECISIONS from the
+    server, matching Flask's own button conditions exactly:
+
+      Submit         not approval_instance
+      Mark Ordered   approval_instance.status == APPROVED and
+                     status == DRAFT
+      Mark Received  status == ORDERED
+      Cancel         status not in (RECEIVED, CANCELLED) and requester
+    """
+    from app.core.approval.engine import ApprovalEngine
+
+    inst = getattr(pr, "approval_instance", None)
+    engine = ApprovalEngine()
+    chain = []
+    if inst is not None:
+        for entry in engine.get_approval_chain(inst):
+            acted_at = entry.get("acted_at")
+            chain.append({
+                "level_number": entry.get("level_number"),
+                "approver_label": entry.get("approver_label"),
+                "status": entry.get("status"),
+                "acted_by_name": entry.get("acted_by_name"),
+                "acted_at": acted_at.isoformat() if acted_at else None,
+                "remarks": entry.get("remarks"),
+            })
+        data["approval_instance_status"] = inst.status
+        data["approval_current_level"] = inst.current_level
+        data["can_act"] = bool(
+            api_user and engine.is_eligible_approver(inst, api_user))
+    else:
+        data["approval_instance_status"] = None
+        data["approval_current_level"] = None
+        data["can_act"] = False
+    data["approval_chain"] = chain
+    data["has_approval_instance"] = inst is not None
+    data["is_requester"] = bool(
+        api_user is not None
+        and getattr(pr, "requested_by", None) == getattr(api_user, "id", None))
+    return data
 
 
 @bp.route("/purchase-requests/<int:pid>/lines", methods=["POST"])
@@ -285,6 +337,14 @@ def return_purchase_request(api_user, pid):
 @api_auth_required("purchaserequest.update")
 def cancel_purchase_request(api_user, pid):
     return _lifecycle_action(api_user, pid, "cancel")
+
+
+@bp.route("/purchase-requests/<int:pid>/resubmit", methods=["POST"])
+@api_auth_required("purchaserequest.update")
+def resubmit_purchase_request(api_user, pid):
+    """RETURNED requests go back for approval after correction --
+    resubmit is on BaseTransactionService, same as Maintenance Orders."""
+    return _lifecycle_action(api_user, pid, "resubmit")
 
 
 @bp.route("/purchase-requests/<int:pid>/mark-ordered", methods=["POST"])
