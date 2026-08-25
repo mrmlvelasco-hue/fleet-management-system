@@ -498,3 +498,57 @@ def test_detail_carries_the_full_header_and_vendor_fields(db, client, inv_env):
     assert inv["vendor_phone"] == "0917-000"
     assert inv["vendor_email"] == "full@v.com"
     assert inv["vendor_address"] == "123 Rizal St"
+
+
+def test_end_to_end_create_add_line_then_fresh_get_shows_the_line(
+        db, client, inv_env):
+    """Reproduces the exact user flow reported: create an invoice header,
+    add ONE line, then re-fetch the invoice as a SEPARATE request (as
+    React does on expand) and confirm the line is there.
+
+    This is deliberately three SEPARATE client.* calls, not one Python
+    object read across all three -- a staleness bug on the READ side
+    (e.g. a cached relationship collection surviving across requests)
+    would only show up this way, not by inspecting the ORM object
+    in-process right after the write.
+    """
+    t = _token(client)
+    status, inv = _header(client, t, inv_env, "INV-E2E")
+    assert status == 201, inv
+
+    status, line = _post(client, f"/api/v1/invoices/{inv['id']}/lines", t, {
+        "part_description": "Labor - engine tune-up",
+        "expense_category": "LABOR", "charged_to": "COMPANY",
+        "quantity": 1, "unit_cost": 1200})
+    assert status == 201, line
+
+    # A FRESH GET, as its own request/response cycle.
+    status, fresh = _get(client, f"/api/v1/invoices/{inv['id']}", t)
+    assert status == 200
+    assert len(fresh["lines"]) == 1, (
+        f"line missing from a fresh GET despite a successful ADD: {fresh}")
+    assert fresh["lines"][0]["part_description"] == "Labor - engine tune-up"
+    # 1200 + 12% VAT (the header default) = 1344 -- matches the total
+    # the user's screenshot showed with zero lines rendered.
+    assert float(fresh["total_invoice_amount"]) == 1344.0
+
+
+def test_list_then_expand_flow_matches_what_the_client_does(db, client,
+                                                            inv_env):
+    """The exact two-call sequence MoInvoices.tsx makes: list the
+    order's invoices (summary only), then fetch one by id (full detail)
+    when the user expands it."""
+    t = _token(client)
+    _status, inv = _header(client, t, inv_env, "INV-FLOW")
+    _post(client, f"/api/v1/invoices/{inv['id']}/lines", t, {
+        "part_description": "Labor", "expense_category": "LABOR",
+        "charged_to": "COMPANY", "quantity": 1, "unit_cost": 1200})
+
+    _status, listed = _get(
+        client, f"/api/v1/maintenance-orders/{inv_env['order'].id}/invoices",
+        t)
+    row = next(i for i in listed["items"] if i["id"] == inv["id"])
+    assert float(row["total_invoice_amount"]) == 1344.0
+
+    _status, expanded = _get(client, f"/api/v1/invoices/{inv['id']}", t)
+    assert len(expanded["lines"]) == 1
