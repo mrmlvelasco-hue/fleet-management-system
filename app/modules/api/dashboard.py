@@ -368,6 +368,7 @@ def dashboard_awaiting_approval(api_user):
     from app.core.approval.task_service import ApprovalTaskService
     from app.core.reference_resolver import (get_worklist_labels,
                                              get_document_number)
+    from app.modules.api.worklist import _task_url
     from app.modules.user_management.models import User
 
     tasks = ApprovalTaskService().list_for_user(api_user)
@@ -414,6 +415,14 @@ def dashboard_awaiting_approval(api_user):
             "created_at": t.created_at.isoformat() if t.created_at else None,
             "reference_table": t.reference_table,
             "reference_id": t.reference_id,
+            # Where the approver goes to actually act on this. Reuses
+            # the SAME route map the pending-approvals worklist uses
+            # rather than a second mapping that could disagree about
+            # where a document type lives. None for a module with no
+            # React screen yet: the row still appears -- the approver
+            # needs to know it is waiting -- but is not made a link to
+            # a page that does not exist.
+            "url": _task_url(t),
         })
 
     return jsonify({"items": items, "total": total, "offset": offset})

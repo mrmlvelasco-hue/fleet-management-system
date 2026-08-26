@@ -285,6 +285,16 @@ def test_due_maintenance_carries_the_maintenance_type_id_for_deep_linking(
     _db.session.add(schedule)
     _db.session.commit()
 
+    # /dashboard/due-maintenance memoises its rows in a module-level
+    # dict with a 12-second TTL. Any EARLIER test in the same run that
+    # hit this endpoint leaves a populated entry behind, so a vehicle
+    # seeded afterwards never appears and this test fails with "the
+    # seeded vehicle should be due" -- a cache artefact, not a product
+    # bug. This is also what made the same test fail in wide cross-file
+    # batches while passing in isolation.
+    from app.modules.api.dashboard import _DUE_CACHE
+    _DUE_CACHE.clear()
+
     token = _token(client)
     status, body = _get(client, "/api/v1/dashboard/due-maintenance", token)
     assert status == 200
@@ -344,3 +354,81 @@ def test_approvals_pending_count_respects_the_branch_selector(db, client,
     _status, scoped = _get(
         client, f"/api/v1/dashboard/summary?branch_id={branch.id}", token)
     assert scoped["approvals_pending_count"] == 1
+
+
+def test_awaiting_approval_items_carry_a_url_to_the_document(db, client,
+                                                              dash_env):
+    """Reported: the approver's queue rows are plain text -- there is no
+    way to open the document being approved from the panel that exists
+    precisely to tell you it needs approving.
+
+    The row already has reference_table and reference_id; it just never
+    resolved them into a link. Reuses the SAME _REACT_ROUTE_MAP the
+    pending-approvals worklist already uses (app/modules/api/worklist.py)
+    rather than a second mapping that could disagree about where a
+    document type lives.
+    """
+    from app.core.approval.models import ApprovalInstance, ApprovalTask
+    from app.modules.document_config.models import DocumentType
+    from app.modules.document_config.service import DocumentTypeService
+    from app.extensions import db as _db
+
+    user, branch = dash_env
+    if DocumentType.query.filter_by(code="MO").first() is None:
+        DocumentTypeService().create(code="MO", name="MO",
+                                     requires_approval=False,
+                                     auto_numbering=True)
+    dt = DocumentType.query.filter_by(code="MO").first()
+    inst = ApprovalInstance(document_type_id=dt.id,
+                            reference_table="maintenance_orders",
+                            reference_id=777, status="PENDING",
+                            current_level=1, branch_id=branch.id)
+    _db.session.add(inst)
+    _db.session.flush()
+    _db.session.add(ApprovalTask(
+        approval_instance_id=inst.id, level_number=1, document_type_id=dt.id,
+        document_number="MO-2026-000777",
+        reference_table="maintenance_orders", reference_id=777,
+        assigned_user_id=user.id, branch_id=branch.id, status="PENDING"))
+    _db.session.commit()
+
+    _status, body = _get(client, "/api/v1/dashboard/awaiting-approval",
+                         _token(client))
+    row = next(i for i in body["items"] if i["reference_id"] == 777)
+    assert row["url"] == "/maintenance-orders/777"
+
+
+def test_awaiting_approval_url_is_null_for_an_unbuilt_module(db, client,
+                                                              dash_env):
+    """Same contract as the worklist: a document type with no React
+    screen yet is still LISTED -- the approver needs to know it is
+    waiting -- but is not made a link to a page that does not exist."""
+    from app.core.approval.models import ApprovalInstance, ApprovalTask
+    from app.modules.document_config.models import DocumentType
+    from app.modules.document_config.service import DocumentTypeService
+    from app.extensions import db as _db
+
+    user, branch = dash_env
+    if DocumentType.query.filter_by(code="MO").first() is None:
+        DocumentTypeService().create(code="MO", name="MO",
+                                     requires_approval=False,
+                                     auto_numbering=True)
+    dt = DocumentType.query.filter_by(code="MO").first()
+    inst = ApprovalInstance(document_type_id=dt.id,
+                            reference_table="trip_tickets", reference_id=888,
+                            status="PENDING", current_level=1,
+                            branch_id=branch.id)
+    _db.session.add(inst)
+    _db.session.flush()
+    _db.session.add(ApprovalTask(
+        approval_instance_id=inst.id, level_number=1, document_type_id=dt.id,
+        document_number="TT-888", reference_table="trip_tickets",
+        reference_id=888, assigned_user_id=user.id, branch_id=branch.id,
+        status="PENDING"))
+    _db.session.commit()
+
+    _status, body = _get(client, "/api/v1/dashboard/awaiting-approval",
+                         _token(client))
+    row = next(i for i in body["items"] if i["reference_id"] == 888)
+    assert row["url"] is None
+    assert row["document_number"] == "TT-888"
