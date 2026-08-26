@@ -358,7 +358,12 @@ def update_maintenance_order(api_user, oid):
 
 
 @bp.route("/maintenance-orders/<int:oid>/submit", methods=["POST"])
-@api_auth_required("maintenanceorder.submit")
+# Flask gates submit on maintenanceorder.update, not a
+# ".submit" action -- no such action is ever registered
+# (routes.py registers view/create/update/delete/print only),
+# so the invented code could not be granted by ANY seed and
+# the endpoint was permanently unusable for every user.
+@api_auth_required("maintenanceorder.update")
 def submit_maintenance_order(api_user, oid):
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService)
@@ -382,7 +387,7 @@ def start_work_maintenance_order(api_user, oid):
 
 
 @bp.route("/maintenance-orders/<int:oid>/complete", methods=["POST"])
-@api_auth_required("maintenanceorder.complete")
+@api_auth_required("maintenanceorder.update")
 def complete_maintenance_order(api_user, oid):
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService, IncompleteChecklistError,
@@ -406,7 +411,7 @@ def complete_maintenance_order(api_user, oid):
 
 
 @bp.route("/maintenance-orders/<int:oid>/cancel", methods=["POST"])
-@api_auth_required("maintenanceorder.cancel")
+@api_auth_required("maintenanceorder.update")
 def cancel_maintenance_order(api_user, oid):
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService)

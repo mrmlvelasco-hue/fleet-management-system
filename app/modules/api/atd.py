@@ -212,7 +212,7 @@ def create_atd(api_user):
 
 
 @bp.route("/atd/<int:aid>/submit", methods=["POST"])
-@api_auth_required("atd.submit")
+@api_auth_required("atd.update")
 def submit_atd(api_user, aid):
     from app.modules.transactions.atd.service import ATDService
     try:
@@ -237,7 +237,7 @@ def activate_atd(api_user, aid):
 
 
 @bp.route("/atd/<int:aid>/cancel", methods=["POST"])
-@api_auth_required("atd.cancel")
+@api_auth_required("atd.update")
 def cancel_atd(api_user, aid):
     from app.modules.transactions.atd.service import ATDService
     p = request.get_json(silent=True) or {}
