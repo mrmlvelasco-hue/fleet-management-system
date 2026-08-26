@@ -585,3 +585,33 @@ def test_full_link_roundtrip_survives_a_shared_session(db, client, pr_env):
     _status, pr_detail = _get(
         client, f"/api/v1/purchase-requests/{pr['id']}", t)
     assert pr_detail["linked_mo_document_number"] == order.document_number
+
+
+def test_pr_detail_carries_the_configured_company_letterhead(db, client,
+                                                              pr_env):
+    """Same fix as MO: print headers were hardcoded rather than reading
+    System Administration's Company Profile, which every one of Flask's
+    print templates uses."""
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+
+    CompanyProfileService().save(
+        company_name="Excellence Poultry & Livestock Specialist Inc.",
+        address_line1="123 Governor's Drive", city="Carmona, Cavite")
+    db.session.commit()
+
+    _status, pr = _post(client, "/api/v1/purchase-requests", _token(client),
+                        _pr_payload(pr_env))
+    _status, detail = _get(
+        client, f"/api/v1/purchase-requests/{pr['id']}", _token(client))
+    assert detail["company"]["company_name"] == (
+        "Excellence Poultry & Livestock Specialist Inc.")
+    assert detail["company"]["city"] == "Carmona, Cavite"
+
+
+def test_pr_detail_company_is_empty_when_unconfigured(db, client, pr_env):
+    _status, pr = _post(client, "/api/v1/purchase-requests", _token(client),
+                        _pr_payload(pr_env))
+    _status, detail = _get(
+        client, f"/api/v1/purchase-requests/{pr['id']}", _token(client))
+    assert detail["company"] == {}

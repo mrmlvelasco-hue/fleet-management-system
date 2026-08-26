@@ -258,6 +258,10 @@ def get_maintenance_order(api_user, oid):
     if o is None:
         return _not_found()
     data = _order_json(o, detail=True)
+    # Letterhead for the print view -- from System Administration's
+    # Company Profile, matching every one of Flask's print templates.
+    from app.modules.api.company_letterhead import company_letterhead
+    data["company"] = company_letterhead()
     data["editable"] = MaintenanceOrderService().editable_scope(o)
     _attach_approval_chain(data, o, api_user)
     return jsonify(data)

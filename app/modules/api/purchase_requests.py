@@ -220,6 +220,10 @@ def purchase_request_detail(api_user, pid):
         return _not_found()
     data = _pr_json(pr, detail=True)
     _attach_approval_chain(data, pr, api_user)
+    # Letterhead for the print view -- from System Administration's
+    # Company Profile, matching Flask's purchaserequest_print.html.
+    from app.modules.api.company_letterhead import company_letterhead
+    data["company"] = company_letterhead()
     return jsonify(data)
 
 

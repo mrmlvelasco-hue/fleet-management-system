@@ -274,14 +274,12 @@ def atd_print(api_user, aid):
     """
     from datetime import datetime
     from app.modules.transactions.atd.service import ATDService
-    from app.modules.system_admin.services.company_service import (
-        CompanyProfileService)
+    from app.modules.api.company_letterhead import company_letterhead
 
     a = ATDService().get_visible(aid, api_user)
     if a is None:
         return _not_found()
 
-    company = CompanyProfileService().get()
     data = _atd_json(a, detail=True)
 
     # Extra print fields used by the official slip
@@ -321,11 +319,11 @@ def atd_print(api_user, aid):
 
     return jsonify({
         "atd": data,
-        "company": {
-            "company_name": getattr(company, "company_name", None),
-            "address_line": getattr(company, "address_line", None),
-            "city": getattr(company, "city", None),
-        } if company else {},
+        # Was reading `address_line`, a column CompanyProfile does not
+        # have (the real one is address_line1) -- so this printed
+        # letterhead's address line had always been blank. Switched to
+        # the shared helper so the field names cannot drift again.
+        "company": company_letterhead(),
         "generated_at": datetime.now().isoformat(),
         "copies": 2,
     })

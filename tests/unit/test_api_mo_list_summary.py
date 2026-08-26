@@ -569,3 +569,53 @@ def test_prefill_carries_the_assignees_job_title(db, client, mol_env):
         _token(client))
     assert status == 200
     assert body["vehicle"]["assigned_driver_position"] == "HR Manager"
+
+
+# ── Print letterhead: company profile from System Configuration ────────────
+
+def _seed_company(db):
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    CompanyProfileService().save(
+        company_name="Excellence Poultry & Livestock Specialist Inc.",
+        address_line1="123 Governor's Drive", city="Carmona, Cavite",
+        phone="046-123-4567", tin="123-456-789-000")
+    db.session.commit()
+
+
+def test_mo_print_carries_the_configured_company_letterhead(db, client,
+                                                            mol_env):
+    """Reported: print headers were hardcoded to "Enterprise Fleet
+    Management System". Every one of Flask's 12 print templates instead
+    reads the CompanyProfile configured in System Administration:
+      {{ company.company_name if company else 'Company Name' }}
+
+    Embedded in this endpoint's own payload rather than fetched by the
+    client from /admin/company, which is gated on company.view -- a
+    permission ordinary staff who print documents have no reason to
+    hold. Same approach ATD's print endpoint already uses.
+    """
+    _grant_create(db, mol_env)
+    _seed_company(db)
+    order = _order(db, mol_env)
+
+    status, body = _get(client, f"/api/v1/maintenance-orders/{order.id}",
+                        _token(client))
+    assert status == 200
+    assert body["company"]["company_name"] == (
+        "Excellence Poultry & Livestock Specialist Inc.")
+    assert body["company"]["address_line1"] == "123 Governor's Drive"
+    assert body["company"]["city"] == "Carmona, Cavite"
+
+
+def test_mo_print_company_is_an_empty_object_when_unconfigured(db, client,
+                                                               mol_env):
+    """A fresh install has no CompanyProfile row at all. The client
+    falls back to a neutral label rather than the endpoint 500ing or
+    inventing a name."""
+    _grant_create(db, mol_env)
+    order = _order(db, mol_env)
+    status, body = _get(client, f"/api/v1/maintenance-orders/{order.id}",
+                        _token(client))
+    assert status == 200
+    assert body["company"] == {}
