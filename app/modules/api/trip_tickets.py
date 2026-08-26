@@ -167,6 +167,30 @@ def create_trip_ticket(api_user):
     return jsonify(_trip_json(trip, detail=True)), 201
 
 
+@bp.route("/trip-tickets/form-options", methods=["GET"])
+@api_auth_required("tripticket.view")
+def trip_ticket_form_options(api_user):
+    """What the create form needs to render itself correctly.
+
+    require_driver_from_master decides whether the Driver field is a
+    Driver Master picker or a free-text name. That setting lives in
+    System Administration and is otherwise readable only via
+    /admin/parameters, which an ordinary trip clerk has no reason to
+    hold -- the same problem the print letterhead had, solved the same
+    way: the module's own endpoint reports the one flag its own form
+    depends on.
+    """
+    from app.modules.system_admin.services.system_parameter_service import (
+        SystemParameterService)
+
+    raw = SystemParameterService().get("REQUIRE_DRIVER_FROM_MASTER",
+                                       default="YES")
+    return jsonify({
+        "require_driver_from_master":
+            str(raw).upper() in ("YES", "TRUE", "1"),
+    })
+
+
 @bp.route("/trip-tickets/<int:tid>", methods=["GET"])
 @api_auth_required("tripticket.view")
 def trip_ticket_detail(api_user, tid):

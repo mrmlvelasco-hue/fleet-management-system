@@ -290,3 +290,37 @@ def test_complete_requires_an_odometer_reading(db, client, tt_env):
     status, _ = _post(client, f"/api/v1/trip-tickets/{trip['id']}/complete",
                       _token(client), {})
     assert status == 400
+
+
+def test_driver_reference_is_reachable_without_vehicle_permissions(db, client,
+                                                                    tt_env):
+    """The Trip Ticket form's driver picker calls /reference/drivers.
+    It was gated on vehicle.view -- an accident of the Vehicle
+    Assignment screen having needed it first. A trip clerk with no
+    vehicle permissions could not populate the driver field on their
+    own form, which has nothing to do with vehicle master data. Same
+    fault already fixed once on /reference/departments."""
+    _make_driver(db, tt_env, name="Ref Driver")
+    status, body = _get(client, "/api/v1/reference/drivers", _token(client))
+    assert status == 200, body
+    assert "items" in body
+
+
+def test_form_options_report_the_driver_mode(db, client, tt_env):
+    """The create form must know whether to render a Driver Master
+    picker or a free-text name field. That decision lives in
+    REQUIRE_DRIVER_FROM_MASTER, readable only via /admin/parameters --
+    an administration endpoint an ordinary trip clerk has no reason to
+    hold. Exposed on this module's own endpoint instead, the same way
+    the print letterhead is, so the form can render correctly without
+    granting admin rights."""
+    _set_param(db, "REQUIRE_DRIVER_FROM_MASTER", "YES")
+    status, body = _get(client, "/api/v1/trip-tickets/form-options",
+                        _token(client))
+    assert status == 200, body
+    assert body["require_driver_from_master"] is True
+
+    _set_param(db, "REQUIRE_DRIVER_FROM_MASTER", "NO")
+    _status, body2 = _get(client, "/api/v1/trip-tickets/form-options",
+                          _token(client))
+    assert body2["require_driver_from_master"] is False

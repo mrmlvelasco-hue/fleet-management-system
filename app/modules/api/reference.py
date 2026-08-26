@@ -233,9 +233,17 @@ def reference_pm_schedules(api_user):
 # ── Drivers and departments ─────────────────────────────────────────────────
 
 @bp.route("/reference/drivers", methods=["GET"])
-@api_auth_required("vehicle.view")
+@api_auth_required()
 def reference_drivers(api_user):
     """Driver search for the Assigned Driver selector.
+
+    Gated on auth only, matching the reasoning already recorded on
+    /reference/departments and /reference/vendors. Was vehicle.view --
+    an accident of the Vehicle Assignment screen having been the first
+    to need this list. Drivers are general reference data several
+    unrelated forms need (vehicle assignment, ATD, and now Trip
+    Tickets), and a trip clerk with no vehicle permissions could not
+    otherwise populate the driver field on their own form.
 
     Only ACTIVE drivers, as the form states — offering a deactivated
     driver would assign accountability for a vehicle to someone who has
