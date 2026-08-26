@@ -324,3 +324,37 @@ def test_form_options_report_the_driver_mode(db, client, tt_env):
     _status, body2 = _get(client, "/api/v1/trip-tickets/form-options",
                           _token(client))
     assert body2["require_driver_from_master"] is False
+
+
+def test_trip_ticket_attachments_upload_and_list(db, client, tt_env):
+    """Extends the same generic attachment pattern MO/PR/vehicles use,
+    rather than a fourth mechanism."""
+    import io
+
+    _set_param(db, "REQUIRE_DRIVER_FROM_MASTER", "NO")
+    t = _token(client)
+    _status, trip = _post(client, "/api/v1/trip-tickets", t,
+                          _payload(tt_env, driver_name_manual="X"))
+    r = client.post(f"/api/v1/trip-tickets/{trip['id']}/attachments",
+                    data={"file": (io.BytesIO(b"%PDF-1.4"), "gate_pass.pdf")},
+                    content_type="multipart/form-data",
+                    headers={"Authorization": f"Bearer {t}"})
+    assert r.status_code == 201, r.get_data(as_text=True)
+
+    status, body = _get(
+        client, f"/api/v1/trip-tickets/{trip['id']}/attachments", t)
+    assert status == 200
+    assert body["items"][0]["original_filename"] == "gate_pass.pdf"
+
+
+def test_trip_ticket_attachment_upload_requires_update(db, client, tt_env):
+    import io
+
+    _set_param(db, "REQUIRE_DRIVER_FROM_MASTER", "NO")
+    _status, trip = _post(client, "/api/v1/trip-tickets", _token(client),
+                          _payload(tt_env, driver_name_manual="X"))
+    r = client.post(f"/api/v1/trip-tickets/{trip['id']}/attachments",
+                    data={"file": (io.BytesIO(b"%PDF-1.4"), "x.pdf")},
+                    content_type="multipart/form-data",
+                    headers={"Authorization": f"Bearer {_token(client, 'tripviewer')}"})
+    assert r.status_code == 403
