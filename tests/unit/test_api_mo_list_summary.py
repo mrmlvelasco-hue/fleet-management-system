@@ -410,3 +410,49 @@ def test_prefill_respects_org_scope(db, client, mol_env):
         f"/api/v1/maintenance-orders/new-prefill?vehicle_id={other_vehicle.id}",
         _token(client))
     assert status == 404
+
+
+def test_prefill_never_touches_a_name_attribute_pmschedule_does_not_have(
+        db, client, mol_env):
+    _grant_create(db, mol_env)
+    """Reproduces a real production 500, from the client's own error
+    log: AttributeError: 'PMSchedule' object has no attribute 'name'.
+
+    Checked against Flask's own template afterward (never checked
+    BEFORE writing the original code, which is exactly how this
+    shipped): maintenanceorder_form.html's recommendation banner never
+    reads a name/label off the recommended package at all -- only
+    status, due_by, due_odometer, due_date, reason and
+    beyond_defined_cycle. package_name was invented from nothing, not
+    merely mis-spelled -- PMSchedule has no naming field this endpoint
+    should have reached for in the first place.
+
+    Submits an actual maintenance schedule (not a bare mock) so this
+    exercises the real model, the same way the field existing in a
+    hand-rolled test double could have hidden this bug the first time.
+    """
+    from app.modules.maintenance_config.models import PMSchedule
+    from app.extensions import db as _db
+
+    schedule = PMSchedule(
+        maintenance_type_id=mol_env["mt"].id, trigger_mode="KM",
+        interval_km=1000, cumulative_km=1000,
+        vehicle_type_id=mol_env["vt"].id)
+    _db.session.add(schedule)
+    mol_env["vehicle"].current_odometer = 1200
+    _db.session.commit()
+
+    # Confirmed directly against the recommendation service before
+    # writing this assertion: with the vehicle above the schedule's
+    # cumulative_km, get_next_due_recommendation genuinely returns a
+    # real PMSchedule instance as recommended_package -- this is not a
+    # bare mock standing in for one, which is exactly the kind of
+    # test double that could have hidden a missing real attribute the
+    # first time this endpoint was written.
+    status, body = _get(
+        client,
+        f"/api/v1/maintenance-orders/new-prefill?vehicle_id={mol_env['vehicle'].id}",
+        _token(client))
+    assert status == 200, body
+    assert "package_name" not in body["pm_recommendation"]
+    assert body["pm_recommendation"]["status"] == "OVERDUE"

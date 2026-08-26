@@ -911,7 +911,6 @@ def maintenance_order_new_prefill(api_user):
     due_template = PMScopeTemplateService().get_next_due_scope_template(
         vehicle, maintenance_type_id=maintenance_type_id)
 
-    pkg = rec.get("recommended_package")
     return jsonify({
         "vehicle": {
             "id": vehicle.id,
@@ -936,7 +935,16 @@ def maintenance_order_new_prefill(api_user):
             "due_odometer": rec.get("due_odometer"),
             "due_date": (rec["due_date"].isoformat()
                         if rec.get("due_date") else None),
-            "package_name": pkg.name if pkg else None,
+            # No package_name: checked against Flask's own template
+            # afterward (should have been checked before writing this
+            # the first time) -- maintenanceorder_form.html's
+            # recommendation banner never displays a name or label for
+            # the recommended package at all, only status/due_by/
+            # due_odometer/due_date/reason/beyond_defined_cycle, all of
+            # which are already here. PMSchedule has no naming column;
+            # this field was invented from nothing, not merely
+            # mis-spelled, and the fix is to drop it rather than guess
+            # a second attribute name.
             "scope_template_id": due_template.id if due_template else None,
             "beyond_defined_cycle": rec.get("beyond_defined_cycle", False),
         },
