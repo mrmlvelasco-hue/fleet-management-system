@@ -243,3 +243,52 @@ def test_preflight_is_answered_without_a_token(db, client, dash_env, app):
                                 "Access-Control-Request-Method": "GET"})
     assert r.status_code == 200
     assert "Authorization" in r.headers.get("Access-Control-Allow-Headers", "")
+
+
+def test_due_maintenance_carries_the_maintenance_type_id_for_deep_linking(
+        db, client, dash_env):
+    """Reported bug, reproduced end to end: clicking a due vehicle's
+    plate number from this exact list landed on a New Maintenance
+    Order with NO Maintenance Type selected and a completely unrelated
+    PM Scope Template recommended (a Tires package instead of
+    Preventive Maintenance Service).
+
+    Root cause, found by reading Flask's own dashboard link builder
+    (app/modules/main/routes.py's _compute_due_widgets): it passes
+    maintenance_type_id=schedule.maintenance_type_id in the deep link,
+    alongside vehicle_id -- so the New MO form opens already knowing
+    which maintenance type this due item is FOR, and the PM
+    recommendation is scoped to that type rather than searching across
+    every maintenance type on the vehicle globally (which is what
+    picked an unrelated Tires schedule as "more due" in absolute
+    terms). This API endpoint never exposed maintenance_type_id at
+    all, so the client had nothing to build a scoped deep link with.
+    """
+    from app.modules.master_data.reference.service import (
+        MaintenanceTypeService, VehicleTypeService)
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.maintenance_config.models import PMSchedule
+    from app.extensions import db as _db
+
+    vt = VehicleTypeService().create(code="LV-DASH2", name="Light",
+                                     category="LIGHT")
+    branch = dash_env[1]
+    mt = MaintenanceTypeService().create(code="DASH-PM", name="PM Service",
+                                         category="PM")
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Vios", year=2024,
+        branch_id=branch.id, conduction_number="DASH-DUE",
+        plate_number="DUE-001", current_odometer=1200)
+    schedule = PMSchedule(maintenance_type_id=mt.id, trigger_mode="KM",
+                          interval_km=1000, cumulative_km=1000,
+                          vehicle_type_id=vt.id)
+    _db.session.add(schedule)
+    _db.session.commit()
+
+    token = _token(client)
+    status, body = _get(client, "/api/v1/dashboard/due-maintenance", token)
+    assert status == 200
+    row = next((r for r in body["items"] if r["vehicle_id"] == vehicle.id),
+              None)
+    assert row is not None, "the seeded vehicle should be due"
+    assert row["maintenance_type_id"] == mt.id

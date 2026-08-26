@@ -144,6 +144,17 @@ def _shared_due_rows(api_user, branch_id=None):
             "branch": v.branch.name if v.branch else None,
             "branch_id": v.branch_id,
             "maintenance_type": getattr(m_type, "name", None),
+            # Reported bug, reproduced end to end: without this, the
+            # client had nothing to build a scoped deep link with, so
+            # clicking a due item opened the New MO form with no
+            # Maintenance Type selected and a PM recommendation search
+            # scanning every maintenance type on the vehicle globally --
+            # which is what surfaced an unrelated Tires schedule instead
+            # of the correct Preventive Maintenance Service one. Matches
+            # Flask's own dashboard link builder
+            # (schedule.maintenance_type_id in the deep link) exactly.
+            "maintenance_type_id": (schedule.maintenance_type_id
+                                    if schedule else None),
             "current_odometer": v.current_odometer,
             "due_odometer": d.get("next_due_km"),
             "due_date": due_date.isoformat() if due_date else None,
