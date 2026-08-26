@@ -921,6 +921,9 @@ def maintenance_order_new_prefill(api_user):
             "branch": vehicle.branch.name if vehicle.branch else None,
             "assigned_driver": (vehicle.assigned_driver.full_name
                                if vehicle.assigned_driver else None),
+            "assigned_driver_position": (
+                vehicle.assigned_driver.job_title
+                if vehicle.assigned_driver else None),
             "current_odometer": vehicle.current_odometer,
         },
         "scope_templates": [

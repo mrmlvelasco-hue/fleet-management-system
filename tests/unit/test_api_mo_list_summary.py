@@ -544,3 +544,28 @@ def test_scope_template_details_without_a_vehicle_shows_raw_tokens(
         _token(client))
     assert status == 200
     assert body["work_description"] == "pm2 servicing"
+
+
+def test_prefill_carries_the_assignees_job_title(db, client, mol_env):
+    """Matches Flask's Vehicle Information Summary field "Assignee
+    Position" (assigned_driver.job_title) exactly."""
+    _grant_create(db, mol_env)
+    from app.modules.master_data.driver.service import DriverService
+    from app.modules.system_admin.models import SystemParameter
+
+    db.session.add(SystemParameter(code="REQUIRE_ASSIGNEE_PHOTO", value="NO",
+                                   data_type="BOOLEAN"))
+    db.session.commit()
+    driver = DriverService().create(
+        employee_number="EMP-PF01", first_name="Michael",
+        last_name="Velasco", branch_id=mol_env["branch"].id,
+        assignee_type="EMPLOYEE", job_title="HR Manager", user=None)
+    mol_env["vehicle"].assigned_driver_id = driver.id
+    db.session.commit()
+
+    status, body = _get(
+        client,
+        f"/api/v1/maintenance-orders/new-prefill?vehicle_id={mol_env['vehicle'].id}",
+        _token(client))
+    assert status == 200
+    assert body["vehicle"]["assigned_driver_position"] == "HR Manager"
