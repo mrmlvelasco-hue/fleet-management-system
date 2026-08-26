@@ -78,6 +78,21 @@ def _visible_trip_ticket(trip_id, api_user):
     return trip if trip.id in visible_ids else None
 
 
+def _visible_registration(reg_id, api_user):
+    """Reuses list_filtered's org-scope rule, same as the other
+    transaction helpers here."""
+    from app.modules.transactions.vehicle_registration.models import (
+        VehicleRegistration)
+    from app.modules.transactions.vehicle_registration.service import (
+        VehicleRegistrationService)
+    reg = VehicleRegistration.query.filter_by(id=reg_id).first()
+    if reg is None:
+        return None
+    visible_ids = {r.id for r in VehicleRegistrationService().list_filtered(
+        user=api_user, page=1, per_page=100000)[0]}
+    return reg if reg.id in visible_ids else None
+
+
 def _visible_purchase_request(pr_id, api_user):
     from app.modules.transactions.purchase_request.models import (
         PurchaseRequest)
@@ -107,6 +122,8 @@ def _parent_visible(reference_table, reference_id, api_user):
         return _visible_purchase_request(reference_id, api_user) is not None
     if reference_table == "trip_tickets":
         return _visible_trip_ticket(reference_id, api_user) is not None
+    if reference_table == "vehicle_registrations":
+        return _visible_registration(reference_id, api_user) is not None
     return False
 
 
@@ -321,7 +338,8 @@ def delete_attachment(api_user, attachment_id):
             "tires": "tire.create", "batteries": "battery.create",
             "maintenance_orders": "maintenanceorder.update",
             "purchase_requests": "purchaserequest.create",
-            "trip_tickets": "tripticket.update"}.get(
+            "trip_tickets": "tripticket.update",
+            "vehicle_registrations": "vehicleregistration.update"}.get(
         att.reference_table)
     if need and not _can(api_user, need):
         return jsonify({"error": "forbidden",
@@ -549,6 +567,42 @@ def upload_trip_ticket_attachment(api_user, trip_id):
     try:
         attachment = AttachmentService().upload(
             file, "trip_tickets", trip_id, user=api_user,
+            document_type=(request.form.get("document_type") or None))
+    except AttachmentError as exc:
+        return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
+
+
+@bp.route("/vehicle-registrations/<int:reg_id>/attachments", methods=["GET"])
+@api_auth_required("vehicleregistration.view")
+def registration_attachments(api_user, reg_id):
+    if _visible_registration(reg_id, api_user) is None:
+        return _not_found("Vehicle Registration")
+    from app.core.attachments.attachment_service import AttachmentService
+    rows = AttachmentService().list_for("vehicle_registrations", reg_id)
+    return jsonify({
+        "items": [_attachment_json(a) for a in rows],
+        "attachment_allowed": _attachments_allowed_for("vehicle_registrations"),
+    })
+
+
+@bp.route("/vehicle-registrations/<int:reg_id>/attachments", methods=["POST"])
+@api_auth_required("vehicleregistration.update")
+def upload_registration_attachment(api_user, reg_id):
+    if _visible_registration(reg_id, api_user) is None:
+        return _not_found("Vehicle Registration")
+    if not _attachments_allowed_for("vehicle_registrations"):
+        return _attachments_blocked("vehicle_registrations")
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+
+    from app.core.attachments.attachment_service import (AttachmentError,
+                                                         AttachmentService)
+    try:
+        attachment = AttachmentService().upload(
+            file, "vehicle_registrations", reg_id, user=api_user,
             document_type=(request.form.get("document_type") or None))
     except AttachmentError as exc:
         return _bad(str(exc))

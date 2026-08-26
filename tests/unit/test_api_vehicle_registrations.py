@@ -355,3 +355,49 @@ def test_a_checklist_item_cannot_be_toggled_through_another_registration(
     _status, second_detail = _get(
         client, f"/api/v1/vehicle-registrations/{second['id']}", t)
     assert second_detail["checklist_items"][0]["is_done"] is False
+
+
+def test_registration_attachments_upload_and_list(db, client, vr_env):
+    """Extends the same generic attachment pattern, including the
+    Document Type's Attachment Allowed gate (flask-v178) -- so the VR
+    doctype must permit it, exactly as a real deployment configures."""
+    import io
+    from app.modules.document_config.models import DocumentType
+
+    dt = DocumentType.query.filter_by(code="VR").first()
+    dt.attachment_allowed = True
+    db.session.commit()
+
+    t = _token(client)
+    _status, reg = _post(client, "/api/v1/vehicle-registrations", t,
+                         _payload(vr_env))
+    r = client.post(f"/api/v1/vehicle-registrations/{reg['id']}/attachments",
+                    data={"file": (io.BytesIO(b"%PDF-1.4"), "or_copy.pdf")},
+                    content_type="multipart/form-data",
+                    headers={"Authorization": f"Bearer {t}"})
+    assert r.status_code == 201, r.get_data(as_text=True)
+
+    status, body = _get(
+        client, f"/api/v1/vehicle-registrations/{reg['id']}/attachments", t)
+    assert status == 200
+    assert body["items"][0]["original_filename"] == "or_copy.pdf"
+    assert body["attachment_allowed"] is True
+
+
+def test_registration_attachments_respect_the_doctype_setting(db, client,
+                                                               vr_env):
+    import io
+    from app.modules.document_config.models import DocumentType
+
+    dt = DocumentType.query.filter_by(code="VR").first()
+    dt.attachment_allowed = False
+    db.session.commit()
+
+    t = _token(client)
+    _status, reg = _post(client, "/api/v1/vehicle-registrations", t,
+                         _payload(vr_env))
+    r = client.post(f"/api/v1/vehicle-registrations/{reg['id']}/attachments",
+                    data={"file": (io.BytesIO(b"%PDF-1.4"), "x.pdf")},
+                    content_type="multipart/form-data",
+                    headers={"Authorization": f"Bearer {t}"})
+    assert r.status_code == 409
