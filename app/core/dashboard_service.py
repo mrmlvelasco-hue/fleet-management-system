@@ -57,10 +57,23 @@ class DashboardService:
         vehicles = sorted(vehicles, key=lambda v: v.id, reverse=True)
         return vehicles[:limit]
 
-    def approvals_pending_count(self, user) -> int:
+    def approvals_pending_count(self, user, branch_id=None) -> int:
+        """Tasks awaiting this user's decision, optionally scoped to one
+        branch.
+
+        branch_id was previously not accepted at all, while every other
+        count on the same dashboard summary already took it -- so the
+        approvals tile reported every branch regardless of the header's
+        branch selector, and disagreed with the worklist beneath it.
+        Same class of count/list disagreement already fixed once for
+        registrations; see registrations_expiring_count below.
+        """
         if user is None:
             return 0
-        return len(ApprovalTaskService().list_for_user(user))
+        tasks = ApprovalTaskService().list_for_user(user)
+        if branch_id is not None:
+            tasks = [t for t in tasks if t.branch_id == branch_id]
+        return len(tasks)
 
     def registrations_expiring_count(self, user=None, days_ahead: int = 30,
                                      branch_id=None) -> int:

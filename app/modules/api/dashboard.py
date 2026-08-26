@@ -187,7 +187,8 @@ def dashboard_summary(api_user):
     return jsonify({
         "fleet_count": dash.fleet_count(user=api_user, branch_id=branch_id),
         "maintenance_due_count": len(due_rows),
-        "approvals_pending_count": dash.approvals_pending_count(api_user),
+        "approvals_pending_count": dash.approvals_pending_count(
+            api_user, branch_id=branch_id),
         "registrations_expiring_count": dash.registrations_expiring_count(
             user=api_user, branch_id=branch_id),
         "tire_stock_count": dash.tire_stock_count(
@@ -470,7 +471,8 @@ def dashboard_bootstrap(api_user):
         "summary": {
             "fleet_count": dash.fleet_count(user=api_user, branch_id=branch_id),
             "maintenance_due_count": len(due_rows),
-            "approvals_pending_count": dash.approvals_pending_count(api_user),
+            "approvals_pending_count": dash.approvals_pending_count(
+            api_user, branch_id=branch_id),
             "registrations_expiring_count": dash.registrations_expiring_count(
                 user=api_user, branch_id=branch_id),
             "tire_stock_count": dash.tire_stock_count(

@@ -292,3 +292,55 @@ def test_due_maintenance_carries_the_maintenance_type_id_for_deep_linking(
               None)
     assert row is not None, "the seeded vehicle should be due"
     assert row["maintenance_type_id"] == mt.id
+
+
+def test_approvals_pending_count_respects_the_branch_selector(db, client,
+                                                               dash_env):
+    """Reported: approval figures did not tie up with the branch chosen
+    in the dashboard header.
+
+    Every other count in this summary already took branch_id --
+    fleet_count, registrations_expiring_count, tire_stock_count,
+    battery_stock_count -- but approvals_pending_count was called with
+    the user alone, so it always reported every branch's tasks
+    regardless of the selector. The same class of count/list
+    disagreement already fixed once for registrations (see
+    dashboard_service.registrations_expiring_count's own comment).
+    """
+    from app.core.approval.models import ApprovalInstance, ApprovalTask
+    from app.modules.document_config.models import DocumentType
+    from app.modules.document_config.service import (
+        DocumentTypeService, NumberingSchemeService)
+    from app.modules.master_data.org.service import BranchService
+    from app.extensions import db as _db
+
+    user, branch = dash_env
+    if DocumentType.query.filter_by(code="MO").first() is None:
+        DocumentTypeService().create(code="MO", name="MO",
+                                     requires_approval=False,
+                                     auto_numbering=True)
+    dt = DocumentType.query.filter_by(code="MO").first()
+    other = BranchService().create(code="BR-DASHX", name="Other Dash Branch")
+    _db.session.commit()
+
+    for idx, b in enumerate([branch, other], start=1):
+        inst = ApprovalInstance(document_type_id=dt.id,
+                                reference_table="maintenance_orders",
+                                reference_id=900 + idx, status="PENDING",
+                                current_level=1, branch_id=b.id)
+        _db.session.add(inst)
+        _db.session.flush()
+        _db.session.add(ApprovalTask(
+            approval_instance_id=inst.id, level_number=1,
+            document_type_id=dt.id, document_number=f"MO-90{idx}",
+            reference_table="maintenance_orders", reference_id=900 + idx,
+            assigned_user_id=user.id, branch_id=b.id, status="PENDING"))
+    _db.session.commit()
+
+    token = _token(client)
+    _status, all_b = _get(client, "/api/v1/dashboard/summary", token)
+    assert all_b["approvals_pending_count"] == 2
+
+    _status, scoped = _get(
+        client, f"/api/v1/dashboard/summary?branch_id={branch.id}", token)
+    assert scoped["approvals_pending_count"] == 1

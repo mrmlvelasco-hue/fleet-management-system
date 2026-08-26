@@ -248,3 +248,63 @@ def test_a_purchase_request_task_now_resolves_to_the_real_screen(db, client,
                if i["reference_table"] == "purchase_requests"]
     assert len(pr_items) == 1
     assert pr_items[0]["url"] == "/purchase-requests/5"
+
+
+# ── Branch filtering: worklist and count must agree with the header ────────
+
+def _pending_task(db, wl_env, *, branch_id, reference_id, doc="MO-X"):
+    from app.core.approval.models import ApprovalInstance, ApprovalTask
+    from app.modules.document_config.models import DocumentType
+    dt = DocumentType.query.filter_by(code="MO").first()
+    inst = ApprovalInstance(document_type_id=dt.id,
+                            reference_table="maintenance_orders",
+                            reference_id=reference_id, status="PENDING",
+                            current_level=1, branch_id=branch_id)
+    db.session.add(inst)
+    db.session.flush()
+    db.session.add(ApprovalTask(
+        approval_instance_id=inst.id, level_number=1, document_type_id=dt.id,
+        document_number=doc, reference_table="maintenance_orders",
+        reference_id=reference_id, assigned_user_id=wl_env["approver"].id,
+        branch_id=branch_id, status="PENDING"))
+    db.session.commit()
+
+
+def test_worklist_can_be_filtered_to_one_branch(db, client, wl_env):
+    """Reported: the approval counts and worklist ignored the branch
+    selector at the top of the dashboard, so the figures did not tie up
+    with the branch the person had chosen."""
+    from app.modules.master_data.org.service import BranchService
+
+    other = BranchService().create(code="BR-WL2", name="Other Branch")
+    db.session.commit()
+    _pending_task(db, wl_env, branch_id=wl_env["branch"].id, reference_id=101,
+                  doc="MO-HERE")
+    _pending_task(db, wl_env, branch_id=other.id, reference_id=102,
+                  doc="MO-THERE")
+
+    t = _token(client)
+    _status, all_items = _get(client, "/api/v1/worklist/pending-approvals", t)
+    assert len(all_items["items"]) == 2
+
+    _status, scoped = _get(
+        client,
+        f"/api/v1/worklist/pending-approvals?branch_id={wl_env['branch'].id}",
+        t)
+    numbers = {i["document_number"] for i in scoped["items"]}
+    assert numbers == {"MO-HERE"}
+
+
+def test_worklist_unfiltered_still_returns_every_branch(db, client, wl_env):
+    """No branch_id means "All Branches" -- the filter must not
+    silently narrow the default view."""
+    from app.modules.master_data.org.service import BranchService
+
+    other = BranchService().create(code="BR-WL3", name="Third")
+    db.session.commit()
+    _pending_task(db, wl_env, branch_id=wl_env["branch"].id, reference_id=201)
+    _pending_task(db, wl_env, branch_id=other.id, reference_id=202)
+
+    _status, body = _get(client, "/api/v1/worklist/pending-approvals",
+                         _token(client))
+    assert len(body["items"]) == 2

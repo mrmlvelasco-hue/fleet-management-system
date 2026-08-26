@@ -19,7 +19,7 @@ task_url_resolver's own docstring says about tables it does not
 recognise ("future modules simply won't be clickable until added"),
 not an error and not invented.
 """
-from flask import jsonify
+from flask import jsonify, request
 
 from app.modules.api.auth import api_auth_required
 from app.modules.api.routes import bp
@@ -60,6 +60,16 @@ def pending_approvals(api_user):
     from app.core.approval.task_service import ApprovalTaskService
 
     tasks = ApprovalTaskService().list_for_user(api_user)
+
+    # Honour the dashboard's branch selector. Reported: the approval
+    # figures did not tie up with the branch chosen in the header,
+    # because this endpoint ignored it entirely while every other
+    # dashboard count already took branch_id. Filtered here rather than
+    # inside list_for_user, which is shared with the approvals COUNT and
+    # with non-dashboard callers that legitimately want every branch.
+    branch_id = request.args.get("branch_id", type=int)
+    if branch_id is not None:
+        tasks = [t for t in tasks if t.branch_id == branch_id]
     return jsonify({"items": [
         {
             "id": t.id,
