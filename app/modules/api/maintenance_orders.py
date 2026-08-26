@@ -949,3 +949,56 @@ def maintenance_order_new_prefill(api_user):
             "beyond_defined_cycle": rec.get("beyond_defined_cycle", False),
         },
     })
+
+
+@bp.route("/maintenance-orders/scope-template-details", methods=["GET"])
+@api_auth_required("maintenanceorder.create")
+def maintenance_order_scope_template_details(api_user):
+    """Powers the New Maintenance Order form's "Work Description
+    Template" box and the collapsible "View Scope Details" table --
+    reuses Flask's own get_pm_scope_template_details logic exactly
+    (app/modules/api_search/routes.py), including token resolution
+    against the vehicle (pm2/pm3/... become the vehicle's actual plate,
+    driver, branch) so a fleet manager sees "65,000 km servicing of
+    Toyota Vios, Plate no. NAO-907" rather than raw placeholders.
+
+    {"found": false}, not a 404, for an unknown template -- matching
+    Flask's own contract exactly, since the client's collapse panel
+    just stays hidden either way.
+    """
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+
+    template_id = request.args.get("template_id", type=int)
+    tmpl = (PMScopeTemplateService().get_by_id(template_id)
+           if template_id else None)
+    if tmpl is None:
+        return jsonify({"found": False})
+
+    items = sorted(tmpl.items, key=lambda i: i.sort_order)
+    work_description = None
+    if tmpl.pm_schedule and tmpl.pm_schedule.work_description_template:
+        raw = tmpl.pm_schedule.work_description_template
+        vehicle_id = request.args.get("vehicle_id", type=int)
+        vehicle = None
+        if vehicle_id:
+            from app.modules.master_data.vehicle.models import Vehicle
+            vehicle = Vehicle.query.filter_by(id=vehicle_id).first()
+        if vehicle is not None:
+            from app.core.reporting.token_resolver import resolve_pm_tokens
+            work_description = resolve_pm_tokens(raw, vehicle=vehicle)
+        else:
+            work_description = raw
+
+    return jsonify({
+        "found": True,
+        "name": tmpl.name,
+        "work_description": work_description,
+        "items": [{
+            "sort_order": i.sort_order,
+            "activity_code": i.activity_code,
+            "activity_description": i.activity_description,
+            "standard_labor_hours": (str(i.standard_labor_hours)
+                                    if i.standard_labor_hours else None),
+            "required_parts": i.required_parts,
+        } for i in items],
+    })

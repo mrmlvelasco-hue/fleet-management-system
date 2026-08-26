@@ -456,3 +456,91 @@ def test_prefill_never_touches_a_name_attribute_pmschedule_does_not_have(
     assert status == 200, body
     assert "package_name" not in body["pm_recommendation"]
     assert body["pm_recommendation"]["status"] == "OVERDUE"
+
+
+# ── Scope template details: Work Description + View Scope Details table ────
+
+def test_scope_template_details_returns_items_and_resolved_description(
+        db, client, mol_env):
+    """Matches Flask's get_pm_scope_template_details exactly -- the
+    data behind the New MO form's "Work Description Template" box and
+    the collapsible "View Scope Details" table, showing exactly what a
+    PM package includes before the order is saved."""
+    _grant_create(db, mol_env)
+    from app.modules.maintenance_config.models import (
+        PMScopeItem, PMScopeTemplate, PMSchedule)
+    from app.extensions import db as _db
+
+    schedule = PMSchedule(maintenance_type_id=mol_env["mt"].id,
+                          trigger_mode="KM", interval_km=1000,
+                          cumulative_km=1000, vehicle_type_id=mol_env["vt"].id,
+                          work_description_template="pm2 servicing of pm3")
+    _db.session.add(schedule)
+    _db.session.flush()
+    template = PMScopeTemplate(
+        name="1,000 km Package", maintenance_type_id=mol_env["mt"].id,
+        pm_schedule_id=schedule.id)
+    _db.session.add(template)
+    _db.session.flush()
+    _db.session.add(PMScopeItem(
+        template_id=template.id, sort_order=0, activity_code="S02-001",
+        activity_description="Replace engine oil & oil filter",
+        standard_labor_hours=1.5, required_parts="Oil filter"))
+    _db.session.commit()
+
+    status, body = _get(
+        client,
+        f"/api/v1/maintenance-orders/scope-template-details"
+        f"?template_id={template.id}&vehicle_id={mol_env['vehicle'].id}",
+        _token(client))
+    assert status == 200
+    assert body["found"] is True
+    assert len(body["items"]) == 1
+    assert body["items"][0]["activity_code"] == "S02-001"
+    assert body["items"][0]["standard_labor_hours"] == "1.50"
+    # Tokens resolved against the real vehicle, not left as raw
+    # placeholders -- "pm2 servicing of pm3" becomes readable text.
+    assert "pm2" not in body["work_description"]
+    assert "pm3" not in body["work_description"]
+
+
+def test_scope_template_details_not_found_returns_a_flag_not_a_404(
+        db, client, mol_env):
+    """Matches Flask's own contract exactly: {"found": false}, not an
+    error response -- the client's collapse panel just stays hidden."""
+    _grant_create(db, mol_env)
+    status, body = _get(
+        client,
+        "/api/v1/maintenance-orders/scope-template-details?template_id=999999",
+        _token(client))
+    assert status == 200
+    assert body["found"] is False
+
+
+def test_scope_template_details_without_a_vehicle_shows_raw_tokens(
+        db, client, mol_env):
+    """Matches Flask exactly: token resolution only happens when a
+    vehicle_id is given. Without one, the raw template text is shown
+    rather than blanked or guessed at."""
+    _grant_create(db, mol_env)
+    from app.modules.maintenance_config.models import PMScopeTemplate, PMSchedule
+    from app.extensions import db as _db
+
+    schedule = PMSchedule(maintenance_type_id=mol_env["mt"].id,
+                          trigger_mode="KM", interval_km=1000,
+                          vehicle_type_id=mol_env["vt"].id,
+                          work_description_template="pm2 servicing")
+    _db.session.add(schedule)
+    _db.session.flush()
+    template = PMScopeTemplate(name="No-vehicle test",
+                               maintenance_type_id=mol_env["mt"].id,
+                               pm_schedule_id=schedule.id)
+    _db.session.add(template)
+    _db.session.commit()
+
+    status, body = _get(
+        client,
+        f"/api/v1/maintenance-orders/scope-template-details?template_id={template.id}",
+        _token(client))
+    assert status == 200
+    assert body["work_description"] == "pm2 servicing"
