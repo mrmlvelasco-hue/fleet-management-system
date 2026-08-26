@@ -110,6 +110,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.api import worklist as _api_worklist  # noqa: F401
     from app.modules.api import purchase_requests as _api_purchase_requests  # noqa: F401
     from app.modules.api import trip_tickets as _api_trip_tickets  # noqa: F401
+    from app.modules.api import vehicle_registrations as _api_vehicle_registrations  # noqa: F401
     app.register_blueprint(api_v1_bp)
     # CSRF protects COOKIE-authenticated form posts: the browser attaches
     # the session automatically, so a third-party page could otherwise
