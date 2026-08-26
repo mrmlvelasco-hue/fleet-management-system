@@ -252,3 +252,50 @@ def test_a_viewer_without_access_cannot_download_a_pr_attachment(db, client,
     # the dispatch reached the real visibility check rather than the
     # default False (which would 404 regardless of real permissions).
     assert r.status_code == 200
+
+
+# ── Delete permission gating (shared route, per-table `need` map) ──────────
+
+def test_mo_attachment_delete_requires_update_not_just_view(db, client,
+                                                             att_env):
+    """The shared delete_attachment route looks up the required
+    permission from a per-reference_table map. Confirmed missing
+    entirely for maintenance_orders/purchase_requests before this test
+    was written: `need` would resolve to None for either table, and
+    delete_attachment's own `if need and not _can(...)` SKIPS the
+    permission check when `need` is falsy -- meaning without this
+    entry, any user who can merely VIEW an order could delete its
+    attachments. This is the exact class of gap this project has hit
+    once already (an attachment visibility bypass with zero coverage
+    while other tests passed)."""
+    t = _token(client)
+    _status, att = _upload(
+        client,
+        f"/api/v1/maintenance-orders/{att_env['order'].id}/attachments", t)
+    r = client.delete(
+        f"/api/v1/attachments/{att['id']}",
+        headers={"Authorization": f"Bearer {_token(client, 'attviewer')}"})
+    assert r.status_code == 403
+
+
+def test_pr_attachment_delete_requires_create_not_just_view(db, client,
+                                                            att_env):
+    t = _token(client)
+    _status, att = _upload(
+        client, f"/api/v1/purchase-requests/{att_env['pr'].id}/attachments",
+        t)
+    r = client.delete(
+        f"/api/v1/attachments/{att['id']}",
+        headers={"Authorization": f"Bearer {_token(client, 'attviewer')}"})
+    assert r.status_code == 403
+
+
+def test_mo_attachment_delete_succeeds_for_a_user_with_update(db, client,
+                                                              att_env):
+    t = _token(client)
+    _status, att = _upload(
+        client,
+        f"/api/v1/maintenance-orders/{att_env['order'].id}/attachments", t)
+    r = client.delete(f"/api/v1/attachments/{att['id']}",
+                      headers={"Authorization": f"Bearer {t}"})
+    assert r.status_code == 200

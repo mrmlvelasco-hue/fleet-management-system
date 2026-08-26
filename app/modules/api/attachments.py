@@ -241,8 +241,19 @@ def delete_attachment(api_user, attachment_id):
     if att is None:
         return jsonify({"error": "not_found",
                         "message": "Attachment not found."}), 404
+    # maintenance_orders and purchase_requests added here for the same
+    # reason tires/batteries use .create instead of .update: gate on
+    # whichever permission this module actually has for "may modify
+    # this record's supporting documents." Missing either of these two
+    # entries would make `need` resolve to None for that table, and
+    # the check below SKIPS permission enforcement entirely when `need`
+    # is falsy -- confirmed by a failing test before this fix existed:
+    # a mere viewer could delete an attachment on an order or request
+    # they could not otherwise modify at all.
     need = {"vehicles": "vehicle.update", "drivers": "driver.update",
-            "tires": "tire.create", "batteries": "battery.create"}.get(
+            "tires": "tire.create", "batteries": "battery.create",
+            "maintenance_orders": "maintenanceorder.update",
+            "purchase_requests": "purchaserequest.create"}.get(
         att.reference_table)
     if need and not _can(api_user, need):
         return jsonify({"error": "forbidden",
