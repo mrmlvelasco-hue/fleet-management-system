@@ -122,6 +122,58 @@ def _can(api_user, code: str) -> bool:
 
 
 
+#: Which DocumentType code governs each attachable transaction table.
+#: Master-data tables (vehicles, drivers, tires, batteries) are
+#: deliberately ABSENT: they have no DocumentType at all, because
+#: "Attachment Allowed" is a transaction-document setting. Absent
+#: configuration means unrestricted, not forbidden -- defaulting them
+#: to "not allowed" would silently break every master-data attachment
+#: panel that has worked since those modules shipped.
+_DOC_TYPE_FOR_TABLE = {
+    "maintenance_orders": "MO",
+    "purchase_requests": "PR",
+    "trip_tickets": "TT",
+    "vehicle_registrations": "VR",
+    "atds": "ATD",
+}
+
+
+def _attachments_allowed_for(reference_table) -> bool:
+    """Whether the Document Type governing this record permits
+    attachments at all.
+
+    The master prompt requires every Document Type to define
+    "Attachment Allowed", and System Administration has always exposed
+    it -- but nothing enforced it, in this API or in Flask's own UI
+    (the shared _attachment_panel.html include renders
+    unconditionally). A configurable control that does nothing is worse
+    than no control: it reads as working.
+
+    A table with no mapped Document Type, or a Document Type that has
+    not been configured yet, is unrestricted.
+    """
+    code = _DOC_TYPE_FOR_TABLE.get(reference_table)
+    if code is None:
+        return True
+    from app.modules.document_config.models import DocumentType
+    dt = DocumentType.query.filter_by(code=code).first()
+    if dt is None:
+        return True
+    return bool(dt.attachment_allowed)
+
+
+def _attachments_blocked(reference_table):
+    """The 409 body for a disallowed upload, naming the setting and
+    where to change it -- otherwise the person hits a wall with no idea
+    it is a configuration choice rather than a fault."""
+    return jsonify({
+        "error": "conflict",
+        "message": ("Attachments are not enabled for this document type. "
+                    "Turn on 'Attachment Allowed' in System Administration "
+                    "> Document Types to allow them."),
+    }), 409
+
+
 def _attachment_json(a):
     return {
         "id": a.id,
@@ -386,7 +438,12 @@ def maintenance_order_attachments(api_user, order_id):
         return _not_found("Maintenance Order")
     from app.core.attachments.attachment_service import AttachmentService
     rows = AttachmentService().list_for("maintenance_orders", order_id)
-    return jsonify({"items": [_attachment_json(a) for a in rows]})
+    # Reported alongside the rows so a client knows whether to offer an
+    # upload control at all. Existing attachments stay readable even
+    # when the setting is off: blocking new uploads is a policy change,
+    # hiding evidence already attached to a record is data loss.
+    return jsonify({"items": [_attachment_json(a) for a in rows],
+                    "attachment_allowed": _attachments_allowed_for("maintenance_orders")})
 
 
 @bp.route("/maintenance-orders/<int:order_id>/attachments", methods=["POST"])
@@ -398,6 +455,8 @@ def upload_maintenance_order_attachment(api_user, order_id):
     upload endpoint."""
     if _visible_maintenance_order(order_id, api_user) is None:
         return _not_found("Maintenance Order")
+    if not _attachments_allowed_for("maintenance_orders"):
+        return _attachments_blocked("maintenance_orders")
 
     file = request.files.get("file")
     if file is None or not file.filename:
@@ -421,7 +480,12 @@ def purchase_request_attachments(api_user, pr_id):
         return _not_found("Purchase Request")
     from app.core.attachments.attachment_service import AttachmentService
     rows = AttachmentService().list_for("purchase_requests", pr_id)
-    return jsonify({"items": [_attachment_json(a) for a in rows]})
+    # Reported alongside the rows so a client knows whether to offer an
+    # upload control at all. Existing attachments stay readable even
+    # when the setting is off: blocking new uploads is a policy change,
+    # hiding evidence already attached to a record is data loss.
+    return jsonify({"items": [_attachment_json(a) for a in rows],
+                    "attachment_allowed": _attachments_allowed_for("purchase_requests")})
 
 
 @bp.route("/purchase-requests/<int:pr_id>/attachments", methods=["POST"])
@@ -435,6 +499,8 @@ def upload_purchase_request_attachment(api_user, pr_id):
     guards on this same model are gated."""
     if _visible_purchase_request(pr_id, api_user) is None:
         return _not_found("Purchase Request")
+    if not _attachments_allowed_for("purchase_requests"):
+        return _attachments_blocked("purchase_requests")
 
     file = request.files.get("file")
     if file is None or not file.filename:
@@ -458,7 +524,12 @@ def trip_ticket_attachments(api_user, trip_id):
         return _not_found("Trip Ticket")
     from app.core.attachments.attachment_service import AttachmentService
     rows = AttachmentService().list_for("trip_tickets", trip_id)
-    return jsonify({"items": [_attachment_json(a) for a in rows]})
+    # Reported alongside the rows so a client knows whether to offer an
+    # upload control at all. Existing attachments stay readable even
+    # when the setting is off: blocking new uploads is a policy change,
+    # hiding evidence already attached to a record is data loss.
+    return jsonify({"items": [_attachment_json(a) for a in rows],
+                    "attachment_allowed": _attachments_allowed_for("trip_tickets")})
 
 
 @bp.route("/trip-tickets/<int:trip_id>/attachments", methods=["POST"])
@@ -466,6 +537,8 @@ def trip_ticket_attachments(api_user, trip_id):
 def upload_trip_ticket_attachment(api_user, trip_id):
     if _visible_trip_ticket(trip_id, api_user) is None:
         return _not_found("Trip Ticket")
+    if not _attachments_allowed_for("trip_tickets"):
+        return _attachments_blocked("trip_tickets")
 
     file = request.files.get("file")
     if file is None or not file.filename:

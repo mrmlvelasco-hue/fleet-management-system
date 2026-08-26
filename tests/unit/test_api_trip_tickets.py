@@ -32,7 +32,15 @@ def _ensure_doc_type(code):
     if DocumentType.query.filter_by(code=code).first() is None:
         DocumentTypeService().create(code=code, name=code,
                                      requires_approval=False,
-                                     auto_numbering=True)
+                                     auto_numbering=True,
+                                     # attachment_allowed defaults to
+                                     # False, and is now genuinely
+                                     # enforced -- these fixtures test
+                                     # attachment behaviour, so they
+                                     # must configure the document type
+                                     # to permit it, exactly as a real
+                                     # deployment would.
+                                     attachment_allowed=True)
         dt = DocumentType.query.filter_by(code=code).first()
         NumberingSchemeService().create(document_type_id=dt.id, prefix=code,
                                         include_year=True, digit_count=6,
