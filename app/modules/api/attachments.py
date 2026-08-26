@@ -48,6 +48,36 @@ def _visible_battery(battery_id, api_user):
     return BatteryService().get_visible(battery_id, api_user)
 
 
+def _visible_maintenance_order(order_id, api_user):
+    """Reuses list_filtered's org-scope rule rather than a second,
+    potentially drifting definition of who may see which order. Less
+    efficient than a targeted query, but this endpoint is checked once
+    per attachment request, not once per row of a list."""
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+    order = MaintenanceOrder.query.filter_by(id=order_id).first()
+    if order is None:
+        return None
+    visible_ids = {o.id for o in MaintenanceOrderService().list_filtered(
+        user=api_user, page=1, per_page=100000)[0]}
+    return order if order.id in visible_ids else None
+
+
+def _visible_purchase_request(pr_id, api_user):
+    from app.modules.transactions.purchase_request.models import (
+        PurchaseRequest)
+    from app.modules.transactions.purchase_request.service import (
+        PurchaseRequestService)
+    pr = PurchaseRequest.query.filter_by(id=pr_id).first()
+    if pr is None:
+        return None
+    visible_ids = {p.id for p in PurchaseRequestService().list_filtered(
+        user=api_user, page=1, per_page=100000)[0]}
+    return pr if pr.id in visible_ids else None
+
+
 def _parent_visible(reference_table, reference_id, api_user):
     """Visibility of the parent record an attachment hangs off."""
     if reference_table == "vehicles":
@@ -58,6 +88,10 @@ def _parent_visible(reference_table, reference_id, api_user):
         return _visible_tire(reference_id, api_user) is not None
     if reference_table == "batteries":
         return _visible_battery(reference_id, api_user) is not None
+    if reference_table == "maintenance_orders":
+        return _visible_maintenance_order(reference_id, api_user) is not None
+    if reference_table == "purchase_requests":
+        return _visible_purchase_request(reference_id, api_user) is not None
     return False
 
 
@@ -312,6 +346,78 @@ def upload_battery_attachment(api_user, battery_id):
     try:
         attachment = AttachmentService().upload(
             file, "batteries", battery_id, user=api_user,
+            document_type=(request.form.get("document_type") or None))
+    except AttachmentError as exc:
+        return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
+
+
+@bp.route("/maintenance-orders/<int:order_id>/attachments", methods=["GET"])
+@api_auth_required("maintenanceorder.view")
+def maintenance_order_attachments(api_user, order_id):
+    if _visible_maintenance_order(order_id, api_user) is None:
+        return _not_found("Maintenance Order")
+    from app.core.attachments.attachment_service import AttachmentService
+    rows = AttachmentService().list_for("maintenance_orders", order_id)
+    return jsonify({"items": [_attachment_json(a) for a in rows]})
+
+
+@bp.route("/maintenance-orders/<int:order_id>/attachments", methods=["POST"])
+@api_auth_required("maintenanceorder.update")
+def upload_maintenance_order_attachment(api_user, order_id):
+    """Requires maintenanceorder.update, not .view -- being able to
+    read an order does not imply the right to attach documents to its
+    record, matching the same reasoning already recorded on vehicles'
+    upload endpoint."""
+    if _visible_maintenance_order(order_id, api_user) is None:
+        return _not_found("Maintenance Order")
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+
+    from app.core.attachments.attachment_service import (AttachmentError,
+                                                         AttachmentService)
+    try:
+        attachment = AttachmentService().upload(
+            file, "maintenance_orders", order_id, user=api_user,
+            document_type=(request.form.get("document_type") or None))
+    except AttachmentError as exc:
+        return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
+
+
+@bp.route("/purchase-requests/<int:pr_id>/attachments", methods=["GET"])
+@api_auth_required("purchaserequest.view")
+def purchase_request_attachments(api_user, pr_id):
+    if _visible_purchase_request(pr_id, api_user) is None:
+        return _not_found("Purchase Request")
+    from app.core.attachments.attachment_service import AttachmentService
+    rows = AttachmentService().list_for("purchase_requests", pr_id)
+    return jsonify({"items": [_attachment_json(a) for a in rows]})
+
+
+@bp.route("/purchase-requests/<int:pr_id>/attachments", methods=["POST"])
+@api_auth_required("purchaserequest.create")
+def upload_purchase_request_attachment(api_user, pr_id):
+    """Requires purchaserequest.create, not .view. There is no
+    purchaserequest.update permission for this action to hang off of
+    the way maintenanceorder.update covers MO -- create is the closest
+    real permission this module has for "may modify this record's
+    supporting documents," matching how the create-time line-editing
+    guards on this same model are gated."""
+    if _visible_purchase_request(pr_id, api_user) is None:
+        return _not_found("Purchase Request")
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+
+    from app.core.attachments.attachment_service import (AttachmentError,
+                                                         AttachmentService)
+    try:
+        attachment = AttachmentService().upload(
+            file, "purchase_requests", pr_id, user=api_user,
             document_type=(request.form.get("document_type") or None))
     except AttachmentError as exc:
         return _bad(str(exc))
