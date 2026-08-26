@@ -867,3 +867,77 @@ def maintenance_orders_summary(api_user):
         "rejected": approval("REJECTED"),
         "returned": approval("RETURNED"),
     })
+
+
+@bp.route("/maintenance-orders/new-prefill", methods=["GET"])
+@api_auth_required("maintenanceorder.create")
+def maintenance_order_new_prefill(api_user):
+    """Vehicle summary + PM package recommendation for the New
+    Maintenance Order form.
+
+    Matches Flask's own maintenanceorder_new route exactly, reusing the
+    SAME service calls (PMScopeTemplateService.get_next_due_recommendation,
+    list_applicable_for_vehicle) rather than re-deriving the
+    recommendation logic here. Two implementations of "which PM package
+    is next due" would eventually disagree, and the due-detection math
+    (odometer AND date thresholds, whichever binds) is exactly the kind
+    of logic that is easy to get subtly wrong a second time.
+
+    This is what the Dashboard's "Due for Maintenance" list deep-links
+    into: clicking a due vehicle was landing on a blank New Order form
+    because nothing on the client read the ?vehicle_id= the link
+    already carried, and nothing server-side pre-computed what Flask's
+    own form shows automatically -- the vehicle's own current odometer,
+    branch, and its recommended PM package with the reason it was
+    chosen.
+    """
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.maintenance_config.service import PMScopeTemplateService
+
+    vehicle_id = request.args.get("vehicle_id", type=int)
+    if not vehicle_id:
+        return _validation("vehicle_id is required.", "vehicle_id")
+
+    vehicle = VehicleService().get_visible(vehicle_id, api_user)
+    if vehicle is None:
+        return _not_found("Vehicle")
+
+    maintenance_type_id = request.args.get("maintenance_type_id", type=int)
+
+    templates = PMScopeTemplateService().list_applicable_for_vehicle(
+        vehicle, maintenance_type_id=maintenance_type_id)
+    rec = PMScopeTemplateService().get_next_due_recommendation(
+        vehicle, maintenance_type_id=maintenance_type_id)
+    due_template = PMScopeTemplateService().get_next_due_scope_template(
+        vehicle, maintenance_type_id=maintenance_type_id)
+
+    pkg = rec.get("recommended_package")
+    return jsonify({
+        "vehicle": {
+            "id": vehicle.id,
+            "plate_number": vehicle.plate_number,
+            "conduction_number": vehicle.conduction_number,
+            "brand": vehicle.brand,
+            "model": vehicle.model,
+            "branch": vehicle.branch.name if vehicle.branch else None,
+            "assigned_driver": (vehicle.assigned_driver.full_name
+                               if vehicle.assigned_driver else None),
+            "current_odometer": vehicle.current_odometer,
+        },
+        "scope_templates": [
+            {"id": t.id, "name": t.name,
+             "maintenance_type_id": t.maintenance_type_id}
+            for t in templates
+        ],
+        "pm_recommendation": {
+            "status": rec.get("status"),
+            "reason": rec.get("reason"),
+            "due_by": rec.get("due_by"),
+            "due_odometer": rec.get("due_odometer"),
+            "due_date": (rec["due_date"].isoformat()
+                        if rec.get("due_date") else None),
+            "package_name": pkg.name if pkg else None,
+            "scope_template_id": due_template.id if due_template else None,
+            "beyond_defined_cycle": rec.get("beyond_defined_cycle", False),
+        },
+    })

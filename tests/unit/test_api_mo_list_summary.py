@@ -332,3 +332,81 @@ def test_detail_carries_the_purchase_request_id_for_linking(db, client,
     body = json.loads(r.get_data(as_text=True))
     assert body["pr_id"] == pr.id
     assert body["pr_document_number"] == "PR-2026-000222"
+
+
+# ── New-MO prefill: vehicle summary + PM recommendation ─────────────────────
+
+def _grant_create(db, mol_env):
+    from app.modules.user_management.models import Permission
+    extra = Permission.query.filter_by(code="maintenanceorder.create").first()
+    if extra and extra not in mol_env["user"].roles[0].permissions:
+        mol_env["user"].roles[0].permissions.append(extra)
+        db.session.commit()
+
+
+def test_prefill_carries_the_vehicle_summary(db, client, mol_env):
+    _grant_create(db, mol_env)
+    """Matches Flask's "Vehicle Information Summary" panel on the New
+    Maintenance Order form -- plate, branch, brand/model, current
+    assignee and odometer, all auto-filled once a vehicle is chosen
+    rather than re-typed from the vehicle's own record."""
+    status, body = _get(
+        client, f"/api/v1/maintenance-orders/new-prefill?vehicle_id={mol_env['vehicle'].id}",
+        _token(client))
+    assert status == 200
+    assert body["vehicle"]["plate_number"] or body["vehicle"]["conduction_number"]
+    assert body["vehicle"]["brand"] == "Toyota"
+    assert body["vehicle"]["model"] == "Hilux"
+    assert body["vehicle"]["current_odometer"] is not None
+
+
+def test_prefill_carries_the_pm_recommendation_shape(db, client, mol_env):
+    _grant_create(db, mol_env)
+    """Same structured recommendation Flask's route builds via
+    PMScopeTemplateService.get_next_due_recommendation -- reused, not
+    reimplemented, so React and Flask can never recommend two
+    different packages for the same vehicle."""
+    status, body = _get(
+        client, f"/api/v1/maintenance-orders/new-prefill?vehicle_id={mol_env['vehicle'].id}",
+        _token(client))
+    assert status == 200
+    for key in ("status", "reason", "due_odometer", "due_date",
+               "scope_template_id"):
+        assert key in body["pm_recommendation"]
+
+
+def test_prefill_404s_for_an_unknown_vehicle(db, client, mol_env):
+    _grant_create(db, mol_env)
+    status, _ = _get(
+        client, "/api/v1/maintenance-orders/new-prefill?vehicle_id=999999",
+        _token(client))
+    assert status == 404
+
+
+def test_prefill_requires_a_vehicle_id(db, client, mol_env):
+    _grant_create(db, mol_env)
+    status, body = _get(
+        client, "/api/v1/maintenance-orders/new-prefill", _token(client))
+    assert status == 400
+
+
+def test_prefill_respects_org_scope(db, client, mol_env):
+    _grant_create(db, mol_env)
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+    from app.modules.master_data.org.service import BranchService
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    other_branch = BranchService().create(code="BR-PREFILL", name="Other")
+    other_vehicle = VehicleService().create(
+        vehicle_type_id=mol_env["vt"].id, brand="Isuzu", model="Elf",
+        year=2020, branch_id=other_branch.id, conduction_number="PF-OTH")
+    UserOrgScopeService().assign(mol_env["user"].id, scope_type="BRANCH",
+                                 branch_id=mol_env["branch"].id)
+    db.session.commit()
+
+    status, _ = _get(
+        client,
+        f"/api/v1/maintenance-orders/new-prefill?vehicle_id={other_vehicle.id}",
+        _token(client))
+    assert status == 404
