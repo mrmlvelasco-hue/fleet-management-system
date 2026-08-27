@@ -276,3 +276,43 @@ def test_completing_without_an_end_time_still_completes(db, client, vm_env):
         client, f"/api/v1/vehicle-movements/{mv['id']}/complete", t, {})
     assert status == 200, body
     assert body["status"] == "COMPLETED"
+
+
+def test_movement_attachments_upload_and_list(db, client, vm_env):
+    """Same generic pattern as every other module, including the
+    Attachment Allowed gate and the delete permission map entry --
+    that map entry is easy to omit, and the delete check SKIPS
+    enforcement entirely when it resolves to None."""
+    import io
+
+    t = _token(client)
+    _status, mv = _post(client, "/api/v1/vehicle-movements", t,
+                        _payload(vm_env))
+    r = client.post(f"/api/v1/vehicle-movements/{mv['id']}/attachments",
+                    data={"file": (io.BytesIO(b"%PDF-1.4"), "gatepass.pdf")},
+                    content_type="multipart/form-data",
+                    headers={"Authorization": f"Bearer {t}"})
+    assert r.status_code == 201, r.get_data(as_text=True)
+
+    status, body = _get(
+        client, f"/api/v1/vehicle-movements/{mv['id']}/attachments", t)
+    assert status == 200
+    assert body["items"][0]["original_filename"] == "gatepass.pdf"
+
+
+def test_movement_attachment_delete_requires_update_not_just_view(
+        db, client, vm_env):
+    import io
+
+    t = _token(client)
+    _status, mv = _post(client, "/api/v1/vehicle-movements", t,
+                        _payload(vm_env))
+    r = client.post(f"/api/v1/vehicle-movements/{mv['id']}/attachments",
+                    data={"file": (io.BytesIO(b"%PDF-1.4"), "x.pdf")},
+                    content_type="multipart/form-data",
+                    headers={"Authorization": f"Bearer {t}"})
+    att = json.loads(r.get_data(as_text=True))
+
+    d = client.delete(f"/api/v1/attachments/{att['id']}",
+                      headers={"Authorization": f"Bearer {_token(client, 'mvviewer')}"})
+    assert d.status_code == 403

@@ -78,6 +78,21 @@ def _visible_trip_ticket(trip_id, api_user):
     return trip if trip.id in visible_ids else None
 
 
+def _visible_movement(move_id, api_user):
+    """Reuses list_filtered's org-scope rule, same as every other
+    transaction helper in this file."""
+    from app.modules.transactions.vehicle_movement.models import (
+        VehicleMovement)
+    from app.modules.transactions.vehicle_movement.service import (
+        VehicleMovementService)
+    mv = VehicleMovement.query.filter_by(id=move_id).first()
+    if mv is None:
+        return None
+    visible_ids = {m.id for m in VehicleMovementService().list_filtered(
+        user=api_user, page=1, per_page=100000)[0]}
+    return mv if mv.id in visible_ids else None
+
+
 def _visible_registration(reg_id, api_user):
     """Reuses list_filtered's org-scope rule, same as the other
     transaction helpers here."""
@@ -124,6 +139,8 @@ def _parent_visible(reference_table, reference_id, api_user):
         return _visible_trip_ticket(reference_id, api_user) is not None
     if reference_table == "vehicle_registrations":
         return _visible_registration(reference_id, api_user) is not None
+    if reference_table == "vehicle_movements":
+        return _visible_movement(reference_id, api_user) is not None
     return False
 
 
@@ -151,6 +168,7 @@ _DOC_TYPE_FOR_TABLE = {
     "purchase_requests": "PR",
     "trip_tickets": "TT",
     "vehicle_registrations": "VR",
+    "vehicle_movements": "VM",
     "atds": "ATD",
 }
 
@@ -339,7 +357,8 @@ def delete_attachment(api_user, attachment_id):
             "maintenance_orders": "maintenanceorder.update",
             "purchase_requests": "purchaserequest.create",
             "trip_tickets": "tripticket.update",
-            "vehicle_registrations": "vehicleregistration.update"}.get(
+            "vehicle_registrations": "vehicleregistration.update",
+            "vehicle_movements": "vehiclemovement.update"}.get(
         att.reference_table)
     if need and not _can(api_user, need):
         return jsonify({"error": "forbidden",
@@ -603,6 +622,42 @@ def upload_registration_attachment(api_user, reg_id):
     try:
         attachment = AttachmentService().upload(
             file, "vehicle_registrations", reg_id, user=api_user,
+            document_type=(request.form.get("document_type") or None))
+    except AttachmentError as exc:
+        return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
+
+
+@bp.route("/vehicle-movements/<int:move_id>/attachments", methods=["GET"])
+@api_auth_required("vehiclemovement.view")
+def movement_attachments(api_user, move_id):
+    if _visible_movement(move_id, api_user) is None:
+        return _not_found("Vehicle Movement")
+    from app.core.attachments.attachment_service import AttachmentService
+    rows = AttachmentService().list_for("vehicle_movements", move_id)
+    return jsonify({
+        "items": [_attachment_json(a) for a in rows],
+        "attachment_allowed": _attachments_allowed_for("vehicle_movements"),
+    })
+
+
+@bp.route("/vehicle-movements/<int:move_id>/attachments", methods=["POST"])
+@api_auth_required("vehiclemovement.update")
+def upload_movement_attachment(api_user, move_id):
+    if _visible_movement(move_id, api_user) is None:
+        return _not_found("Vehicle Movement")
+    if not _attachments_allowed_for("vehicle_movements"):
+        return _attachments_blocked("vehicle_movements")
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+
+    from app.core.attachments.attachment_service import (AttachmentError,
+                                                         AttachmentService)
+    try:
+        attachment = AttachmentService().upload(
+            file, "vehicle_movements", move_id, user=api_user,
             document_type=(request.form.get("document_type") or None))
     except AttachmentError as exc:
         return _bad(str(exc))
