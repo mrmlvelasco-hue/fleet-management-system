@@ -1014,3 +1014,63 @@ def maintenance_order_scope_template_details(api_user):
             "required_parts": i.required_parts,
         } for i in items],
     })
+
+
+@bp.route("/maintenance-orders/<int:oid>/print-documents", methods=["GET"])
+@api_auth_required("maintenanceorder.view")
+def maintenance_order_print_documents(api_user, oid):
+    """Which printed documents THIS order can actually produce.
+
+    Flask has four distinct print outputs for a Maintenance Order --
+    the generic work order, the Vehicle Assignment Memo, the Asset
+    Transfer Report and the Asset Disposal Report -- and each of its
+    routes gates on the DATA being present rather than on the
+    transaction type code:
+
+        no driver_id                 -> refuses the assignment memo
+        no destination_branch_id     -> refuses the transfer report
+        no disposal_reference_number -> refuses the disposal report
+
+    That is the more robust rule and it is reused here rather than
+    replaced with a code-to-template map. A DEP-ASSIGNMENT order whose
+    driver was never set cannot produce a truthful memo, and a
+    code-based map would offer the action anyway, only for the print
+    route to refuse it. Flask's own comment says it plainly: the memo
+    "is only true if it reflects what was actually approved".
+
+    The Actions menu reads this list, so it names the actual document
+    rather than a generic "Print" -- a fleet admin choosing between
+    four possible outputs needs to know which one they are producing.
+    """
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+
+    o = MaintenanceOrder.query.filter_by(id=oid).first()
+    if o is None:
+        return _not_found("Maintenance Order")
+
+    base = f"/maintenance-orders/{o.id}/print"
+    documents = [{
+        "code": "WORK_ORDER",
+        "label": "Work Order",
+        "url": base,
+    }]
+    if o.driver_id:
+        documents.append({
+            "code": "VEHICLE_ASSIGNMENT_MEMO",
+            "label": "Vehicle Assignment Memo",
+            "url": f"{base}/vam",
+        })
+    if o.destination_branch_id:
+        documents.append({
+            "code": "ASSET_TRANSFER_REPORT",
+            "label": "Asset Transfer Report",
+            "url": f"{base}/transfer",
+        })
+    if o.disposal_reference_number:
+        documents.append({
+            "code": "ASSET_DISPOSAL_REPORT",
+            "label": "Asset Disposal Report",
+            "url": f"{base}/disposal",
+        })
+    return jsonify({"documents": documents})

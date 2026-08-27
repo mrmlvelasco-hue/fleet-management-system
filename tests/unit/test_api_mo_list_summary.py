@@ -619,3 +619,91 @@ def test_mo_print_company_is_an_empty_object_when_unconfigured(db, client,
                         _token(client))
     assert status == 200
     assert body["company"] == {}
+
+
+# ── Print documents available for an order ─────────────────────────────────
+
+def test_print_documents_defaults_to_the_generic_work_order(db, client,
+                                                             mol_env):
+    """Every order can always print the generic work order. An order
+    with no specialised document must still print something."""
+    _grant_create(db, mol_env)
+    order = _order(db, mol_env)
+    status, body = _get(
+        client, f"/api/v1/maintenance-orders/{order.id}/print-documents",
+        _token(client))
+    assert status == 200
+    codes = [d["code"] for d in body["documents"]]
+    assert codes == ["WORK_ORDER"]
+
+
+def test_the_assignment_memo_appears_only_once_a_driver_is_set(db, client,
+                                                                mol_env):
+    """Gated on the DATA, matching Flask's own route, not on the
+    transaction type code. Flask refuses to print a Vehicle Assignment
+    Memo with no driver because "the memo is only true if it reflects
+    what was actually approved" -- offering the action before the data
+    exists would just lead to that refusal."""
+    _grant_create(db, mol_env)
+    from app.modules.master_data.driver.models import Driver
+
+    order = _order(db, mol_env)
+    _status, before = _get(
+        client, f"/api/v1/maintenance-orders/{order.id}/print-documents",
+        _token(client))
+    assert "VEHICLE_ASSIGNMENT_MEMO" not in [d["code"] for d in before["documents"]]
+
+    driver = Driver(first_name="Juan", last_name="Cruz",
+                    employee_number="PRT-1", branch_id=mol_env["branch"].id,
+                    assignee_type="DRIVER", is_active=True)
+    db.session.add(driver)
+    db.session.flush()
+    order.driver_id = driver.id
+    db.session.commit()
+
+    _status, after = _get(
+        client, f"/api/v1/maintenance-orders/{order.id}/print-documents",
+        _token(client))
+    memo = next(d for d in after["documents"]
+                if d["code"] == "VEHICLE_ASSIGNMENT_MEMO")
+    assert memo["url"].endswith(f"/maintenance-orders/{order.id}/print/vam")
+
+
+def test_the_transfer_report_appears_only_with_a_destination_branch(
+        db, client, mol_env):
+    _grant_create(db, mol_env)
+    order = _order(db, mol_env)
+    order.destination_branch_id = mol_env["branch"].id
+    db.session.commit()
+
+    _status, body = _get(
+        client, f"/api/v1/maintenance-orders/{order.id}/print-documents",
+        _token(client))
+    assert "ASSET_TRANSFER_REPORT" in [d["code"] for d in body["documents"]]
+
+
+def test_the_disposal_report_appears_only_with_a_disposal_reference(
+        db, client, mol_env):
+    _grant_create(db, mol_env)
+    order = _order(db, mol_env)
+    order.disposal_reference_number = "DIS-2026-0001"
+    db.session.commit()
+
+    _status, body = _get(
+        client, f"/api/v1/maintenance-orders/{order.id}/print-documents",
+        _token(client))
+    assert "ASSET_DISPOSAL_REPORT" in [d["code"] for d in body["documents"]]
+
+
+def test_each_document_carries_a_label_the_actions_menu_can_show(db, client,
+                                                                  mol_env):
+    """The Actions menu must name the actual document, not just
+    "Print" -- a fleet admin choosing between four possible outputs
+    needs to know which one they are about to produce."""
+    _grant_create(db, mol_env)
+    order = _order(db, mol_env)
+    _status, body = _get(
+        client, f"/api/v1/maintenance-orders/{order.id}/print-documents",
+        _token(client))
+    for doc in body["documents"]:
+        assert doc["label"] and doc["url"]
