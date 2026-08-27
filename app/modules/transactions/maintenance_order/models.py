@@ -38,6 +38,18 @@ class TransactionType(db.Model, BaseModel):
     order_category = db.Column(db.String(15), nullable=False)
     # DEPLOYMENT | ADMINISTRATIVE | DISPOSAL | ACCESSORIES | MAINTENANCE
     group = db.Column(db.String(20), nullable=True)
+    # Which printed document this transaction type produces.
+    #
+    # Held as DATA for the same reason maintenance_class is, a few lines
+    # below: an if/elif on transaction code means every new type a client
+    # adds in System Administration needs a developer before it can
+    # print, which contradicts the system's own rule that business
+    # configuration lives in System Administration.
+    #
+    # NULL means the generic work order. Nullable rather than defaulted
+    # in the column so an existing row never silently claims a template
+    # that may not exist; the resolver treats NULL and unknown alike.
+    print_template = db.Column(db.String(60), nullable=True)
     # PREVENTIVE | CORRECTIVE | PREDICTIVE — the maintenance discipline a
     # MAINTENANCE-category transaction represents, used by the dashboard's
     # "Maintenance Orders by Type" analytics.

@@ -707,3 +707,52 @@ def test_each_document_carries_a_label_the_actions_menu_can_show(db, client,
         _token(client))
     for doc in body["documents"]:
         assert doc["label"] and doc["url"]
+
+
+def test_the_configured_print_template_is_offered(db, client, mol_env):
+    """print_template on the transaction type decides the document, so
+    a client adding a transaction type in System Administration can map
+    it to a form without a developer."""
+    _grant_create(db, mol_env)
+    from app.modules.transactions.maintenance_order.models import (
+        TransactionType)
+
+    tt = TransactionType(code="DEP-ASSIGNMENT", name="Assignment",
+                         order_category="OPERATIONAL", group="DEPLOYMENT",
+                         print_template="vehicle_assignment_memo",
+                         is_active=True)
+    db.session.add(tt)
+    db.session.flush()
+    order = _order(db, mol_env)
+    order.transaction_type_id = tt.id
+    db.session.commit()
+
+    _status, body = _get(
+        client, f"/api/v1/maintenance-orders/{order.id}/print-documents",
+        _token(client))
+    codes = [d["code"] for d in body["documents"]]
+    assert "VEHICLE_ASSIGNMENT_MEMO" in codes
+
+
+def test_a_type_with_no_template_still_prints_the_work_order(db, client,
+                                                              mol_env):
+    """NULL means generic, not "cannot print". A transaction type
+    nobody has mapped yet must not leave the order with no printable
+    document at all."""
+    _grant_create(db, mol_env)
+    from app.modules.transactions.maintenance_order.models import (
+        TransactionType)
+
+    tt = TransactionType(code="ADM-NEW-THING", name="Something New",
+                         order_category="OPERATIONAL", group="ADMINISTRATIVE",
+                         print_template=None, is_active=True)
+    db.session.add(tt)
+    db.session.flush()
+    order = _order(db, mol_env)
+    order.transaction_type_id = tt.id
+    db.session.commit()
+
+    _status, body = _get(
+        client, f"/api/v1/maintenance-orders/{order.id}/print-documents",
+        _token(client))
+    assert [d["code"] for d in body["documents"]] == ["WORK_ORDER"]

@@ -1055,19 +1055,55 @@ def maintenance_order_print_documents(api_user, oid):
         "label": "Work Order",
         "url": base,
     }]
-    if o.driver_id:
+
+    # The transaction type's configured template, when it has one.
+    # Held as DATA on the type (flask migration a7c419e35d02) so a
+    # client mapping a NEW transaction type to a form in System
+    # Administration does not need a developer. NULL means the generic
+    # work order, which is already in the list above -- so an unmapped
+    # type still prints something rather than nothing.
+    _TEMPLATES = {
+        "vehicle_assignment_memo":
+            ("VEHICLE_ASSIGNMENT_MEMO", "Vehicle Assignment Memo", "vam"),
+        "vehicle_reassignment_memo":
+            ("VEHICLE_REASSIGNMENT_MEMO", "Vehicle Reassignment Memo", "vam"),
+        "vehicle_relocation_memo":
+            ("VEHICLE_RELOCATION_MEMO", "Vehicle Relocation Memo", "vam"),
+        "maintenanceorder_print_transfer":
+            ("ASSET_TRANSFER_REPORT", "Asset Transfer Report", "transfer"),
+        "maintenanceorder_print_disposal":
+            ("ASSET_DISPOSAL_REPORT", "Asset Disposal Report", "disposal"),
+        "pm_work_order":
+            ("PM_WORK_ORDER", "Preventive Maintenance Work Order", ""),
+        "repair_work_order":
+            ("REPAIR_WORK_ORDER", "Repair Work Order", ""),
+    }
+    configured = getattr(getattr(o, "transaction_type", None),
+                         "print_template", None)
+    entry = _TEMPLATES.get(configured or "")
+    if entry:
+        code, label, suffix = entry
+        if code not in {d["code"] for d in documents}:
+            documents.append({
+                "code": code,
+                "label": label,
+                "url": f"{base}/{suffix}" if suffix else base,
+            })
+
+    known = {d["code"] for d in documents}
+    if o.driver_id and "VEHICLE_ASSIGNMENT_MEMO" not in known:
         documents.append({
             "code": "VEHICLE_ASSIGNMENT_MEMO",
             "label": "Vehicle Assignment Memo",
             "url": f"{base}/vam",
         })
-    if o.destination_branch_id:
+    if o.destination_branch_id and "ASSET_TRANSFER_REPORT" not in known:
         documents.append({
             "code": "ASSET_TRANSFER_REPORT",
             "label": "Asset Transfer Report",
             "url": f"{base}/transfer",
         })
-    if o.disposal_reference_number:
+    if o.disposal_reference_number and "ASSET_DISPOSAL_REPORT" not in known:
         documents.append({
             "code": "ASSET_DISPOSAL_REPORT",
             "label": "Asset Disposal Report",
