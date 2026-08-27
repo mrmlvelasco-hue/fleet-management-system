@@ -72,16 +72,19 @@ def _order_json(o, *, detail=False):
             o.transaction_type.code if o.transaction_type else None),
         "transaction_type_group": (
             o.transaction_type.group if o.transaction_type else None),
-        "print_template": (
-            getattr(o.transaction_type, "print_template", None)
-            if o.transaction_type else None),
-        "print_label": (
-            __import__("app.modules.transactions.maintenance_order.service",
-                       fromlist=["PRINT_TEMPLATE_LABELS"])
-            .PRINT_TEMPLATE_LABELS.get(
-                getattr(o.transaction_type, "print_template", None) or "",
-                "Work Order")
-            if o.transaction_type else "Work Order"),
+        "print_template": __import__(
+            "app.modules.transactions.maintenance_order.service",
+            fromlist=["resolve_print_template"]
+        ).resolve_print_template(o.transaction_type),
+        "print_label": __import__(
+            "app.modules.transactions.maintenance_order.service",
+            fromlist=["PRINT_TEMPLATE_LABELS", "resolve_print_template"]
+        ).PRINT_TEMPLATE_LABELS.get(
+            __import__(
+                "app.modules.transactions.maintenance_order.service",
+                fromlist=["resolve_print_template"]
+            ).resolve_print_template(o.transaction_type),
+            "Work Order"),
         "maintenance_class_label": getattr(o, "maintenance_class_label", None),
         "scheduled_date": _iso(o.scheduled_date),
         "completed_date": _iso(o.completed_date),
@@ -96,6 +99,8 @@ def _order_json(o, *, detail=False):
         "vehicle_assigned_driver": (
             o.vehicle.assigned_driver.full_name
             if o.vehicle and o.vehicle.assigned_driver else None),
+        "driver": (o.driver.full_name if getattr(o, "driver", None) else None),
+        "assignment_classification": o.assignment_classification,
         "vehicle_current_odometer": (
             o.vehicle.current_odometer if o.vehicle else None),
         # PR / Invoice column. purchase_request_id already exists on
@@ -157,9 +162,10 @@ def _order_json(o, *, detail=False):
             "vehicle_odometer": (
                 getattr(o.vehicle, "current_odometer", None) if o.vehicle else None),
             "assignee_name": (
-                o.vehicle.assigned_driver.full_name
-                if o.vehicle and getattr(o.vehicle, "assigned_driver", None)
-                else None),
+                o.driver.full_name if getattr(o, "driver", None)
+                else (o.vehicle.assigned_driver.full_name
+                      if o.vehicle and getattr(o.vehicle, "assigned_driver", None)
+                      else None)),
             "disposal_value": _dec(o.disposal_value),
             "disposal_recipient": o.disposal_recipient,
             "disposal_reference_number": o.disposal_reference_number,
@@ -321,7 +327,11 @@ def create_maintenance_order(api_user):
         return _validation("vehicle_id is required.", "vehicle_id")
     sched = p.get("scheduled_date")
     if not sched:
-        return _validation("scheduled_date is required.", "scheduled_date")
+        # Operational Assignment hides the date on the form but the
+        # column is NOT NULL. Default to today (Flask uses the same
+        # date as the VAM "Date" line).
+        from datetime import date as _date
+        sched = _date.today().isoformat()
     try:
         scheduled_date = date.fromisoformat(str(sched)[:10])
     except ValueError:
@@ -543,7 +553,8 @@ def remove_mo_part(api_user, oid, part_id):
 @api_auth_required("maintenanceorder.view")
 def list_mo_transaction_types(api_user):
     from app.modules.transactions.maintenance_order.service import (
-        TransactionTypeService, PRINT_TEMPLATE_LABELS)
+        TransactionTypeService, PRINT_TEMPLATE_LABELS,
+        resolve_print_template)
     cat = request.args.get("order_category")
     rows = TransactionTypeService().list(
         order_category=cat, include_inactive=False)
@@ -555,9 +566,9 @@ def list_mo_transaction_types(api_user):
                 "name": t.name,
                 "order_category": t.order_category,
                 "group": t.group,
-                "print_template": getattr(t, "print_template", None),
+                "print_template": resolve_print_template(t),
                 "print_label": PRINT_TEMPLATE_LABELS.get(
-                    getattr(t, "print_template", None) or "", "Work Order"),
+                    resolve_print_template(t), "Work Order"),
             }
             for t in rows
         ]

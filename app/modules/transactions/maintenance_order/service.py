@@ -44,9 +44,31 @@ PRINT_TEMPLATE_LABELS = {
 }
 
 def resolve_print_template(tt):
+    """Configured column first; otherwise infer from the type code/group
+    so Assignment still prints as a VAM when print_template was never
+    backfilled."""
     if tt is None:
         return "maintenanceorder_print"
-    return getattr(tt, "print_template", None) or "maintenanceorder_print"
+    configured = getattr(tt, "print_template", None)
+    if configured:
+        return configured
+    code = (getattr(tt, "code", None) or "").upper()
+    group = (getattr(tt, "group", None) or "").upper()
+    by_code = {
+        "DEP-ASSIGNMENT": "vehicle_assignment_memo",
+        "DEP-REASSIGNMENT": "vehicle_reassignment_memo",
+        "DEP-RELOCATION": "vehicle_relocation_memo",
+        "DEP-TRANSFER": "maintenanceorder_print_transfer",
+        "MAINT-SERVICING": "pm_work_order",
+        "MAINT-REPAIR": "repair_work_order",
+    }
+    if code in by_code:
+        return by_code[code]
+    if code.startswith("DIS-") or group == "DISPOSAL":
+        return "maintenanceorder_print_disposal"
+    if group == "DEPLOYMENT":
+        return "vehicle_assignment_memo"
+    return "maintenanceorder_print"
 
 class TransactionTypeService:
     def create(self, *, code, name, order_category, group=None, sort_order=0):
