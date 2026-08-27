@@ -102,6 +102,7 @@ class ApprovalEngine:
         is next, for display on any transaction's detail page."""
         if instance is None or not instance.approval_path:
             return []
+        self.repair_instance(instance)
         from app.modules.user_management.models import User
 
         actions_by_level = {}
@@ -155,6 +156,29 @@ class ApprovalEngine:
 
     # ---------- actions ----------
 
+    def _last_return_level(self, instance):
+        for a in reversed(list(instance.actions or [])):
+            if a.action == "RETURN" and a.level_number:
+                return a.level_number
+        return None
+
+    def repair_instance(self, instance):
+        """Unstick an instance after Return zeroed current_level.
+
+        Those rows look PENDING (or RETURNED) with current_level=0, so
+        no approver is eligible and the initiator has no Resubmit.
+        """
+        if instance is None:
+            return instance
+        last_ret = self._last_return_level(instance)
+        if instance.status == "PENDING" and (not instance.current_level):
+            if last_ret:
+                instance.status = "RETURNED"
+                instance.current_level = last_ret
+        if instance.status == "RETURNED" and (not instance.current_level) and last_ret:
+            instance.current_level = last_ret
+        return instance
+
     def submit(self, document_type_code, reference_table, reference_id,
                amount=None, user=None, branch_id=None,
                business_unit_id=None, document_number=None) -> ApprovalInstance:
@@ -173,6 +197,9 @@ class ApprovalEngine:
                              reference_id=reference_id, status="PENDING")
                    .first())
         if existing_pending is not None:
+            self.repair_instance(existing_pending)
+            if existing_pending.status == "RETURNED":
+                return self.resubmit(existing_pending, user)
             return existing_pending
         existing_returned = (ApprovalInstance.query
                    .filter_by(reference_table=reference_table,
@@ -255,6 +282,10 @@ class ApprovalEngine:
         return instance
 
     def resubmit(self, instance, user, remarks=None) -> ApprovalInstance:
+        self.repair_instance(instance)
+        if instance.status == "PENDING" and instance.current_level:
+            # Already in flight (double-click or earlier /submit).
+            return instance
         self._require_status(instance, "RETURNED")
         instance.status = "PENDING"
         if not instance.current_level:

@@ -712,6 +712,12 @@ def _attach_approval_chain(data, order, api_user):
     engine = ApprovalEngine()
     chain = []
     if inst is not None:
+        engine.repair_instance(inst)
+        from app.extensions import db as _db
+        try:
+            _db.session.commit()
+        except Exception:
+            _db.session.rollback()
         for entry in engine.get_approval_chain(inst):
             acted_at = entry.get("acted_at")
             chain.append({
