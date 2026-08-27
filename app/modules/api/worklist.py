@@ -61,6 +61,10 @@ def pending_approvals(api_user):
 
     tasks = ApprovalTaskService().list_for_user(api_user)
 
+    # Returned documents belong on the initiator's action list so they
+    # can attach what the approver asked for and resubmit.
+    returned_items = _returned_for_requester(api_user)
+
     # Honour the dashboard's branch selector. Reported: the approval
     # figures did not tie up with the branch chosen in the header,
     # because this endpoint ignored it entirely while every other
@@ -83,6 +87,33 @@ def pending_approvals(api_user):
             # yet still gets LISTED (the document number is still
             # useful information) but is not made a dead or wrong link.
             "url": _task_url(t),
+            "kind": "approval",
         }
         for t in tasks
-    ]})
+    ] + returned_items})
+
+
+def _returned_for_requester(api_user):
+    from app.core.approval.models import ApprovalInstance
+    rows = (ApprovalInstance.query
+            .filter_by(submitted_by=api_user.id, status="RETURNED")
+            .order_by(ApprovalInstance.id.desc())
+            .all())
+    items = []
+    for inst in rows:
+        template = _REACT_ROUTE_MAP.get(inst.reference_table)
+        items.append({
+            "id": f"returned-{inst.id}",
+            "reference_table": inst.reference_table,
+            "reference_id": inst.reference_id,
+            "document_number": None,
+            "document_type": (
+                inst.document_type.name if inst.document_type else None),
+            "level_number": inst.current_level,
+            "created_at": inst.created_at.isoformat()
+                if getattr(inst, "created_at", None) else None,
+            "url": (template.format(id=inst.reference_id)
+                    if template else None),
+            "kind": "returned",
+        })
+    return items

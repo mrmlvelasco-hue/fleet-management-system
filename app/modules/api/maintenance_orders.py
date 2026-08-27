@@ -309,6 +309,7 @@ def get_maintenance_order(api_user, oid):
     from app.modules.api.company_letterhead import company_letterhead
     data["company"] = company_letterhead()
     data["editable"] = MaintenanceOrderService().editable_scope(o)
+    data["oath_body"] = _oath_body_for(o)
     _attach_approval_chain(data, o, api_user)
     return jsonify(data)
 
@@ -671,6 +672,19 @@ def maintenance_order_cost_summary(api_user, oid):
                         if order.actual_cost is not None else None),
         "invoice_count": len(invoice_ids),
     })
+
+
+def _oath_body_for(order):
+    try:
+        from app.modules.system_admin.services.print_template_service import (
+            PrintTemplateService)
+        svc = PrintTemplateService()
+        tpl = svc.get("OATH_OF_UNDERTAKING")
+        if tpl is None:
+            return None
+        return svc.render(tpl.body_html, order=order)
+    except Exception:
+        return None
 
 
 def _attach_approval_chain(data, order, api_user):

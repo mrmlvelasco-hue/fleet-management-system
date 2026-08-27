@@ -122,7 +122,13 @@ class ApprovalEngine:
                 "remarks": None,
             }
             action = actions_by_level.get(level.level_number)
-            if action:
+            resumed = (
+                instance.status == "PENDING"
+                and action is not None
+                and action.action == "RETURN"
+                and level.level_number == instance.current_level
+            )
+            if action and not resumed:
                 entry["status"] = status_labels.get(action.action, action.action)
                 actor = db.session.get(User, action.acted_by)
                 entry["acted_by_name"] = actor.full_name if actor else None
@@ -131,6 +137,8 @@ class ApprovalEngine:
             elif (level.level_number == instance.current_level
                  and instance.status == "PENDING"):
                 entry["status"] = "CURRENT"
+                if action and action.action == "RETURN":
+                    entry["remarks"] = action.remarks
             chain.append(entry)
         return chain
 
@@ -160,12 +168,19 @@ class ApprovalEngine:
         # tab) creating a second ApprovalInstance -- and therefore a
         # second ApprovalTask -- for the same document. Without this, the
         # same document shows up twice in "For My Action".
-        existing = (ApprovalInstance.query
+        existing_pending = (ApprovalInstance.query
                    .filter_by(reference_table=reference_table,
                              reference_id=reference_id, status="PENDING")
                    .first())
-        if existing is not None:
-            return existing
+        if existing_pending is not None:
+            return existing_pending
+        existing_returned = (ApprovalInstance.query
+                   .filter_by(reference_table=reference_table,
+                             reference_id=reference_id, status="RETURNED")
+                   .order_by(ApprovalInstance.id.desc())
+                   .first())
+        if existing_returned is not None:
+            return self.resubmit(existing_returned, user)
 
         instance = ApprovalInstance(
             document_type_id=dt.id, reference_table=reference_table,
@@ -233,7 +248,8 @@ class ApprovalEngine:
         self._record(instance, "RETURN", user, remarks)
         self.tasks.complete_current(instance, user)
         instance.status = "RETURNED"
-        instance.current_level = 0
+        # Keep current_level so resubmit resumes at the level that
+        # returned (L2 asked for an attachment → L2 reviews again).
         db.session.commit()
         self._emit("returned", instance)
         return instance
@@ -241,11 +257,18 @@ class ApprovalEngine:
     def resubmit(self, instance, user, remarks=None) -> ApprovalInstance:
         self._require_status(instance, "RETURNED")
         instance.status = "PENDING"
-        instance.current_level = 1
+        if not instance.current_level:
+            # Older returns zeroed the level; resume at the last RETURN.
+            last_return = None
+            for a in reversed(list(instance.actions or [])):
+                if a.action == "RETURN" and a.level_number:
+                    last_return = a.level_number
+                    break
+            instance.current_level = last_return or 1
         self._record(instance, "SUBMIT", user, remarks)
         db.session.commit()
-        level_1 = self._current_level_def(instance)
-        self.tasks.create_for_level(instance, level_1,
+        level = self._current_level_def(instance)
+        self.tasks.create_for_level(instance, level,
                                     requested_by=instance.submitted_by)
         db.session.commit()
         self._emit("resubmitted", instance)
