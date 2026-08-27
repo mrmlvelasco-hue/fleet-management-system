@@ -73,7 +73,7 @@ def pending_approvals(api_user):
     # with non-dashboard callers that legitimately want every branch.
     branch_id = request.args.get("branch_id", type=int)
     if branch_id is not None:
-        tasks = [t for t in tasks if t.branch_id == branch_id]
+        tasks = [t for t in tasks if t.branch_id in (None, branch_id)]
     return jsonify({"items": [
         {
             "id": t.id,

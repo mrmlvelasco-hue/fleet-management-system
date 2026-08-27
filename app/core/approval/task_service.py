@@ -68,8 +68,14 @@ class ApprovalTaskService:
                      .order_by(ApprovalTask.created_at)
                      .all())
 
+        from app.core.approval.models import ApprovalAction
+        returned_instance_ids = {
+            a.instance_id for a in
+            ApprovalAction.query.filter_by(acted_by=user.id, action="RETURN").all()
+        }
         eligible = [t for t in candidates
                    if t.assigned_user_id == user.id
+                   or t.approval_instance_id in returned_instance_ids
                    or scope_svc.covers(user.id, branch_id=t.branch_id,
                                        business_unit_id=t.business_unit_id)]
 

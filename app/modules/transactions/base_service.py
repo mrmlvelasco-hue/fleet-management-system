@@ -151,7 +151,10 @@ class BaseTransactionService:
         if user is not None and not self._visible_to(record, user):
             raise NotVisibleError(
                 "You do not have access to this record.")
-        self.engine.resubmit(record.approval_instance, user, remarks)
+        inst = record.approval_instance
+        if inst is not None and inst.branch_id is None:
+            inst.branch_id = self._infer_branch_id(record)
+        self.engine.resubmit(inst, user, remarks)
         db.session.commit()
         return record
 

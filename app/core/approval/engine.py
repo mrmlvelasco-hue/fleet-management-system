@@ -93,6 +93,13 @@ class ApprovalEngine:
             self._check_eligible(instance, user)
             return True
         except (NotEligibleApproverError, InvalidStateError):
+            # The user who returned this level is the approver, even if
+            # org-scope later fails to match the stored branch.
+            for a in reversed(list(instance.actions or [])):
+                if a.action == "RETURN" and a.acted_by == user.id:
+                    if not instance.current_level or a.level_number == instance.current_level:
+                        return True
+                    break
             return False
 
     def get_approval_chain(self, instance) -> list:
@@ -165,16 +172,23 @@ class ApprovalEngine:
     def repair_instance(self, instance):
         """Unstick an instance after Return zeroed current_level.
 
-        Those rows look PENDING (or RETURNED) with current_level=0, so
-        no approver is eligible and the initiator has no Resubmit.
+        Do NOT flip a live PENDING instance back to RETURNED — that
+        undid resubmit on the next GET and left Level 2 with no task.
         """
         if instance is None:
             return instance
         last_ret = self._last_return_level(instance)
-        if instance.status == "PENDING" and (not instance.current_level):
-            if last_ret:
-                instance.status = "RETURNED"
-                instance.current_level = last_ret
+        actions = list(instance.actions or [])
+        last = actions[-1] if actions else None
+        if last and last.action == "SUBMIT" and instance.status in ("PENDING", "RETURNED"):
+            instance.status = "PENDING"
+            instance.current_level = (
+                instance.current_level
+                or last.level_number
+                or last_ret
+                or 1
+            )
+            return instance
         if instance.status == "RETURNED" and (not instance.current_level) and last_ret:
             instance.current_level = last_ret
         return instance
@@ -292,7 +306,9 @@ class ApprovalEngine:
             return existing
         level = self._current_level_def(instance)
         return self.tasks.create_for_level(
-            instance, level, requested_by=instance.submitted_by)
+            instance, level,
+            document_number=getattr(instance, "document_number", None),
+            requested_by=instance.submitted_by)
 
     def resubmit(self, instance, user, remarks=None) -> ApprovalInstance:
         """Initiator sends a returned document back to the returning level.
