@@ -31,6 +31,23 @@ class InvalidOrderCategoryError(Exception):
     pass
 
 
+
+PRINT_TEMPLATE_LABELS = {
+    "vehicle_assignment_memo": "Vehicle Assignment Memo",
+    "vehicle_reassignment_memo": "Vehicle Reassignment Memo",
+    "vehicle_relocation_memo": "Vehicle Relocation Memo",
+    "maintenanceorder_print_transfer": "Asset Transfer Report",
+    "maintenanceorder_print_disposal": "Asset Disposal Report",
+    "pm_work_order": "PM Work Order",
+    "repair_work_order": "Repair Work Order",
+    "maintenanceorder_print": "Work Order",
+}
+
+def resolve_print_template(tt):
+    if tt is None:
+        return "maintenanceorder_print"
+    return getattr(tt, "print_template", None) or "maintenanceorder_print"
+
 class TransactionTypeService:
     def create(self, *, code, name, order_category, group=None, sort_order=0):
         tt = TransactionType(code=code, name=name, order_category=order_category,

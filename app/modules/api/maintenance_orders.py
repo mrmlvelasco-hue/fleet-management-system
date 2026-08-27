@@ -68,6 +68,20 @@ def _order_json(o, *, detail=False):
         "transaction_type_id": o.transaction_type_id,
         "transaction_type": (
             o.transaction_type.name if o.transaction_type else None),
+        "transaction_type_code": (
+            o.transaction_type.code if o.transaction_type else None),
+        "transaction_type_group": (
+            o.transaction_type.group if o.transaction_type else None),
+        "print_template": (
+            getattr(o.transaction_type, "print_template", None)
+            if o.transaction_type else None),
+        "print_label": (
+            __import__("app.modules.transactions.maintenance_order.service",
+                       fromlist=["PRINT_TEMPLATE_LABELS"])
+            .PRINT_TEMPLATE_LABELS.get(
+                getattr(o.transaction_type, "print_template", None) or "",
+                "Work Order")
+            if o.transaction_type else "Work Order"),
         "maintenance_class_label": getattr(o, "maintenance_class_label", None),
         "scheduled_date": _iso(o.scheduled_date),
         "completed_date": _iso(o.completed_date),
@@ -122,6 +136,30 @@ def _order_json(o, *, detail=False):
             "destination_branch_id": o.destination_branch_id,
             "origin_branch_id": o.origin_branch_id,
             "assignment_classification": o.assignment_classification,
+            "driver_employee_number": (
+                o.driver.employee_number if getattr(o, "driver", None) else None),
+            "destination_branch": (
+                o.destination_branch.name
+                if getattr(o, "destination_branch", None) else None),
+            "origin_branch": (
+                o.origin_branch.name if getattr(o, "origin_branch", None)
+                else (o.vehicle.branch.name
+                      if o.vehicle and getattr(o.vehicle, "branch", None)
+                      else None)),
+            "vehicle_year": getattr(o.vehicle, "year", None) if o.vehicle else None,
+            "vehicle_engine_number": (
+                getattr(o.vehicle, "engine_number", None) if o.vehicle else None),
+            "vehicle_chassis_number": (
+                getattr(o.vehicle, "chassis_number", None) if o.vehicle else None),
+            "vehicle_color": getattr(o.vehicle, "color", None) if o.vehicle else None,
+            "vehicle_far_number": (
+                getattr(o.vehicle, "far_number", None) if o.vehicle else None),
+            "vehicle_odometer": (
+                getattr(o.vehicle, "current_odometer", None) if o.vehicle else None),
+            "assignee_name": (
+                o.vehicle.assigned_driver.full_name
+                if o.vehicle and getattr(o.vehicle, "assigned_driver", None)
+                else None),
             "disposal_value": _dec(o.disposal_value),
             "disposal_recipient": o.disposal_recipient,
             "disposal_reference_number": o.disposal_reference_number,
@@ -250,6 +288,8 @@ def get_maintenance_order(api_user, oid):
              joinedload(MaintenanceOrder.transaction_type),
              joinedload(MaintenanceOrder.vendor),
              joinedload(MaintenanceOrder.driver),
+             joinedload(MaintenanceOrder.origin_branch),
+             joinedload(MaintenanceOrder.destination_branch),
              selectinload(MaintenanceOrder.checklist_items),
              selectinload(MaintenanceOrder.parts),
          )
@@ -503,7 +543,7 @@ def remove_mo_part(api_user, oid, part_id):
 @api_auth_required("maintenanceorder.view")
 def list_mo_transaction_types(api_user):
     from app.modules.transactions.maintenance_order.service import (
-        TransactionTypeService)
+        TransactionTypeService, PRINT_TEMPLATE_LABELS)
     cat = request.args.get("order_category")
     rows = TransactionTypeService().list(
         order_category=cat, include_inactive=False)
@@ -515,6 +555,9 @@ def list_mo_transaction_types(api_user):
                 "name": t.name,
                 "order_category": t.order_category,
                 "group": t.group,
+                "print_template": getattr(t, "print_template", None),
+                "print_label": PRINT_TEMPLATE_LABELS.get(
+                    getattr(t, "print_template", None) or "", "Work Order"),
             }
             for t in rows
         ]

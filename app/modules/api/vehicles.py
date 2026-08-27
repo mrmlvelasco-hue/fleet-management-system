@@ -1046,14 +1046,119 @@ def vehicle_print(api_user, vehicle_id):
         CompanyProfileService)
     company = CompanyProfileService().get()
 
+    def _iso(v):
+        if v is None:
+            return None
+        if hasattr(v, "isoformat"):
+            return v.isoformat()
+        return str(v)
+
+    def _num(v):
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return str(v)
+
+    attachments = []
+    doc_type_labels = {}
+    try:
+        from app.core.attachments.attachment_service import AttachmentService
+        svc = AttachmentService()
+        attachments = [{
+            "id": a.id,
+            "original_filename": a.original_filename,
+            "mime_type": a.mime_type,
+            "document_type": getattr(a, "document_type", None),
+            "file_size": a.file_size,
+        } for a in svc.list_for("vehicles", vehicle_id)]
+        doc_type_labels = {row.code: row.description
+                           for row in svc.document_types()}
+    except Exception:
+        attachments = []
+
+    mo_history = []
+    try:
+        from app.modules.transactions.maintenance_order.models import (
+            MaintenanceOrder)
+        orders = (MaintenanceOrder.query
+                  .filter_by(vehicle_id=vehicle_id)
+                  .order_by(MaintenanceOrder.scheduled_date.desc())
+                  .all())
+        for mo in orders:
+            mo_history.append({
+                "id": mo.id,
+                "document_number": mo.document_number,
+                "type": (
+                    mo.maintenance_type.name if mo.maintenance_type
+                    else (mo.transaction_type.name if mo.transaction_type
+                          else None)),
+                "category": mo.category or mo.order_category,
+                "scheduled_date": _iso(mo.scheduled_date),
+                "completed_date": _iso(mo.completed_date),
+                "odometer": mo.odometer_at_service,
+                "status": mo.status,
+                "cost": _num(mo.actual_cost or mo.estimated_cost),
+            })
+    except Exception:
+        mo_history = []
+
+    activity_rows = []
+    utilization = {}
+    outlet_history = []
+    try:
+        from app.core.vehicle_activity_history_service import (
+            VehicleActivityHistoryService)
+        activity_svc = VehicleActivityHistoryService()
+        raw_rows = activity_svc.get_activity_rows(vehicle)
+        utilization = dict(activity_svc.get_utilization_summary(vehicle, raw_rows) or {})
+        if utilization.get("total_maintenance_cost") is not None:
+            utilization["total_maintenance_cost"] = _num(
+                utilization["total_maintenance_cost"])
+        outlet_history = []
+        for seg in activity_svc.get_outlet_history(vehicle):
+            outlet_history.append({
+                "from_date": _iso(seg.get("from_date")),
+                "to_date": _iso(seg.get("to_date")),
+                "outlet": seg.get("outlet"),
+                "custodian": seg.get("custodian"),
+            })
+        for r in raw_rows:
+            activity_rows.append({
+                "date": _iso(r.get("date")),
+                "activity_type": r.get("activity_type"),
+                "outlet": r.get("outlet"),
+                "assigned_to": r.get("assigned_to"),
+                "description": r.get("description"),
+                "cost": _num(r.get("cost")),
+                "odometer": r.get("odometer"),
+            })
+    except Exception:
+        activity_rows = []
+        utilization = {}
+        outlet_history = []
+
+    addr1 = None
+    if company:
+        addr1 = (getattr(company, "address_line1", None)
+                 or getattr(company, "address_line", None))
+
     return jsonify({
         "vehicle": detail_json(vehicle),
         "company": {
             "company_name": getattr(company, "company_name", None),
-            "address_line": getattr(company, "address_line", None),
+            "address_line": addr1,
+            "address_line1": addr1,
             "city": getattr(company, "city", None),
         } if company else {},
         "generated_at": datetime.now().isoformat(),
+        "attachments": attachments,
+        "attachment_doc_types": doc_type_labels,
+        "mo_history": mo_history,
+        "activity_rows": activity_rows,
+        "utilization": utilization,
+        "outlet_history": outlet_history,
     })
 
 
