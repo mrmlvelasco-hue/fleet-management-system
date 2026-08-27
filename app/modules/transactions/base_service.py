@@ -86,11 +86,12 @@ class BaseTransactionService:
         one, so a module that names its money column differently routes
         correctly instead of silently resolving with None.
         """
+        from decimal import Decimal
         for field in self.APPROVAL_AMOUNT_FIELDS:
             value = getattr(record, field, None)
             if value is not None:
                 return value
-        return None
+        return Decimal("0")
 
     def submit(self, record_id: int, user):
         """Submit a DRAFT record through the Approval Engine."""

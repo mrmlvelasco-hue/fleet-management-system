@@ -169,6 +169,13 @@ class MaintenanceOrderService(BaseTransactionService):
         # already be the new one, not the "From" branch being reported.
         origin_branch_id = (vehicle.branch_id if destination_branch_id
                            and vehicle else None)
+        # Assignment / transfer / disposal often have no money line.
+        # Approval routing uses estimated_cost; leave it NULL and the
+        # matrix looks for "no amount" only. Default operational drafts
+        # to 0 so a 0-and-up band matches.
+        if estimated_cost is None and order_category == "OPERATIONAL":
+            from decimal import Decimal
+            estimated_cost = Decimal("0")
         # Per the spec: "Not every Maintenance Order represents vehicle
         # maintenance. Administrative, Deployment, Disposal, and
         # Accessories are valid Maintenance Orders" — Operational orders

@@ -146,7 +146,13 @@ class ApprovalMatrixService:
     def resolve(self, document_type_id, amount=None, on_date=None):
         """Return the ApprovalMatrix matching amount and date, else raise."""
         on_date = on_date or date.today()
-        amount = Decimal(str(amount)) if amount is not None else None
+        # Blank / missing amount is routed as 0 so operational documents
+        # (Vehicle Assignment Memo, transfer, disposal without a figure)
+        # still match a matrix whose range starts at 0 or has no minimum.
+        if amount is None or amount == "":
+            amount = Decimal("0")
+        else:
+            amount = Decimal(str(amount))
         # Routing failures are otherwise invisible: the matrix looks
         # correctly configured in the UI, and the old error didn't say what
         # was actually being matched against.
