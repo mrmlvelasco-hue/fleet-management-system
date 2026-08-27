@@ -105,9 +105,16 @@ def _known_lookup_types():
 
 
 @bp.route("/reference/lookups", methods=["GET"])
-@api_auth_required("vehicle.view")
+@api_auth_required()
 def reference_lookups(api_user):
     """Several lookup types in one request, keyed by type.
+
+    Gated on auth only, matching /reference/departments, /vendors and
+    /drivers. Was vehicle.view -- an accident of the Vehicle form being
+    the first screen to need lookups. Lookups are general configuration
+    several unrelated forms read (the Maintenance Order form needs
+    ASSIGNMENT_CLASSIFICATION for a Vehicle Assignment Memo, which has
+    nothing to do with vehicle master data).
 
     The Vehicle form needs four of these lists (FUEL_TYPE, TRANSMISSION,
     VEHICLE_BODY_TYPE, COMPONENT_GROUP). Four round-trips would render
