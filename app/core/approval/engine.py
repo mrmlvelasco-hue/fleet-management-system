@@ -281,26 +281,39 @@ class ApprovalEngine:
         self._emit("returned", instance)
         return instance
 
-    def resubmit(self, instance, user, remarks=None) -> ApprovalInstance:
-        self.repair_instance(instance)
-        if instance.status == "PENDING" and instance.current_level:
-            # Already in flight (double-click or earlier /submit).
-            return instance
-        self._require_status(instance, "RETURNED")
-        instance.status = "PENDING"
-        if not instance.current_level:
-            # Older returns zeroed the level; resume at the last RETURN.
-            last_return = None
-            for a in reversed(list(instance.actions or [])):
-                if a.action == "RETURN" and a.level_number:
-                    last_return = a.level_number
-                    break
-            instance.current_level = last_return or 1
-        self._record(instance, "SUBMIT", user, remarks)
-        db.session.commit()
+    def _ensure_pending_task(self, instance):
+        from app.core.approval.models import ApprovalTask
+        existing = (ApprovalTask.query
+                    .filter_by(approval_instance_id=instance.id,
+                               level_number=instance.current_level,
+                               status="PENDING")
+                    .first())
+        if existing is not None:
+            return existing
         level = self._current_level_def(instance)
-        self.tasks.create_for_level(instance, level,
-                                    requested_by=instance.submitted_by)
+        return self.tasks.create_for_level(
+            instance, level, requested_by=instance.submitted_by)
+
+    def resubmit(self, instance, user, remarks=None) -> ApprovalInstance:
+        """Initiator sends a returned document back to the returning level.
+
+        Always (re)opens a PENDING task for that level so it appears on
+        the approver's For My Action list. A 200 that does nothing left
+        Level 2 with no task after Return had completed the old one.
+        """
+        self.repair_instance(instance)
+        if instance.status == "RETURNED":
+            instance.status = "PENDING"
+            if not instance.current_level:
+                instance.current_level = self._last_return_level(instance) or 1
+            self._record(instance, "SUBMIT", user, remarks)
+            db.session.commit()
+        elif instance.status == "PENDING":
+            if not instance.current_level:
+                instance.current_level = self._last_return_level(instance) or 1
+        else:
+            self._require_status(instance, "RETURNED")
+        self._ensure_pending_task(instance)
         db.session.commit()
         self._emit("resubmitted", instance)
         return instance
