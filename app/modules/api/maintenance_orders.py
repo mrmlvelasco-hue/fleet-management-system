@@ -92,6 +92,31 @@ def _approval_audit(order):
     return rows
 
 
+def _match_attachment(rows, *tokens):
+    want = [t.lower().replace(" ", "_") for t in tokens]
+    for a in rows:
+        if not getattr(a, "is_active", True):
+            continue
+        code = (a.document_type or "").lower().replace(" ", "_")
+        name = (a.original_filename or a.filename or "").lower()
+        blob = f"{code} {name}"
+        if any(tok in blob for tok in want):
+            if "front" in want and "back" in blob and "front" not in blob:
+                continue
+            if "back" in want and "front" in blob and "back" not in blob:
+                continue
+            return a.id
+    return None
+
+
+def _list_attachments(table, rid):
+    from app.core.models.attachment import Attachment
+    return (Attachment.query
+            .filter_by(reference_table=table, reference_id=rid)
+            .order_by(Attachment.id.desc())
+            .all())
+
+
 def _vam_print_extras(o):
     """Photos, registration numbers and endorsement block for VAM print."""
     extras = {
@@ -115,22 +140,32 @@ def _vam_print_extras(o):
             getattr(drv, "position", None) or getattr(drv, "job_title", None))
         extras["driver_address"] = getattr(drv, "complete_address", None)
         extras["driver_phone"] = getattr(drv, "phone", None)
+        if not extras["driver_photo_attachment_id"]:
+            datts = _list_attachments("drivers", drv.id)
+            extras["driver_photo_attachment_id"] = (
+                _match_attachment(datts, "photograph", "photo", "portrait", "id_pic")
+                or next((a.id for a in datts
+                         if getattr(a, "is_active", True)
+                         and (a.mime_type or "").startswith("image/")), None)
+            )
     veh = getattr(o, "vehicle", None)
     if veh is not None:
         extras["vehicle_cr_number"] = getattr(veh, "cr_number", None)
         odo = getattr(veh, "current_odometer", None)
         extras["vehicle_brand_new"] = "Yes" if odo is not None and odo < 500 else "No"
-        from app.core.models.attachment import Attachment
-        for code, key in (("PHOTO_FRONT", "photo_front_id"),
-                          ("PHOTO_BACK", "photo_back_id")):
-            att = (Attachment.query
-                   .filter_by(reference_table="vehicles",
-                              reference_id=veh.id,
-                              document_type=code, is_active=True)
-                   .order_by(Attachment.created_at.desc())
-                   .first())
-            if att:
-                extras[key] = att.id
+        vatts = _list_attachments("vehicles", veh.id)
+        extras["photo_front_id"] = _match_attachment(
+            vatts, "photo_front", "front", "vehicle photo — front")
+        extras["photo_back_id"] = _match_attachment(
+            vatts, "photo_back", "back", "vehicle photo — back")
+        if not extras["photo_front_id"] or not extras["photo_back_id"]:
+            images = [a for a in vatts
+                      if getattr(a, "is_active", True)
+                      and (a.mime_type or "").startswith("image/")]
+            if not extras["photo_front_id"] and images:
+                extras["photo_front_id"] = images[0].id
+            if not extras["photo_back_id"] and len(images) > 1:
+                extras["photo_back_id"] = images[1].id
         try:
             from app.modules.transactions.vehicle_registration.models import (
                 VehicleRegistration)

@@ -958,22 +958,35 @@ def maintenanceorder_print_vam(oid):
     # Front/back photos for the Conforme page, by document type rather
     # than by filename, so a rename cannot silently blank the page.
     from app.core.models.attachment import Attachment
-    def _photo(doc_type):
+    def _photo(*tokens):
         if not item.vehicle_id:
             return None
-        return (Attachment.query
-               .filter_by(reference_table="vehicles",
-                         reference_id=item.vehicle_id,
-                         document_type=doc_type, is_active=True)
-               .order_by(Attachment.created_at.desc()).first())
+        rows = (Attachment.query
+                .filter_by(reference_table="vehicles",
+                           reference_id=item.vehicle_id)
+                .order_by(Attachment.created_at.desc()).all())
+        want = [x.lower().replace(" ", "_") for x in tokens]
+        for a in rows:
+            if not getattr(a, "is_active", True):
+                continue
+            blob = f"{(a.document_type or '')} {(a.original_filename or '')}".lower()
+            if any(tok in blob.replace(" ", "_") or tok in blob for tok in want):
+                if "front" in want and "back" in blob and "front" not in blob:
+                    continue
+                if "back" in want and "front" in blob and "back" not in blob:
+                    continue
+                return a
+        images = [a for a in rows if getattr(a, "is_active", True)
+                  and (a.mime_type or "").startswith("image/")]
+        return images[0] if images else None
 
     return render_template("transactions/maintenanceorder_print_vam.html",
                            item=item, company=company,
                            endorsed_by=endorsed_by, approved_by=approved_by,
                            latest_reg=latest_reg,
                            oath_template=oath_tpl, oath_body=oath_body,
-                           photo_front=_photo("PHOTO_FRONT"),
-                           photo_back=_photo("PHOTO_BACK"),
+                           photo_front=_photo("PHOTO_FRONT", "front"),
+                           photo_back=_photo("PHOTO_BACK", "back"),
                            generated_at=datetime.now())
 
 
