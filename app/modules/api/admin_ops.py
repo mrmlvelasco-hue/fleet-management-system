@@ -574,6 +574,38 @@ def list_custom_reports(api_user):
     return jsonify({"items": [_cr_json(r) for r in items], "sources": sources})
 
 
+
+@bp.route("/admin/custom-reports/preview", methods=["POST"])
+@api_auth_required("customreport.manage")
+def preview_custom_report(api_user):
+    from app.core.reporting.report_builder import run_report, ReportBuilderError
+    p = request.get_json(silent=True) or {}
+    try:
+        result = run_report(
+            p.get("data_source") or "",
+            p.get("fields") or [],
+            filters=p.get("filters") or [],
+            sort_key=p.get("sort_key"),
+            sort_dir=p.get("sort_dir") or "asc",
+            limit=min(int(p.get("row_limit") or 50), 50),
+            user=api_user)
+    except Exception as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 400
+    rows = result.get("rows") or []
+    # normalize rows to list-of-lists of strings for the preview table
+    if rows and isinstance(rows[0], dict):
+        cols = result.get("columns") or [{"key": k} for k in rows[0].keys()]
+        keys = [c.get("key") if isinstance(c, dict) else str(c) for c in cols]
+        norm = [[("" if r.get(k) is None else str(r.get(k))) for k in keys] for r in rows]
+    else:
+        norm = [[("" if v is None else str(v)) for v in row] for row in rows]
+    return jsonify({
+        "ok": True,
+        "columns": result.get("columns") or [],
+        "rows": norm,
+        "row_count": result.get("row_count", len(norm)),
+    })
+
 @bp.route("/admin/custom-reports", methods=["POST"])
 @api_auth_required("customreport.manage")
 def create_custom_report(api_user):
@@ -585,7 +617,12 @@ def create_custom_report(api_user):
             name=p.get("name"),
             data_source=p.get("data_source"),
             fields=p.get("fields") or [],
+            filters=p.get("filters") or [],
+            sort_key=p.get("sort_key"),
+            sort_dir=p.get("sort_dir") or "asc",
             description=p.get("description"),
+            row_limit=p.get("row_limit") or 1000,
+            default_recipients=p.get("default_recipients"),
             user=api_user)
     except Exception as exc:
         return jsonify({"error": "validation", "message": str(exc)}), 400
