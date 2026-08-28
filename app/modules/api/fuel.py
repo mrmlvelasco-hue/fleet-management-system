@@ -25,6 +25,7 @@ def _txn_json(t):
         "id": t.id,
         "document_number": t.document_number,
         "vehicle_id": t.vehicle_id,
+        "fuel_card_id": t.fuel_card_id,
         "plate_number": v.plate_number if v else None,
         "vehicle_label": (
             " ".join(x for x in [getattr(v, "brand", None),
@@ -138,6 +139,73 @@ def create_fuel(api_user):
         db.session.rollback()
         return jsonify({"error": "validation", "message": str(exc)}), 400
     return jsonify(_txn_json(txn)), 201
+
+
+@bp.route("/fuel/form-options", methods=["GET"])
+@api_auth_required("fuel.view")
+def fuel_form_options(api_user):
+    from app.modules.master_data.vehicle.models import Vehicle
+    from app.modules.transactions.fuel.models import FuelCard
+    vehicles = (Vehicle.query.filter(Vehicle.status != "DISPOSED")
+                .order_by(Vehicle.plate_number).all())
+    cards = (FuelCard.query.filter_by(status="ACTIVE")
+             .order_by(FuelCard.card_number).all())
+    return jsonify({
+        "vehicles": [{
+            "id": v.id,
+            "plate_number": v.plate_number,
+            "conduction_number": v.conduction_number,
+            "brand": v.brand,
+            "model": v.model,
+        } for v in vehicles],
+        "cards": [{
+            "id": c.id,
+            "card_number": c.card_number,
+            "provider": c.provider,
+            "vehicle_id": c.vehicle_id,
+        } for c in cards],
+        "fuel_types": ["DIESEL", "GASOLINE"],
+    })
+
+
+@bp.route("/fuel/<int:tid>", methods=["PUT", "PATCH"])
+@api_auth_required("fuel.update")
+def update_fuel(api_user, tid):
+    from app.modules.transactions.fuel.models import FuelTransaction
+    from app.modules.transactions.fuel.import_export import (
+        _to_decimal, _to_int, _to_datetime)
+    from app.modules.transactions.fuel.odometer_validation import (
+        OdometerValidationService)
+    from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+    txn = db.session.get(FuelTransaction, tid)
+    if txn is None:
+        return jsonify({"error": "not_found", "message": "Not found."}), 404
+    p = request.get_json(silent=True) or {}
+    try:
+        if p.get("vehicle_id"):
+            txn.vehicle_id = int(p["vehicle_id"])
+        txn.fuel_card_id = int(p["fuel_card_id"]) if p.get("fuel_card_id") else None
+        if p.get("transaction_date"):
+            txn.transaction_date = _to_datetime(p.get("transaction_date"))
+        txn.station = p.get("station") or None
+        txn.fuel_type = (p.get("fuel_type") or "").upper() or None
+        if p.get("litres") not in (None, ""):
+            txn.litres = _to_decimal(p.get("litres"))
+        txn.price_per_litre = _to_decimal(p.get("price_per_litre")) if p.get("price_per_litre") not in (None, "") else txn.price_per_litre
+        if p.get("total_amount") not in (None, ""):
+            txn.total_amount = _to_decimal(p.get("total_amount"))
+        if "odometer_reported" in p:
+            txn.odometer_reported = _to_int(p.get("odometer_reported"))
+        txn.reference_number = p.get("reference_number") or None
+        txn.remarks = p.get("remarks") or None
+        db.session.flush()
+        OdometerValidationService().validate(txn)
+        FuelAnalyticsService().detect_anomalies(txn)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"error": "validation", "message": str(exc)}), 400
+    return jsonify(_txn_json(txn))
 
 
 @bp.route("/fuel/<int:tid>", methods=["GET"])
