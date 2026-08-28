@@ -286,7 +286,11 @@ class ApprovalEngine:
     def return_document(self, instance, user, remarks=None) -> ApprovalInstance:
         self._require_status(instance, "PENDING")
         self._check_eligible(instance, user)
-        self._record(instance, "RETURN", user, remarks)
+        note = (remarks or "").strip()
+        if not note:
+            raise InvalidStateError(
+                "Comments are required when returning a request to the initiator.")
+        self._record(instance, "RETURN", user, note)
         self.tasks.complete_current(instance, user)
         instance.status = "RETURNED"
         # Keep current_level so resubmit resumes at the level that
@@ -320,13 +324,12 @@ class ApprovalEngine:
         self.repair_instance(instance)
         if instance.status == "RETURNED":
             instance.status = "PENDING"
-            if not instance.current_level:
-                instance.current_level = self._last_return_level(instance) or 1
+            instance.current_level = 1
             self._record(instance, "SUBMIT", user, remarks)
             db.session.commit()
         elif instance.status == "PENDING":
             if not instance.current_level:
-                instance.current_level = self._last_return_level(instance) or 1
+                instance.current_level = 1
         else:
             self._require_status(instance, "RETURNED")
         self._ensure_pending_task(instance)

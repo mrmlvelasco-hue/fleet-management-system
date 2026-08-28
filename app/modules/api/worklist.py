@@ -117,3 +117,70 @@ def _returned_for_requester(api_user):
             "kind": "returned",
         })
     return items
+
+
+@bp.route("/worklist/inbox", methods=["GET"])
+@api_auth_required()
+def worklist_inbox(api_user):
+    """Initiator + approver inbox counts and items."""
+    from app.core.approval.task_service import ApprovalTaskService
+    from app.core.approval.models import ApprovalInstance
+    from app.modules.transactions.maintenance_order.models import MaintenanceOrder
+
+    tasks = ApprovalTaskService().list_for_user(api_user)
+    awaiting_approval = [{
+        "id": t.id,
+        "kind": "approval",
+        "reference_table": t.reference_table,
+        "reference_id": t.reference_id,
+        "document_number": t.document_number,
+        "url": _task_url(t),
+        "level_number": t.level_number,
+    } for t in tasks]
+
+    returned_rows = (ApprovalInstance.query
+                     .filter_by(submitted_by=api_user.id, status="RETURNED")
+                     .all())
+    returned = []
+    for inst in returned_rows:
+        template = _REACT_ROUTE_MAP.get(inst.reference_table)
+        mo = None
+        if inst.reference_table == "maintenance_orders":
+            from app.extensions import db as _db
+            mo = _db.session.get(MaintenanceOrder, inst.reference_id)
+        returned.append({
+            "id": f"returned-{inst.id}",
+            "kind": "returned",
+            "reference_table": inst.reference_table,
+            "reference_id": inst.reference_id,
+            "document_number": getattr(mo, "document_number", None),
+            "url": template.format(id=inst.reference_id) if template else None,
+            "remarks": None,
+        })
+
+    my_orders = (MaintenanceOrder.query
+                 .filter_by(requested_by=api_user.id)
+                 .order_by(MaintenanceOrder.id.desc())
+                 .limit(50)
+                 .all())
+    mine = [{
+        "id": o.id,
+        "kind": "mine",
+        "reference_table": "maintenance_orders",
+        "reference_id": o.id,
+        "document_number": o.document_number,
+        "url": f"/maintenance-orders/{o.id}",
+        "status": o.status,
+    } for o in my_orders]
+
+    return jsonify({
+        "awaiting_approval": awaiting_approval,
+        "returned_for_action": returned,
+        "my_requests": mine,
+        "counts": {
+            "awaiting_approval": len(awaiting_approval),
+            "returned_for_action": len(returned),
+            "pending_resubmission": len(returned),
+            "my_requests": len(mine),
+        },
+    })

@@ -48,6 +48,49 @@ def _attachment_count(order_id):
         reference_table="maintenance_orders", reference_id=order_id).count()
 
 
+
+def _display_status(order):
+    """User-facing status combining physical + approval state."""
+    phys = (order.status or "").upper()
+    inst = getattr(order, "approval_instance", None)
+    appr = (inst.status if inst is not None else None)
+    if phys == "CANCELLED":
+        return "Cancelled"
+    if phys == "COMPLETED":
+        return "Completed"
+    if phys == "IN_PROGRESS":
+        return "In Progress"
+    if appr == "PENDING":
+        return "Awaiting Approval"
+    if appr == "RETURNED":
+        return "Returned for Revision"
+    if appr == "REJECTED":
+        return "Rejected"
+    if appr == "APPROVED" and phys == "DRAFT":
+        return "Approved"
+    if phys == "DRAFT":
+        return "Draft"
+    return phys.title() if phys else "Draft"
+
+
+def _approval_audit(order):
+    inst = getattr(order, "approval_instance", None)
+    if inst is None:
+        return []
+    from app.modules.user_management.models import User
+    rows = []
+    for a in inst.actions or []:
+        from app.extensions import db as _db
+        actor = _db.session.get(User, a.acted_by) if a.acted_by else None
+        rows.append({
+            "action": a.action,
+            "level_number": a.level_number,
+            "acted_by_name": actor.full_name if actor else None,
+            "acted_at": a.acted_at.isoformat() if a.acted_at else None,
+            "remarks": a.remarks,
+        })
+    return rows
+
 def _order_json(o, *, detail=False):
     plate = None
     if o.vehicle:
@@ -56,6 +99,9 @@ def _order_json(o, *, detail=False):
         "id": o.id,
         "document_number": o.document_number,
         "status": o.status,
+        "display_status": _display_status(o),
+        "approval_status": (
+            o.approval_instance.status if getattr(o, "approval_instance", None) else None),
         "order_category": o.order_category,
         "vehicle_id": o.vehicle_id,
         "plate_number": plate,
@@ -203,6 +249,23 @@ def _order_json(o, *, detail=False):
 @bp.route("/maintenance-orders", methods=["GET"])
 @api_auth_required("maintenanceorder.view")
 def list_maintenance_orders_v2(api_user):
+
+    def _inbox_keep(o, inbox):
+        if not inbox:
+            return True
+        inst = getattr(o, "approval_instance", None)
+        appr = inst.status if inst is not None else None
+        uid = getattr(api_user, "id", None)
+        if inbox in ("mine", "my-requests"):
+            return getattr(o, "requested_by", None) == uid
+        if inbox in ("returned", "returned-requests"):
+            return appr == "RETURNED" and getattr(o, "requested_by", None) == uid
+        if inbox in ("awaiting-action", "awaiting"):
+            return appr == "RETURNED" and getattr(o, "requested_by", None) == uid
+        if inbox in ("awaiting-approval",):
+            return appr == "PENDING"
+        return True
+
     """Paginated list. Replaces the thin results shape used by the dashboard
     widget with a full list payload for the React screen."""
     from app.modules.transactions.maintenance_order.service import (
@@ -219,6 +282,7 @@ def list_maintenance_orders_v2(api_user):
     q = (request.args.get("q") or "").strip().lower()
     status = (request.args.get("status") or "").strip().upper() or None
     cls = (request.args.get("maintenance_class") or "").strip().upper() or None
+    inbox = (request.args.get("inbox") or "").strip().lower() or None
 
     svc = MaintenanceOrderService()
     extra = []
@@ -246,6 +310,8 @@ def list_maintenance_orders_v2(api_user):
     orders = svc.list(user=api_user)
     if status:
         orders = [o for o in orders if o.status == status]
+    if inbox:
+        orders = [o for o in orders if _inbox_keep(o, inbox)]
     if q:
         def _blob(o):
             return " ".join(filter(None, [
@@ -309,6 +375,7 @@ def get_maintenance_order(api_user, oid):
     from app.modules.api.company_letterhead import company_letterhead
     data["company"] = company_letterhead()
     data["editable"] = MaintenanceOrderService().editable_scope(o)
+    data["approval_audit"] = _approval_audit(o)
     data["oath_body"] = _oath_body_for(o)
     _attach_approval_chain(data, o, api_user)
     return jsonify(data)
