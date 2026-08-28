@@ -299,8 +299,22 @@ class MaintenanceOrderService(BaseTransactionService):
         if order.status != "DRAFT":
             return "NONE"
         instance = order.approval_instance
-        if instance is None or instance.status == "RETURNED":
+        if instance is None:
+            # Submit stores approval_instance_id, but a stale session or
+            # an instance created only on the approval table must still
+            # lock the order. Look up the latest instance by reference.
+            from app.core.approval.models import ApprovalInstance
+            instance = (ApprovalInstance.query
+                        .filter_by(reference_table="maintenance_orders",
+                                   reference_id=order.id)
+                        .order_by(ApprovalInstance.id.desc())
+                        .first())
+        if instance is None or instance.status in ("RETURNED", "CANCELLED"):
             return "FULL"
+        # PENDING / APPROVED (awaiting Start work) — particulars stay frozen
+        # until an approver Returns the request.
+        if instance.status == "PENDING":
+            return "NONE"
         return "NONE"
 
     def update(self, order_id: int, *, user=None, **fields):
@@ -571,10 +585,10 @@ class MaintenanceOrderService(BaseTransactionService):
         order = db.session.get(MaintenanceOrder, order_id)
         if order is None:
             raise InvalidOrderStateError("Maintenance Order not found.")
-        if order.status != "DRAFT":
+        if self.editable_scope(order) != "FULL":
             raise InvalidOrderStateError(
-                f"Parts can only be added while the order is DRAFT "
-                f"(this one is {order.status}).")
+                "This order is awaiting approval and cannot be edited. "
+                "Ask the approver to return it if parts need to change.")
         if not str(part_description or "").strip():
             raise InvalidOrderStateError("Part description is required.")
 
@@ -605,9 +619,10 @@ class MaintenanceOrderService(BaseTransactionService):
         if part is None:
             return None
         order = part.order
-        if order.status != "DRAFT":
+        if self.editable_scope(order) != "FULL":
             raise InvalidOrderStateError(
-                "Parts can only be removed while the order is DRAFT.")
+                "This order is awaiting approval and cannot be edited. "
+                "Ask the approver to return it if parts need to change.")
         # Remove via the relationship, not db.session.delete(part): the
         # delete-orphan cascade still removes the row, but this also
         # keeps the parent's already-loaded parts collection correct.

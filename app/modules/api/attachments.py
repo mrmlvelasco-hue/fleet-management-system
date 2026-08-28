@@ -494,6 +494,17 @@ def upload_maintenance_order_attachment(api_user, order_id):
         return _not_found("Maintenance Order")
     if not _attachments_allowed_for("maintenance_orders"):
         return _attachments_blocked("maintenance_orders")
+    from app.extensions import db
+    from app.modules.transactions.maintenance_order.models import MaintenanceOrder
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+    order = db.session.get(MaintenanceOrder, order_id)
+    if order is not None and MaintenanceOrderService().editable_scope(order) != "FULL":
+        return jsonify({
+            "error": "conflict",
+            "message": ("This order is awaiting approval and cannot be edited. "
+                        "Ask the approver to return it before attaching files."),
+        }), 409
 
     file = request.files.get("file")
     if file is None or not file.filename:
