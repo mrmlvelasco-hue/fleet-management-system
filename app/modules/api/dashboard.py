@@ -476,6 +476,79 @@ def dashboard_bootstrap(api_user):
     fleet_status = analytics.fleet_by_status(user=api_user, branch_id=branch_id)
     due_rows = _shared_due_rows(api_user, branch_id)
 
+    analytics_wf = analytics.approval_workflow_counts(user=api_user)
+    trends = analytics.kpi_trends(user=api_user)
+    registration_status = analytics.all_charts(
+        user=api_user, only=["registration_status"], branch_id=branch_id
+    ).get("registration_status")
+
+    from app.modules.master_data.org.models import Branch
+    from app.modules.user_management.org_scope_service import UserOrgScopeService
+    scope_svc = UserOrgScopeService()
+    branches = [
+        {"id": b.id, "code": b.code, "name": b.name}
+        for b in Branch.query.filter_by(is_active=True).order_by(Branch.name).all()
+        if scope_svc.covers(api_user.id, branch_id=b.id)
+    ]
+
+    awaiting = {"items": [], "total": 0}
+    try:
+        from flask import request as _req
+        # Reuse the same queue as /dashboard/awaiting-approval, first page only.
+        from app.core.approval.task_service import ApprovalTaskService
+        from app.core.reference_resolver import get_worklist_labels, get_document_number
+        from app.modules.api.worklist import _task_url
+        from app.modules.user_management.models import User
+        tasks = ApprovalTaskService().list_for_user(api_user)
+        awaiting["total"] = len(tasks)
+        for t in tasks[:5]:
+            labels = get_worklist_labels(t.reference_table, t.reference_id)
+            document_number = t.document_number or get_document_number(
+                t.reference_table, t.reference_id)
+            awaiting["items"].append({
+                "id": t.id,
+                "document_number": document_number,
+                "document_type": labels.get("type"),
+                "plate_number": labels.get("plate"),
+                "level_number": t.level_number,
+                "url": _task_url(t),
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+            })
+    except Exception:
+        awaiting = {"items": [], "total": 0}
+
+    due_reg = {"items": [], "total": 0}
+    try:
+        from app.modules.registration_config.service import (
+            RegistrationDueCalculationService)
+        from datetime import date as _date
+        due = RegistrationDueCalculationService().get_all_due_vehicles()
+        if branch_id is not None:
+            due = [d for d in due if d["vehicle"].branch_id == branch_id]
+        due = [d for d in due
+               if scope_svc.covers(api_user.id, branch_id=d["vehicle"].branch_id)]
+        def _sort_key(d):
+            date = d.get("next_due_date")
+            return (0 if d.get("status") == "OVERDUE" else 1, date or _date.max)
+        due.sort(key=_sort_key)
+        items = []
+        for d in due[:5]:
+            v = d["vehicle"]
+            expiry = d.get("next_due_date")
+            items.append({
+                "vehicle_id": v.id,
+                "plate_number": v.plate_number,
+                "conduction_number": v.conduction_number,
+                "vehicle": f"{v.brand} {v.model}".strip(),
+                "branch": v.branch.name if v.branch else None,
+                "status": d.get("status"),
+                "expiry_date": expiry.isoformat() if expiry else None,
+                "days_remaining": d.get("days_remaining"),
+            })
+        due_reg = {"items": items, "total": len(due)}
+    except Exception:
+        due_reg = {"items": [], "total": 0}
+
     return jsonify({
         "summary": {
             "fleet_count": dash.fleet_count(user=api_user, branch_id=branch_id),
@@ -496,6 +569,12 @@ def dashboard_bootstrap(api_user):
             "items": due_rows[:limit],
             "total": len(due_rows),
         },
+        "workflow": analytics_wf,
+        "trends": trends,
+        "registration_status": registration_status,
+        "branches": {"items": branches},
+        "awaiting_approval": awaiting,
+        "due_registration": due_reg,
     })
 
 @bp.route("/dashboard/due-registration", methods=["GET"])
