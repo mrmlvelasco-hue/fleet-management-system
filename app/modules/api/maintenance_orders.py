@@ -91,6 +91,86 @@ def _approval_audit(order):
         })
     return rows
 
+
+def _vam_print_extras(o):
+    """Photos, registration numbers and endorsement block for VAM print."""
+    extras = {
+        "driver_photo_attachment_id": None,
+        "driver_position": None,
+        "driver_address": None,
+        "driver_phone": None,
+        "vehicle_cr_number": None,
+        "registration_cr_number": None,
+        "registration_or_number": None,
+        "photo_front_id": None,
+        "photo_back_id": None,
+        "endorsed_by": None,
+        "approved_by": None,
+        "vehicle_brand_new": None,
+    }
+    drv = getattr(o, "driver", None)
+    if drv is not None:
+        extras["driver_photo_attachment_id"] = getattr(drv, "photo_attachment_id", None)
+        extras["driver_position"] = (
+            getattr(drv, "position", None) or getattr(drv, "job_title", None))
+        extras["driver_address"] = getattr(drv, "complete_address", None)
+        extras["driver_phone"] = getattr(drv, "phone", None)
+    veh = getattr(o, "vehicle", None)
+    if veh is not None:
+        extras["vehicle_cr_number"] = getattr(veh, "cr_number", None)
+        odo = getattr(veh, "current_odometer", None)
+        extras["vehicle_brand_new"] = "Yes" if odo is not None and odo < 500 else "No"
+        from app.core.models.attachment import Attachment
+        for code, key in (("PHOTO_FRONT", "photo_front_id"),
+                          ("PHOTO_BACK", "photo_back_id")):
+            att = (Attachment.query
+                   .filter_by(reference_table="vehicles",
+                              reference_id=veh.id,
+                              document_type=code, is_active=True)
+                   .order_by(Attachment.created_at.desc())
+                   .first())
+            if att:
+                extras[key] = att.id
+        try:
+            from app.modules.transactions.vehicle_registration.models import (
+                VehicleRegistration)
+            latest = (VehicleRegistration.query
+                      .filter_by(vehicle_id=veh.id, status="COMPLETED")
+                      .order_by(VehicleRegistration.expiry_date.desc())
+                      .first())
+            if latest:
+                extras["registration_cr_number"] = getattr(latest, "cr_number", None)
+                extras["registration_or_number"] = getattr(latest, "or_number", None)
+        except Exception:
+            pass
+    if getattr(o, "requester", None):
+        role = o.requester.roles[0].name if o.requester.roles else ""
+        extras["endorsed_by"] = {
+            "name": o.requester.full_name,
+            "title": role,
+            "date": (o.created_at.date().isoformat()
+                     if getattr(o, "created_at", None) else None),
+        }
+    inst = getattr(o, "approval_instance", None)
+    if inst is not None:
+        from app.core.approval.models import ApprovalTask
+        from app.modules.user_management.models import User
+        from app.extensions import db
+        task = (ApprovalTask.query
+                .filter_by(approval_instance_id=inst.id, status="COMPLETED")
+                .order_by(ApprovalTask.level_number.desc())
+                .first())
+        if task and task.completed_by:
+            approver = db.session.get(User, task.completed_by)
+            if approver:
+                extras["approved_by"] = {
+                    "name": approver.full_name,
+                    "title": approver.roles[0].name if approver.roles else "",
+                    "date": (task.completed_at.date().isoformat()
+                             if task.completed_at else None),
+                }
+    return extras
+
 def _order_json(o, *, detail=False):
     plate = None
     if o.vehicle:
