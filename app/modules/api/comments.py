@@ -45,11 +45,17 @@ def _comment_json(c):
         atts = [{"id": a.id, "filename": a.original_filename} for a in rows]
     except Exception:
         atts = []
+    roles = []
+    try:
+        roles = [r.name for r in (c.author.roles or [])] if c.author else []
+    except Exception:
+        roles = []
     return {
         "id": c.id,
         "body": c.body,
         "author_id": c.author_id,
         "author_name": _name(c.author),
+        "author_role": roles[0] if roles else None,
         "recipient_id": c.recipient_id,
         "recipient_name": _name(c.recipient),
         "created_at": _iso(c.created_at),
