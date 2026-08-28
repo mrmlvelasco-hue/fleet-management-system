@@ -75,6 +75,7 @@ class ApprovalTaskService:
         }
         eligible = [t for t in candidates
                    if t.assigned_user_id == user.id
+                   or t.assigned_role_id in role_ids
                    or t.approval_instance_id in returned_instance_ids
                    or scope_svc.covers(user.id, branch_id=t.branch_id,
                                        business_unit_id=t.business_unit_id)]

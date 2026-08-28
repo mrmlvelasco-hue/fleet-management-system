@@ -93,8 +93,16 @@ class ApprovalEngine:
             self._check_eligible(instance, user)
             return True
         except (NotEligibleApproverError, InvalidStateError):
-            # The user who returned this level is the approver, even if
-            # org-scope later fails to match the stored branch.
+            try:
+                level = self._current_level_def(instance)
+                if level.approver_type == "ROLE" and any(
+                    r.id == level.role_id and r.is_active for r in (user.roles or [])
+                ):
+                    return True
+                if level.approver_type == "USER" and level.user_id == user.id:
+                    return True
+            except Exception:
+                pass
             for a in reversed(list(instance.actions or [])):
                 if a.action == "RETURN" and a.acted_by == user.id:
                     if not instance.current_level or a.level_number == instance.current_level:
@@ -324,12 +332,12 @@ class ApprovalEngine:
         self.repair_instance(instance)
         if instance.status == "RETURNED":
             instance.status = "PENDING"
-            instance.current_level = 1
+            instance.current_level = self._last_return_level(instance) or 1
             self._record(instance, "SUBMIT", user, remarks)
             db.session.commit()
         elif instance.status == "PENDING":
             if not instance.current_level:
-                instance.current_level = 1
+                instance.current_level = self._last_return_level(instance) or 1
         else:
             self._require_status(instance, "RETURNED")
         self._ensure_pending_task(instance)

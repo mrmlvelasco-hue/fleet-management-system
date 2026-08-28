@@ -800,6 +800,7 @@ def _attach_approval_chain(data, order, api_user):
         data["approval_current_level"] = inst.current_level
         data["can_act"] = bool(
             api_user and engine.is_eligible_approver(inst, api_user))
+        data["is_final_level"] = bool(getattr(inst, "is_final_level", False))
     else:
         data["approval_instance_status"] = None
         data["approval_current_level"] = None
