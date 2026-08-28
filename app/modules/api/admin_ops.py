@@ -305,3 +305,326 @@ def create_report_config(api_user):
     db.session.add(row)
     db.session.commit()
     return jsonify({"id": row.id, "report_code": row.report_code, "name": row.name}), 201
+
+
+# ── Dashboard widget visibility ───────────────────────────────────────────
+
+@bp.route("/admin/dashboard-config", methods=["GET"])
+@api_auth_required("dashboardconfig.view")
+def get_dashboard_config(api_user):
+    from app.modules.system_admin.models import (
+        DashboardWidget, UserDashboardConfig)
+    widgets = DashboardWidget.query.order_by(DashboardWidget.sort_order).all()
+    user_map = {
+        c.widget_code: c.is_visible
+        for c in UserDashboardConfig.query.filter_by(user_id=api_user.id).all()
+    }
+    return jsonify({
+        "items": [{
+            "code": w.code,
+            "label": w.label,
+            "icon": w.icon,
+            "default_visible": w.default_visible,
+            "visible": user_map.get(w.code, w.default_visible),
+        } for w in widgets]
+    })
+
+
+@bp.route("/admin/dashboard-config", methods=["PUT", "PATCH"])
+@api_auth_required("dashboardconfig.update")
+def save_dashboard_config(api_user):
+    from app.modules.system_admin.models import (
+        DashboardWidget, UserDashboardConfig)
+    p = request.get_json(silent=True) or {}
+    visible_codes = set(p.get("visible") or [])
+    widgets = DashboardWidget.query.all()
+    for w in widgets:
+        visible = w.code in visible_codes
+        cfg = UserDashboardConfig.query.filter_by(
+            user_id=api_user.id, widget_code=w.code).first()
+        if cfg is None:
+            db.session.add(UserDashboardConfig(
+                user_id=api_user.id, widget_code=w.code, is_visible=visible))
+        else:
+            cfg.is_visible = visible
+    db.session.commit()
+    return get_dashboard_config(api_user)
+
+
+# ── Data quality ──────────────────────────────────────────────────────────
+
+def _dq_branch(b):
+    return {
+        "rank": b.get("rank"),
+        "branch_id": b["branch"].id if b.get("branch") else None,
+        "branch_name": b.get("branch_name"),
+        "vehicles": b.get("vehicles"),
+        "complete": b.get("complete"),
+        "incomplete": b.get("incomplete"),
+        "score": b.get("score"),
+        "rating": b.get("rating"),
+    }
+
+
+@bp.route("/admin/data-quality", methods=["GET"])
+@api_auth_required("dataquality.view")
+def get_data_quality(api_user):
+    from app.core.data_quality_service import DataQualityService
+    svc = DataQualityService()
+    branch_id = request.args.get("branch_id", type=int)
+    summary = svc.summary(user=api_user)
+    branches = [_dq_branch(b) for b in svc.branch_scorecard(user=api_user)]
+    fields = []
+    for f in svc.field_completion(user=api_user):
+        fields.append({
+            "label": f["label"],
+            "group": f["group"],
+            "filled": f["filled"],
+            "missing": f["missing"],
+            "rate": f["rate"],
+            "rating": f["rating"],
+            "is_required": f["is_required"],
+        })
+    gaps = []
+    if branch_id:
+        for row in svc.vehicles_with_gaps(branch_id=branch_id, user=api_user):
+            v = row["vehicle"]
+            missing = row.get("missing") or []
+            labels = []
+            for m in missing:
+                labels.append(getattr(m, "label", None) or str(m))
+            gaps.append({
+                "id": getattr(v, "id", None),
+                "plate_number": getattr(v, "plate_number", None),
+                "score": row.get("score"),
+                "rating": row.get("rating"),
+                "missing": labels,
+            })
+    return jsonify({
+        "summary": {
+            "score": summary.get("score"),
+            "rating": summary.get("rating"),
+            "vehicles": summary.get("vehicles"),
+            "incomplete": summary.get("incomplete"),
+            "missing_points": summary.get("missing_points"),
+            "common_missing": summary.get("common_missing") or [],
+        },
+        "branches": branches,
+        "fields": fields,
+        "gaps": gaps,
+        "selected_branch_id": branch_id,
+    })
+
+
+@bp.route("/admin/data-quality/settings", methods=["GET"])
+@api_auth_required("dataquality.manage")
+def get_dq_settings(api_user):
+    from app.core.data_quality_service import DataQualityField, FIELD_GROUPS
+    fields = (DataQualityField.query.filter_by(is_active=True)
+              .order_by(DataQualityField.sort_order).all())
+    grouped = {}
+    for f in fields:
+        grouped.setdefault(f.field_group, []).append({
+            "id": f.id,
+            "field_name": f.field_name,
+            "label": f.label,
+            "is_required": f.is_required,
+            "include_in_score": f.include_in_score,
+            "weight": f.weight,
+        })
+    order = [g for g in FIELD_GROUPS if g in grouped]
+    for g in grouped:
+        if g not in order:
+            order.append(g)
+    return jsonify({
+        "groups": [{"group": g, "fields": grouped[g]} for g in order],
+        "total_weight": sum(f.weight for f in fields if f.include_in_score),
+    })
+
+
+@bp.route("/admin/data-quality/settings", methods=["PUT", "PATCH"])
+@api_auth_required("dataquality.manage")
+def save_dq_settings(api_user):
+    from app.core.data_quality_service import DataQualityField
+    payload = request.get_json(silent=True) or {}
+    updates = {int(u["id"]): u for u in (payload.get("fields") or []) if u.get("id")}
+    changed = 0
+    for field in DataQualityField.query.all():
+        u = updates.get(field.id)
+        if not u:
+            continue
+        inc = bool(u.get("include_in_score"))
+        req = bool(u.get("is_required"))
+        try:
+            weight = max(1, min(100, int(u.get("weight", field.weight))))
+        except (TypeError, ValueError):
+            weight = field.weight
+        if (inc != field.include_in_score or req != field.is_required
+                or weight != field.weight):
+            field.include_in_score = inc
+            field.is_required = req
+            field.weight = weight
+            changed += 1
+    db.session.commit()
+    return jsonify({"changed": changed})
+
+
+# ── Scheduled reports ─────────────────────────────────────────────────────
+
+def _sched_json(s):
+    return {
+        "id": s.id,
+        "name": s.name,
+        "report_code": s.report_code,
+        "frequency": s.frequency,
+        "recipients": s.recipients,
+        "last_run_at": _iso(s.last_run_at),
+        "next_run_at": _iso(s.next_run_at),
+        "last_run_status": s.last_run_status,
+    }
+
+
+@bp.route("/admin/scheduled-reports", methods=["GET"])
+@api_auth_required("reportconfig.view")
+def list_scheduled_reports(api_user):
+    from app.modules.system_admin.services.scheduled_report_service import (
+        ScheduledReportService)
+    from app.core.reporting.generators import REPORT_GENERATORS
+    items = ScheduledReportService().list_all()
+    return jsonify({
+        "items": [_sched_json(s) for s in items],
+        "report_choices": sorted(REPORT_GENERATORS.keys()),
+    })
+
+
+@bp.route("/admin/scheduled-reports", methods=["POST"])
+@api_auth_required("reportconfig.update")
+def create_scheduled_report(api_user):
+    from app.modules.system_admin.services.scheduled_report_service import (
+        ScheduledReportService)
+    p = request.get_json(silent=True) or {}
+    try:
+        item = ScheduledReportService().create(
+            name=(p.get("name") or "").strip(),
+            report_code=p.get("report_code"),
+            frequency=p.get("frequency") or "WEEKLY",
+            recipients=(p.get("recipients") or "").strip(),
+            filters=p.get("filters") or None)
+    except ValueError as exc:
+        return jsonify({"error": "validation", "message": str(exc)}), 400
+    return jsonify(_sched_json(item)), 201
+
+
+@bp.route("/admin/scheduled-reports/<int:sid>/delete", methods=["POST"])
+@api_auth_required("reportconfig.update")
+def delete_scheduled_report(api_user, sid):
+    from app.modules.system_admin.services.scheduled_report_service import (
+        ScheduledReportService)
+    ScheduledReportService().delete(sid)
+    return jsonify({"ok": True})
+
+
+@bp.route("/admin/scheduled-reports/<int:sid>/run-now", methods=["POST"])
+@api_auth_required("reportconfig.update")
+def run_scheduled_report(api_user, sid):
+    from datetime import datetime, timezone
+    from app.modules.system_admin.models import ScheduledReport
+    from app.modules.system_admin.services.scheduled_report_service import (
+        ScheduledReportService)
+    item = db.session.get(ScheduledReport, sid)
+    if item is None:
+        return jsonify({"error": "not_found", "message": "Not found."}), 404
+    item.next_run_at = datetime.now(timezone.utc)
+    db.session.commit()
+    sent, failed = ScheduledReportService().run_due(only_id=sid)
+    return jsonify({"sent": sent, "failed": failed})
+
+
+# ── Custom reports ────────────────────────────────────────────────────────
+
+def _cr_json(r):
+    return {
+        "id": r.id,
+        "name": r.name,
+        "description": r.description,
+        "data_source": r.data_source,
+        "fields": r.fields,
+        "filters": r.filters,
+        "sort_key": r.sort_key,
+        "sort_dir": r.sort_dir,
+        "row_limit": r.row_limit,
+        "default_recipients": r.default_recipients,
+    }
+
+
+@bp.route("/admin/custom-reports", methods=["GET"])
+@api_auth_required("customreport.view")
+def list_custom_reports(api_user):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService)
+    from app.core.reporting.report_builder import DATA_SOURCES
+    items = CustomReportService().list()
+    sources = [{
+        "key": k,
+        "label": s.label,
+        "description": s.description,
+        "fields": [{"key": f.key, "label": f.label, "kind": f.kind}
+                   for f in s.fields.values()],
+    } for k, s in DATA_SOURCES.items()]
+    return jsonify({"items": [_cr_json(r) for r in items], "sources": sources})
+
+
+@bp.route("/admin/custom-reports", methods=["POST"])
+@api_auth_required("customreport.manage")
+def create_custom_report(api_user):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService, ReportBuilderError)
+    p = request.get_json(silent=True) or {}
+    try:
+        report = CustomReportService().create(
+            name=p.get("name"),
+            data_source=p.get("data_source"),
+            fields=p.get("fields") or [],
+            description=p.get("description"),
+            user=api_user)
+    except Exception as exc:
+        return jsonify({"error": "validation", "message": str(exc)}), 400
+    return jsonify(_cr_json(report)), 201
+
+
+@bp.route("/admin/custom-reports/<int:rid>", methods=["GET"])
+@api_auth_required("customreport.view")
+def get_custom_report(api_user, rid):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService)
+    report = CustomReportService().get_by_id(rid)
+    if report is None:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(_cr_json(report))
+
+
+@bp.route("/admin/custom-reports/<int:rid>/run", methods=["POST", "GET"])
+@api_auth_required("customreport.view")
+def run_custom_report(api_user, rid):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService)
+    report = CustomReportService().get_by_id(rid)
+    if report is None:
+        return jsonify({"error": "not_found"}), 404
+    try:
+        result = CustomReportService().run(report, user=api_user)
+    except Exception as exc:
+        return jsonify({"error": "validation", "message": str(exc)}), 400
+    # result typically {columns, rows} or similar
+    if isinstance(result, dict):
+        return jsonify(result)
+    return jsonify({"rows": result})
+
+
+@bp.route("/admin/custom-reports/<int:rid>/delete", methods=["POST"])
+@api_auth_required("customreport.manage")
+def delete_custom_report(api_user, rid):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService)
+    CustomReportService().deactivate(rid)
+    return jsonify({"ok": True})
