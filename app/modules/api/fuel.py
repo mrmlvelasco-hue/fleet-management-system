@@ -76,6 +76,7 @@ def list_fuel(api_user):
     from app.modules.transactions.fuel.analytics import FuelAnalyticsService
     from app.modules.master_data.vehicle.models import Vehicle
 
+    from datetime import datetime, timedelta
     view = request.args.get("view") or "all"
     q = FuelTransaction.query
     if view == "flagged":
@@ -83,14 +84,38 @@ def list_fuel(api_user):
             FuelTransaction.anomaly_flags.isnot(None),
             FuelTransaction.odometer_status.in_(("SUSPECT", "MISSING"))))
     branch_id = request.args.get("branch_id", type=int)
-    if branch_id:
-        q = q.join(Vehicle, Vehicle.id == FuelTransaction.vehicle_id).filter(
-            Vehicle.branch_id == branch_id)
+    vehicle_status = request.args.get("vehicle_status") or ""
+    date_from = request.args.get("date_from") or ""
+    date_to = request.args.get("date_to") or ""
+    if branch_id or vehicle_status:
+        q = q.join(Vehicle, Vehicle.id == FuelTransaction.vehicle_id)
+        if branch_id:
+            q = q.filter(Vehicle.branch_id == branch_id)
+        if vehicle_status:
+            q = q.filter(Vehicle.status == vehicle_status)
+    if date_from:
+        try:
+            q = q.filter(FuelTransaction.transaction_date
+                         >= datetime.strptime(date_from, "%Y-%m-%d"))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            q = q.filter(FuelTransaction.transaction_date
+                         < datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1))
+        except ValueError:
+            pass
     page = request.args.get("page", 1, type=int)
-    page_size = min(request.args.get("page_size", 25, type=int), 100)
+    page_size = min(request.args.get("page_size", 25, type=int), 200)
     q = q.order_by(FuelTransaction.transaction_date.desc())
     pagination = q.paginate(page=page, per_page=page_size, error_out=False)
-    summary = FuelAnalyticsService().summary()
+    raw = FuelAnalyticsService().summary()
+    summary = {}
+    for k, v in (raw or {}).items():
+        if hasattr(v, "quantize"):
+            summary[k] = float(v)
+        else:
+            summary[k] = v
     return jsonify({
         "items": [_txn_json(t) for t in pagination.items],
         "total": pagination.total,
