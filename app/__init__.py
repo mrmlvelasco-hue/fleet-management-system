@@ -57,6 +57,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.transactions.vehicle_registration import models as _vreg  # noqa: F401
     from app.core import data_quality_service as _dq  # noqa: F401
     from app.modules.transactions.fuel import models as _fuel  # noqa: F401
+    from app.modules.transactions.vehicle_checklist import models as _vchk  # noqa: F401
     from app.modules.history_migration import models as _histmig  # noqa: F401
     from app.modules.transactions.maintenance_order.auto_pr import (
         register_auto_pr)

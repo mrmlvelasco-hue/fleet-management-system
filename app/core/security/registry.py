@@ -34,8 +34,21 @@ def sync_permissions(reg: "PermissionRegistry | None" = None) -> None:
 
     reg = reg or registry
     existing = {p.code for p in Permission.query.all()}
+    added = []
     for d in reg.definitions:
         if d.code not in existing:
-            db.session.add(Permission(code=d.code, module=d.module,
-                                      action=d.action, description=d.description))
+            perm = Permission(code=d.code, module=d.module,
+                              action=d.action, description=d.description)
+            db.session.add(perm)
+            added.append(perm)
     db.session.flush()
+    # System roles are "full access". New modules would otherwise be
+    # invisible until someone re-ran flask seed admin.
+    if added:
+        from app.modules.user_management.models import Role
+        for role in Role.query.filter_by(is_system_role=True).all():
+            have = {p.code for p in (role.permissions or [])}
+            for perm in added:
+                if perm.code not in have:
+                    role.permissions.append(perm)
+        db.session.flush()

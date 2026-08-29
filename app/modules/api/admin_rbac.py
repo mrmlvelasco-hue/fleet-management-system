@@ -268,7 +268,11 @@ def update_role(api_user, rid):
 @bp.route("/admin/permissions", methods=["GET"])
 @api_auth_required("role.view")
 def list_permissions(api_user):
+    from app.core.security.registry import sync_permissions
+    from app.extensions import db
     from app.modules.user_management.models import Permission
+    sync_permissions()
+    db.session.commit()
     rows = Permission.query.order_by(
         Permission.module, Permission.code).all()
     items = [{
