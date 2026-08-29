@@ -43,6 +43,17 @@ class ChecklistError(Exception):
 class VehicleChecklistService:
     document_type_code = "CHK"
 
+    def _assign_number(self, cl):
+        if getattr(cl, "document_number", None):
+            return cl
+        try:
+            cl.document_number = AutoNumberingService().generate(
+                self.document_type_code)
+        except Exception:
+            year = date.today().year
+            cl.document_number = f"CHK-{year}-{cl.id:06d}" if cl.id else None
+        return cl
+
     def ensure_default_template(self):
         existing = ChecklistTemplate.query.filter_by(is_active=True).first()
         if existing:
@@ -124,7 +135,11 @@ class VehicleChecklistService:
         return rows, total
 
     def get(self, cid):
-        return db.session.get(VehicleChecklist, cid)
+        cl = db.session.get(VehicleChecklist, cid)
+        if cl is not None and not cl.document_number:
+            self._assign_number(cl)
+            db.session.commit()
+        return cl
 
     def create(self, *, vehicle_id, template_id, user, driver_id=None,
                odometer=None, inspection_date=None, inspection_time=None,
@@ -161,8 +176,11 @@ class VehicleChecklistService:
             remarks=remarks,
             created_by=user.id if user else None,
         )
+        self._assign_number(cl)
         db.session.add(cl)
         db.session.flush()
+        if not cl.document_number:
+            self._assign_number(cl)
         order = 0
         for cat in tmpl.categories:
             for item in cat.items:
@@ -284,11 +302,7 @@ class VehicleChecklistService:
         cl.pass_count = scored["pass"]
         cl.attention_count = scored["attention"]
         cl.fail_count = scored["fail"]
-        try:
-            cl.document_number = AutoNumberingService().generate(
-                self.document_type_code)
-        except NoSchemeError:
-            cl.document_number = f"CHK-{date.today().year}-{cl.id:06d}"
+        self._assign_number(cl)
         cl.status = "SUBMITTED"
         cl.submitted_at = datetime.utcnow()
         cl.submitted_by = user.id if user else None
