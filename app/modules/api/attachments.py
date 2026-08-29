@@ -170,6 +170,7 @@ _DOC_TYPE_FOR_TABLE = {
     "vehicle_registrations": "VR",
     "vehicle_movements": "VM",
     "atds": "ATD",
+    "maintenance_invoices": "INV",
 }
 
 
@@ -669,6 +670,44 @@ def upload_movement_attachment(api_user, move_id):
     try:
         attachment = AttachmentService().upload(
             file, "vehicle_movements", move_id, user=api_user,
+            document_type=(request.form.get("document_type") or None))
+    except AttachmentError as exc:
+        return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
+
+
+@bp.route("/invoices/<int:iid>/attachments", methods=["GET"])
+@api_auth_required("maintenanceinvoice.view")
+def invoice_attachments(api_user, iid):
+    from app.modules.transactions.maintenance_invoice.models import (
+        MaintenanceInvoice)
+    from app.core.attachments.attachment_service import AttachmentService
+    if MaintenanceInvoice.query.filter_by(id=iid).first() is None:
+        return _not_found("Invoice")
+    rows = AttachmentService().list_for("maintenance_invoices", iid)
+    return jsonify({
+        "items": [_attachment_json(a) for a in rows],
+        "attachment_allowed": _attachments_allowed_for("maintenance_invoices"),
+    })
+
+
+@bp.route("/invoices/<int:iid>/attachments", methods=["POST"])
+@api_auth_required("maintenanceinvoice.create")
+def upload_invoice_attachment(api_user, iid):
+    from app.modules.transactions.maintenance_invoice.models import (
+        MaintenanceInvoice)
+    from app.core.attachments.attachment_service import (AttachmentError,
+                                                         AttachmentService)
+    if MaintenanceInvoice.query.filter_by(id=iid).first() is None:
+        return _not_found("Invoice")
+    if not _attachments_allowed_for("maintenance_invoices"):
+        return _attachments_blocked("maintenance_invoices")
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+    try:
+        attachment = AttachmentService().upload(
+            file, "maintenance_invoices", iid, user=api_user,
             document_type=(request.form.get("document_type") or None))
     except AttachmentError as exc:
         return _bad(str(exc))
