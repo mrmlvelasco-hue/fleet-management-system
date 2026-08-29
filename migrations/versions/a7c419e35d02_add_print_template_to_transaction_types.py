@@ -42,12 +42,14 @@ _BY_CODE = {
 
 
 def upgrade():
-    op.add_column(
-        "mo_transaction_types",
-        sa.Column("print_template", sa.String(length=60), nullable=True),
-    )
-
     conn = op.get_bind()
+    cols = {c["name"] for c in sa.inspect(conn).get_columns("mo_transaction_types")}
+    if "print_template" not in cols:
+        op.add_column(
+            "mo_transaction_types",
+            sa.Column("print_template", sa.String(length=60), nullable=True),
+        )
+
     for code, template in _BY_CODE.items():
         conn.execute(
             sa.text("UPDATE mo_transaction_types SET print_template = :t "

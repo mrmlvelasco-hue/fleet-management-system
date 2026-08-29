@@ -15,6 +15,9 @@ depends_on = None
 
 
 def upgrade():
+    insp = sa.inspect(op.get_bind())
+    if "vehicle_checklists" in insp.get_table_names():
+        return
     op.create_table(
         "checklist_templates",
         sa.Column("id", sa.Integer(), nullable=False),
