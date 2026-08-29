@@ -702,7 +702,7 @@ def upload_invoice_attachment(api_user, iid):
     if inv is None:
         return _not_found("Invoice")
     mo = getattr(inv, "maintenance_order", None)
-    if inv.status == "APPROVED" or (mo is not None and mo.status in ("COMPLETED", "CANCELLED")):
+    if inv.status in ("APPROVED", "COMPLETED") or (mo is not None and mo.status in ("COMPLETED", "CANCELLED")):
         return jsonify({
             "error": "conflict",
             "message": "This maintenance order is completed. Invoice files cannot be changed.",

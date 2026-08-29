@@ -150,7 +150,7 @@ class MaintenanceInvoiceService(BaseTransactionService):
                 part_number=None, specification=None, uom=None,
                 sort_order=None):
         invoice = self.get_by_id(invoice_id)
-        if invoice.status == "APPROVED" or getattr(invoice, "locked", False):
+        if invoice.status in ("APPROVED", "COMPLETED") or getattr(invoice, "locked", False):
             raise InvoiceLockedError(
                 "This invoice is approved and locked. Reopen it first "
                 "before adding line items.")
@@ -196,7 +196,7 @@ class MaintenanceInvoiceService(BaseTransactionService):
         if not line:
             return
         invoice = line.invoice
-        if invoice.status == "APPROVED":
+        if invoice.status in ("APPROVED", "COMPLETED"):
             raise InvoiceLockedError(
                 "This invoice is approved and locked. Reopen it first "
                 "before removing line items.")
@@ -233,3 +233,20 @@ class MaintenanceInvoiceService(BaseTransactionService):
         invoice.status = "DRAFT"
         db.session.commit()
         return invoice
+
+
+    def delete_header(self, invoice_id):
+        invoice = self.get_by_id(invoice_id)
+        if invoice is None:
+            return
+        mo = getattr(invoice, "maintenance_order", None)
+        if invoice.status in ("APPROVED", "COMPLETED"):
+            raise InvoiceLockedError(
+                "This invoice is completed and cannot be deleted.")
+        if mo is not None and mo.status in ("COMPLETED", "CANCELLED"):
+            raise InvoiceLockedError(
+                "This maintenance order is completed. Its invoices cannot be deleted.")
+        for line in list(invoice.line_items or []):
+            db.session.delete(line)
+        db.session.delete(invoice)
+        db.session.commit()

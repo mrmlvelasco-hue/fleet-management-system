@@ -458,17 +458,22 @@ class MaintenanceOrderService(BaseTransactionService):
                 actual_cost = Decimal(str(actual_cost))
             except (InvalidOperation, ValueError):
                 actual_cost = None
+        from app.modules.transactions.maintenance_invoice.models import (
+            MaintenanceInvoice)
+        invoices = (MaintenanceInvoice.query
+                    .filter_by(maintenance_order_id=order.id)
+                    .filter(MaintenanceInvoice.status != "CANCELLED")
+                    .all())
+        invoice_total = sum((i.total_invoice_amount or 0) for i in invoices)
+        # Blank / 0 on Mark Complete means "use the billed total", not
+        # store zero against an order that has ₱8,008 of invoices.
+        if actual_cost is None or actual_cost == 0:
+            actual_cost = invoice_total or Decimal("0")
         order.actual_cost = actual_cost
         order.completed_date = completed_date
         order.status = "COMPLETED"
-        # A completed MO is the source of cost reports. Invoices on it
-        # stay as they were and cannot be edited or given new files.
-        from app.modules.transactions.maintenance_invoice.models import (
-            MaintenanceInvoice)
-        (MaintenanceInvoice.query
-         .filter_by(maintenance_order_id=order.id)
-         .filter(MaintenanceInvoice.status != "CANCELLED")
-         .update({"status": "APPROVED"}, synchronize_session=False))
+        for inv in invoices:
+            inv.status = "COMPLETED"
         if order.odometer_at_service and (
                 order.vehicle.current_odometer is None or
                 order.odometer_at_service > order.vehicle.current_odometer):

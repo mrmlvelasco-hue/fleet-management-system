@@ -126,7 +126,7 @@ def _invoice_json(inv, detail=False):
         # APPROVED invoices are locked by the service. Sent as a
         # decision so the client disables entry rather than letting
         # someone type a line that will be refused on submit.
-        "locked": inv.status == "APPROVED",
+        "locked": inv.status in ("APPROVED", "COMPLETED"),
     }
     if detail:
         data["lines"] = [_line_json(l) for l in sorted(
@@ -279,3 +279,16 @@ def remove_invoice_line(api_user, iid, line_id):
         return _conflict(str(exc))
     inv = MaintenanceInvoice.query.filter_by(id=iid).first()
     return jsonify(_invoice_json(inv, detail=True))
+
+
+
+@bp.route("/invoices/<int:iid>", methods=["DELETE"])
+@api_auth_required("maintenanceinvoice.update")
+def delete_invoice(api_user, iid):
+    from app.modules.transactions.maintenance_invoice.service import (
+        MaintenanceInvoiceService)
+    try:
+        MaintenanceInvoiceService().delete_header(iid)
+    except Exception as exc:
+        return _conflict(str(exc))
+    return jsonify({"ok": True})
