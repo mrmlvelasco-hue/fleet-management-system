@@ -178,32 +178,52 @@ def _vam_print_extras(o):
                 extras["registration_or_number"] = getattr(latest, "or_number", None)
         except Exception:
             pass
-    if getattr(o, "requester", None):
-        role = o.requester.roles[0].name if o.requester.roles else ""
+    from app.modules.user_management.models import User
+    from app.extensions import db
+
+    requester = getattr(o, "requester", None)
+    if requester is None and getattr(o, "requested_by", None):
+        requester = db.session.get(User, o.requested_by)
+    if requester is not None:
+        role = requester.roles[0].name if getattr(requester, "roles", None) else ""
+        created = getattr(o, "created_at", None)
         extras["endorsed_by"] = {
-            "name": o.requester.full_name,
-            "title": role,
-            "date": (o.created_at.date().isoformat()
-                     if getattr(o, "created_at", None) else None),
+            "name": requester.full_name or requester.username,
+            "title": role or "Requestor",
+            "date": (created.date().isoformat() if created and hasattr(created, "date")
+                     else (str(created)[:10] if created else None)),
         }
     inst = getattr(o, "approval_instance", None)
     if inst is not None:
-        from app.core.approval.models import ApprovalTask
-        from app.modules.user_management.models import User
-        from app.extensions import db
+        from app.core.approval.models import ApprovalTask, ApprovalAction
+        approver = None
+        approved_on = None
+        title = ""
         task = (ApprovalTask.query
                 .filter_by(approval_instance_id=inst.id, status="COMPLETED")
                 .order_by(ApprovalTask.level_number.desc())
                 .first())
         if task and task.completed_by:
             approver = db.session.get(User, task.completed_by)
-            if approver:
-                extras["approved_by"] = {
-                    "name": approver.full_name,
-                    "title": approver.roles[0].name if approver.roles else "",
-                    "date": (task.completed_at.date().isoformat()
-                             if task.completed_at else None),
-                }
+            approved_on = task.completed_at
+        if approver is None:
+            action = (ApprovalAction.query
+                      .filter_by(instance_id=inst.id, action="APPROVE")
+                      .order_by(ApprovalAction.level_number.desc(),
+                                ApprovalAction.id.desc())
+                      .first())
+            if action and action.acted_by:
+                approver = db.session.get(User, action.acted_by)
+                approved_on = action.acted_at
+        if approver is not None:
+            title = approver.roles[0].name if getattr(approver, "roles", None) else ""
+            extras["approved_by"] = {
+                "name": approver.full_name or approver.username,
+                "title": title or "Approver",
+                "date": (approved_on.date().isoformat()
+                         if approved_on and hasattr(approved_on, "date")
+                         else (str(approved_on)[:10] if approved_on else None)),
+            }
     return extras
 
 def _order_json(o, *, detail=False):
@@ -475,6 +495,7 @@ def get_maintenance_order(api_user, oid):
              joinedload(MaintenanceOrder.transaction_type),
              joinedload(MaintenanceOrder.vendor),
              joinedload(MaintenanceOrder.driver),
+             joinedload(MaintenanceOrder.requester),
              joinedload(MaintenanceOrder.origin_branch),
              joinedload(MaintenanceOrder.destination_branch),
              selectinload(MaintenanceOrder.checklist_items),
@@ -485,6 +506,7 @@ def get_maintenance_order(api_user, oid):
     if o is None:
         return _not_found()
     data = _order_json(o, detail=True)
+    data.update(_vam_print_extras(o))
     # Letterhead for the print view -- from System Administration's
     # Company Profile, matching every one of Flask's print templates.
     from app.modules.api.company_letterhead import company_letterhead
