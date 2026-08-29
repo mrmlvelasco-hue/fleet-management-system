@@ -571,8 +571,49 @@ def vehicle_maintenance_history(api_user, vehicle_id):
             else (m.transaction_type.name
                   if getattr(m, "transaction_type", None) else None)),
         "vendor": m.vendor.name if getattr(m, "vendor", None) else None,
-        "total_cost": _money(getattr(m, "total_cost", None)),
+        "total_cost": _money(getattr(m, "actual_cost", None)),
+        "odometer": m.odometer_at_service,
+        "status": m.status,
     } for m in rows]})
+
+
+
+@bp.route("/vehicles/<int:vehicle_id>/activity-history", methods=["GET"])
+@api_auth_required("vehicle.view")
+def vehicle_activity_history(api_user, vehicle_id):
+    """Activity timeline + outlet assignment — same sources as print."""
+    from app.modules.master_data.vehicle.service import VehicleService
+    vehicle = VehicleService().get_visible(vehicle_id, api_user)
+    if vehicle is None:
+        return jsonify({"error": "not_found",
+                        "message": "Vehicle not found or not visible to "
+                                   "this account."}), 404
+    activity_rows, outlet_history = [], []
+    try:
+        from app.core.vehicle_activity_history_service import (
+            VehicleActivityHistoryService)
+        svc = VehicleActivityHistoryService()
+        raw = svc.get_activity_rows(vehicle)
+        for r in raw:
+            activity_rows.append({
+                "date": _iso(r.get("date")),
+                "activity_type": r.get("activity_type"),
+                "outlet": r.get("outlet"),
+                "assigned_to": r.get("assigned_to"),
+                "description": r.get("description"),
+                "cost": _money(r.get("cost")),
+                "odometer": r.get("odometer"),
+            })
+        for seg in svc.get_outlet_history(vehicle):
+            outlet_history.append({
+                "from_date": _iso(seg.get("from_date")),
+                "to_date": _iso(seg.get("to_date")),
+                "outlet": seg.get("outlet"),
+                "custodian": seg.get("custodian"),
+            })
+    except Exception:
+        activity_rows, outlet_history = [], []
+    return jsonify({"activity_rows": activity_rows, "outlet_history": outlet_history})
 
 
 @bp.route("/vehicles/<int:vehicle_id>/registration-history", methods=["GET"])
@@ -1083,7 +1124,7 @@ def vehicle_print(api_user, vehicle_id):
         from app.modules.transactions.maintenance_order.models import (
             MaintenanceOrder)
         orders = (MaintenanceOrder.query
-                  .filter_by(vehicle_id=vehicle_id)
+                  .filter_by(vehicle_id=vehicle_id, status="COMPLETED")
                   .order_by(MaintenanceOrder.scheduled_date.desc())
                   .all())
         for mo in orders:
