@@ -93,21 +93,6 @@ class ApprovalEngine:
             self._check_eligible(instance, user)
             return True
         except (NotEligibleApproverError, InvalidStateError):
-            try:
-                level = self._current_level_def(instance)
-                if level.approver_type == "ROLE" and any(
-                    r.id == level.role_id and r.is_active for r in (user.roles or [])
-                ):
-                    return True
-                if level.approver_type == "USER" and level.user_id == user.id:
-                    return True
-            except Exception:
-                pass
-            for a in reversed(list(instance.actions or [])):
-                if a.action == "RETURN" and a.acted_by == user.id:
-                    if not instance.current_level or a.level_number == instance.current_level:
-                        return True
-                    break
             return False
 
     def get_approval_chain(self, instance) -> list:
@@ -172,9 +157,28 @@ class ApprovalEngine:
     # ---------- actions ----------
 
     def _last_return_level(self, instance):
-        for a in reversed(list(instance.actions or [])):
-            if a.action == "RETURN" and a.level_number:
-                return a.level_number
+        """Level that sent the document back.
+
+        Older Return rows stored level_number=0 after a bug that zeroed
+        current_level. Treat 0 as missing and infer: last APPROVE + 1.
+        Query the table so a detached instance still resolves.
+        """
+        from app.core.approval.models import ApprovalAction
+        rows = (ApprovalAction.query
+                .filter_by(instance_id=instance.id)
+                .order_by(ApprovalAction.id.asc())
+                .all())
+        last_return_level = None
+        last_approve_level = 0
+        for a in rows:
+            if a.action == "APPROVE" and a.level_number:
+                last_approve_level = max(last_approve_level, a.level_number)
+            if a.action == "RETURN":
+                last_return_level = a.level_number or None
+        if last_return_level:
+            return last_return_level
+        if last_approve_level:
+            return last_approve_level + 1
         return None
 
     def repair_instance(self, instance):
@@ -325,21 +329,23 @@ class ApprovalEngine:
     def resubmit(self, instance, user, remarks=None) -> ApprovalInstance:
         """Initiator sends a returned document back to the returning level.
 
-        Always (re)opens a PENDING task for that level so it appears on
-        the approver's For My Action list. A 200 that does nothing left
-        Level 2 with no task after Return had completed the old one.
+        L2 returned → L2 reviews again. Level 1 must NOT get a new
+        Approve button.
         """
-        self.repair_instance(instance)
-        if instance.status == "RETURNED":
-            instance.status = "PENDING"
-            instance.current_level = self._last_return_level(instance) or 1
-            self._record(instance, "SUBMIT", user, remarks)
-            db.session.commit()
-        elif instance.status == "PENDING":
-            if not instance.current_level:
-                instance.current_level = self._last_return_level(instance) or 1
-        else:
+        resume_at = self._last_return_level(instance) or instance.current_level or 1
+        if instance.status not in ("RETURNED", "PENDING"):
             self._require_status(instance, "RETURNED")
+        instance.status = "PENDING"
+        instance.current_level = resume_at
+        self._record(instance, "SUBMIT", user, remarks)
+        # Drop stray PENDING tasks at other levels (a fallback to L1
+        # used to leave a Level 1 inbox item after a Level 2 return).
+        from app.core.approval.models import ApprovalTask
+        (ApprovalTask.query
+         .filter_by(approval_instance_id=instance.id, status="PENDING")
+         .filter(ApprovalTask.level_number != resume_at)
+         .update({"status": "CANCELLED"}, synchronize_session=False))
+        db.session.commit()
         self._ensure_pending_task(instance)
         db.session.commit()
         self._emit("resubmitted", instance)
