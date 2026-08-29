@@ -4,7 +4,7 @@ register_audit_listeners() hooks before_flush and after_flush; every
 insert/update/delete on models inheriting BaseModel is logged without any
 per-module code. Values are serialised to JSON-safe primitives.
 """
-from datetime import datetime, date
+from datetime import datetime, date, time
 from decimal import Decimal
 
 from sqlalchemy import event, inspect
@@ -37,8 +37,12 @@ def _current_ip():
 
 
 def _serialise(value):
-    if isinstance(value, (datetime, date)):
+    if isinstance(value, datetime):
         return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, time):
+        return value.strftime("%H:%M:%S")
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, (bytes, bytearray)):
