@@ -150,10 +150,15 @@ class MaintenanceInvoiceService(BaseTransactionService):
                 part_number=None, specification=None, uom=None,
                 sort_order=None):
         invoice = self.get_by_id(invoice_id)
-        if invoice.status == "APPROVED":
+        if invoice.status == "APPROVED" or getattr(invoice, "locked", False):
             raise InvoiceLockedError(
                 "This invoice is approved and locked. Reopen it first "
                 "before adding line items.")
+        mo = getattr(invoice, "maintenance_order", None)
+        if mo is not None and mo.status in ("COMPLETED", "CANCELLED"):
+            raise InvoiceLockedError(
+                "This maintenance order is completed and can no longer "
+                "be edited, including its invoices and attachments.")
         # Cast once here so both the stored raw fields AND the calculated
         # fields are consistently Decimal — form data arrives as strings,
         # and storing those directly (even though _calculate_line() casts

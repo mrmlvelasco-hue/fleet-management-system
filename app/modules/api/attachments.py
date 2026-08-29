@@ -698,8 +698,15 @@ def upload_invoice_attachment(api_user, iid):
         MaintenanceInvoice)
     from app.core.attachments.attachment_service import (AttachmentError,
                                                          AttachmentService)
-    if MaintenanceInvoice.query.filter_by(id=iid).first() is None:
+    inv = MaintenanceInvoice.query.filter_by(id=iid).first()
+    if inv is None:
         return _not_found("Invoice")
+    mo = getattr(inv, "maintenance_order", None)
+    if inv.status == "APPROVED" or (mo is not None and mo.status in ("COMPLETED", "CANCELLED")):
+        return jsonify({
+            "error": "conflict",
+            "message": "This maintenance order is completed. Invoice files cannot be changed.",
+        }), 409
     if not _attachments_allowed_for("maintenance_invoices"):
         return _attachments_blocked("maintenance_invoices")
     file = request.files.get("file")
