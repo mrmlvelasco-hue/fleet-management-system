@@ -12,6 +12,7 @@ _TABLE_PERM = {
     "trip_tickets": "tripticket.view",
     "authority_to_drives": "atd.view",
     "vehicle_movements": "vehiclemovement.view",
+    "vehicle_checklists": "checklist.view",
     "maintenance_orders": "maintenanceorder.view",
     "purchase_requests": "purchaserequest.view",
     "vehicle_registrations": "vehicleregistration.view",

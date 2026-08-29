@@ -58,10 +58,14 @@ bp = Blueprint("transactions", __name__, url_prefix="/transactions",
 
 for _mod in ["tripticket", "atd", "vehiclemovement", "maintenanceorder",
              "tiretxn", "batterytxn", "purchaserequest", "vehicleregistration",
-             "maintenanceinvoice"]:
+             "maintenanceinvoice", "checklist"]:
     for _act in ["view", "create", "update", "delete", "print"]:
         _code = f"{_mod}.{_act}"
         registry.register(_code, _mod, _act, f"{_act.title()} {_mod}")
+for _code, _act in (("checklist.submit", "submit"),
+                    ("checklist.report", "report"),
+                    ("checklist.manage", "manage")):
+    registry.register(_code, "checklist", _act, f"{_act.title()} checklist")
 
 
 def _flash_engine_error(exc):

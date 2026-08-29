@@ -168,6 +168,7 @@ _DOC_TYPE_FOR_TABLE = {
     "purchase_requests": "PR",
     "trip_tickets": "TT",
     "vehicle_registrations": "VR",
+    "vehicle_checklists": "CHK",
     "vehicle_movements": "VM",
     "atds": "ATD",
     "maintenance_invoices": "INV",
@@ -359,6 +360,7 @@ def delete_attachment(api_user, attachment_id):
             "purchase_requests": "purchaserequest.create",
             "trip_tickets": "tripticket.update",
             "vehicle_registrations": "vehicleregistration.update",
+            "vehicle_checklists": "checklist.update",
             "vehicle_movements": "vehiclemovement.update"}.get(
         att.reference_table)
     if need and not _can(api_user, need):
@@ -715,6 +717,44 @@ def upload_invoice_attachment(api_user, iid):
     try:
         attachment = AttachmentService().upload(
             file, "maintenance_invoices", iid, user=api_user,
+            document_type=(request.form.get("document_type") or None))
+    except AttachmentError as exc:
+        return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
+
+
+@bp.route("/checklists/<int:cid>/attachments", methods=["GET"])
+@api_auth_required("checklist.view")
+def checklist_attachments(api_user, cid):
+    from app.modules.transactions.vehicle_checklist.service import (
+        VehicleChecklistService)
+    if VehicleChecklistService().get(cid) is None:
+        return _not_found("Checklist")
+    from app.core.attachments.attachment_service import AttachmentService
+    rows = AttachmentService().list_for("vehicle_checklists", cid)
+    return jsonify({
+        "items": [_attachment_json(a) for a in rows],
+        "attachment_allowed": _attachments_allowed_for("vehicle_checklists"),
+    })
+
+
+@bp.route("/checklists/<int:cid>/attachments", methods=["POST"])
+@api_auth_required("checklist.update")
+def upload_checklist_attachment(api_user, cid):
+    from app.modules.transactions.vehicle_checklist.service import (
+        VehicleChecklistService)
+    if VehicleChecklistService().get(cid) is None:
+        return _not_found("Checklist")
+    if not _attachments_allowed_for("vehicle_checklists"):
+        return _attachments_blocked("vehicle_checklists")
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+    from app.core.attachments.attachment_service import (AttachmentError,
+                                                         AttachmentService)
+    try:
+        attachment = AttachmentService().upload(
+            file, "vehicle_checklists", cid, user=api_user,
             document_type=(request.form.get("document_type") or None))
     except AttachmentError as exc:
         return _bad(str(exc))

@@ -23,6 +23,7 @@ _REFERENCE_TABLE_PERMISSION = {
     "maintenance_orders": "maintenanceorder.view",
     "purchase_requests": "purchaserequest.view",
     "vehicle_registrations": "vehicleregistration.view",
+    "vehicle_checklists": "checklist.view",
     "tire_transactions": "tiretxn.view",
     "battery_transactions": "batterytxn.view",
 }
