@@ -419,7 +419,8 @@ def get_data_quality(api_user):
 @bp.route("/admin/data-quality/settings", methods=["GET"])
 @api_auth_required("dataquality.manage")
 def get_dq_settings(api_user):
-    from app.core.data_quality_service import DataQualityField, FIELD_GROUPS
+    from app.core.data_quality_service import DataQualityField, DataQualityService, FIELD_GROUPS
+    DataQualityService().sync_fields()
     fields = (DataQualityField.query.filter_by(is_active=True)
               .order_by(DataQualityField.sort_order).all())
     grouped = {}

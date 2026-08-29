@@ -1119,12 +1119,16 @@ def data_quality_settings():
               "success")
         return redirect(url_for("system_admin.data_quality_settings"))
 
+    DataQualityService().sync_fields()
     fields = (DataQualityField.query.filter_by(is_active=True)
              .order_by(DataQualityField.sort_order).all())
     grouped = {}
     for field in fields:
         grouped.setdefault(field.field_group, []).append(field)
-    ordered = [(g, grouped[g]) for g in FIELD_GROUPS if g in grouped]
+    ordered = [(g, grouped.get(g, [])) for g in FIELD_GROUPS if g in grouped]
+    for g, rows in grouped.items():
+        if g not in FIELD_GROUPS:
+            ordered.append((g, rows))
     return render_template("system_admin/data_quality_settings.html",
                            grouped=ordered,
                            total_weight=sum(f.weight for f in fields

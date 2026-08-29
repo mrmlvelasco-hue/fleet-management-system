@@ -91,11 +91,35 @@ FIELD_GROUPS = {
                  "vtpl_bi_from_date", "vtpl_bi_to_date",
                  "has_inland_marine"),
     "MAINTENANCE": ("pm_schedule_id", "last_pm_odometer", "last_pm_date"),
+    "ATTACHMENTS": (
+        "attachment:*",
+        "attachment:PHOTO_FRONT",
+        "attachment:PHOTO_BACK",
+        "attachment:PHOTO",
+        "attachment:CR",
+        "attachment:OR",
+        "attachment:INSURANCE",
+        "attachment:OTHER",
+    ),
     "OTHER": ("status", "remarks", "notes", "mr_eds"),
 }
 
+ATTACHMENT_PREFIX = "attachment:"
+ANY_ATTACHMENT = "attachment:*"
+DEFAULT_ATTACHMENT_TYPES = (
+    ("PHOTO_FRONT", "Photo — Front"),
+    ("PHOTO_BACK", "Photo — Back"),
+    ("PHOTO", "Photo"),
+    ("CR", "Certificate of Registration"),
+    ("OR", "Official Receipt"),
+    ("INSURANCE", "Insurance document"),
+    ("OTHER", "Other attachment"),
+)
+
 
 def group_of(field_name):
+    if field_name.startswith(ATTACHMENT_PREFIX):
+        return "ATTACHMENTS"
     for group, names in FIELD_GROUPS.items():
         if field_name in names:
             return group
@@ -105,6 +129,14 @@ def group_of(field_name):
 def label_of(field_name):
     if field_name in FIELD_LABELS:
         return FIELD_LABELS[field_name]
+    if field_name == ANY_ATTACHMENT:
+        return "Any attached document"
+    if field_name.startswith(ATTACHMENT_PREFIX):
+        code = field_name[len(ATTACHMENT_PREFIX):]
+        for known, title in DEFAULT_ATTACHMENT_TYPES:
+            if known == code:
+                return f"Attachment: {title}"
+        return f"Attachment: {code.replace('_', ' ').title()}"
     return field_name.replace("_id", "").replace("_", " ").title()
 
 
@@ -135,6 +167,9 @@ class DataQualityService:
     # colour the same number identically.
     THRESHOLD_EXCELLENT = 90
     THRESHOLD_WARNING = 70
+
+    def __init__(self):
+        self._att_index = None
 
     def sync_fields(self):
         """Make sure every eligible Vehicle column has a settings row.
@@ -167,6 +202,51 @@ class DataQualityService:
                 is_required=False, include_in_score=True,
                 weight=5, sort_order=index))
             created += 1
+        created += self._sync_attachment_fields(existing)
+        return created
+
+    def _sync_attachment_fields(self, existing):
+        """Document types from Lookup Maintenance, plus a catch-all.
+
+        Virtual field names use attachment:<CODE> so they never collide
+        with a Vehicle column. Score looks at Attachment rows, not
+        Vehicle attributes.
+        """
+        created = 0
+        specs = [(ANY_ATTACHMENT, "Any attached document")]
+        seen = {ANY_ATTACHMENT}
+        try:
+            from app.core.attachments.attachment_service import AttachmentService
+            for row in AttachmentService().document_types() or []:
+                code = (getattr(row, "code", None) or "").strip().upper()
+                if not code:
+                    continue
+                name = ATTACHMENT_PREFIX + code
+                if name in seen:
+                    continue
+                seen.add(name)
+                title = getattr(row, "name", None) or code.replace("_", " ").title()
+                specs.append((name, f"Attachment: {title}"))
+        except Exception:
+            pass
+        for code, title in DEFAULT_ATTACHMENT_TYPES:
+            name = ATTACHMENT_PREFIX + code
+            if name not in seen:
+                seen.add(name)
+                specs.append((name, f"Attachment: {title}"))
+        start = DataQualityField.query.count()
+        for offset, (name, label) in enumerate(specs):
+            if name in existing:
+                continue
+            db.session.add(DataQualityField(
+                field_name=name, label=label,
+                field_group="ATTACHMENTS",
+                is_required=False, include_in_score=True,
+                weight=5, sort_order=900 + offset))
+            created += 1
+            existing.add(name)
+        if created:
+            db.session.commit()
         return created
 
     def scored_fields(self):
@@ -174,8 +254,37 @@ class DataQualityService:
                .filter_by(include_in_score=True, is_active=True)
                .order_by(DataQualityField.sort_order).all())
 
-    @staticmethod
-    def _is_filled(vehicle, field_name):
+    def _preload_attachments(self, vehicles):
+        """One query for all vehicle files, reused across score calls."""
+        from app.core.models.attachment import Attachment
+        ids = [v.id for v in vehicles if getattr(v, "id", None)]
+        index = {}
+        if not ids:
+            self._att_index = index
+            return
+        rows = (Attachment.query
+                .filter(Attachment.reference_table == "vehicles",
+                        Attachment.reference_id.in_(ids),
+                        Attachment.is_active.is_(True))
+                .all())
+        for a in rows:
+            bag = index.setdefault(a.reference_id, set())
+            bag.add("*")
+            code = (a.document_type or "").strip().upper()
+            if code:
+                bag.add(code)
+            blob = " ".join(filter(None, [
+                code,
+                a.original_filename or "",
+                getattr(a, "stored_filename", None) or "",
+            ])).upper()
+            if "FRONT" in blob:
+                bag.add("PHOTO_FRONT")
+            if "BACK" in blob:
+                bag.add("PHOTO_BACK")
+        self._att_index = index
+
+    def _is_filled(self, vehicle, field_name):
         """Whether a field counts as populated.
 
         Empty strings and whitespace count as MISSING: a space typed
@@ -183,7 +292,31 @@ class DataQualityService:
         completeness score becomes flattering and useless. Booleans are
         deliberately always 'filled' -- False is a real answer, not an
         absence.
+
+        attachment:<CODE> is filled when the vehicle has an active file
+        of that document type (or any file when CODE is *).
         """
+        if field_name.startswith(ATTACHMENT_PREFIX):
+            code = field_name[len(ATTACHMENT_PREFIX):] or "*"
+            bag = (self._att_index or {}).get(vehicle.id, set())
+            if self._att_index is None:
+                # Single-vehicle path (tests / drill-down without preload).
+                from app.core.models.attachment import Attachment
+                q = Attachment.query.filter_by(
+                    reference_table="vehicles",
+                    reference_id=vehicle.id,
+                    is_active=True)
+                if code == "*":
+                    return q.first() is not None
+                rows = q.all()
+                for a in rows:
+                    dt = (a.document_type or "").strip().upper()
+                    fn = (a.original_filename or "").upper()
+                    if dt == code or (code == "PHOTO_FRONT" and "FRONT" in (dt + " " + fn)) or (
+                            code == "PHOTO_BACK" and "BACK" in (dt + " " + fn)):
+                        return True
+                return False
+            return "*" in bag if code == "*" else code.upper() in bag
         value = getattr(vehicle, field_name, None)
         if value is None:
             return False
@@ -246,8 +379,10 @@ class DataQualityService:
             return []
 
         branches = {b.id: b for b in Branch.query.all()}
+        vehicles = self._vehicles(user=user)
+        self._preload_attachments(vehicles)
         buckets = {}
-        for vehicle in self._vehicles(user=user):
+        for vehicle in vehicles:
             result = self.score_vehicle(vehicle, fields)
             bucket = buckets.setdefault(
                 vehicle.branch_id,
@@ -287,6 +422,7 @@ class DataQualityService:
         what makes the list actionable."""
         fields = self.scored_fields()
         vehicles = self._vehicles(user=user)
+        self._preload_attachments(vehicles)
         total = len(vehicles)
         if not total or not fields:
             return []
@@ -312,6 +448,7 @@ class DataQualityService:
         """Headline figures for the dashboard widget."""
         fields = self.scored_fields()
         vehicles = self._vehicles(user=user)
+        self._preload_attachments(vehicles)
         if not fields or not vehicles:
             return {"score": 0, "rating": "CRITICAL", "vehicles": 0,
                    "incomplete": 0, "missing_points": 0,
@@ -350,7 +487,9 @@ class DataQualityService:
         """Drill-down: Branch -> Vehicle -> Missing Fields."""
         fields = self.scored_fields()
         rows = []
-        for vehicle in self._vehicles(user=user, branch_id=branch_id):
+        vehicles = self._vehicles(user=user, branch_id=branch_id)
+        self._preload_attachments(vehicles)
+        for vehicle in vehicles:
             result = self.score_vehicle(vehicle, fields)
             if not result["missing"]:
                 continue
