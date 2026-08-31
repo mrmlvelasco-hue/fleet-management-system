@@ -109,6 +109,9 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.api import admin_email_audit as _api_admin_email_audit  # noqa: F401
     from app.modules.api import invoices as _api_invoices  # noqa: F401
     from app.modules.api import worklist as _api_worklist  # noqa: F401
+    # Module-agnostic approval routes, so the mobile client knows
+    # approvals rather than eight hardcoded modules.
+    from app.modules.api import approvals as _api_approvals  # noqa: F401
     from app.modules.api import purchase_requests as _api_purchase_requests  # noqa: F401
     from app.modules.api import trip_tickets as _api_trip_tickets  # noqa: F401
     from app.modules.api import vehicle_registrations as _api_vehicle_registrations  # noqa: F401
