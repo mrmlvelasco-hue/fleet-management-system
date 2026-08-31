@@ -143,3 +143,87 @@ def report_pms_compliance_export(api_user):
     from app.core.reporting.generators import generate_pms_compliance_xlsx
     filename, data = generate_pms_compliance_xlsx(filters, user=api_user)
     return _send_xlsx(filename, data)
+
+
+# ── Vehicle Registration Expiry ──────────────────────────────────────────────
+
+def _registration_filters():
+    filters = {}
+    for key in ("branch_id", "vehicle_type_id"):
+        val, err = _int_arg(key)
+        if err:
+            return None, err
+        if val is not None:
+            filters[key] = val
+    status = request.args.get("status")
+    if status:
+        filters["status"] = status
+    return filters, None
+
+
+def _registration_rows(filters, user):
+    """The rows report_registration_expiry builds. Every status is
+    fetched (not just DUE_SOON/OVERDUE) so the status filter's other
+    options have data, then narrowed by the chosen status -- exactly as
+    the Jinja route does. Org scope applies regardless."""
+    from app.modules.registration_config.service import (
+        RegistrationDueCalculationService)
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+    from app.core.reporting.generators import _vehicle_matches
+
+    scope = UserOrgScopeService()
+    all_statuses = ("OVERDUE", "DUE_SOON", "GOOD", "NO_RECORD")
+    rows = [r for r in RegistrationDueCalculationService().get_all_due_vehicles(
+                statuses=all_statuses)
+            if scope.covers(user.id, branch_id=r["vehicle"].branch_id)
+            and _vehicle_matches(r["vehicle"], filters)]
+    if filters.get("status"):
+        rows = [r for r in rows if r["status"] == filters["status"]]
+    return rows
+
+
+def _registration_row_json(r):
+    v = r["vehicle"]
+    due = r.get("next_due_date")
+    return {
+        "plate_no": v.plate_number or v.conduction_number,
+        "branch": v.branch.name if v.branch else None,
+        "make": v.brand,
+        "model": v.model,
+        "lto_month": r.get("lto_month"),
+        "lto_week": r.get("lto_week"),
+        "next_due_date": (due.isoformat()
+                          if due and hasattr(due, "isoformat") else due),
+        "source": r.get("source"),
+        "status": r["status"],
+        "warning": r.get("warning"),
+    }
+
+
+@bp.route("/reports/registration-expiry", methods=["GET"])
+@api_auth_required("reportregistrationexpiry.view")
+def report_registration_expiry(api_user):
+    filters, err = _registration_filters()
+    if err:
+        return err
+    # No run gate: the Jinja route runs this on open. get_all_due_vehicles
+    # here is a status lookup per vehicle, not the full schedule scan the
+    # PMS report does, so it is cheap enough to run unconditionally.
+    rows = _registration_rows(filters, api_user)
+    return jsonify({
+        "rows": [_registration_row_json(r) for r in rows],
+        "generated_at": datetime.now().isoformat(),
+    })
+
+
+@bp.route("/reports/registration-expiry/export.xlsx", methods=["GET"])
+@api_auth_required("reportregistrationexpiry.view")
+def report_registration_expiry_export(api_user):
+    filters, err = _registration_filters()
+    if err:
+        return err
+    from app.core.reporting.generators import (
+        generate_registration_expiry_xlsx)
+    filename, data = generate_registration_expiry_xlsx(filters, user=api_user)
+    return _send_xlsx(filename, data)
