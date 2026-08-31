@@ -376,3 +376,131 @@ def report_maintenance_cost_export(api_user):
     filename, data = generate_maintenance_cost_summary_xlsx(
         filters, user=api_user)
     return _send_xlsx(filename, data)
+
+
+# ── Vehicle Activity History ─────────────────────────────────────────────────
+
+def _activity_vehicle_ids():
+    """Repeated ?vehicle_ids=3&vehicle_ids=7. Unlike every other report's
+    filters, there is no unfiltered mode here -- an empty list is a
+    valid, empty selection, not 'show everything'."""
+    ids = []
+    for raw in request.args.getlist("vehicle_ids"):
+        if raw == "":
+            continue
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            return None, _bad("vehicle_ids must be integers.")
+    return ids, None
+
+
+def _activity_vehicle_json(v):
+    return {
+        "id": v.id,
+        "plate_no": v.plate_number or v.conduction_number,
+        "brand": v.brand,
+        "model": v.model,
+        "year": v.year,
+        "engine_number": v.engine_number,
+        "chassis_number": v.chassis_number,
+        "acquisition_cost": (float(v.acquisition_cost)
+                             if v.acquisition_cost is not None else None),
+        "status": v.status,
+    }
+
+
+def _activity_section_json(vehicle, svc):
+    """One vehicle's full section: activity timeline, utilization (built
+    from THOSE SAME rows, not a separate query), and outlet history.
+    Shares row-shaping with the existing single-vehicle
+    /vehicles/:id/activity-history endpoint's _iso/_money helpers so a
+    date or a peso figure cannot format differently between the two."""
+    from app.modules.api.vehicles import _iso, _money
+
+    rows = svc.get_activity_rows(vehicle)
+    activity_rows = [{
+        "date": _iso(r.get("date")),
+        "activity_type": r.get("activity_type"),
+        "outlet": r.get("outlet"),
+        "assigned_to": r.get("assigned_to"),
+        "description": r.get("description"),
+        "cost": _money(r.get("cost")),
+        "odometer": r.get("odometer"),
+    } for r in rows]
+
+    util = svc.get_utilization_summary(vehicle, rows)
+    utilization = {
+        "total_transfers": util["total_transfers"],
+        "pms_count": util["pms_count"],
+        "repair_count": util["repair_count"],
+        "tire_replacements": util["tire_replacements"],
+        "battery_replacements": util["battery_replacements"],
+        "total_maintenance_cost": float(util["total_maintenance_cost"]),
+        "assigned_outlets_count": util["assigned_outlets_count"],
+        "vehicle_age_years": util["vehicle_age_years"],
+        "current_odometer": util["current_odometer"],
+    }
+
+    outlet_history = [{
+        "from_date": _iso(seg.get("from_date")),
+        "to_date": _iso(seg.get("to_date")),
+        "outlet": seg.get("outlet"),
+        "custodian": seg.get("custodian"),
+    } for seg in svc.get_outlet_history(vehicle)]
+
+    return {
+        "vehicle": _activity_vehicle_json(vehicle),
+        "activity_rows": activity_rows,
+        "utilization": utilization,
+        "outlet_history": outlet_history,
+    }
+
+
+@bp.route("/reports/vehicle-activity", methods=["GET"])
+@api_auth_required("reportvehicleactivity.view")
+def report_vehicle_activity(api_user):
+    """Its own permission, distinct from vehicle.view: a multi-vehicle
+    export is a different disclosure from browsing one vehicle's
+    profile, which is what /vehicles/:id/activity-history (vehicle.view)
+    serves. Not the same endpoint reused -- this one also carries
+    Utilization, which that one omits."""
+    ids, err = _activity_vehicle_ids()
+    if err:
+        return err
+
+    from app.core.vehicle_activity_history_service import (
+        VehicleActivityHistoryService)
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    svc = VehicleActivityHistoryService()
+    vehicle_svc = VehicleService()
+    sections = []
+    for vid in ids:
+        # get_visible returns None for a vehicle outside this user's org
+        # scope. Silently dropped, not an error -- one stale or
+        # out-of-scope id in the selection must not fail the whole
+        # report, and "nonexistent" vs. "exists but not visible to you"
+        # are indistinguishable from here on purpose.
+        vehicle = vehicle_svc.get_visible(vid, api_user)
+        if vehicle is None:
+            continue
+        sections.append(_activity_section_json(vehicle, svc))
+
+    return jsonify({
+        "sections": sections,
+        "generated_at": datetime.now().isoformat(),
+    })
+
+
+@bp.route("/reports/vehicle-activity/export.xlsx", methods=["GET"])
+@api_auth_required("reportvehicleactivity.view")
+def report_vehicle_activity_export(api_user):
+    ids, err = _activity_vehicle_ids()
+    if err:
+        return err
+    from app.core.reporting.generators import (
+        generate_vehicle_activity_history_xlsx)
+    filename, data = generate_vehicle_activity_history_xlsx(
+        ids, user=api_user)
+    return _send_xlsx(filename, data)
