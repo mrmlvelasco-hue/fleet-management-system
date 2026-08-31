@@ -112,6 +112,7 @@ def create_app(config_name: str | None = None) -> Flask:
     # Module-agnostic approval routes, so the mobile client knows
     # approvals rather than eight hardcoded modules.
     from app.modules.api import approvals as _api_approvals  # noqa: F401
+    from app.modules.api import reports as _api_reports  # noqa: F401
     from app.modules.api import purchase_requests as _api_purchase_requests  # noqa: F401
     from app.modules.api import trip_tickets as _api_trip_tickets  # noqa: F401
     from app.modules.api import vehicle_registrations as _api_vehicle_registrations  # noqa: F401
