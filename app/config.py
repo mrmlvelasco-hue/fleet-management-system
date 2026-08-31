@@ -9,6 +9,30 @@ import os
 from datetime import timedelta
 from urllib.parse import quote_plus
 
+# Nothing else in this codebase calls load_dotenv() -- wsgi.py just does
+# `create_app()`. Whether .env actually reaches os.environ therefore
+# depended entirely on the LAUNCHER: `flask run` auto-loads it via
+# Flask's CLI, but a PyCharm run configuration that executes wsgi.py
+# directly does not, unless the IDE itself is configured with an EnvFile
+# plugin pointed at the file -- and if it instead has environment
+# variables typed directly into the run configuration, .env is not being
+# read at all, and no amount of editing that file or restarting the
+# process will ever change anything. That is indistinguishable, from
+# outside, from a value simply "not taking" no matter how many times it
+# is corrected.
+#
+# find_dotenv() walks up from the current working directory, so this
+# works whether Flask is launched from the project root or from a
+# subdirectory. python-dotenv never overrides a variable already present
+# in os.environ, so an env var set by the real shell or CI still wins --
+# this only fills in what nothing else already provided.
+try:
+    from dotenv import find_dotenv, load_dotenv
+    load_dotenv(find_dotenv(usecwd=True))
+except ImportError:
+    pass  # python-dotenv is in requirements.txt; this is a defensive
+          # fallback only, not the expected path.
+
 
 def _build_database_uri() -> str:
     """Build the SQLAlchemy URI.
