@@ -516,8 +516,13 @@ def test_emergency_contacts_are_listed(db, client, drv_env):
         EmergencyContactService)
 
     d = Driver.query.filter_by(employee_number="EMP-001").first()
+    # person_record_id is an integer FK -> drivers.id, NOT the person_id
+    # business key ("PID-2026-0001"). Flask's driver_detail route filters
+    # EmergencyContact by `did` (drivers.id), so the API matches it. SQLite
+    # accepted the string silently, which is why this only surfaced as an
+    # empty list rather than an integrity error.
     EmergencyContactService().create(
-        person_record_id=d.person_id, contact_name="Rosa Dela Cruz",
+        person_record_id=d.id, contact_name="Rosa Dela Cruz",
         relationship_type="Spouse", contact_number="0917-000-0000")
     db.session.commit()
 
