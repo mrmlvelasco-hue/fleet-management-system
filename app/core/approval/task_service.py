@@ -75,10 +75,22 @@ class ApprovalTaskService:
         }
         eligible = [t for t in candidates
                    if t.assigned_user_id == user.id
-                   or t.assigned_role_id in role_ids
+                   # A document this user returned stays on their list
+                   # regardless of scope -- they are the one waiting for
+                   # it to come back.
                    or t.approval_instance_id in returned_instance_ids
-                   or scope_svc.covers(user.id, branch_id=t.branch_id,
-                                       business_unit_id=t.business_unit_id)]
+                   # Role AND scope, per the docstring above. This was an
+                   # `or`, which meant holding the assigned role was
+                   # enough on its own and org scope was never enforced
+                   # for role-assigned tasks -- a Cavite approver saw and
+                   # could act on another branch's documents. `covers()`
+                   # returns True for a user with no scope rows, so
+                   # approvers an admin has not explicitly scoped are
+                   # unaffected.
+                   or (t.assigned_role_id in role_ids
+                       and scope_svc.covers(
+                           user.id, branch_id=t.branch_id,
+                           business_unit_id=t.business_unit_id))]
 
         seen = set()
         distinct = []
