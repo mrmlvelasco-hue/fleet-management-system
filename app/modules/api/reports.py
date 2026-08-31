@@ -227,3 +227,152 @@ def report_registration_expiry_export(api_user):
         generate_registration_expiry_xlsx)
     filename, data = generate_registration_expiry_xlsx(filters, user=api_user)
     return _send_xlsx(filename, data)
+
+
+# ── Maintenance Cost Summary ─────────────────────────────────────────────────
+
+def _cost_filters():
+    filters = {}
+    for key in ("branch_id", "vehicle_type_id"):
+        val, err = _int_arg(key)
+        if err:
+            return None, err
+        if val is not None:
+            filters[key] = val
+    for key in ("date_from", "date_to", "plate_number"):
+        val = request.args.get(key)
+        if val:
+            filters[key] = val.strip() if key == "plate_number" else val
+    return filters, None
+
+
+def _cost_orders(filters, user):
+    """The same COMPLETED orders report_maintenance_cost_summary builds,
+    in the same order (completed_date descending), with the same
+    plate/conduction fallback and org-scope rules."""
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+
+    query = MaintenanceOrder.query.filter_by(status="COMPLETED")
+    if filters.get("branch_id"):
+        query = query.filter(MaintenanceOrder.vehicle.has(
+            branch_id=filters["branch_id"]))
+    if filters.get("vehicle_type_id"):
+        query = query.filter(MaintenanceOrder.vehicle.has(
+            vehicle_type_id=filters["vehicle_type_id"]))
+    if filters.get("date_from"):
+        query = query.filter(
+            MaintenanceOrder.completed_date >= filters["date_from"])
+    if filters.get("date_to"):
+        query = query.filter(
+            MaintenanceOrder.completed_date <= filters["date_to"])
+    orders = query.order_by(MaintenanceOrder.completed_date.desc()).all()
+
+    if filters.get("plate_number"):
+        # Case-insensitive substring against EITHER column -- checked in
+        # Python, not SQL, matching the Jinja route: unregistered
+        # vehicles have no plate yet, so the fallback to
+        # conduction_number is what makes them findable at all.
+        needle = filters["plate_number"].lower()
+        orders = [o for o in orders
+                  if needle in (o.vehicle.plate_number or "").lower()
+                  or needle in (o.vehicle.conduction_number or "").lower()]
+
+    scope = UserOrgScopeService()
+    orders = [o for o in orders
+              if scope.covers(user.id, branch_id=o.vehicle.branch_id)]
+    return orders
+
+
+def _cost_row_json(o):
+    v = o.vehicle
+    return {
+        "mo_number": o.document_number or "(draft)",
+        "vehicle": f"{v.plate_number or v.conduction_number} — "
+                   f"{v.brand} {v.model}",
+        "branch": v.branch.name if v.branch else None,
+        "category": o.category or o.order_category,
+        "maintenance_type": (o.maintenance_type.name
+                             if o.maintenance_type else None),
+        "completed_date": (o.completed_date.isoformat()
+                           if o.completed_date else None),
+        "actual_cost": float(o.actual_cost or 0),
+    }
+
+
+def _budget_rows_json(orders):
+    """Budget Utilization by Vehicle: one row per DISTINCT vehicle in
+    the already-filtered `orders`, first occurrence wins, included only
+    when applicable. This is the section the XLSX export does not
+    carry -- Flask's own generator omits it, so this endpoint's export
+    route must not add it either; that would be scope beyond parity,
+    not a bug fix.
+
+    `spent` inside get_budget_status is deliberately NOT derived from
+    `orders` -- it queries the vehicle's own budget-year window,
+    anchored to its delivery/acquisition date, which is independent of
+    whatever date range the report itself was filtered to.
+    """
+    from app.core.maintenance.budget_service import VehicleBudgetService
+
+    budget_svc = VehicleBudgetService()
+    seen = set()
+    rows = []
+    for o in orders:
+        if o.vehicle_id in seen:
+            continue
+        seen.add(o.vehicle_id)
+        status = budget_svc.get_budget_status(o.vehicle)
+        if not status["applicable"]:
+            continue
+        rows.append({
+            "vehicle_id": o.vehicle_id,
+            "vehicle": f"{o.vehicle.plate_number or o.vehicle.conduction_number}",
+            "mode": status["mode"],
+            "classification": status["classification"],
+            "current_year": status["current_year"],
+            "period_start": status["period_start"].isoformat(),
+            "period_end": status["period_end"].isoformat(),
+            "budget": float(status["budget"]),
+            "spent": float(status["spent"]),
+            "remaining": float(status["remaining"]),
+            "over_budget": status["over_budget"],
+        })
+    return rows
+
+
+@bp.route("/reports/maintenance-cost", methods=["GET"])
+@api_auth_required("reportmaintenancecost.view")
+def report_maintenance_cost(api_user):
+    filters, err = _cost_filters()
+    if err:
+        return err
+    # No run gate: a COMPLETED-status query is cheap regardless of fleet
+    # size, unlike PMS's full schedule scan.
+    orders = _cost_orders(filters, api_user)
+    total = sum(float(o.actual_cost or 0) for o in orders)
+    return jsonify({
+        "rows": [_cost_row_json(o) for o in orders],
+        # Computed server-side over the SAME filtered set the rows come
+        # from. The screen must never re-sum the rows itself -- a
+        # paginated view re-summing only its visible page would
+        # silently disagree with this figure.
+        "total": total,
+        "budget_rows": _budget_rows_json(orders),
+        "generated_at": datetime.now().isoformat(),
+    })
+
+
+@bp.route("/reports/maintenance-cost/export.xlsx", methods=["GET"])
+@api_auth_required("reportmaintenancecost.view")
+def report_maintenance_cost_export(api_user):
+    filters, err = _cost_filters()
+    if err:
+        return err
+    from app.core.reporting.generators import (
+        generate_maintenance_cost_summary_xlsx)
+    filename, data = generate_maintenance_cost_summary_xlsx(
+        filters, user=api_user)
+    return _send_xlsx(filename, data)
