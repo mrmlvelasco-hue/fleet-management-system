@@ -9,6 +9,7 @@ to keep in sync, and revoking a user's access in the UI revokes their
 API access too.
 """
 import functools
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -125,12 +126,30 @@ REFRESH_COOKIE_PATH = "/api/v1/auth"
 
 
 def issue_refresh_token(user: User) -> tuple:
-    """Returns (token, expires_at)."""
+    """Returns (token, expires_at).
+
+    The jti makes every issued token unique. Without it, two tokens
+    minted in the same second for the same user are BYTE-IDENTICAL --
+    iat and exp are second-resolution -- so "rotation" produced the same
+    string back and a caller could not tell a rotated token from a
+    replayed one.
+
+    LIMITATION worth stating plainly: these are stateless JWTs with no
+    server-side store, so rotation does not REVOKE the previous token.
+    An old refresh token keeps working until it expires (14 days).
+    Rotation limits the window in which a captured token is the *current*
+    one; it does not close it. Genuinely revoking a session -- the case
+    that matters when a driver's phone is lost -- needs a jti denylist
+    or a per-user token generation counter checked on every refresh.
+    The jti here is what makes that possible to add later without
+    reissuing anyone's credentials.
+    """
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=REFRESH_TTL_DAYS)
     token = jwt.encode({
         "sub": str(user.id),
         "typ": "refresh",
+        "jti": uuid.uuid4().hex,
         "iat": now,
         "exp": expires_at,
     }, _secret(), algorithm="HS256")

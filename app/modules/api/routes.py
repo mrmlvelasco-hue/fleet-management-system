@@ -58,6 +58,18 @@ def _vehicle_json(v, include_pm=False):
     return data
 
 
+def _is_native_client(payload):
+    """Whether this caller holds its own credentials.
+
+    Explicit opt-in from the client rather than sniffing the User-Agent
+    or the Origin header: a WebView's UA is a browser UA, and guessing
+    wrong in the permissive direction would hand the refresh token to a
+    real browser in the response body, which is the one thing this must
+    never do.
+    """
+    return str(payload.get("client") or "").lower() == "native"
+
+
 @bp.route("/auth/token", methods=["POST"])
 def auth_token():
     """Exchange username/password for a bearer token.
@@ -84,12 +96,33 @@ def auth_token():
                        "message": "Invalid username or password."}), 401
     from app.modules.api.auth import (issue_refresh_token,
                                       set_refresh_cookie)
-    response = jsonify(issue_token(user))
-    # The refresh token rides in an httpOnly cookie; the access token
-    # stays in the body and in memory. Only the long-lived credential is
-    # sent automatically, and JavaScript can read neither it nor replay
-    # it cross-site.
     refresh, expires_at = issue_refresh_token(user)
+    body = issue_token(user)
+
+    # A native client asks for the refresh token in the BODY.
+    #
+    # The cookie is the right answer for a browser -- a token
+    # JavaScript can read is a token an injected script can steal -- but
+    # it cannot serve a Capacitor WebView. The app's origin is
+    # http://localhost while the API is on another host, so the cookie
+    # is cross-site and SameSite=Lax means the browser will not send it.
+    # A driver offline for a few hours would reopen the app logged out,
+    # holding unsent checklist drafts: the exact failure the offline
+    # work exists to prevent.
+    #
+    # Nothing is given up by this. The httpOnly cookie defends against
+    # browser CSRF and script access, and a native app has no
+    # attacker-controlled page from which to mount either. The token is
+    # held in Keychain/Keystore on the device.
+    if _is_native_client(payload):
+        body["refresh_token"] = refresh
+        body["refresh_expires_at"] = expires_at.isoformat()
+        return jsonify(body)
+
+    response = jsonify(body)
+    # Browser flow unchanged: the refresh token rides in an httpOnly
+    # cookie and never appears in the body, so script can neither read
+    # it nor replay it cross-site.
     return set_refresh_cookie(response, refresh, expires_at)
 
 
@@ -105,17 +138,33 @@ def auth_refresh():
                                       set_refresh_cookie,
                                       user_from_refresh_token)
 
-    user = user_from_refresh_token(request.cookies.get(REFRESH_COOKIE))
+    payload = request.get_json(silent=True) or {}
+    # Body first, then cookie. A native client has no cookie jar at all,
+    # which is precisely why it cannot use the browser flow.
+    supplied = payload.get("refresh_token")
+    user = user_from_refresh_token(
+        supplied or request.cookies.get(REFRESH_COOKIE))
     if user is None:
         return jsonify({"error": "unauthorized",
                         "message": "Please sign in again."}), 401
 
-    response = jsonify(issue_token(user))
     # Rotated on every use, so a token captured from an old response
     # stops working as soon as the legitimate client refreshes, and an
-    # active session never has to re-login on a fixed schedule.
+    # active session never has to re-login on a fixed schedule. Rotation
+    # matters MORE on a device, not less: the token sits on hardware
+    # that gets lost, lent and resold.
     refresh, expires_at = issue_refresh_token(user)
-    return set_refresh_cookie(response, refresh, expires_at)
+    body = issue_token(user)
+
+    # Answered the way it was asked. A client that sent its token in the
+    # body gets the replacement there; a browser gets a fresh cookie and
+    # nothing readable.
+    if supplied:
+        body["refresh_token"] = refresh
+        body["refresh_expires_at"] = expires_at.isoformat()
+        return jsonify(body)
+
+    return set_refresh_cookie(jsonify(body), refresh, expires_at)
 
 
 @bp.route("/auth/logout", methods=["POST"])
