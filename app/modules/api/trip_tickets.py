@@ -214,6 +214,12 @@ def _lifecycle(api_user, tid, method_name):
     try:
         if method_name == "release":
             svc.release(tid)
+        elif method_name == "submit":
+            # See purchase_requests.py's _lifecycle_action: submit()
+            # takes (record_id, user) only, and forwarding remarks
+            # unconditionally raised "submit() got an unexpected
+            # keyword argument 'remarks'" on every submit call.
+            svc.submit(tid, user=api_user)
         else:
             getattr(svc, method_name)(tid, user=api_user,
                                       remarks=p.get("remarks"))

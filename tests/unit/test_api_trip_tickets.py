@@ -148,6 +148,23 @@ def test_create_requires_the_create_permission(db, client, tt_env):
     assert status == 403
 
 
+def test_submit_succeeds_on_a_fresh_draft(db, client, tt_env):
+    """Regression: the shared _lifecycle dispatcher forwarded remarks
+    to every action including submit(), which only ever accepted
+    (record_id, user). Raised "submit() got an unexpected keyword
+    argument 'remarks'" on every submit call unconditionally -- the
+    client sends an empty body -- masked as an ordinary 409 by the
+    dispatcher's generic except Exception -> _conflict(str(exc)). No
+    submit test existed for this module before this."""
+    _set_param(db, "REQUIRE_DRIVER_FROM_MASTER", "NO")
+    _status, body = _post(client, "/api/v1/trip-tickets",
+                          _token(client),
+                          _payload(tt_env, driver_name_manual="Ad Hoc"))
+    status, resp = _post(
+        client, f"/api/v1/trip-tickets/{body['id']}/submit", _token(client))
+    assert status == 200, resp
+
+
 # ── REQUIRE_DRIVER_FROM_MASTER: the module's defining rule ─────────────────
 
 def test_driver_must_come_from_master_when_the_parameter_is_yes(db, client,

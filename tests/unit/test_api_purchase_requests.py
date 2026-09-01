@@ -305,10 +305,18 @@ def test_remove_line_recomputes_the_amount(db, client, pr_env):
 def test_submit_and_approve(db, client, pr_env):
     _status, pr_body = _post(client, "/api/v1/purchase-requests",
                              _token(client), _pr_payload(pr_env))
-    status, _ = _post(
+    status, body = _post(
         client, f"/api/v1/purchase-requests/{pr_body['id']}/submit",
         _token(client))
-    assert status in (200, 409)
+    # NOT `assert status in (200, 409)`. That assertion is what let
+    # BaseTransactionService.submit() got an unexpected keyword
+    # argument 'remarks' ship silently for months: the dispatcher's
+    # generic except Exception -> _conflict(str(exc)) turns a genuine
+    # TypeError into the exact same 409 shape as a real business-rule
+    # refusal, and a test that accepts either status cannot tell a
+    # crash from a legitimate "wrong state" answer. A fresh DRAFT PR
+    # submitting for the first time must succeed outright.
+    assert status == 200, body
 
 
 def test_approval_actions_are_not_404_placeholders(db, client, pr_env):

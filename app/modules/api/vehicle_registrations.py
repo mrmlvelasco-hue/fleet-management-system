@@ -229,8 +229,16 @@ def _lifecycle(api_user, rid, method_name):
         return _not_found()
     p = request.get_json(silent=True) or {}
     try:
-        getattr(VehicleRegistrationService(), method_name)(
-            rid, user=api_user, remarks=p.get("remarks"))
+        if method_name == "submit":
+            # submit() takes (record_id, user) only -- see
+            # purchase_requests.py's _lifecycle_action for the full
+            # story. Forwarding remarks unconditionally raised
+            # "submit() got an unexpected keyword argument 'remarks'"
+            # on every submit call.
+            VehicleRegistrationService().submit(rid, user=api_user)
+        else:
+            getattr(VehicleRegistrationService(), method_name)(
+                rid, user=api_user, remarks=p.get("remarks"))
     except Exception as exc:
         return _conflict(str(exc))
     fresh = VehicleRegistration.query.filter_by(id=rid).first()

@@ -344,6 +344,16 @@ def _lifecycle_action(api_user, pid, method_name):
     try:
         if method_name == "mark_ordered":
             svc.mark_ordered(pid)
+        elif method_name == "submit":
+            # submit() takes (record_id, user) only -- there is no
+            # "remarks" concept when submitting your OWN document, only
+            # when someone else decides on it (approve/reject/return).
+            # Forwarding remarks here unconditionally, as every other
+            # action does, raised "submit() got an unexpected keyword
+            # argument 'remarks'" on every single submit call
+            # regardless of payload -- React always sends {} here, so
+            # this fired 100% of the time, not intermittently.
+            svc.submit(pid, user=api_user)
         else:
             getattr(svc, method_name)(pid, user=api_user,
                                       remarks=p.get("remarks"))

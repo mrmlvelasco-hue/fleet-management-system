@@ -117,6 +117,24 @@ def test_create_requires_the_create_permission(db, client, vr_env):
     assert status == 403
 
 
+def test_submit_succeeds_on_a_fresh_draft(db, client, vr_env):
+    """Regression: the shared _lifecycle dispatcher forwarded remarks
+    to EVERY action including submit(), which only ever accepted
+    (record_id, user). That raised "submit() got an unexpected keyword
+    argument 'remarks'" on every single submit call -- unconditionally,
+    since the client sends an empty body -- and the dispatcher's
+    generic except Exception -> _conflict(str(exc)) turned that crash
+    into an ordinary-looking 409, indistinguishable from a real
+    business-rule refusal. This module had NO submit test at all before
+    this, which is how it went uncaught."""
+    _status, body = _post(client, "/api/v1/vehicle-registrations",
+                          _token(client), _payload(vr_env))
+    status, resp = _post(
+        client, f"/api/v1/vehicle-registrations/{body['id']}/submit",
+        _token(client))
+    assert status == 200, resp
+
+
 # ── LTO validity rules ─────────────────────────────────────────────────────
 
 def test_a_new_registration_is_valid_for_three_years(db, client, vr_env):

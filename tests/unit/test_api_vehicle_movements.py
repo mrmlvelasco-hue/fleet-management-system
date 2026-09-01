@@ -115,6 +115,22 @@ def test_create_requires_the_create_permission(db, client, vm_env):
     assert status == 403
 
 
+def test_submit_succeeds_on_a_fresh_draft(db, client, vm_env):
+    """Regression: the shared _lifecycle dispatcher forwarded remarks
+    to every action including submit(), which only ever accepted
+    (record_id, user). Raised "submit() got an unexpected keyword
+    argument 'remarks'" on every submit call unconditionally -- the
+    client sends an empty body -- masked as an ordinary 409 by the
+    dispatcher's generic except Exception -> _conflict(str(exc)). No
+    submit test existed for this module before this."""
+    _status, body = _post(client, "/api/v1/vehicle-movements",
+                          _token(client), _payload(vm_env))
+    status, resp = _post(
+        client, f"/api/v1/vehicle-movements/{body['id']}/submit",
+        _token(client))
+    assert status == 200, resp
+
+
 # ── movement_type comes from a Lookup, not a hardcoded list ────────────────
 
 def test_a_registered_movement_type_is_accepted(db, client, vm_env):
