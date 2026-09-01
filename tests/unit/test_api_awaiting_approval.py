@@ -149,3 +149,98 @@ def test_empty_queue_is_not_an_error(db, client, wl_env):
     assert status == 200
     assert body["items"] == []
     assert body["total"] == 0
+
+
+# ── Merge with the old "Awaiting Your Action" panel ──────────────────────
+#
+# React's dashboard used to show two panels backed by two endpoints --
+# this one, and /worklist/pending-approvals -- both built from
+# ApprovalTaskService.list_for_user() but each adding something the
+# other lacked: this one paginates and re-resolves the document number
+# live; the other adds branch filtering and returned-to-initiator items.
+# Merged into this endpoint, which becomes the single source for
+# React's new "For Your Action List" panel.
+
+def test_every_item_carries_a_kind(db, client, wl_env):
+    """The merged panel renders an approval task and a returned document
+    differently (a returned one is the person's OWN document coming
+    back, not something to decide on), so the field distinguishing them
+    must exist on every row, not just the returned ones."""
+    approver, _ = wl_env
+    _make_task(db, approver)
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/awaiting-approval", token)
+    assert body["items"][0]["kind"] == "approval"
+
+
+def test_includes_documents_returned_to_the_signed_in_user(db, client, wl_env):
+    """A document the approver sent back to ITS OWN initiator belongs on
+    that initiator's action list too -- it is work waiting on them, just
+    not a decision. Dropped from the old 'Awaiting Your Approval' panel
+    entirely; only the OTHER panel ('Awaiting Your Action') carried it,
+    which is the whole reason the two were kept separate before."""
+    from app.core.approval.models import ApprovalInstance
+    from app.modules.document_config.models import DocumentType
+    approver, _ = wl_env
+    dt = DocumentType.query.filter_by(code="MO-WL").first()
+    if dt is None:
+        dt = DocumentType(code="MO-WL", name="Maintenance Order")
+        db.session.add(dt)
+        db.session.flush()
+    inst = ApprovalInstance(document_type_id=dt.id,
+                            reference_table="maintenance_orders",
+                            reference_id=99, status="RETURNED",
+                            submitted_by=approver.id, current_level=1)
+    db.session.add(inst)
+    db.session.commit()
+
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/awaiting-approval", token)
+    returned = [i for i in body["items"] if i["kind"] == "returned"]
+    assert len(returned) == 1
+    assert returned[0]["reference_id"] == 99
+
+
+def test_returned_items_count_toward_total(db, client, wl_env):
+    """The panel's badge count and its pagination both read `total` --
+    a returned document invisible to that count would undercount the
+    person's actual queue."""
+    from app.core.approval.models import ApprovalInstance
+    from app.modules.document_config.models import DocumentType
+    approver, _ = wl_env
+    dt = DocumentType.query.filter_by(code="MO-WL").first()
+    if dt is None:
+        dt = DocumentType(code="MO-WL", name="Maintenance Order")
+        db.session.add(dt)
+        db.session.flush()
+    db.session.add(ApprovalInstance(
+        document_type_id=dt.id,
+        reference_table="maintenance_orders", reference_id=99,
+        status="RETURNED", submitted_by=approver.id, current_level=1))
+    db.session.commit()
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/awaiting-approval", token)
+    assert body["total"] >= 1
+
+
+def test_branch_id_filters_approval_tasks(db, client, wl_env):
+    """Reported against the OLD panel: figures did not tie up with the
+    branch chosen in the dashboard header, because that endpoint
+    ignored it. Carried into the merge rather than repeating the gap."""
+    approver, _ = wl_env
+    t = _make_task(db, approver)
+    t.branch_id = 5
+    db.session.commit()
+    token = _token(client)
+    _, body = _get(
+        client, "/api/v1/dashboard/awaiting-approval?branch_id=999", token)
+    numbers = [i.get("reference_id") for i in body["items"]
+              if i["kind"] == "approval"]
+    assert t.reference_id not in numbers or body["total"] == 0
+
+
+def test_bad_branch_id_is_a_clean_400(db, client, wl_env):
+    token = _token(client)
+    status, _ = _get(
+        client, "/api/v1/dashboard/awaiting-approval?branch_id=abc", token)
+    assert status == 400

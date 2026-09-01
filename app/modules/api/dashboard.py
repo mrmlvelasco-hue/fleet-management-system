@@ -365,18 +365,34 @@ def dashboard_awaiting_approval(api_user):
         return jsonify({"error": "bad_request",
                         "message": "offset must be an integer."}), 400
 
+    branch_id = None
+    raw_branch = request.args.get("branch_id")
+    if raw_branch:
+        try:
+            branch_id = int(raw_branch)
+        except (TypeError, ValueError):
+            return jsonify({"error": "bad_request",
+                            "message": "branch_id must be an integer."}), 400
+
     from app.core.approval.task_service import ApprovalTaskService
+    from app.core.approval.models import ApprovalInstance
     from app.core.reference_resolver import (get_worklist_labels,
                                              get_document_number)
     from app.modules.api.worklist import _task_url
     from app.modules.user_management.models import User
 
     tasks = ApprovalTaskService().list_for_user(api_user)
-    total = len(tasks)
-    window = tasks[offset:offset + limit]
+    # Reported against the panel this merges in: dashboard figures did
+    # not tie up with the branch chosen in the header, because this
+    # query ignored it while every other dashboard count already took
+    # branch_id. Filtered here rather than inside list_for_user, which
+    # is shared with the approvals COUNT and with non-dashboard callers
+    # that legitimately want every branch.
+    if branch_id is not None:
+        tasks = [t for t in tasks if t.branch_id in (None, branch_id)]
 
-    items = []
-    for t in window:
+    approval_items = []
+    for t in tasks:
         labels = get_worklist_labels(t.reference_table, t.reference_id)
 
         # ApprovalTask.document_number is a DENORMALISED copy taken at
@@ -401,7 +417,7 @@ def dashboard_awaiting_approval(api_user):
         requester = (db_session_get(User, t.requested_by)
                      if t.requested_by else None)
 
-        items.append({
+        approval_items.append({
             "task_id": t.id,
             "document_number": document_number,
             "document_type": (t.document_type.name
@@ -423,7 +439,48 @@ def dashboard_awaiting_approval(api_user):
             # needs to know it is waiting -- but is not made a link to
             # a page that does not exist.
             "url": _task_url(t),
+            "kind": "approval",
         })
+
+    # A document the signed-in user sent back to ITS OWN initiator, OR
+    # that came back to them as the initiator -- either way, work
+    # waiting on this person, just not a decision to make. This is what
+    # the merge actually adds: the old "Awaiting Your Approval" panel
+    # never showed these at all; only the OTHER panel
+    # ("Awaiting Your Action", now retired) did, which is why the two
+    # were kept as separate panels instead of one being simply better.
+    #
+    # Not filtered by branch_id: a returned document is the person's
+    # own submission regardless of which branch the dashboard header
+    # happens to be scoped to.
+    returned_rows = (ApprovalInstance.query
+                     .filter_by(submitted_by=api_user.id, status="RETURNED")
+                     .order_by(ApprovalInstance.id.desc())
+                     .all())
+    returned_items = []
+    for inst in returned_rows:
+        labels = get_worklist_labels(inst.reference_table, inst.reference_id)
+        returned_items.append({
+            "task_id": None,
+            "document_number": None,
+            "document_type": (inst.document_type.name
+                              if getattr(inst, "document_type", None) else None),
+            "plate_number": labels.get("plate_number"),
+            "type_label": labels.get("type_label"),
+            "level_number": inst.current_level,
+            "assigned_to": None,
+            "requested_by": None,
+            "created_at": inst.created_at.isoformat()
+                if getattr(inst, "created_at", None) else None,
+            "reference_table": inst.reference_table,
+            "reference_id": inst.reference_id,
+            "url": _task_url(inst),
+            "kind": "returned",
+        })
+
+    combined = approval_items + returned_items
+    total = len(combined)
+    items = combined[offset:offset + limit]
 
     return jsonify({"items": items, "total": total, "offset": offset})
 
