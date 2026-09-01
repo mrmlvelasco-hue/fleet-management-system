@@ -323,11 +323,37 @@ def test_approval_actions_are_not_404_placeholders(db, client, pr_env):
     _status, pr_body = _post(client, "/api/v1/purchase-requests",
                              _token(client), _pr_payload(pr_env))
     for action in ("submit", "approve", "reject", "return", "cancel",
-                   "mark-ordered"):
+                   "mark-ordered", "mark-received"):
         status, _ = _post(
             client, f"/api/v1/purchase-requests/{pr_body['id']}/{action}",
             _token(client))
         assert status != 404, f"/{action} is not routed"
+
+
+def test_mark_received_transitions_an_ordered_pr(db, client, pr_env):
+    """Reported live: the React button (shown only when status ==
+    ORDERED, matching this test's setup) called this exact URL and got
+    a 404 -- the mark_received() service method has existed all along,
+    the route to reach it never did. Caught here rather than only by
+    the routing check above so a regression shows a real status
+    mismatch, not just 'some non-404 code came back'.
+
+    Also mutation-relevant: mark_received(self, pr_id) takes no user or
+    remarks, the same shape as mark_ordered -- routing it through the
+    dispatcher's generic branch, which forwards both, would repeat the
+    exact bug just fixed for submit()."""
+    _status, pr_body = _post(client, "/api/v1/purchase-requests",
+                             _token(client), _pr_payload(pr_env))
+    pid = pr_body["id"]
+    status, body = _post(client, f"/api/v1/purchase-requests/{pid}/mark-ordered",
+                         _token(client))
+    assert status == 200, body
+    assert body["status"] == "ORDERED"
+
+    status, body = _post(client, f"/api/v1/purchase-requests/{pid}/mark-received",
+                         _token(client))
+    assert status == 200, body
+    assert body["status"] == "RECEIVED"
 
 
 # ── Generate-from-MO endpoint stays consistent ──────────────────────────────

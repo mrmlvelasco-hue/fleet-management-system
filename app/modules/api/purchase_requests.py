@@ -344,6 +344,12 @@ def _lifecycle_action(api_user, pid, method_name):
     try:
         if method_name == "mark_ordered":
             svc.mark_ordered(pid)
+        elif method_name == "mark_received":
+            # Same shape as mark_ordered: mark_received(self, pr_id)
+            # takes no user or remarks. Routing it through the generic
+            # branch below would repeat the exact bug just fixed for
+            # submit() -- forwarding kwargs a method never accepted.
+            svc.mark_received(pid)
         elif method_name == "submit":
             # submit() takes (record_id, user) only -- there is no
             # "remarks" concept when submitting your OWN document, only
@@ -406,6 +412,16 @@ def resubmit_purchase_request(api_user, pid):
 @api_auth_required("purchaserequest.update")
 def mark_purchase_request_ordered(api_user, pid):
     return _lifecycle_action(api_user, pid, "mark_ordered")
+
+
+@bp.route("/purchase-requests/<int:pid>/mark-received", methods=["POST"])
+@api_auth_required("purchaserequest.update")
+def mark_purchase_request_received(api_user, pid):
+    """The service method (mark_received) has existed all along; the
+    route to reach it never did. React's Mark Received button (shown
+    only when status == ORDERED) called this exact URL and got a 404 --
+    reported live, reproduced here, fixed here."""
+    return _lifecycle_action(api_user, pid, "mark_received")
 
 
 @bp.route("/purchase-requests/summary", methods=["GET"])
