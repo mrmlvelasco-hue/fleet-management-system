@@ -432,3 +432,103 @@ def test_awaiting_approval_url_is_null_for_an_unbuilt_module(db, client,
     row = next(i for i in body["items"] if i["reference_id"] == 888)
     assert row["url"] is None
     assert row["document_number"] == "TT-888"
+
+
+# ── Maintenance Cost Trend (React's Analytics page, previously missing) ────
+#
+# Both service methods (maintenance_cost_trend, maintenance_cost_trend_
+# grouped) already existed and already powered the Jinja Analytics page
+# -- the JSON API simply never exposed either one. Confirmed absent by
+# grep before writing anything here, not assumed missing.
+
+def test_cost_trend_requires_a_token(db, client, dash_env):
+    assert client.get(
+        "/api/v1/dashboard/maintenance-cost-trend").status_code == 401
+
+
+def test_cost_trend_requires_vehicle_view(db, client, dash_env):
+    token = _token(client, username="nodash")
+    assert client.get("/api/v1/dashboard/maintenance-cost-trend",
+                      headers=_auth(token)).status_code == 403
+
+
+def test_cost_trend_matches_the_analytics_service_exactly(db, client, dash_env):
+    """Not a second implementation -- the same equality-against-the-
+    service assertion this whole file uses, so this endpoint cannot
+    quietly drift from what the Jinja Analytics page already shows."""
+    user, _branch = dash_env
+    status, body = _get(client, "/api/v1/dashboard/maintenance-cost-trend",
+                        _token(client))
+    assert status == 200
+    expected = DashboardAnalyticsService().maintenance_cost_trend(user=user)
+    assert body == expected
+
+
+def test_cost_trend_honours_a_months_param(db, client, dash_env):
+    user, _branch = dash_env
+    _status, body = _get(
+        client, "/api/v1/dashboard/maintenance-cost-trend?months=3",
+        _token(client))
+    expected = DashboardAnalyticsService().maintenance_cost_trend(
+        months=3, user=user)
+    assert body == expected
+    assert len(body["labels"]) == 3
+
+
+def test_cost_trend_grouped_matches_the_service_exactly(db, client, dash_env):
+    user, _branch = dash_env
+    status, body = _get(
+        client, "/api/v1/dashboard/maintenance-cost-trend-grouped",
+        _token(client))
+    assert status == 200
+    expected = DashboardAnalyticsService().maintenance_cost_trend_grouped(
+        user=user, group_by="BRANCH", branch_id=None)
+    # `branches` is appended by the ROUTE (visible branches for the
+    # drill-down selector), not by the service method -- checked
+    # separately below rather than folded into this equality, the same
+    # way the route itself keeps the two concerns apart.
+    for key in expected:
+        assert body[key] == expected[key]
+
+
+def test_cost_trend_grouped_carries_the_branch_list_for_drilldown(db, client, dash_env):
+    _status, body = _get(
+        client, "/api/v1/dashboard/maintenance-cost-trend-grouped",
+        _token(client))
+    assert isinstance(body.get("branches"), list)
+    assert any(b["name"] for b in body["branches"])
+
+
+def test_cost_trend_grouped_by_department_requires_a_branch(db, client, dash_env):
+    """The service itself refuses this combination -- department codes
+    repeat across branches, and mixing them without a branch to scope
+    to would silently merge two different departments that share a
+    code. The API must surface that refusal, not paper over it."""
+    _status, body = _get(
+        client,
+        "/api/v1/dashboard/maintenance-cost-trend-grouped?group_by=DEPARTMENT",
+        _token(client))
+    assert body.get("error")
+    assert body["datasets"] == []
+
+
+def test_cost_trend_grouped_department_works_with_a_branch(db, client, dash_env):
+    user, branch = dash_env
+    _status, body = _get(
+        client,
+        f"/api/v1/dashboard/maintenance-cost-trend-grouped"
+        f"?group_by=DEPARTMENT&branch_id={branch.id}",
+        _token(client))
+    expected = DashboardAnalyticsService().maintenance_cost_trend_grouped(
+        user=user, group_by="DEPARTMENT", branch_id=branch.id)
+    assert body["labels"] == expected["labels"]
+    assert body["datasets"] == expected["datasets"]
+    assert not body.get("error")
+
+
+def test_cost_trend_grouped_bad_branch_id_is_a_clean_400(db, client, dash_env):
+    status, _ = _get(
+        client,
+        "/api/v1/dashboard/maintenance-cost-trend-grouped?branch_id=abc",
+        _token(client))
+    assert status == 400

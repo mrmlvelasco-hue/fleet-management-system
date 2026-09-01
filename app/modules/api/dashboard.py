@@ -703,3 +703,69 @@ def dashboard_due_registration(api_user):
         })
 
     return jsonify({"items": items, "total": total, "offset": offset})
+
+
+# ── Maintenance Cost Trend (feeds React's Analytics page) ──────────────────
+#
+# Both service methods already existed and already power the Jinja
+# Analytics page; this is purely exposing them through the bearer-token
+# API. Gated by vehicle.view, matching every other endpoint in this
+# file -- the standalone Analytics PAGE requires analytics.view, but
+# the underlying chart data is available to anyone who can see the
+# compact Dashboard, same as fleet-status and awaiting-approval above.
+
+@bp.route("/dashboard/maintenance-cost-trend", methods=["GET"])
+@api_auth_required("vehicle.view")
+def dashboard_maintenance_cost_trend(api_user):
+    from app.core.dashboard_analytics_service import DashboardAnalyticsService
+
+    try:
+        months = int(request.args.get("months", 6))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_request",
+                        "message": "months must be an integer."}), 400
+
+    payload = DashboardAnalyticsService().maintenance_cost_trend(
+        months=months, user=api_user)
+    return jsonify(payload)
+
+
+@bp.route("/dashboard/maintenance-cost-trend-grouped", methods=["GET"])
+@api_auth_required("vehicle.view")
+def dashboard_maintenance_cost_trend_grouped(api_user):
+    from app.core.dashboard_analytics_service import DashboardAnalyticsService
+    from app.modules.master_data.org.models import Branch
+
+    try:
+        months = int(request.args.get("months", 6))
+    except (TypeError, ValueError):
+        return jsonify({"error": "bad_request",
+                        "message": "months must be an integer."}), 400
+
+    branch_id = request.args.get("branch_id")
+    if branch_id:
+        try:
+            branch_id = int(branch_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "bad_request",
+                            "message": "branch_id must be an integer."}), 400
+    else:
+        branch_id = None
+
+    group_by = request.args.get("group_by", "BRANCH")
+
+    svc = DashboardAnalyticsService()
+    payload = svc.maintenance_cost_trend_grouped(
+        months=months, user=api_user, group_by=group_by,
+        branch_id=branch_id)
+
+    # Only branches this person can actually see, so the drill-down
+    # selector cannot be used to reach a branch the rest of the
+    # dashboard hides -- identical to the Jinja route's own guard.
+    visible = svc._visible_branch_ids(api_user)
+    bq = Branch.query.filter_by(is_active=True)
+    if visible is not None:
+        bq = bq.filter(Branch.id.in_(visible))
+    payload["branches"] = [{"id": b.id, "name": b.name}
+                           for b in bq.order_by(Branch.name).all()]
+    return jsonify(payload)
