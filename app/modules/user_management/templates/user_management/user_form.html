@@ -78,6 +78,16 @@
 
             <div class="col-12">
               <div class="form-check">
+                {{ form.mobile_access(class="form-check-input") }}
+                {{ form.mobile_access.label(class="form-check-label fw-semibold") }}
+              </div>
+              <div class="form-text">
+                <i class="bi bi-phone me-1"></i>{{ form.mobile_access.description }}
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="form-check">
                 {{ form.is_lockout_exempt(class="form-check-input") }}
                 {{ form.is_lockout_exempt.label(class="form-check-label fw-semibold") }}
               </div>

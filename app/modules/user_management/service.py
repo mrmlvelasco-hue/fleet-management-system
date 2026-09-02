@@ -22,7 +22,7 @@ class UserService:
     def create_user(self, username, email, password, first_name=None,
                     last_name=None, role_ids=None, must_change_password=False,
                     employee_id=None, branch_id=None, department_id=None,
-                    is_lockout_exempt=False):
+                    is_lockout_exempt=False, mobile_access=False):
         if self.users.get_by_username(username) is not None:
             raise DuplicateUsernameError(f"Username '{username}' already exists.")
         user = self.users.create(
@@ -32,7 +32,8 @@ class UserService:
             employee_id=employee_id, branch_id=branch_id,
             department_id=department_id,
             must_change_password=must_change_password,
-            is_lockout_exempt=is_lockout_exempt)
+            is_lockout_exempt=is_lockout_exempt,
+            mobile_access=mobile_access)
         self._assign_roles(user, role_ids or [])
         db.session.flush()
         from app.core.security.password_policy import PasswordPolicyService
@@ -43,12 +44,20 @@ class UserService:
     def update_user(self, user_id, *, email=None, first_name=None,
                     last_name=None, role_ids=None, password=None,
                     employee_id=None, branch_id=None, department_id=None,
-                    is_lockout_exempt=None):
+                    is_lockout_exempt=None, mobile_access=None):
         user = self.users.get_by_id(user_id, include_inactive=True)
         if user is None:
             return None
         if is_lockout_exempt is not None:
             user.is_lockout_exempt = is_lockout_exempt
+        # None means "not supplied, leave alone"; False means "revoke".
+        # The distinction matters because revocation is the whole point
+        # of the switch -- a signature that treated a missing value and
+        # an explicit False the same way could grant mobile access but
+        # never take it away, and a kill switch that only turns on is
+        # not a kill switch.
+        if mobile_access is not None:
+            user.mobile_access = mobile_access
         if email is not None:
             user.email = email
         if first_name is not None:

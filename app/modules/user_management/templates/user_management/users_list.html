@@ -13,7 +13,7 @@
 <table class="table table-striped fms-datatable">
   <thead><tr>
     <th>Username</th><th>Name</th><th>Email</th><th>Roles</th>
-    <th>Active</th><th>Status</th><th>Last login</th><th></th>
+    <th>Active</th><th>Mobile</th><th>Status</th><th>Last login</th><th></th>
   </tr></thead>
   <tbody>
   {% for u in users %}
@@ -29,6 +29,11 @@
       <td>{% for r in u.roles %}<span class="badge text-bg-secondary">{{ r.name }}</span> {% endfor %}</td>
       <td>{% if u.is_active %}<span class="badge text-bg-success">Yes</span>
           {% else %}<span class="badge text-bg-danger">No</span>{% endif %}</td>
+      {# A dash, not a red "No". Most accounts are web-only by design,
+         and a warning badge on every one of them would train people to
+         read past the column entirely. #}
+      <td>{% if u.mobile_access %}<span class="badge text-bg-info"><i class="bi bi-phone me-1"></i>Yes</span>
+          {% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
       <td>
         {% if u.is_lockout_exempt and u.failed_login_attempts >= max_failed_attempts %}
         {# Exempt, so never actually locked -- but a counter this high

@@ -23,6 +23,13 @@ class UserForm(FlaskForm):
     password = PasswordField("Password", validators=[Optional()])
     roles = SelectMultipleField("Roles", coerce=int)
     must_change_password = BooleanField("Require password change at next login")
+    mobile_access = BooleanField(
+        "Mobile access (Android field app)",
+        description="Allows this account to sign in on the FMS Field "
+                   "Android app. Controls the CHANNEL only -- what the "
+                   "person may do once inside is decided by their roles, "
+                   "exactly as it is in the browser. Leaving this off "
+                   "does not restrict their web access in any way.")
     is_lockout_exempt = BooleanField(
         "Exempt from account lockout",
         description="Never locked out after failed login attempts. "
