@@ -115,8 +115,21 @@ class VehicleChecklistService:
 
     def list_checklists(self, *, branch_id=None, vehicle_id=None, result=None,
                         status=None, date_from=None, date_to=None,
-                        page=1, per_page=25):
+                        user=None, page=1, per_page=25):
         q = VehicleChecklist.query
+        # A driver sees only what THEY created, unconditionally -- this
+        # is a mandatory scope applied before any other filter, not an
+        # optional "mine=true" a caller could simply omit to see
+        # everyone's inspections. checklist.submit is the signal for
+        # "this person reviews checklists, not just fills in their
+        # own": it already gates the one action (POST
+        # /checklists/:id/submit) that makes someone a reviewer rather
+        # than a driver, finalising the hand-off this whole workflow is
+        # built around. Holding it is what the rest of this codebase
+        # already treats as the reviewer role; this is not a new
+        # permission invented for this filter.
+        if user is not None and not user.has_permission("checklist.submit"):
+            q = q.filter_by(created_by=user.id)
         if branch_id:
             q = q.filter_by(branch_id=branch_id)
         if vehicle_id:

@@ -205,7 +205,7 @@ def checklist_list(api_user):
         result=request.args.get("result") or None,
         status=request.args.get("status") or None,
         date_from=c.get("date_from"), date_to=c.get("date_to"),
-        page=page, per_page=per_page)
+        user=api_user, page=page, per_page=per_page)
     return jsonify({"items": [_row(r) for r in rows], "total": total,
                     "page": page, "per_page": per_page})
 
