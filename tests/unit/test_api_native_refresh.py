@@ -34,8 +34,15 @@ from app.modules.user_management.models import User
 
 @pytest.fixture()
 def user(db):
+    # mobile_access is required for the native branch as of Phase 1a.
+    # This file is entirely ABOUT the native branch, so the fixture must
+    # grant it; the flag's own behaviour is covered separately in
+    # test_api_mobile_access_gate.py. Set explicitly rather than
+    # defaulted so it stays obvious that a native login now depends on
+    # it.
     u = User(username="driver1", email="d1@e.com",
-             password_hash=hash_password("secret123"), is_active=True)
+             password_hash=hash_password("secret123"), is_active=True,
+             mobile_access=True)
     db.session.add(u)
     db.session.commit()
     return u

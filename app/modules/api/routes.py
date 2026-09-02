@@ -94,6 +94,26 @@ def auth_token():
             user.password_hash, password):
         return jsonify({"error": "unauthorized",
                        "message": "Invalid username or password."}), 401
+    # The mobile channel gate.
+    #
+    # Checked AFTER the password, deliberately. Checked before it, the
+    # endpoint would answer differently for a real username with the
+    # wrong password than for one lacking mobile access -- an oracle for
+    # which accounts exist and which are provisioned for the field app,
+    # readable without knowing any password at all.
+    #
+    # Only the native branch. A browser never sends client=native, so a
+    # user without mobile access is an ordinary web user, not a disabled
+    # account. That separation is the whole reason this is a channel
+    # flag rather than a permission or an is_active edit.
+    if _is_native_client(payload) and not user.mobile_access:
+        return jsonify({
+            "error": "mobile_access_denied",
+            "message": "This account is not enabled for the mobile app. "
+                       "Ask your Fleet administrator to switch on Mobile "
+                       "access in User Maintenance.",
+        }), 403
+
     from app.modules.api.auth import (issue_refresh_token,
                                       set_refresh_cookie)
     refresh, expires_at = issue_refresh_token(user)
@@ -145,6 +165,25 @@ def auth_refresh():
     user = user_from_refresh_token(
         supplied or request.cookies.get(REFRESH_COOKIE))
     if user is None:
+        return jsonify({"error": "unauthorized",
+                        "message": "Please sign in again."}), 401
+
+    # The same gate again, and this is the one that makes the flag mean
+    # anything.
+    #
+    # Gating only the login would leave a valid 14-day refresh token on
+    # a device that has just been revoked, still minting access tokens
+    # for a fortnight -- precisely the lost-phone case the switch exists
+    # for. Re-checked here on every use for the same reason the account
+    # state is: a decision to revoke has to take effect promptly, not
+    # whenever the credential happens to expire.
+    #
+    # `supplied` is the native signal (a body token; a browser has none),
+    # so the cookie path is untouched.
+    #
+    # Same message and status as an invalid token: a revoked device
+    # learns it must sign in again, and learns nothing else.
+    if supplied and not user.mobile_access:
         return jsonify({"error": "unauthorized",
                         "message": "Please sign in again."}), 401
 
