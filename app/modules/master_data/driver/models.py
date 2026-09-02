@@ -83,8 +83,40 @@ class Driver(db.Model, BaseModel):
     # ACTIVE | INACTIVE | SUSPENDED
     status = db.Column(db.String(20), default="ACTIVE", nullable=False)
 
+    # The system account this assignee signs in with, if they have one.
+    #
+    # THE authoritative join between a login and a person. Before this
+    # column the backend could not answer "which vehicle belongs to the
+    # holder of this token" at all: User.employee_id is free text and
+    # nothing joined it to employee_number. That question is the entire
+    # premise of the Vehicle Assignee mobile app, so the link is a real
+    # foreign key rather than a string match -- a match on typed
+    # identifiers is silent, unenforced, and breaks the first time
+    # somebody retypes an employee number with a different prefix.
+    #
+    # NULLABLE because most assignees will never have a login. Drivers
+    # are master data first; a system account is the exception.
+    #
+    # UNIQUE because one account must not resolve to two assignees.
+    # That ambiguity would make the "which vehicle" question
+    # unanswerable again in 1b, which is the whole reason the link
+    # exists. Multiple NULLs are permitted under this constraint on both
+    # MySQL and SQLite, which is what keeps it compatible with the
+    # nullable requirement above.
+    #
+    # Named constraint: an anonymous UNIQUE cannot be dropped on MySQL
+    # without first discovering whatever name the server invented for
+    # it.
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"),
+                        nullable=True, unique=True)
+
     branch = db.relationship("Branch")
     department = db.relationship("Department")
+    # No backref onto User. The reverse direction ("which assignee is
+    # this account") is wanted in exactly one place, /api/v1/me, and a
+    # backref would add a relationship to User that every existing query
+    # loading a user would carry without needing it.
+    user_account = db.relationship("User", foreign_keys=[user_id])
 
     @property
     def full_name(self):

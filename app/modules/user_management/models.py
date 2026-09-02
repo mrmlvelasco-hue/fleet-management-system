@@ -87,6 +87,30 @@ class User(db.Model, BaseModel, UserMixin):
     # picked Classic should stay on Classic. See
     # app/core/appearance/skin_service.py.
     sidebar_skin = db.Column(db.String(30), nullable=True)
+    # Whether this account may obtain a token from the Android field
+    # app. A CHANNEL, not a capability -- which is why it lives here as
+    # its own column rather than as a permission code.
+    #
+    # A permission answers "what may this person do"; roles already do
+    # that job well and both channels share them, so a user's phone can
+    # never do more than their browser. This answers a different
+    # question -- "may this person's phone hold a credential at all" --
+    # and the two do not move together. A Fleet Manager may hold every
+    # checklist permission and never touch a phone; a driver has mobile
+    # access with almost no permissions. Folding the channel into the
+    # permission matrix would mean every future role edit silently
+    # grants or revokes phone access to everyone holding that role.
+    #
+    # Kept separate from the drivers.user_id link for the same reason:
+    # linking records WHO someone is, this records WHETHER their device
+    # may sign in. An assignee can be linked for reporting without being
+    # handed the field app, and a lost phone can be cut off without
+    # unlinking the person from their vehicle.
+    #
+    # Defaults to False. An existing install that runs the migration and
+    # changes nothing else grants nobody native access -- the closed
+    # default is what makes it safe to add a gate to a live endpoint.
+    mobile_access = db.Column(db.Boolean, default=False, nullable=False)
     roles = db.relationship("Role", secondary=user_roles, backref="users")
     branch = db.relationship("Branch", foreign_keys=[branch_id])
     department = db.relationship("Department")
