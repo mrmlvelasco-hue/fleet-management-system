@@ -224,6 +224,14 @@ def auth_logout():
 def me(api_user):
     """Who am I, and what may I do -- lets a mobile app hide actions the
     signed-in user can't perform, using the real permission list."""
+    # The assignee this account is linked to, if any. Queried here
+    # rather than reached through a relationship on User: the reverse
+    # direction is wanted in this one endpoint, and a backref would
+    # hang a relationship off User that every other query loading a
+    # user would carry for nothing.
+    from app.modules.master_data.driver.models import Driver
+    assignee = Driver.query.filter_by(user_id=api_user.id).first()
+
     return jsonify({
         "id": api_user.id,
         "username": api_user.username,
@@ -232,6 +240,20 @@ def me(api_user):
         "roles": [r.name for r in api_user.roles],
         "permissions": sorted(
             p.code for r in api_user.roles for p in r.permissions),
+        # Reported so the app can say something TRUE when the answer is
+        # no. The only other signal is a bare 403 from the token
+        # endpoint, which looks exactly like a wrong password from the
+        # driver's side -- they would retype until the account locked.
+        "mobile_access": bool(api_user.mobile_access),
+        # Always present, null when unlinked. A client forced to tell
+        # "no assignee" from "this server predates the field app" by a
+        # missing key ends up guessing.
+        "assignee": None if assignee is None else {
+            "id": assignee.id,
+            "person_id": assignee.person_id,
+            "employee_number": assignee.employee_number,
+            "full_name": assignee.full_name,
+        },
     })
 
 
