@@ -489,7 +489,10 @@ class MaintenanceOrderService(BaseTransactionService):
         if order.driver_id:
             from app.modules.master_data.vehicle.assignment_hooks import (
                 assign_driver_to_vehicle)
-            assign_driver_to_vehicle(order.vehicle_id, order.driver_id)
+            assign_driver_to_vehicle(order.vehicle_id, order.driver_id,
+                                     source="MO",
+                                     source_table="maintenance_orders",
+                                     source_id=order.id)
 
         # "Asset Transfer Report" workflow: an Operational order with a
         # Destination Branch set (Relocation/Transfer transaction types)

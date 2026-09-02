@@ -32,20 +32,39 @@ approved ATD or a completed Assignment MO on file.
 from app.extensions import db
 
 
-def assign_driver_to_vehicle(vehicle_id: int, driver_id: int) -> None:
+def assign_driver_to_vehicle(vehicle_id: int, driver_id: int,
+                             source: str = "MANUAL",
+                             source_table: str = None,
+                             source_id: int = None) -> None:
     """Shared update used by both trigger points below. Silently no-ops
     if either id is missing/invalid rather than raising -- a failed
     lookup here should never block an ATD approval or MO completion from
     going through; the assignment update is a side effect, not the main
-    transaction."""
+    transaction.
+
+    Now delegates to VehicleAssignmentService, so the handover is
+    RECORDED rather than merely applied: the previous assignment is
+    closed with an end date instead of being overwritten out of
+    existence.
+
+    `source`/`source_table`/`source_id` are optional so existing callers
+    that pass only the two ids keep working unchanged. They are worth
+    passing: both callers already know which document caused the change
+    and used to discard it, and that is exactly what makes the history
+    answer "why did this vehicle change hands on the 14th" rather than
+    only "who holds it now".
+    """
     if not vehicle_id or not driver_id:
         return
     from app.modules.master_data.vehicle.models import Vehicle
     vehicle = db.session.get(Vehicle, vehicle_id)
     if vehicle is None:
         return
-    vehicle.assigned_driver_id = driver_id
-    db.session.commit()
+    from app.modules.master_data.vehicle.assignment_service import (
+        VehicleAssignmentService)
+    VehicleAssignmentService().assign(
+        vehicle_id, driver_id, source=source,
+        source_table=source_table, source_id=source_id)
 
 
 def transfer_vehicle_branch(vehicle_id: int, destination_branch_id: int) -> None:
@@ -75,7 +94,9 @@ def _on_approval_event(event_name: str, instance) -> None:
     atd = db.session.get(AuthorityToDrive, instance.reference_id)
     if atd is None:
         return
-    assign_driver_to_vehicle(atd.vehicle_id, atd.driver_id)
+    assign_driver_to_vehicle(atd.vehicle_id, atd.driver_id, source="ATD",
+                             source_table="authority_to_drives",
+                             source_id=atd.id)
 
 
 _HOOKS_REGISTERED = False

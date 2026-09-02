@@ -141,6 +141,14 @@ class VehicleService:
                 f"Engine number '{engine_number}' already exists.")
         _validate_business_rules(kwargs)
         brand, model = _resolve_brand_model(brand, model, strict)
+        # Intercepted here rather than in the routes, so EVERY caller is
+        # funnelled -- the Vehicle form, the API, the importers and any
+        # future one. The one-open-row invariant is enforced in the
+        # service rather than by a database constraint (MySQL has no
+        # filtered indexes), so a writer that set the column directly
+        # would break it silently: the column would move while the
+        # history stood still, with no error anywhere.
+        assigned_driver_id = kwargs.pop("assigned_driver_id", None)
         obj = Vehicle(
             vehicle_type_id=vehicle_type_id, brand=brand, model=model,
             year=year, branch_id=branch_id,
@@ -149,7 +157,28 @@ class VehicleService:
         db.session.add(obj)
         self._commit_or_raise_friendly(conduction_number, plate_number,
                                        engine_number)
+        # After the commit, because the assignment row needs the new
+        # vehicle's id.
+        if assigned_driver_id:
+            self._apply_assignment(obj.id, assigned_driver_id)
         return obj
+
+    def _apply_assignment(self, vehicle_id, driver_id):
+        """Route an assignment change through the single writer.
+
+        assign() is idempotent, so handing it the driver the vehicle
+        already holds is a no-op rather than a spurious handover -- which
+        matters because the Vehicle form POSTs assigned_driver_id on
+        EVERY save, including edits that have nothing to do with the
+        assignee.
+        """
+        from app.modules.master_data.vehicle.assignment_service import (
+            VehicleAssignmentService)
+        svc = VehicleAssignmentService()
+        if driver_id:
+            svc.assign(vehicle_id, driver_id, source="MANUAL")
+        else:
+            svc.release(vehicle_id, source="MANUAL")
 
     def _commit_or_raise_friendly(self, conduction_number, plate_number,
                                   engine_number=None):
@@ -208,11 +237,18 @@ class VehicleService:
                 brand, model = _resolve_brand_model(brand, model, strict)
                 obj.brand = brand
                 obj.model = model
+            # Absent means "not supplied", NOT "set to nobody" -- a
+            # partial update must never release a vehicle as a side
+            # effect. Only a key that is actually present is acted on.
+            has_assignment_change = "assigned_driver_id" in kwargs
+            assigned_driver_id = kwargs.pop("assigned_driver_id", None)
             for k, v in kwargs.items():
                 setattr(obj, k, v)
             self._commit_or_raise_friendly(
                 kwargs.get("conduction_number"), kwargs.get("plate_number"),
                 engine_number)
+            if has_assignment_change:
+                self._apply_assignment(obj.id, assigned_driver_id)
         return obj
 
     def get_clone_data(self, record_id) -> dict:
@@ -244,10 +280,11 @@ class VehicleService:
         return obj
 
     def assign_driver(self, vehicle_id, driver_id):
+        # Delegates rather than writing the column, so this path records
+        # history like every other.
         obj = db.session.get(Vehicle, vehicle_id)
         if obj:
-            obj.assigned_driver_id = driver_id
-            db.session.commit()
+            self._apply_assignment(vehicle_id, driver_id)
         return obj
 
     def get(self, record_id, include_inactive=True):
