@@ -90,6 +90,12 @@ def _serialise(d):
         # still need a photograph" becomes a real question, and the
         # list is where it gets answered.
         "has_photo": d.photo_attachment_id is not None,
+        # The linked system account. `username` travels with the id so
+        # the list can render the column without fetching every user to
+        # resolve one name -- and seeing at a glance which assignees can
+        # sign in is the entire reason the column exists.
+        "user_id": d.user_id,
+        "username": d.user_account.username if d.user_account else None,
     }
 
 
@@ -376,6 +382,14 @@ def _serialise_detail(d):
         "emergency_contacts": _emergency_contacts(d),
         # Assignment
         "assigned_vehicles": _assigned_vehicles(d),
+        # The linked system account. Deliberately NOT in _WRITABLE
+        # below: the link has rules (one account, one assignee; the
+        # account must exist and be active) and those live in
+        # DriverService.link_user. Letting it through the generic
+        # setattr path would be a second door onto the same column that
+        # bypasses every one of them.
+        "user_id": d.user_id,
+        "username": d.user_account.username if d.user_account else None,
         # Section visibility, decided server-side (see docstring).
         "show_license": d.assignee_type == "DRIVER",
         "show_business": d.assignee_type in ("THIRD_PARTY_DELIVERY",
