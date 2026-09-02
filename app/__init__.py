@@ -42,6 +42,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.master_data.reference import models as _ref  # noqa: F401
     from app.modules.master_data.vendor import models as _vnd    # noqa: F401
     from app.modules.master_data.vehicle import models as _veh   # noqa: F401
+    from app.modules.master_data.vehicle import assignment_models as _vas  # noqa: F401
     from app.modules.master_data.driver import models as _drv    # noqa: F401
     from app.modules.master_data.tire import models as _tir      # noqa: F401
     from app.modules.master_data.battery import models as _bat   # noqa: F401
