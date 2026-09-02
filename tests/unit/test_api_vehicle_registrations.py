@@ -419,3 +419,120 @@ def test_registration_attachments_respect_the_doctype_setting(db, client,
                     content_type="multipart/form-data",
                     headers={"Authorization": f"Bearer {t}"})
     assert r.status_code == 409
+
+
+# ── Approval wiring: same gap found and fixed on Trip Tickets ──────────────
+#
+# React's detail screen was already wired to ApprovalWorkflow/
+# MoDecisionPanel; this endpoint never populated the fields, and
+# /return + /resubmit had no routes at all. Both fixed together, same
+# reasoning as trip_tickets.py.
+
+@pytest.fixture()
+def vr_approval_env(db):
+    sync_permissions()
+    db.session.commit()
+
+    requester_role = Role(name="VR Requester")
+    requester_role.permissions = Permission.query.filter(
+        Permission.code.in_(["vehicleregistration.view",
+                             "vehicleregistration.create",
+                             "vehicleregistration.update"])).all()
+    approver_role = Role(name="VR Approver")
+    approver_role.permissions = Permission.query.filter(
+        Permission.code == "vehicleregistration.view").all()
+
+    requester = User(username="vr_requester", email="vrr@e.com",
+                     password_hash=hash_password("secret123"), is_active=True)
+    requester.roles = [requester_role]
+    approver = User(username="vr_approver", email="vra@e.com",
+                    password_hash=hash_password("secret123"), is_active=True)
+    approver.roles = [approver_role]
+    db.session.add_all([requester_role, approver_role, requester, approver])
+
+    branch = BranchService().create(code="BR-VRA", name="VRA Branch")
+    vt = VehicleTypeService().create(code="LV-VRA", name="Light",
+                                     category="LIGHT")
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Vios", year=2026,
+        branch_id=branch.id, conduction_number="VRA-CN-001")
+
+    from app.modules.approval_config.service import (
+        ApprovalMatrixService, ApprovalPathService)
+    from app.modules.document_config.models import DocumentType
+    from app.modules.document_config.service import (
+        DocumentTypeService, NumberingSchemeService)
+
+    dt = DocumentType.query.filter_by(code="VR").first()
+    if dt is None:
+        DocumentTypeService().create(code="VR", name="Vehicle Registration",
+                                     requires_approval=True,
+                                     auto_numbering=True)
+        dt = DocumentType.query.filter_by(code="VR").first()
+        NumberingSchemeService().create(document_type_id=dt.id, prefix="VR",
+                                        include_year=True, digit_count=6,
+                                        reset_policy="YEARLY")
+    else:
+        dt.requires_approval = True
+
+    path = ApprovalPathService().create(name="VR One-Step", levels=[
+        {"level_number": 1, "approver_type": "ROLE", "role_id": approver_role.id},
+    ])
+    ApprovalMatrixService().create(dt.id, path.id)
+    db.session.commit()
+    return {"requester": requester, "approver": approver, "branch": branch,
+            "vt": vt, "vehicle": vehicle}
+
+
+def test_return_route_exists(db, client, vr_approval_env):
+    _status, reg = _post(client, "/api/v1/vehicle-registrations",
+                         _token(client, "vr_requester"),
+                         _payload(vr_approval_env))
+    status, _ = _post(
+        client, f"/api/v1/vehicle-registrations/{reg['id']}/return",
+        _token(client, "vr_approver"))
+    assert status != 404
+
+
+def test_resubmit_route_exists(db, client, vr_approval_env):
+    _status, reg = _post(client, "/api/v1/vehicle-registrations",
+                         _token(client, "vr_requester"),
+                         _payload(vr_approval_env))
+    status, _ = _post(
+        client, f"/api/v1/vehicle-registrations/{reg['id']}/resubmit",
+        _token(client, "vr_requester"))
+    assert status != 404
+
+
+def test_full_return_and_resubmit_cycle(db, client, vr_approval_env):
+    """The real bug, end to end: before this fix, approval_instance_
+    status did not exist on this response AT ALL, so every one of
+    these assertions was impossible to make true regardless of the
+    registration's real state."""
+    req_token = _token(client, "vr_requester")
+    appr_token = _token(client, "vr_approver")
+
+    _status, reg = _post(client, "/api/v1/vehicle-registrations",
+                         req_token, _payload(vr_approval_env))
+    rid = reg["id"]
+
+    status, body = _post(
+        client, f"/api/v1/vehicle-registrations/{rid}/submit", req_token)
+    assert status == 200, body
+    assert body["approval_instance_status"] == "PENDING"
+    assert body["is_requester"] is True
+
+    status, body = _post(
+        client, f"/api/v1/vehicle-registrations/{rid}/return", appr_token,
+        {"remarks": "Please attach the OR copy."})
+    assert status == 200, body
+    assert body["approval_instance_status"] == "RETURNED"
+
+    _status, req_view = _get(
+        client, f"/api/v1/vehicle-registrations/{rid}", req_token)
+    assert req_view["approval_instance_status"] == "RETURNED"
+
+    status, body = _post(
+        client, f"/api/v1/vehicle-registrations/{rid}/resubmit", req_token)
+    assert status == 200, body
+    assert body["approval_instance_status"] == "PENDING"

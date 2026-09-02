@@ -62,7 +62,7 @@ def _iso(v):
     return v.isoformat() if v else None
 
 
-def _mv_json(mv, *, detail=False):
+def _mv_json(mv, *, detail=False, api_user=None):
     data = {
         "id": mv.id,
         "document_number": mv.document_number,
@@ -91,6 +91,37 @@ def _mv_json(mv, *, detail=False):
     if detail:
         from app.modules.api.company_letterhead import company_letterhead
         data["company"] = company_letterhead()
+        # Same gap found and fixed on Trip Tickets and Vehicle
+        # Registrations: React's ApprovalWorkflow/MoDecisionPanel were
+        # already wired to read these fields; this serializer never
+        # populated any of them.
+        from app.core.approval.engine import ApprovalEngine
+        inst = getattr(mv, "approval_instance", None)
+        engine = ApprovalEngine()
+        chain = []
+        if inst is not None:
+            for entry in engine.get_approval_chain(inst):
+                acted_at = entry.get("acted_at")
+                chain.append({
+                    "level_number": entry.get("level_number"),
+                    "approver_label": entry.get("approver_label"),
+                    "status": entry.get("status"),
+                    "acted_by_name": entry.get("acted_by_name"),
+                    "acted_at": acted_at.isoformat() if acted_at else None,
+                    "remarks": entry.get("remarks"),
+                })
+            data["approval_instance_status"] = inst.status
+            data["approval_current_level"] = inst.current_level
+            data["can_act"] = bool(
+                api_user and engine.is_eligible_approver(inst, api_user))
+        else:
+            data["approval_instance_status"] = None
+            data["approval_current_level"] = None
+            data["can_act"] = False
+        data["approval_chain"] = chain
+        data["has_approval_instance"] = inst is not None
+        data["is_requester"] = bool(
+            api_user is not None and mv.requested_by == getattr(api_user, "id", None))
     return data
 
 
@@ -174,7 +205,7 @@ def create_vehicle_movement(api_user):
         return _bad(str(exc), "movement_type")
     except Exception as exc:
         return _conflict(str(exc))
-    return jsonify(_mv_json(mv, detail=True)), 201
+    return jsonify(_mv_json(mv, detail=True, api_user=api_user)), 201
 
 
 @bp.route("/vehicle-movements/<int:mid>", methods=["GET"])
@@ -186,7 +217,7 @@ def vehicle_movement_detail(api_user, mid):
     mv = VehicleMovement.query.filter_by(id=mid).first()
     if mv is None:
         return _not_found()
-    return jsonify(_mv_json(mv, detail=True))
+    return jsonify(_mv_json(mv, detail=True, api_user=api_user))
 
 
 def _lifecycle(api_user, mid, method_name):
@@ -214,7 +245,7 @@ def _lifecycle(api_user, mid, method_name):
     except Exception as exc:
         return _conflict(str(exc))
     mv = VehicleMovement.query.filter_by(id=mid).first()
-    return jsonify(_mv_json(mv, detail=True))
+    return jsonify(_mv_json(mv, detail=True, api_user=api_user))
 
 
 @bp.route("/vehicle-movements/<int:mid>/submit", methods=["POST"])
@@ -233,6 +264,23 @@ def approve_vehicle_movement(api_user, mid):
 @api_auth_required("vehiclemovement.view")
 def reject_vehicle_movement(api_user, mid):
     return _lifecycle(api_user, mid, "reject")
+
+
+@bp.route("/vehicle-movements/<int:mid>/return", methods=["POST"])
+@api_auth_required("vehiclemovement.view")
+def return_vehicle_movement(api_user, mid):
+    """Was entirely missing, same class of gap as Trip Tickets and
+    Vehicle Registrations: without this route a movement could never
+    reach RETURNED via the API, making resubmit unreachable too."""
+    return _lifecycle(api_user, mid, "return_document")
+
+
+@bp.route("/vehicle-movements/<int:mid>/resubmit", methods=["POST"])
+@api_auth_required("vehiclemovement.update")
+def resubmit_vehicle_movement(api_user, mid):
+    """resubmit() is on BaseTransactionService, same as every other
+    module. Also entirely missing before this fix."""
+    return _lifecycle(api_user, mid, "resubmit")
 
 
 @bp.route("/vehicle-movements/<int:mid>/cancel", methods=["POST"])
@@ -273,4 +321,4 @@ def complete_vehicle_movement(api_user, mid):
         return _conflict(str(exc))
 
     fresh = VehicleMovement.query.filter_by(id=mid).first()
-    return jsonify(_mv_json(fresh, detail=True))
+    return jsonify(_mv_json(fresh, detail=True, api_user=api_user))

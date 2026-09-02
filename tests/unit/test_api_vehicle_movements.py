@@ -332,3 +332,110 @@ def test_movement_attachment_delete_requires_update_not_just_view(
     d = client.delete(f"/api/v1/attachments/{att['id']}",
                       headers={"Authorization": f"Bearer {_token(client, 'mvviewer')}"})
     assert d.status_code == 403
+
+
+# ── Approval wiring: same gap found and fixed on Trip Tickets ──────────────
+
+@pytest.fixture()
+def vm_approval_env(db):
+    sync_permissions()
+    db.session.commit()
+
+    requester_role = Role(name="VM Requester")
+    requester_role.permissions = Permission.query.filter(
+        Permission.code.in_(["vehiclemovement.view", "vehiclemovement.create",
+                             "vehiclemovement.update"])).all()
+    approver_role = Role(name="VM Approver")
+    approver_role.permissions = Permission.query.filter(
+        Permission.code == "vehiclemovement.view").all()
+
+    requester = User(username="vm_requester", email="vmr@e.com",
+                     password_hash=hash_password("secret123"), is_active=True)
+    requester.roles = [requester_role]
+    approver = User(username="vm_approver", email="vma@e.com",
+                    password_hash=hash_password("secret123"), is_active=True)
+    approver.roles = [approver_role]
+    db.session.add_all([requester_role, approver_role, requester, approver])
+
+    branch = BranchService().create(code="BR-VMA", name="VMA Branch")
+    vt = VehicleTypeService().create(code="LV-VMA", name="Light",
+                                     category="LIGHT")
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Isuzu", model="Elf", year=2024,
+        branch_id=branch.id, conduction_number="VMA-000")
+
+    from app.modules.approval_config.service import (
+        ApprovalMatrixService, ApprovalPathService)
+    from app.modules.document_config.models import DocumentType
+    from app.modules.document_config.service import (
+        DocumentTypeService, NumberingSchemeService)
+
+    dt = DocumentType.query.filter_by(code="VM").first()
+    if dt is None:
+        DocumentTypeService().create(code="VM", name="Vehicle Movement",
+                                     requires_approval=True,
+                                     auto_numbering=True)
+        dt = DocumentType.query.filter_by(code="VM").first()
+        NumberingSchemeService().create(document_type_id=dt.id, prefix="VM",
+                                        include_year=True, digit_count=6,
+                                        reset_policy="YEARLY")
+    else:
+        dt.requires_approval = True
+
+    path = ApprovalPathService().create(name="VM One-Step", levels=[
+        {"level_number": 1, "approver_type": "ROLE", "role_id": approver_role.id},
+    ])
+    ApprovalMatrixService().create(dt.id, path.id)
+    db.session.commit()
+    return {"requester": requester, "approver": approver, "branch": branch,
+            "vt": vt, "vehicle": vehicle}
+
+
+def test_return_route_exists(db, client, vm_approval_env):
+    _status, mv = _post(client, "/api/v1/vehicle-movements",
+                        _token(client, "vm_requester"),
+                        _payload(vm_approval_env))
+    status, _ = _post(
+        client, f"/api/v1/vehicle-movements/{mv['id']}/return",
+        _token(client, "vm_approver"))
+    assert status != 404
+
+
+def test_resubmit_route_exists(db, client, vm_approval_env):
+    _status, mv = _post(client, "/api/v1/vehicle-movements",
+                        _token(client, "vm_requester"),
+                        _payload(vm_approval_env))
+    status, _ = _post(
+        client, f"/api/v1/vehicle-movements/{mv['id']}/resubmit",
+        _token(client, "vm_requester"))
+    assert status != 404
+
+
+def test_full_return_and_resubmit_cycle(db, client, vm_approval_env):
+    req_token = _token(client, "vm_requester")
+    appr_token = _token(client, "vm_approver")
+
+    _status, mv = _post(client, "/api/v1/vehicle-movements",
+                        req_token, _payload(vm_approval_env))
+    mid = mv["id"]
+
+    status, body = _post(
+        client, f"/api/v1/vehicle-movements/{mid}/submit", req_token)
+    assert status == 200, body
+    assert body["approval_instance_status"] == "PENDING"
+    assert body["is_requester"] is True
+
+    status, body = _post(
+        client, f"/api/v1/vehicle-movements/{mid}/return", appr_token,
+        {"remarks": "Confirm the destination branch."})
+    assert status == 200, body
+    assert body["approval_instance_status"] == "RETURNED"
+
+    _status, req_view = _get(
+        client, f"/api/v1/vehicle-movements/{mid}", req_token)
+    assert req_view["approval_instance_status"] == "RETURNED"
+
+    status, body = _post(
+        client, f"/api/v1/vehicle-movements/{mid}/resubmit", req_token)
+    assert status == 200, body
+    assert body["approval_instance_status"] == "PENDING"

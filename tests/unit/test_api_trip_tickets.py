@@ -383,3 +383,182 @@ def test_trip_ticket_attachment_upload_requires_update(db, client, tt_env):
                     content_type="multipart/form-data",
                     headers={"Authorization": f"Bearer {_token(client, 'tripviewer')}"})
     assert r.status_code == 403
+
+
+# ── Approval wiring: reported live as "cannot resubmit" ─────────────────────
+#
+# Traced to something bigger than a missing route. React's detail screen
+# already reads approval_chain / approval_instance_status / can_act via
+# the SAME shared components (ApprovalWorkflow, MoDecisionPanel)
+# Maintenance Orders and Purchase Requests use -- but _trip_json never
+# populated any of them, so the approval panel always rendered as "not
+# yet submitted" and no approve/reject/return/resubmit action was ever
+# offered, regardless of the trip ticket's actual state. Separately,
+# /resubmit had no route at all. Both are fixed together because
+# fixing only the route would still have left the button impossible to
+# reach: MoDecisionPanel's resubmit gate depends on
+# approval_instance_status === "RETURNED", which needed the detail
+# wiring to ever be true in the first place.
+
+@pytest.fixture()
+def tt_approval_env(db):
+    sync_permissions()
+    db.session.commit()
+
+    requester_role = Role(name="TT Requester")
+    requester_role.permissions = Permission.query.filter(
+        Permission.code.in_(["tripticket.view", "tripticket.create",
+                             "tripticket.update"])).all()
+    approver_role = Role(name="TT Approver")
+    approver_role.permissions = Permission.query.filter(
+        Permission.code == "tripticket.view").all()
+
+    requester = User(username="tt_requester", email="ttr@e.com",
+                     password_hash=hash_password("secret123"), is_active=True)
+    requester.roles = [requester_role]
+    approver = User(username="tt_approver", email="tta@e.com",
+                    password_hash=hash_password("secret123"), is_active=True)
+    approver.roles = [approver_role]
+    db.session.add_all([requester_role, approver_role, requester, approver])
+
+    branch = BranchService().create(code="BR-TTA", name="TTA Branch")
+    vt = VehicleTypeService().create(code="LV-TTA", name="Light",
+                                     category="LIGHT")
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hiace", year=2024,
+        branch_id=branch.id, conduction_number="TTA-000",
+        current_odometer=5000)
+
+    from app.modules.approval_config.service import (
+        ApprovalMatrixService, ApprovalPathService)
+    from app.modules.document_config.models import DocumentType
+    from app.modules.document_config.service import (
+        DocumentTypeService, NumberingSchemeService)
+
+    dt = DocumentType.query.filter_by(code="TT").first()
+    if dt is None:
+        DocumentTypeService().create(code="TT", name="Trip Ticket",
+                                     requires_approval=True,
+                                     auto_numbering=True)
+        dt = DocumentType.query.filter_by(code="TT").first()
+        NumberingSchemeService().create(document_type_id=dt.id, prefix="TT",
+                                        include_year=True, digit_count=6,
+                                        reset_policy="YEARLY")
+    else:
+        dt.requires_approval = True
+
+    path = ApprovalPathService().create(name="TT One-Step", levels=[
+        {"level_number": 1, "approver_type": "ROLE", "role_id": approver_role.id},
+    ])
+    ApprovalMatrixService().create(dt.id, path.id)
+    db.session.commit()
+    return {"requester": requester, "approver": approver, "branch": branch,
+            "vt": vt, "vehicle": vehicle}
+
+
+def _tt_approval_payload(env, **overrides):
+    payload = {
+        "vehicle_id": env["vehicle"].id,
+        "driver_name_manual": "Ad Hoc Driver",
+        "destination": "Laguna branches",
+        "purpose": "Visit sites",
+        "departure_datetime": "2026-09-02T15:32:00",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_resubmit_route_exists(db, client, tt_approval_env):
+    """The narrow regression check: this route 404'd before anything
+    else in this section was fixed."""
+    _set_param(db, "REQUIRE_DRIVER_FROM_MASTER", "NO")
+    _status, trip = _post(client, "/api/v1/trip-tickets",
+                          _token(client, "tt_requester"),
+                          _tt_approval_payload(tt_approval_env))
+    status, _ = _post(
+        client, f"/api/v1/trip-tickets/{trip['id']}/resubmit",
+        _token(client, "tt_requester"))
+    assert status != 404
+
+
+def test_full_return_and_resubmit_cycle(db, client, tt_approval_env):
+    """The real bug, end to end through the REST layer (not the engine
+    directly): submit, have it returned, confirm the detail response
+    now actually says so, resubmit, confirm it is back in the
+    approver's queue. Every one of these assertions was false before
+    this fix -- the fields did not exist on the response at all."""
+    _set_param(db, "REQUIRE_DRIVER_FROM_MASTER", "NO")
+    req_token = _token(client, "tt_requester")
+    appr_token = _token(client, "tt_approver")
+
+    _status, trip = _post(client, "/api/v1/trip-tickets", req_token,
+                          _tt_approval_payload(tt_approval_env))
+    tid = trip["id"]
+
+    status, body = _post(
+        client, f"/api/v1/trip-tickets/{tid}/submit", req_token)
+    assert status == 200, body
+    assert body["approval_instance_status"] == "PENDING"
+    assert body["has_approval_instance"] is True
+    assert body["is_requester"] is True
+
+    # The approver can see the pending decision.
+    _status, appr_view = _get(
+        client, f"/api/v1/trip-tickets/{tid}", appr_token)
+    assert appr_view["can_act"] is True
+
+    status, body = _post(
+        client, f"/api/v1/trip-tickets/{tid}/return", appr_token,
+        {"remarks": "Please confirm the return date."})
+    assert status == 200, body
+    assert body["approval_instance_status"] == "RETURNED"
+    assert any(c["remarks"] == "Please confirm the return date."
+              for c in body["approval_chain"])
+
+    # This is the exact condition MoDecisionPanel/React checks before
+    # showing "Resubmit for Approval" at all.
+    _status, req_view = _get(
+        client, f"/api/v1/trip-tickets/{tid}", req_token)
+    assert req_view["approval_instance_status"] == "RETURNED"
+
+    status, body = _post(
+        client, f"/api/v1/trip-tickets/{tid}/resubmit", req_token)
+    assert status == 200, body
+    assert body["approval_instance_status"] == "PENDING"
+    assert body["approval_current_level"] == 1
+
+
+def test_resubmit_requires_the_update_permission(db, client, tt_approval_env):
+    _set_param(db, "REQUIRE_DRIVER_FROM_MASTER", "NO")
+    req_token = _token(client, "tt_requester")
+    appr_token = _token(client, "tt_approver")
+
+    _status, trip = _post(client, "/api/v1/trip-tickets", req_token,
+                          _tt_approval_payload(tt_approval_env))
+    tid = trip["id"]
+    _post(client, f"/api/v1/trip-tickets/{tid}/submit", req_token)
+    _post(client, f"/api/v1/trip-tickets/{tid}/return", appr_token,
+          {"remarks": "fix"})
+
+    # tt_approver holds only tripticket.view -- viewing a RETURNED
+    # ticket must not also mean being allowed to resubmit someone
+    # else's document.
+    status, _ = _post(
+        client, f"/api/v1/trip-tickets/{tid}/resubmit", appr_token)
+    assert status == 403
+
+
+def test_a_non_requester_is_not_offered_the_decision(db, client, tt_approval_env):
+    """can_act must reflect eligibility to act on THIS instance at its
+    CURRENT level, not merely holding some approval-adjacent
+    permission -- the requester viewing their own pending request must
+    not be told they can act on it."""
+    _set_param(db, "REQUIRE_DRIVER_FROM_MASTER", "NO")
+    req_token = _token(client, "tt_requester")
+    _status, trip = _post(client, "/api/v1/trip-tickets", req_token,
+                          _tt_approval_payload(tt_approval_env))
+    _post(client, f"/api/v1/trip-tickets/{trip['id']}/submit", req_token)
+
+    _status, req_view = _get(
+        client, f"/api/v1/trip-tickets/{trip['id']}", req_token)
+    assert req_view["can_act"] is False

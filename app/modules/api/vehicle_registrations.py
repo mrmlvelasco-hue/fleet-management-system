@@ -50,7 +50,7 @@ def _money(v):
     return None if v is None else f"{v:.2f}"
 
 
-def _reg_json(r, *, detail=False):
+def _reg_json(r, *, detail=False, api_user=None):
     data = {
         "id": r.id,
         "document_number": r.document_number,
@@ -86,6 +86,39 @@ def _reg_json(r, *, detail=False):
             "sort_order": i.sort_order,
         } for i in sorted(getattr(r, "checklist_items", None) or [],
                           key=lambda i: i.sort_order)]
+        # Same gap found and fixed on Trip Tickets: React's
+        # ApprovalWorkflow/MoDecisionPanel were already wired to read
+        # these fields, but this serializer never populated any of
+        # them, so the approval panel always rendered as "not yet
+        # submitted" regardless of the registration's real state.
+        # Matches purchase_requests.py's identical block.
+        from app.core.approval.engine import ApprovalEngine
+        inst = getattr(r, "approval_instance", None)
+        engine = ApprovalEngine()
+        chain = []
+        if inst is not None:
+            for entry in engine.get_approval_chain(inst):
+                acted_at = entry.get("acted_at")
+                chain.append({
+                    "level_number": entry.get("level_number"),
+                    "approver_label": entry.get("approver_label"),
+                    "status": entry.get("status"),
+                    "acted_by_name": entry.get("acted_by_name"),
+                    "acted_at": acted_at.isoformat() if acted_at else None,
+                    "remarks": entry.get("remarks"),
+                })
+            data["approval_instance_status"] = inst.status
+            data["approval_current_level"] = inst.current_level
+            data["can_act"] = bool(
+                api_user and engine.is_eligible_approver(inst, api_user))
+        else:
+            data["approval_instance_status"] = None
+            data["approval_current_level"] = None
+            data["can_act"] = False
+        data["approval_chain"] = chain
+        data["has_approval_instance"] = inst is not None
+        data["is_requester"] = bool(
+            api_user is not None and r.requested_by == getattr(api_user, "id", None))
     return data
 
 
@@ -171,7 +204,7 @@ def create_vehicle_registration(api_user):
         return _conflict(str(exc))
     except Exception as exc:
         return _conflict(str(exc))
-    return jsonify(_reg_json(reg, detail=True)), 201
+    return jsonify(_reg_json(reg, detail=True, api_user=api_user)), 201
 
 
 @bp.route("/vehicle-registrations/<int:rid>", methods=["GET"])
@@ -183,7 +216,7 @@ def vehicle_registration_detail(api_user, rid):
     reg = VehicleRegistration.query.filter_by(id=rid).first()
     if reg is None:
         return _not_found()
-    return jsonify(_reg_json(reg, detail=True))
+    return jsonify(_reg_json(reg, detail=True, api_user=api_user))
 
 
 @bp.route("/vehicle-registrations/<int:rid>/complete", methods=["POST"])
@@ -216,7 +249,7 @@ def complete_vehicle_registration(api_user, rid):
         return _conflict(str(exc))
 
     fresh = VehicleRegistration.query.filter_by(id=rid).first()
-    return jsonify(_reg_json(fresh, detail=True))
+    return jsonify(_reg_json(fresh, detail=True, api_user=api_user))
 
 
 def _lifecycle(api_user, rid, method_name):
@@ -242,7 +275,7 @@ def _lifecycle(api_user, rid, method_name):
     except Exception as exc:
         return _conflict(str(exc))
     fresh = VehicleRegistration.query.filter_by(id=rid).first()
-    return jsonify(_reg_json(fresh, detail=True))
+    return jsonify(_reg_json(fresh, detail=True, api_user=api_user))
 
 
 @bp.route("/vehicle-registrations/<int:rid>/submit", methods=["POST"])
@@ -261,6 +294,23 @@ def approve_vehicle_registration(api_user, rid):
 @api_auth_required("vehicleregistration.view")
 def reject_vehicle_registration(api_user, rid):
     return _lifecycle(api_user, rid, "reject")
+
+
+@bp.route("/vehicle-registrations/<int:rid>/return", methods=["POST"])
+@api_auth_required("vehicleregistration.view")
+def return_vehicle_registration(api_user, rid):
+    """Was entirely missing, same as Trip Tickets: without this route a
+    registration could never reach RETURNED via the API, which also
+    made resubmit below unreachable in practice."""
+    return _lifecycle(api_user, rid, "return_document")
+
+
+@bp.route("/vehicle-registrations/<int:rid>/resubmit", methods=["POST"])
+@api_auth_required("vehicleregistration.update")
+def resubmit_vehicle_registration(api_user, rid):
+    """resubmit() is on BaseTransactionService, same as every other
+    module. Also entirely missing before this fix."""
+    return _lifecycle(api_user, rid, "resubmit")
 
 
 @bp.route("/vehicle-registrations/<int:rid>/cancel", methods=["POST"])
@@ -291,4 +341,4 @@ def toggle_registration_checklist(api_user, rid, item_id):
         item_id, bool(payload.get("done")), user=api_user)
 
     fresh = VehicleRegistration.query.filter_by(id=rid).first()
-    return jsonify(_reg_json(fresh, detail=True))
+    return jsonify(_reg_json(fresh, detail=True, api_user=api_user))

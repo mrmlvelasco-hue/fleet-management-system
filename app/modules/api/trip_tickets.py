@@ -60,7 +60,7 @@ def _iso(v):
     return v.isoformat() if v else None
 
 
-def _trip_json(t, *, detail=False):
+def _trip_json(t, *, detail=False, api_user=None):
     """`driver` is the DISPLAY name from whichever source applies --
     the master record when one is linked, the typed name otherwise.
     The client should not have to know which mode the system is in to
@@ -96,6 +96,43 @@ def _trip_json(t, *, detail=False):
     if detail:
         from app.modules.api.company_letterhead import company_letterhead
         data["company"] = company_letterhead()
+        # Previously entirely absent: React's ApprovalWorkflow and
+        # MoDecisionPanel components were already wired to read
+        # approval_chain / approval_instance_status / can_act -- the
+        # SAME shared components Maintenance Orders and Purchase
+        # Requests use -- but this endpoint never populated any of
+        # them, so both always rendered as "not yet submitted" and no
+        # approve/reject/return/resubmit action was ever offered,
+        # regardless of the trip ticket's real state. The button, the
+        # route, and the engine all worked; only this wiring was
+        # missing. Matches purchase_requests.py's identical block.
+        from app.core.approval.engine import ApprovalEngine
+        inst = getattr(t, "approval_instance", None)
+        engine = ApprovalEngine()
+        chain = []
+        if inst is not None:
+            for entry in engine.get_approval_chain(inst):
+                acted_at = entry.get("acted_at")
+                chain.append({
+                    "level_number": entry.get("level_number"),
+                    "approver_label": entry.get("approver_label"),
+                    "status": entry.get("status"),
+                    "acted_by_name": entry.get("acted_by_name"),
+                    "acted_at": acted_at.isoformat() if acted_at else None,
+                    "remarks": entry.get("remarks"),
+                })
+            data["approval_instance_status"] = inst.status
+            data["approval_current_level"] = inst.current_level
+            data["can_act"] = bool(
+                api_user and engine.is_eligible_approver(inst, api_user))
+        else:
+            data["approval_instance_status"] = None
+            data["approval_current_level"] = None
+            data["can_act"] = False
+        data["approval_chain"] = chain
+        data["has_approval_instance"] = inst is not None
+        data["is_requester"] = bool(
+            api_user is not None and t.requested_by == getattr(api_user, "id", None))
     return data
 
 
@@ -164,7 +201,7 @@ def create_trip_ticket(api_user):
         return _bad(str(exc), "driver_id")
     except Exception as exc:
         return _conflict(str(exc))
-    return jsonify(_trip_json(trip, detail=True)), 201
+    return jsonify(_trip_json(trip, detail=True, api_user=api_user)), 201
 
 
 @bp.route("/trip-tickets/form-options", methods=["GET"])
@@ -199,7 +236,7 @@ def trip_ticket_detail(api_user, tid):
     trip = TripTicket.query.filter_by(id=tid).first()
     if trip is None:
         return _not_found()
-    return jsonify(_trip_json(trip, detail=True))
+    return jsonify(_trip_json(trip, detail=True, api_user=api_user))
 
 
 def _lifecycle(api_user, tid, method_name):
@@ -228,7 +265,7 @@ def _lifecycle(api_user, tid, method_name):
     except Exception as exc:
         return _conflict(str(exc))
     trip = TripTicket.query.filter_by(id=tid).first()
-    return jsonify(_trip_json(trip, detail=True))
+    return jsonify(_trip_json(trip, detail=True, api_user=api_user))
 
 
 @bp.route("/trip-tickets/<int:tid>/submit", methods=["POST"])
@@ -249,10 +286,37 @@ def reject_trip_ticket(api_user, tid):
     return _lifecycle(api_user, tid, "reject")
 
 
+@bp.route("/trip-tickets/<int:tid>/return", methods=["POST"])
+@api_auth_required("tripticket.view")
+def return_trip_ticket(api_user, tid):
+    """Send a PENDING trip ticket back to its requester for correction.
+
+    Also entirely missing before this fix, not just /resubmit -- and
+    more fundamental: without this route a trip ticket could never
+    REACH the RETURNED state via the API at all, which means resubmit
+    was unreachable in practice no matter what else got fixed on that
+    side. return_document() is on BaseTransactionService, same as
+    Maintenance Orders and Purchase Requests, and already enforces its
+    own 'comments are required' rule inside the engine -- no extra
+    validation needed here."""
+    return _lifecycle(api_user, tid, "return_document")
+
+
 @bp.route("/trip-tickets/<int:tid>/cancel", methods=["POST"])
 @api_auth_required("tripticket.update")
 def cancel_trip_ticket(api_user, tid):
     return _lifecycle(api_user, tid, "cancel")
+
+
+@bp.route("/trip-tickets/<int:tid>/resubmit", methods=["POST"])
+@api_auth_required("tripticket.update")
+def resubmit_trip_ticket(api_user, tid):
+    """RETURNED trip tickets go back for approval after correction --
+    resubmit() is on BaseTransactionService, same as Maintenance
+    Orders and Purchase Requests. The route was simply never added;
+    resubmit() takes (record_id, user, remarks=None), so it needs no
+    special-casing in _lifecycle's dispatcher the way submit() does."""
+    return _lifecycle(api_user, tid, "resubmit")
 
 
 @bp.route("/trip-tickets/<int:tid>/release", methods=["POST"])
@@ -298,4 +362,4 @@ def complete_trip_ticket(api_user, tid):
         return _conflict(str(exc))
 
     fresh = TripTicket.query.filter_by(id=tid).first()
-    return jsonify(_trip_json(fresh, detail=True))
+    return jsonify(_trip_json(fresh, detail=True, api_user=api_user))
