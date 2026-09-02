@@ -34,7 +34,7 @@ from app.modules.master_data.vehicle_brand.service import (
 from app.modules.master_data.driver.models import Driver
 from app.modules.master_data.driver.service import (
     DriverService, DuplicateDriverError, InvalidAssigneeError,
-    EmergencyContactService)
+    DuplicateAssigneeLinkError, EmergencyContactService)
 from app.modules.master_data.tire.models import Tire
 from app.modules.master_data.tire.service import TireService, DuplicateSerialError
 from app.modules.master_data.battery.models import Battery
@@ -1395,6 +1395,24 @@ def driver_print(did):
                            generated_at=datetime.now(), today=date.today())
 
 
+def _linkable_users():
+    """Active accounts offered in the System Account picker.
+
+    Inactive accounts are excluded because link_user refuses them
+    anyway; offering a choice the service will reject is a form that
+    lies about what it accepts.
+
+    Already-linked accounts are deliberately NOT excluded. Filtering
+    them out would leave an administrator looking at an empty picker
+    with no way to discover that the name they want is held elsewhere --
+    the duplicate message names the assignee holding it, which is the
+    information they actually need.
+    """
+    from app.modules.user_management.models import User
+    return (User.query.filter_by(is_active=True)
+            .order_by(User.username).all())
+
+
 @bp.route("/drivers/new", methods=["GET", "POST"])
 @login_required
 @require_permission("driver.create")
@@ -1406,15 +1424,29 @@ def driver_new():
     employment_types = LookupService().get_by_type_with_fallback("EMPLOYMENT_TYPE")
     if request.method == "POST":
         try:
-            DriverService().create(
+            created = DriverService().create(
                 **_driver_fields(),
                 photo_file=request.files.get("photo"),
                 user=current_user)
+            # The picker renders on this form too, so it has to work
+            # here. Silently discarding the choice on create -- and only
+            # on create -- is the kind of gap nobody reports as a bug;
+            # they just quietly re-open the record and set it again.
+            #
+            # After create, because the link needs the new row's id.
+            DriverService().link_user(created.id, request.form.get("user_id") or None)
             flash("Driver created.", "success")
             return redirect(url_for("master_data.driver_list"))
         except (DuplicateDriverError, DateFormatError,
                 RequiredFieldError, InvalidAssigneeError) as e:
             flash(str(e), "danger")
+        except DuplicateAssigneeLinkError as e:
+            # The assignee itself was created; only the link was
+            # refused. Said plainly, because "Driver created" alone
+            # would leave someone believing the account was linked.
+            flash(f"Assignee created, but the system account was not "
+                  f"linked: {e}", "warning")
+            return redirect(url_for("master_data.driver_list"))
     return render_template("master_data/driver_form.html",
                            item=None,
                            departments=departments,
@@ -1422,6 +1454,7 @@ def driver_new():
                            assignee_types=assignee_types,
                            employment_statuses=employment_statuses,
                            employment_types=employment_types,
+                           linkable_users=_linkable_users(),
                            title="New Driver")
 
 
@@ -1473,9 +1506,24 @@ def driver_edit(did):
                 job_title=f.get("job_title") or None,
                 branch_id=int(f["branch_id"]),
                 department_id=int(f["department_id"]) if f.get("department_id") else None)
+            # Routed through link_user rather than the **kwargs above,
+            # because the link has rules -- one account, one assignee;
+            # the account must exist and be active -- and update() sets
+            # whatever it is handed. A rule reachable through a second
+            # door is not a rule.
+            #
+            # Applied AFTER the field update so a rejected link cannot
+            # silently discard the other edits on the form.
+            DriverService().link_user(did, f.get("user_id") or None)
             flash("Driver updated.", "success")
             return redirect(url_for("master_data.driver_detail", did=did))
         except (DateFormatError, RequiredFieldError) as e:
+            flash(str(e), "danger")
+        except (DuplicateAssigneeLinkError, InvalidAssigneeError) as e:
+            # An administrator picking a name already taken is an
+            # ordinary mistake and must read as one. Left to the UNIQUE
+            # constraint it would surface as an IntegrityError at commit
+            # -- a 500 page, three layers from the form they submitted.
             flash(str(e), "danger")
     return render_template("master_data/driver_form.html",
                            item=item,
@@ -1484,6 +1532,7 @@ def driver_edit(did):
                            assignee_types=assignee_types,
                            employment_statuses=employment_statuses,
                            employment_types=employment_types,
+                           linkable_users=_linkable_users(),
                            title=f"Edit — {item.full_name}")
 
 

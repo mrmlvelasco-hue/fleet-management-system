@@ -16,7 +16,7 @@
 <table class="table table-striped fms-datatable">
   <thead><tr>
     <th>Employee No.</th><th>Name</th><th>License No.</th>
-    <th>License Expiry</th><th>Type</th><th>Branch</th><th>Status</th><th></th>
+    <th>License Expiry</th><th>Type</th><th>Branch</th><th>System Account</th><th>Status</th><th></th>
   </tr></thead>
   <tbody>
   {% for d in items %}
@@ -30,6 +30,13 @@
         {% endif %}</td>
       <td>{{ d.license_type }}</td>
       <td>{{ d.branch.name if d.branch else '—' }}</td>
+      {# Answers "who can sign in" at a glance, which is the whole
+         reason an administrator opens this list during mobile
+         onboarding. A dash for the majority who have no login -- most
+         assignees never will, so a badge on every one of them would
+         make the column noise. #}
+      <td>{% if d.user_account %}<span class="badge text-bg-light border"><i class="bi bi-person-badge me-1"></i>{{ d.user_account.username }}</span>
+          {% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
       <td><span class="badge text-bg-{{ 'success' if d.status=='ACTIVE' else 'danger' }}">{{ d.status }}</span></td>
       <td class="text-end">
         <a class="btn btn-sm btn-outline-info"

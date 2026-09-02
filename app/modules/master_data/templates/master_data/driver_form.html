@@ -159,6 +159,22 @@
               </select>
             </div>
 
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">System Account</label>
+              <select name="user_id" class="form-select fms-select2">
+                <option value="">— None —</option>
+                {% for u in linkable_users %}
+                <option value="{{ u.id }}" {{ 'selected' if item and item.user_id==u.id }}>{{ u.username }} — {{ u.full_name }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">
+                The FMS login this person signs in with. Optional — most
+                assignees never have one. Linking does not by itself grant
+                the Android field app; that is the Mobile access switch in
+                User Maintenance.
+              </div>
+            </div>
+
             <div class="col-md-3">
               <label class="form-label fw-semibold">Section</label>
               <input type="text" name="section" class="form-control"
