@@ -13,6 +13,19 @@ class InvalidAssigneeError(Exception):
     pass
 
 
+class DuplicateAssigneeLinkError(Exception):
+    """One system account is already linked to a different assignee.
+
+    Distinct from DuplicateDriverError, which is about duplicate master
+    data (a licence or employee number entered twice). This is about the
+    login-to-person join, and the caller handles it differently: a
+    duplicate employee number is a data-entry mistake, while this is
+    usually an administrator picking the wrong name from a list and
+    needs to name the assignee already holding the account.
+    """
+    pass
+
+
 class EmergencyContactService:
     def create(self, *, person_record_id, contact_name, relationship_type=None,
               contact_number=None):
@@ -149,6 +162,66 @@ class DriverService:
                     reference_id=obj.id, user=user)
                 obj.photo_attachment_id = attachment.id
             db.session.commit()
+        return obj
+
+    def link_user(self, record_id, user_id):
+        """Point this assignee at a system account, or clear the link.
+
+        Kept out of update() and off the generic **kwargs path on
+        purpose. update() sets whatever it is handed; this has rules,
+        and a rule that can be bypassed by passing the same field
+        through a different door is not a rule. Everything that writes
+        drivers.user_id goes through here.
+
+        Passing None clears the link. Clearing never touches the account
+        itself -- the person keeps signing in to the web app exactly as
+        before, because being an assignee and having a login are
+        separate facts.
+        """
+        from app.modules.user_management.models import User
+
+        obj = db.session.get(Driver, record_id)
+        if obj is None:
+            return None
+
+        if user_id in (None, "", 0):
+            obj.user_id = None
+            db.session.commit()
+            return obj
+
+        user_id = int(user_id)
+        # Re-linking to the account already held is a no-op, not a
+        # duplicate. Without this, saving the assignee form a second
+        # time without touching the picker would be rejected -- so an
+        # ordinary edit to an unrelated field on a linked assignee
+        # would fail.
+        if obj.user_id == user_id:
+            return obj
+
+        user = db.session.get(User, user_id)
+        if user is None or not user.is_active:
+            raise InvalidAssigneeError(
+                "That system account does not exist or is inactive.")
+
+        # Checked in the service as well as by the UNIQUE constraint.
+        # The constraint is the backstop that keeps the data correct
+        # under any writer; this is what turns a violation into a
+        # sentence an administrator can act on instead of a 500 from an
+        # IntegrityError raised at commit time, three layers away from
+        # the form they submitted.
+        clash = Driver.query.filter(Driver.user_id == user_id,
+                                    Driver.id != obj.id).first()
+        if clash is not None:
+            raise DuplicateAssigneeLinkError(
+                f"System account '{user.username}' is already linked to "
+                f"assignee {clash.full_name} ({clash.employee_number}).")
+
+        # Deliberately does NOT set user.mobile_access. Linking records
+        # WHO someone is; the flag records WHETHER their phone may hold
+        # a credential. Granting one from the other would mean every
+        # assignee linked for reporting silently gained the field app.
+        obj.user_id = user_id
+        db.session.commit()
         return obj
 
     def get(self, record_id, include_inactive=True):
