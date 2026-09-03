@@ -176,7 +176,17 @@ def user_from_refresh_token(token: str):
     return user
 
 
-def set_refresh_cookie(response, token, expires_at):
+def set_refresh_cookie(response, token, expires_at, remember=True):
+    """Persist the refresh token, or keep it for this browser session.
+
+    `remember=False` omits `expires`, which makes it a SESSION cookie:
+    the browser discards it when it closes. The token itself is still
+    valid server-side for its full life -- this only controls how long
+    the browser keeps hold of it. That is the honest scope of a
+    "Remember me" checkbox, and it is worth being precise about,
+    because it means unchecking the box protects the next person at
+    this machine, not against someone who already captured the token.
+    """
     response.set_cookie(
         REFRESH_COOKIE, token,
         httponly=True,
@@ -189,7 +199,11 @@ def set_refresh_cookie(response, token, expires_at):
         # feature look broken.
         secure=not current_app.config.get("DEBUG", False),
         path=REFRESH_COOKIE_PATH,
-        expires=expires_at,
+        # Omitted entirely when not remembering -- a cookie with no
+        # expiry is a session cookie. Setting expires=None explicitly
+        # would be the same thing, but leaving the argument out makes
+        # the intent readable at the call site.
+        **({"expires": expires_at} if remember else {}),
     )
     return response
 

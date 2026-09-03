@@ -134,16 +134,29 @@ def auth_token():
     # browser CSRF and script access, and a native app has no
     # attacker-controlled page from which to mount either. The token is
     # held in Keychain/Keystore on the device.
+    # "Remember me". Defaults to TRUE, which is what the system has
+    # always done -- flipping the default would silently start signing
+    # everyone out daily, a change nobody asked for. Unchecking the box
+    # is the new capability, not a new default.
+    remember = payload.get("remember", True)
+    if not isinstance(remember, bool):
+        remember = str(remember).lower() not in ("false", "0", "no", "")
+
     if _is_native_client(payload):
         body["refresh_token"] = refresh
         body["refresh_expires_at"] = expires_at.isoformat()
+        # The device decides whether to write this to the Keystore. Told
+        # explicitly rather than inferred, so the app is not guessing at
+        # the user's intent from a field it did not send.
+        body["remember"] = remember
         return jsonify(body)
 
     response = jsonify(body)
     # Browser flow unchanged: the refresh token rides in an httpOnly
     # cookie and never appears in the body, so script can neither read
     # it nor replay it cross-site.
-    return set_refresh_cookie(response, refresh, expires_at)
+    return set_refresh_cookie(response, refresh, expires_at,
+                              remember=remember)
 
 
 @bp.route("/auth/refresh", methods=["POST"])
