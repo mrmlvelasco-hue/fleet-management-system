@@ -117,8 +117,37 @@ class MobileReleaseService:
         release.status = "PUBLISHED"
         release.is_current = True
         release.released_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        self._purge_superseded(release)
+
         db.session.commit()
         return release
+
+    def _purge_superseded(self, current):
+        """Delete every stored binary except the one just published.
+
+        Only the latest APK is kept -- an older build is never handed
+        out, so keeping ~20 MB of it forever buys nothing.
+
+        DRAFTS ARE SPARED. A draft is a build somebody is still
+        preparing; deleting the file they uploaded an hour ago because
+        an unrelated release went live would be baffling and
+        unrecoverable.
+
+        The metadata row always survives, which is why file_purged
+        exists rather than simply deleting the release.
+        """
+        superseded = (MobileAppRelease.query
+                      .filter(MobileAppRelease.id != current.id,
+                              MobileAppRelease.platform == current.platform,
+                              MobileAppRelease.status != "DRAFT")
+                      .all())
+        for old in superseded:
+            row = (MobileAppReleaseFile.query
+                   .filter_by(release_id=old.id).first())
+            if row is not None:
+                db.session.delete(row)
+            old.file_purged = True
 
     def set_minimum(self, release_id, min_code, user=None):
         """Raise the forced-update floor. The deliberate action.

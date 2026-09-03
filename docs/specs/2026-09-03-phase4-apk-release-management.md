@@ -106,5 +106,11 @@ old build are the ones who cannot find out.
 - **Blobs in MySQL.** At ~20 MB per release this is fine for the handful of builds this client will
   keep, and `max_allowed_packet` must be large enough — worth checking on the real server, since the
   SQLite suite will not catch it.
-- A retention policy is still undecided: nothing prunes old ARCHIVED binaries. Left deliberate rather
-  than guessed.
+- **Retention decided (client, 2026-09-03): only the latest APK is stored.** Publishing deletes every
+  superseded binary. The metadata row survives, marked `file_purged` — it is a few hundred bytes,
+  it records which version was live when and who published it, and crucially it keeps the
+  `version_code` claimed so nobody can re-upload 140 and produce two builds a phone cannot tell
+  apart. DRAFT builds are spared: a draft is something somebody is still preparing, and deleting
+  their upload because an unrelated release went live would be baffling and unrecoverable.
+- A device pointed at a purged download URL gets a 404 saying the build is no longer available
+  rather than an empty file, which would install and then crash.

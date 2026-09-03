@@ -42,6 +42,12 @@ def upgrade():
             sa.Column("file_size", sa.Integer(), nullable=True),
             sa.Column("checksum_sha256", sa.String(length=64), nullable=True),
             sa.Column("released_at", sa.DateTime(), nullable=True),
+            # True once the binary has been deleted. Only the
+            # latest APK is stored; the metadata row survives so
+            # the version_code stays claimed and the history of
+            # what was live when is not lost.
+            sa.Column("file_purged", sa.Boolean(), nullable=False,
+                      server_default=sa.text("0")),
             sa.Column("created_at", sa.DateTime(), nullable=True),
             sa.Column("updated_at", sa.DateTime(), nullable=True),
             sa.Column("created_by", sa.Integer(), nullable=True),

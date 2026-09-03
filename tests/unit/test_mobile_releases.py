@@ -280,3 +280,96 @@ def test_listing_does_not_load_the_binaries(app, client, admin):
     assert len(rows) == 1
     assert not hasattr(rows[0], "file_data")
     assert MobileAppReleaseFile.query.count() == 1
+
+
+# ── retention: only the current build's binary is kept ───────────────
+
+def test_publishing_purges_the_previous_binary(app):
+    """Client decision, 2026-09-03: only the latest APK is stored.
+
+    The BINARY goes; the metadata row stays. That split is deliberate --
+    the row is a few hundred bytes and answers "which version was live
+    on the 14th, who published it, what changed", and it keeps the
+    version code CLAIMED so nobody can re-upload 140 and produce two
+    builds a phone cannot tell apart.
+    """
+    svc = MobileReleaseService()
+    old = _upload(code=100)
+    svc.publish(old.id)
+    assert svc.bytes_for(old.id) == APK
+
+    new = _upload(code=101, name="1.0.1")
+    svc.publish(new.id)
+
+    assert svc.bytes_for(old.id) is None
+    assert svc.bytes_for(new.id) == APK
+
+
+def test_the_purged_release_keeps_its_history(app):
+    svc = MobileReleaseService()
+    old = _upload(code=100)
+    svc.publish(old.id)
+    new = _upload(code=101, name="1.0.1")
+    svc.publish(new.id)
+
+    row = db.session.get(MobileAppRelease, old.id)
+    assert row is not None
+    assert row.version_code == 100
+    assert row.status == "ARCHIVED"
+    assert row.checksum_sha256 == hashlib.sha256(APK).hexdigest()
+    assert row.file_purged is True
+
+
+def test_a_purged_version_code_still_cannot_be_reused(app):
+    """The reason the metadata row survives. Two builds sharing a
+    version code are indistinguishable to a phone, which compares codes
+    and nothing else."""
+    svc = MobileReleaseService()
+    old = _upload(code=100)
+    svc.publish(old.id)
+    new = _upload(code=101, name="1.0.1")
+    svc.publish(new.id)
+
+    with pytest.raises(MobileReleaseError):
+        _upload(code=100, name="rewind")
+
+
+def test_only_one_binary_is_ever_stored(app):
+    svc = MobileReleaseService()
+    for code in (100, 101, 102, 103):
+        r = _upload(code=code, name=f"1.0.{code}")
+        svc.publish(r.id)
+
+    assert MobileAppReleaseFile.query.count() == 1
+
+
+def test_downloading_a_purged_release_reads_as_a_sentence(app, client,
+                                                           driver):
+    """A device pointed at an old download URL must be told plainly,
+    not handed a stack trace or an empty file that installs and
+    crashes."""
+    svc = MobileReleaseService()
+    old = _upload(code=100)
+    svc.publish(old.id)
+    new = _upload(code=101, name="1.0.1")
+    svc.publish(new.id)
+
+    res = client.get(f"/api/v1/mobile/releases/{old.id}/download",
+                     headers=_hdr(client, "juan"))
+
+    assert res.status_code == 404
+    assert "no longer" in _body(res)["message"].lower()
+
+
+def test_draft_binaries_are_not_purged_by_publishing_another(app):
+    """A draft is a build somebody is still preparing. Publishing an
+    unrelated release must not delete the file they just uploaded."""
+    svc = MobileReleaseService()
+    live = _upload(code=100)
+    svc.publish(live.id)
+    draft = _upload(code=101, name="1.0.1-rc")
+
+    newer = _upload(code=102, name="1.0.2")
+    svc.publish(newer.id)
+
+    assert svc.bytes_for(draft.id) == APK

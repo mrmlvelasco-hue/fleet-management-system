@@ -36,6 +36,7 @@ def _row(r, download=True):
         "file_name": r.file_name,
         "file_size": r.file_size,
         "checksum_sha256": r.checksum_sha256,
+        "file_purged": bool(r.file_purged),
         "released_at": r.released_at.isoformat() if r.released_at else None,
         "download_url": (f"/api/v1/mobile/releases/{r.id}/download"
                          if download else None),
@@ -96,8 +97,16 @@ def mobile_release_download(api_user, rid):
 
     data = svc.bytes_for(rid)
     if data is None:
-        return jsonify({"error": "not_found",
-                        "message": "That release has no file."}), 404
+        # Only the latest APK is stored, so a device pointed at an old
+        # download URL lands here. Say so plainly: an empty file would
+        # install and then crash, which is miserable to diagnose from
+        # another building.
+        return jsonify({
+            "error": "not_found",
+            "message": ("That build is no longer available. Only the "
+                        "latest release is kept — check for an update "
+                        "and download the current version."),
+        }), 404
 
     return send_file(
         BytesIO(data), as_attachment=True,

@@ -69,6 +69,16 @@ class MobileAppRelease(db.Model, BaseModel):
 
     released_at = db.Column(db.DateTime, nullable=True)
 
+    #: True once the binary has been deleted, leaving only this record.
+    #:
+    #: Client decision, 2026-09-03: only the latest APK is stored. The
+    #: BINARY goes; this row stays. The split is deliberate -- the row
+    #: is a few hundred bytes and answers "which version was live on the
+    #: 14th, who published it, what changed", and it keeps the
+    #: version_code CLAIMED, so nobody can re-upload 140 and produce two
+    #: builds a phone cannot tell apart.
+    file_purged = db.Column(db.Boolean, nullable=False, default=False)
+
 
 class MobileAppReleaseFile(db.Model, BaseModel):
     """The APK bytes. One row per release, fetched only on download."""
