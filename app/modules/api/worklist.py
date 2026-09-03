@@ -37,6 +37,30 @@ _REACT_ROUTE_MAP = {
     # it points at will drift; nothing enforces the two stay in sync
     # except a human noticing, which is what happened here.
     "purchase_requests": "/purchase-requests/{id}",
+    # Added after the SECOND time this drifted -- a client screenshot of
+    # "For Your Action" showing Trip Ticket and ATD rows as plain text
+    # beside Maintenance Order links. Every screen below had shipped;
+    # only this map had not been told.
+    "trip_tickets": "/trip-tickets/{id}",
+    "authority_to_drives": "/atd/{id}",
+    "vehicle_movements": "/vehicle-movements/{id}",
+    "vehicle_registrations": "/vehicle-registrations/{id}",
+    "tire_transactions": "/tire-transactions/{id}",
+    "battery_transactions": "/battery-transactions/{id}",
+}
+
+#: Approvable documents with NO React detail screen yet.
+#:
+#: Explicit rather than absent, and that is the whole point. Absence is
+#: indistinguishable from an oversight -- which is precisely how this
+#: map drifted twice. test_worklist_route_coverage asserts every
+#: approvable table appears in one dict or the other, so a new module
+#: cannot ship without someone deciding which it is.
+_NO_REACT_SCREEN = {
+    "maintenance_invoices": "No React detail screen yet.",
+    "vehicle_checklists": (
+        "Reviewed in the field app's own checklist screens, not through "
+        "the web worklist."),
 }
 
 

@@ -155,13 +155,22 @@ def test_a_task_for_an_unmapped_document_type_has_a_null_url_not_an_error(
 
     dt = DocumentType.query.filter_by(code="MO").first()
     inst = ApprovalInstance(document_type_id=dt.id,
-                            reference_table="trip_tickets", reference_id=999,
+                            # maintenance_invoices, not trip_tickets: the
+                            # latter gained a React screen and is now
+                            # mapped. The CONTRACT under test is
+                            # unchanged -- an unmapped table yields a
+                            # null url, not a 500 -- only the example
+                            # had to move to a table that is still
+                            # genuinely screenless.
+                            reference_table="maintenance_invoices",
+                            reference_id=999,
                             status="PENDING", current_level=1)
     db.session.add(inst)
     db.session.flush()
     task = ApprovalTask(approval_instance_id=inst.id, level_number=1,
                         document_type_id=dt.id, document_number="TT-000001",
-                        reference_table="trip_tickets", reference_id=999,
+                        reference_table="maintenance_invoices",
+                        reference_id=999,
                         assigned_user_id=wl_env["approver"].id,
                         status="PENDING")
     db.session.add(task)
@@ -171,7 +180,7 @@ def test_a_task_for_an_unmapped_document_type_has_a_null_url_not_an_error(
                         _token(client))
     assert status == 200
     tt_items = [i for i in body["items"]
-               if i["reference_table"] == "trip_tickets"]
+               if i["reference_table"] == "maintenance_invoices"]
     assert len(tt_items) == 1
     assert tt_items[0]["url"] is None
     assert tt_items[0]["document_number"] == "TT-000001"

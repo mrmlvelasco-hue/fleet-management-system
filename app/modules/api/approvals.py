@@ -105,9 +105,80 @@ def _pr_entry():
 #: Entries are FUNCTIONS so the imports stay lazy: importing every
 #: transaction model at module load would pull most of the app into any
 #: process that touches the API blueprint.
+
+def _tt_entry():
+    from app.modules.transactions.trip_ticket.models import TripTicket
+    from app.modules.transactions.trip_ticket.service import (
+        TripTicketService)
+
+    def details(t):
+        return _pairs([
+            ("Vehicle", _vehicle_label(t)),
+            ("Driver",
+             getattr(t.driver, "full_name", None)
+             if getattr(t, "driver", None) else
+             getattr(t, "driver_name", None)),
+            ("Date", _d(getattr(t, "trip_date", None))),
+            ("Destination", getattr(t, "destination", None)),
+            ("Purpose", getattr(t, "purpose", None)),
+        ])
+
+    return ApprovalEntry(
+        label="Trip Ticket", permission="tripticket.view",
+        model=TripTicket, service=TripTicketService, detail_fn=details)
+
+
+def _atd_entry():
+    from app.modules.transactions.atd.models import AuthorityToDrive
+    from app.modules.transactions.atd.service import ATDService
+
+    def details(a):
+        return _pairs([
+            ("Vehicle", _vehicle_label(a)),
+            ("Driver",
+             getattr(a.driver, "full_name", None)
+             if getattr(a, "driver", None) else None),
+            ("Valid From", _d(getattr(a, "valid_from", None))),
+            ("Valid To", _d(getattr(a, "valid_to", None))),
+            ("Purpose", getattr(a, "purpose", None)),
+        ])
+
+    return ApprovalEntry(
+        label="Authority To Drive", permission="atd.view",
+        model=AuthorityToDrive, service=ATDService, detail_fn=details)
+
+
+def _vm_entry():
+    from app.modules.transactions.vehicle_movement.models import (
+        VehicleMovement)
+    from app.modules.transactions.vehicle_movement.service import (
+        VehicleMovementService)
+
+    def details(m):
+        return _pairs([
+            ("Vehicle", _vehicle_label(m)),
+            ("Movement Type", getattr(m, "movement_type", None)),
+            ("Effective", _d(getattr(m, "effective_date", None))),
+            ("Reason", getattr(m, "reason", None)),
+        ])
+
+    return ApprovalEntry(
+        label="Vehicle Movement", permission="vehiclemovement.view",
+        model=VehicleMovement, service=VehicleMovementService,
+        detail_fn=details)
+
+
 REGISTRY = {
     "maintenance_orders": _mo_entry,
     "purchase_requests": _pr_entry,
+    # Added after a client screenshot of "For Your Action" in which
+    # Trip Ticket and ATD rows could be read but not acted on. Their
+    # detail screens had shipped; only these registrations were
+    # missing, so the generic approve/reject/return endpoint refused
+    # the reference_table and the card offered no buttons.
+    "trip_tickets": _tt_entry,
+    "authority_to_drives": _atd_entry,
+    "vehicle_movements": _vm_entry,
 }
 
 #: Only the engine's own decisions are dispatchable. Without this
