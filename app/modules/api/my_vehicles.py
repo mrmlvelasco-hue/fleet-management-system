@@ -61,6 +61,28 @@ def _assigned_vehicle(vehicle_id, api_user):
     return db.session.get(Vehicle, vehicle_id)
 
 
+def _vehicle_label(vehicle_id):
+    """Plate, or the conduction number when no plate exists yet.
+
+    Philippine LTO: a new vehicle runs on its conduction number until
+    the plate is released, and those are exactly the units most likely
+    to be moved around on one-off authorities. Falling back is not a
+    nicety -- without it a brand-new unit's ATD names nothing at all.
+
+    Read directly rather than through the assignment guard: this labels
+    a vehicle the caller has ALREADY been shown an authority for, and
+    that authority may well cover a vehicle they are not assigned. A
+    plate is not a secret; refusing to name it here would produce an
+    authority document that identifies no vehicle.
+    """
+    if not vehicle_id:
+        return None
+    v = db.session.get(Vehicle, vehicle_id)
+    if v is None:
+        return None
+    return v.plate_number or v.conduction_number
+
+
 def _row(v, detail=False):
     data = {
         "id": v.id,
@@ -248,6 +270,19 @@ def my_atds(api_user):
         "id": a.id,
         "document_number": a.document_number,
         "vehicle_id": a.vehicle_id,
+        # The vehicle is named, not just referenced by id.
+        #
+        # An ATD is NOT filtered by whether the vehicle is assigned to
+        # the holder -- a pool unit, a one-off delivery, or a temporary
+        # authority while their own vehicle is in for maintenance all
+        # produce an ATD for a vehicle they do not hold. The ATD IS the
+        # authority, so it stands on its own.
+        #
+        # Which means the plate is essential rather than decorative: a
+        # driver holding two authorities cannot otherwise tell them
+        # apart, and an enforcer asking to see the authority for a
+        # specific plate would be shown a document naming no plate.
+        "plate_number": _vehicle_label(a.vehicle_id),
         "status": a.status,
         "valid_from": a.valid_from.isoformat() if a.valid_from else None,
         "valid_to": a.valid_to.isoformat() if a.valid_to else None,
@@ -270,6 +305,7 @@ def my_atd_detail(api_user, aid):
         "id": atd.id,
         "document_number": atd.document_number,
         "vehicle_id": atd.vehicle_id,
+        "plate_number": _vehicle_label(atd.vehicle_id),
         "driver_id": atd.driver_id,
         "status": atd.status,
         "valid_from": (atd.valid_from.isoformat()

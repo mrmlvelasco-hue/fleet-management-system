@@ -233,3 +233,47 @@ def test_unlinked_user_sees_no_atds(app, client, env):
 
     assert r.status_code == 200
     assert _body(r)["items"] == []
+
+
+def test_an_atd_for_a_vehicle_NOT_assigned_to_me_still_appears(app, client,
+                                                                env):
+    """An ATD may cover a vehicle the holder is not assigned.
+
+    A pool vehicle, a one-off delivery, a temporary authority while
+    their own unit is in for maintenance -- the ATD IS the authority, so
+    it must not be filtered by whether that vehicle happens to be
+    assigned to them. Juan is assigned MINE-111; this ATD is his
+    authority over HERS-222, and he must be able to see it.
+    """
+    _b, _ju, _mu, juan, _maria, _mine, theirs = env
+    _atd(theirs.id, juan.id, "ATD-2026-000010")
+
+    r = client.get("/api/v1/my/atds", headers=_hdr(client))
+
+    numbers = [a["document_number"] for a in _body(r)["items"]]
+    assert "ATD-2026-000010" in numbers
+
+
+def test_detail_of_an_atd_on_an_unassigned_vehicle_is_readable(app, client,
+                                                                env):
+    _b, _ju, _mu, juan, _maria, _mine, theirs = env
+    a = _atd(theirs.id, juan.id, "ATD-2026-000011")
+
+    r = client.get(f"/api/v1/my/atds/{a.id}", headers=_hdr(client))
+
+    assert r.status_code == 200
+    assert _body(r)["vehicle_id"] == theirs.id
+
+
+def test_the_atd_payload_identifies_the_vehicle(app, client, env):
+    """If an ATD can cover a vehicle other than the one assigned, the
+    payload MUST say which vehicle -- otherwise a driver holding two
+    authorities cannot tell them apart, and an enforcer asking to see
+    the authority for a specific plate gets a document that names no
+    plate."""
+    _b, _ju, _mu, juan, _maria, _mine, theirs = env
+    _atd(theirs.id, juan.id, "ATD-2026-000012")
+
+    row = _body(client.get("/api/v1/my/atds", headers=_hdr(client)))["items"][0]
+
+    assert row["plate_number"] == "HERS-222"
