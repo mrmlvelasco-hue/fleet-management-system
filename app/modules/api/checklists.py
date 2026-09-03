@@ -240,7 +240,7 @@ def checklist_create(api_user):
 @bp.route("/checklists/<int:cid>", methods=["GET"])
 @api_auth_required("checklist.view")
 def checklist_detail(api_user, cid):
-    cl = VehicleChecklistService().get(cid)
+    cl = VehicleChecklistService().get_visible(cid, api_user)
     if cl is None:
         return jsonify({"error": "not_found", "message": "Checklist not found."}), 404
     return jsonify(_row(cl, detail=True))
@@ -249,6 +249,12 @@ def checklist_detail(api_user, cid):
 @bp.route("/checklists/<int:cid>", methods=["PUT"])
 @api_auth_required("checklist.update")
 def checklist_save(api_user, cid):
+    # Scope checked BEFORE the write. Reading is not the only risk here:
+    # without this, another driver's inspection could be edited by id
+    # even once it had become invisible in the list.
+    if VehicleChecklistService().get_visible(cid, api_user) is None:
+        return jsonify({"error": "not_found",
+                        "message": "Checklist not found."}), 404
     p = request.get_json(silent=True) or {}
     try:
         cl = VehicleChecklistService().save_draft(

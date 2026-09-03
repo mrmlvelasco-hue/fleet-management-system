@@ -147,6 +147,35 @@ class VehicleChecklistService:
         rows = q.offset((page - 1) * per_page).limit(per_page).all()
         return rows, total
 
+    def get_visible(self, cid, user):
+        """get(), with the SAME scope rule the list applies.
+
+        Finding J3: list_checklists() has always filtered a driver down
+        to their own inspections, but get() was a bare session.get()
+        with no scope check at all. So a driver who could no longer LIST
+        another driver's checklist could still fetch and edit it by
+        guessing the sequential id. The list scoping was the newer
+        change; this path was never updated with it.
+
+        The rule is deliberately not re-derived here. Detail must not
+        have a different rule from the list that produced the link --
+        two definitions of "yours" would drift, and the drift would be
+        invisible until someone probed for it. `checklist.submit` is the
+        reviewer signal in both places.
+
+        Returns None on a miss, and callers return 404 rather than 403:
+        inside a scoped read, "you may not see this" and "this does not
+        exist" must be indistinguishable, or sequential ids reveal how
+        many inspections exist and when they were taken.
+        """
+        cl = self.get(cid)
+        if cl is None:
+            return None
+        if user is not None and not user.has_permission("checklist.submit"):
+            if cl.created_by != user.id:
+                return None
+        return cl
+
     def get(self, cid):
         cl = db.session.get(VehicleChecklist, cid)
         if cl is not None and not cl.document_number:
