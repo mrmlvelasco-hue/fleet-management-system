@@ -153,6 +153,47 @@ def _filtered(api_user):
     return rows, None
 
 
+@bp.route("/drivers/linkable-users", methods=["GET"])
+@api_auth_required("driver.update")
+def linkable_users(api_user):
+    """Active accounts offered in the Assignee form's System Account picker.
+
+    Guarded by `driver.update`, NOT `user.view`. The Flask form fills
+    this picker server-side, so anyone maintaining assignees can use it;
+    routing React through /admin/users instead would have required
+    `user.view`, a System Administration permission a Fleet Officer very
+    plausibly lacks. For them the picker would have rendered EMPTY while
+    the Jinja form worked -- not an error, just a control that looks
+    broken, which is the kind of defect nobody reports.
+
+    Three fields only. This is reachable with a lower permission than
+    /admin/users, so it must not become a back door to the same data: no
+    email, no roles, no branch, no login history.
+
+    Registered ABOVE /drivers/<int:did> is unnecessary here -- Flask
+    matches the int converter, so "linkable-users" cannot be captured by
+    it -- but the route stays adjacent to the other collection routes
+    for readability.
+
+    Inactive users are excluded because DriverService.link_user refuses
+    them; offering a choice the service will reject is a form that lies
+    about what it accepts. Already-linked accounts ARE still offered,
+    matching Flask: filtering them would leave an administrator staring
+    at an empty picker with no way to discover the name they want is
+    held elsewhere, whereas the duplicate error names the assignee
+    holding it.
+    """
+    from app.modules.user_management.models import User
+
+    rows = (User.query.filter_by(is_active=True)
+            .order_by(User.username).all())
+    return jsonify({"items": [{
+        "id": u.id,
+        "username": u.username,
+        "full_name": getattr(u, "full_name", None) or u.username,
+    } for u in rows], "total": len(rows)})
+
+
 @bp.route("/drivers", methods=["GET"])
 @api_auth_required("driver.view")
 def list_drivers(api_user):
