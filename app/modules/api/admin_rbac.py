@@ -39,6 +39,11 @@ def _user_json(u, *, detail=False):
         "department": (
             u.department.name if getattr(u, "department", None) else None),
         "is_active": bool(u.is_active),
+        # The mobile CHANNEL switch -- whether this account may obtain a
+        # token from the Android field app. Not a permission: roles
+        # still decide what the person may DO once inside, on either
+        # channel.
+        "mobile_access": bool(getattr(u, "mobile_access", False)),
         "is_superuser": bool(getattr(u, "is_superuser", False)),
         "failed_login_attempts": u.failed_login_attempts or 0,
         "last_login_at": (
@@ -129,6 +134,7 @@ def create_user(api_user):
             branch_id=p.get("branch_id") or None,
             department_id=p.get("department_id") or None,
             role_ids=p.get("role_ids") or [],
+            mobile_access=bool(p.get("mobile_access", False)),
         )
     except Exception as e:
         return _conflict(str(e))
@@ -152,6 +158,12 @@ def update_user(api_user, uid):
         kwargs["password"] = p["password"]
     if "role_ids" in p:
         kwargs["role_ids"] = p["role_ids"] or []
+    # Presence-checked, not truthiness-checked. An absent key means "not
+    # supplied" and must leave the flag alone -- otherwise editing
+    # someone's email would silently cut off their phone. An explicit
+    # false must revoke, or the switch only ever turns on.
+    if "mobile_access" in p:
+        kwargs["mobile_access"] = bool(p["mobile_access"])
     try:
         u = UserService().update_user(uid, **kwargs)
     except Exception as e:
