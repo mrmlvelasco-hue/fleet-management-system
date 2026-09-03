@@ -183,15 +183,45 @@ def linkable_users(api_user):
     held elsewhere, whereas the duplicate error names the assignee
     holding it.
     """
+    from app.extensions import db
     from app.modules.user_management.models import User
 
-    rows = (User.query.filter_by(is_active=True)
-            .order_by(User.username).all())
-    return jsonify({"items": [{
-        "id": u.id,
-        "username": u.username,
-        "full_name": getattr(u, "full_name", None) or u.username,
-    } for u in rows], "total": len(rows)})
+    # Server-side search, mirroring what Flask's Select2 does through
+    # api_search. A capped client-side list is the failure mode
+    # SearchPicker exists to avoid: at 400 users a plain dropdown shows
+    # the first N and NOTHING SAYS SO, so a username outside them reads
+    # as "that person has no account".
+    q = (request.args.get("q") or "").strip()
+    query = User.query.filter_by(is_active=True)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(db.or_(
+            User.username.ilike(like),
+            User.first_name.ilike(like),
+            User.last_name.ilike(like),
+            User.email.ilike(like),
+        ))
+
+    limit = 20
+    rows = query.order_by(User.username).limit(limit + 1).all()
+    # has_more caps how many MATCHES are shown rather than what is
+    # SELECTABLE, and says so, instead of implying the list is complete.
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+
+    return jsonify({
+        "items": [{
+            "id": u.id,
+            # `label` is what SearchPicker renders. username and
+            # full_name stay for any caller that wants the parts.
+            "label": (f"{u.username} — {u.full_name}"
+                      if getattr(u, "full_name", None) else u.username),
+            "username": u.username,
+            "full_name": getattr(u, "full_name", None) or u.username,
+        } for u in rows],
+        "has_more": has_more,
+        "total": len(rows),
+    })
 
 
 @bp.route("/drivers", methods=["GET"])

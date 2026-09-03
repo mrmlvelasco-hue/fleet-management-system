@@ -129,7 +129,10 @@ def test_payload_is_minimal(app, client, fleet_officer):
     rows = _body(client.get("/api/v1/drivers/linkable-users",
                             headers=_hdr(client)))["items"]
 
-    assert set(rows[0].keys()) == {"id", "username", "full_name"}
+    # `label` is what SearchPicker renders; the parts stay available.
+    # Still nothing sensitive -- no email, no roles, no branch, no login
+    # history.
+    assert set(rows[0].keys()) == {"id", "label", "username", "full_name"}
 
 
 def test_ordered_by_username(app, client, fleet_officer):
@@ -148,3 +151,49 @@ def test_refused_without_driver_update(app, client, fleet_officer):
     r = client.get("/api/v1/drivers/linkable-users",
                    headers=_hdr(client, "readonly"))
     assert r.status_code == 403
+
+
+def test_search_narrows_by_username(app, client, fleet_officer):
+    """Server-side, mirroring Flask's Select2. A capped client-side list
+    shows the first N and says nothing, so a username outside them reads
+    as 'that person has no account'."""
+    _user("jdelacruz", [])
+    _user("msantos", [])
+
+    rows = _body(client.get("/api/v1/drivers/linkable-users?q=delacruz",
+                            headers=_hdr(client)))["items"]
+
+    names = [u["username"] for u in rows]
+    assert "jdelacruz" in names
+    assert "msantos" not in names
+
+
+def test_search_matches_a_persons_name_not_only_their_username(
+        app, client, fleet_officer):
+    """An administrator looking for a driver knows their name, not the
+    username IT assigned them."""
+    _user("abc123", [])
+
+    rows = _body(client.get("/api/v1/drivers/linkable-users?q=Abc123",
+                            headers=_hdr(client)))["items"]
+
+    assert "abc123" in [u["username"] for u in rows]
+
+
+def test_each_row_carries_a_label(app, client, fleet_officer):
+    rows = _body(client.get("/api/v1/drivers/linkable-users",
+                            headers=_hdr(client)))["items"]
+    assert "—" in rows[0]["label"] or rows[0]["label"] == rows[0]["username"]
+
+
+def test_results_are_capped_and_say_so(app, client, fleet_officer):
+    """has_more caps how many MATCHES are shown, not what is
+    SELECTABLE."""
+    for i in range(25):
+        _user(f"bulk{i:02d}", [])
+
+    body = _body(client.get("/api/v1/drivers/linkable-users",
+                            headers=_hdr(client)))
+
+    assert len(body["items"]) == 20
+    assert body["has_more"] is True
