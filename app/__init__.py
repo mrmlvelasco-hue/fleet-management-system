@@ -43,6 +43,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.master_data.vendor import models as _vnd    # noqa: F401
     from app.modules.master_data.vehicle import models as _veh   # noqa: F401
     from app.modules.master_data.vehicle import assignment_models as _vas  # noqa: F401
+    from app.modules.system_admin import mobile_release_models as _mrm  # noqa: F401
     from app.modules.master_data.driver import models as _drv    # noqa: F401
     from app.modules.master_data.tire import models as _tir      # noqa: F401
     from app.modules.master_data.battery import models as _bat   # noqa: F401
@@ -122,6 +123,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.api import fuel as _api_fuel  # noqa: F401
     from app.modules.api import checklists as _api_checklists  # noqa: F401
     from app.modules.api import my_vehicles as _api_my  # noqa: F401
+    from app.modules.api import mobile_releases as _api_rel  # noqa: F401
     from app.modules.api import comments as _api_comments  # noqa: F401
     from app.modules.api import admin_ops as _api_admin_ops  # noqa: F401
     app.register_blueprint(api_v1_bp)

@@ -76,6 +76,12 @@ for _code, _desc in [
     ("fuel.update", "Correct or confirm a flagged odometer reading"),
     ("fuel.delete", "Delete an entire fuel import batch (undo a wrong upload)"),
     ("historymigration.import", "Import historical vehicle maintenance and registration records from paper records"),
+    # Its own family rather than folding into user.* or vehicle.*.
+    # Publishing an executable that runs on company phones is its own
+    # authority and should be grantable to exactly the people who do it.
+    ("mobileapp.view", "View mobile app releases"),
+    ("mobileapp.create", "Upload a new mobile app release (APK)"),
+    ("mobileapp.update", "Publish a release, or set the minimum supported version"),
 ]:
     _m, _a = _code.split(".")
     registry.register(_code, _m, _a, _desc)
