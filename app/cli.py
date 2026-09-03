@@ -33,6 +33,7 @@ def seed_all(admin_password):
     sync_permissions()
     db.session.commit()
     _seed_admin(admin_password)
+    _seed_field_roles()
     _seed_system_parameters()
     _seed_dashboard_widgets()
     _seed_lookups()
@@ -195,6 +196,80 @@ def _seed_admin(admin_password: str) -> None:
     else:
         click.echo("Admin user already exists; skipped.")
     db.session.commit()
+
+
+#: The permission set the field app actually needs, recorded here
+#: rather than in somebody's memory.
+#:
+#: A real device showed the Checklists tab missing because a hand-built
+#: role held vehicle.view and atd.view but not checklist.view. Nothing
+#: errored -- the tab simply did not appear, and the driver had no way
+#: to file an inspection. Until now the only seeded role was System
+#: Administrator, so every other role was assembled by hand and the
+#: correct set was never written down anywhere.
+FIELD_ROLES = {
+    "Vehicle Assignee": (
+        "Drivers and assignees using the Android field app: their own "
+        "vehicle, odometer, checklists and ATD.",
+        [
+            # Each of the three .view codes maps to a TAB in the field
+            # app. A missing one hides that tab silently.
+            "vehicle.view",
+            "checklist.view",
+            "atd.view",
+            # Odometer readings.
+            "vehicle.update",
+            "checklist.create",
+            "checklist.update",
+            # checklist.submit is deliberately ABSENT. Filling an
+            # inspection and signing it off are two different people's
+            # jobs; granting it here would let a driver approve their
+            # own inspection and quietly collapse the control.
+        ],
+    ),
+    "Fleet Officer": (
+        "Reviews and submits driver checklists, and maintains vehicle "
+        "and assignee master data.",
+        [
+            "vehicle.view", "vehicle.create", "vehicle.update",
+            "vehicle.print",
+            "driver.view", "driver.create", "driver.update", "driver.print",
+            "checklist.view", "checklist.create", "checklist.update",
+            # What separates a reviewer from a driver.
+            "checklist.submit", "checklist.report",
+            "atd.view", "atd.create", "atd.update", "atd.print",
+            "maintenanceorder.view", "maintenanceorder.create",
+            "tripticket.view", "tripticket.create",
+        ],
+    ),
+}
+
+
+def _seed_field_roles() -> None:
+    """Create the default field roles if they are absent.
+
+    CREATES, never reconciles. An administrator who tailors these roles
+    must not have their work silently reverted the next time somebody
+    runs seed -- which is exactly what would happen if this reassigned
+    permissions on every run.
+
+    Not system roles: these are starting points the client is expected
+    to adjust, and system roles are protected from editing.
+    """
+    for name, (description, codes) in FIELD_ROLES.items():
+        if Role.query.filter_by(name=name).first() is not None:
+            continue
+        role = Role(name=name, description=description,
+                    is_system_role=False)
+        # Silently skips a code that is not registered, rather than
+        # failing the whole seed. A role missing one permission is a
+        # five-second fix in the UI; a seed that aborts halfway leaves
+        # the database in a state nobody can reason about.
+        role.permissions = [
+            p for p in Permission.query.filter(Permission.code.in_(codes))
+        ]
+        db.session.add(role)
+        click.echo(f"Role created: {name} ({len(role.permissions)} permissions).")
 
 
 def _seed_data_quality_fields() -> None:
