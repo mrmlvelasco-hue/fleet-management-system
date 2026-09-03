@@ -24,7 +24,10 @@ from app.modules.master_data.vehicle.service import VehicleService
 from app.modules.transactions.atd.models import AuthorityToDrive
 from app.modules.user_management.models import Permission, Role, User
 
-CODES = ["vehicle.view", "vehicle.update", "atd.view"]
+# atd.print is required for the gate-guard slip and is granted by the
+# seeded Vehicle Assignee role. Without it the printout is
+# unreachable for exactly the person the authority was issued to.
+CODES = ["vehicle.view", "vehicle.update", "atd.view", "atd.print"]
 
 
 def _perm(code):
@@ -277,3 +280,63 @@ def test_the_atd_payload_identifies_the_vehicle(app, client, env):
     row = _body(client.get("/api/v1/my/atds", headers=_hdr(client)))["items"][0]
 
     assert row["plate_number"] == "HERS-222"
+
+
+# ── the ATD printout ─────────────────────────────────────────────────
+
+def _hdr_print(client, username="juan"):
+    return _hdr(client, username)
+
+
+def test_print_returns_the_slip_for_my_own_atd(app, client, env):
+    _b, _ju, _mu, juan, _m, mine, _theirs = env
+    a = _atd(mine.id, juan.id, "ATD-2026-000010")
+
+    r = client.get(f"/api/v1/my/atds/{a.id}/print", headers=_hdr(client))
+
+    assert r.status_code == 200
+    body = _body(r)
+    # The PRINTOUT, not a summary: letterhead, two copies, signatures.
+    assert body["company"] is not None
+    assert body["copies"] == 2
+    assert "signatures" in body
+    assert body["atd"]["document_number"] == "ATD-2026-000010"
+
+
+def test_print_404s_for_someone_elses_atd(app, client, env):
+    """An ATD is what gets a vehicle through a gate. Org scope on the
+    general print endpoint would let any driver print a branch-mate's
+    authority, which is precisely the document where that matters."""
+    _b, _ju, _mu, _juan, maria, mine, _theirs = env
+    a = _atd(mine.id, maria.id, "ATD-2026-000011")
+
+    r = client.get(f"/api/v1/my/atds/{a.id}/print", headers=_hdr(client))
+
+    assert r.status_code == 404
+
+
+def test_print_carries_the_driver_and_vehicle_the_slip_needs(app, client,
+                                                              env):
+    _b, _ju, _mu, juan, _m, mine, _theirs = env
+    a = _atd(mine.id, juan.id, "ATD-2026-000012")
+
+    body = _body(client.get(f"/api/v1/my/atds/{a.id}/print",
+                            headers=_hdr(client)))["atd"]
+
+    assert body["driver_employee_number"] == "EMP-001"
+    assert body["vehicle_brand"] == "Toyota"
+    assert body["purpose"] == "Delivery run"
+
+
+def test_an_unapproved_level_is_not_a_signature(app, client, env):
+    """A pending approver has authorised nothing. Printing their name
+    over a signature line would put an authorisation on paper that
+    nobody gave."""
+    _b, _ju, _mu, juan, _m, mine, _theirs = env
+    a = _atd(mine.id, juan.id, "ATD-2026-000013")
+
+    body = _body(client.get(f"/api/v1/my/atds/{a.id}/print",
+                            headers=_hdr(client)))
+
+    for sig in body["signatures"]:
+        assert sig["name"]

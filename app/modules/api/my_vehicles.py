@@ -315,3 +315,59 @@ def my_atd_detail(api_user, aid):
         "odometer_out": atd.odometer_out,
         "odometer_in": atd.odometer_in,
     })
+
+
+@bp.route("/my/atds/<int:aid>/print", methods=["GET"])
+@api_auth_required("atd.print")
+def my_atd_print(api_user, aid):
+    """The gate-guard slip, for the assignee it was issued to.
+
+    Not a display of the record -- the PRINTOUT: the same payload
+    /atd/<id>/print builds for the Jinja slip, so the phone renders the
+    document a gate guard would be handed rather than a mobile-shaped
+    summary of it.
+
+    Scoped on the named driver, exactly like /my/atds. The general print
+    endpoint uses org scope, which would let any driver print any
+    branch-mate's authority to drive -- and an authority to drive is
+    precisely the document where that matters, since it is what gets a
+    vehicle through a gate.
+    """
+    from datetime import datetime
+    from app.modules.api.atd import _atd_json, _atd_print_extras
+    from app.modules.api.company_letterhead import company_letterhead
+    from app.modules.transactions.atd.models import AuthorityToDrive
+
+    assignee = AssigneeScopeService().assignee_for(api_user)
+    if assignee is None:
+        return _not_found()
+    atd = db.session.get(AuthorityToDrive, aid)
+    if atd is None or atd.driver_id != assignee.id:
+        return _not_found()
+
+    data = _atd_print_extras(atd, _atd_json(atd, detail=True),
+                             api_user=api_user)
+
+    # Only APPROVED levels become signature blocks, matching the Jinja
+    # slip. A pending approver has not authorised anything, and printing
+    # their name over a signature line would put an authorisation on
+    # paper that nobody gave.
+    signatures = [
+        {"name": lvl.get("acted_by_name"),
+         "level_number": lvl.get("level_number"),
+         "acted_at": lvl.get("acted_at")}
+        for lvl in (data.get("approval_chain") or [])
+        if lvl.get("status") == "APPROVED" and lvl.get("acted_by_name")
+    ]
+
+    return jsonify({
+        "atd": data,
+        "signatures": signatures,
+        "company": company_letterhead(),
+        "generated_at": datetime.now().isoformat(),
+        "printed_by": api_user.full_name or api_user.username,
+        # Two copies: the gate guard keeps one, the driver keeps one.
+        # Carried in the payload rather than hard-coded in the app so
+        # the phone and the Jinja slip cannot disagree about it.
+        "copies": 2,
+    })

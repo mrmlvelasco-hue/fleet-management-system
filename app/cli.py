@@ -217,6 +217,10 @@ FIELD_ROLES = {
             "vehicle.view",
             "checklist.view",
             "atd.view",
+            # Reading the gate-guard slip on the phone. Without this the
+            # ATD printout is unreachable for exactly the person the
+            # authority was issued to.
+            "atd.print",
             # Odometer readings.
             "vehicle.update",
             "checklist.create",
