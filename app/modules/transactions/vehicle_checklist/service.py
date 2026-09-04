@@ -183,6 +183,36 @@ class VehicleChecklistService:
             db.session.commit()
         return cl
 
+    def delete_draft(self, cid, user):
+        """Discard a draft inspection.
+
+        Only a DRAFT. A SUBMITTED checklist is a RECORD -- a Fleet
+        reviewer has acted on it, it may have raised maintenance orders,
+        and it is what an audit points to. Deleting one would erase
+        evidence, so submitted inspections are refused here and the
+        caller turns that into a clear message rather than a 500.
+
+        Ownership is the caller's problem to check before calling; this
+        enforces the one rule the caller cannot see -- that the DOCUMENT
+        is still a draft. Returns True on delete, False if it was not a
+        draft. Raises nothing for a missing row: deleting something that
+        is already gone is not an error.
+        """
+        cl = db.session.get(VehicleChecklist, cid)
+        if cl is None:
+            return True
+        if cl.status != "DRAFT":
+            return False
+        # Lines and defects go with it -- a checklist row with orphaned
+        # answers left behind is worse than either outcome.
+        for line in list(getattr(cl, "lines", []) or []):
+            db.session.delete(line)
+        for defect in list(getattr(cl, "defects", []) or []):
+            db.session.delete(defect)
+        db.session.delete(cl)
+        db.session.commit()
+        return True
+
     def create(self, *, vehicle_id, template_id, user, driver_id=None,
                odometer=None, inspection_date=None, inspection_time=None,
                remarks=None):

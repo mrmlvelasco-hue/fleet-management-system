@@ -296,6 +296,39 @@ def checklist_save(api_user, cid):
     return jsonify(_row(cl, detail=True))
 
 
+@bp.route("/checklists/<int:cid>", methods=["DELETE"])
+@api_auth_required("checklist.update")
+def checklist_delete(api_user, cid):
+    """Discard a draft the driver started by mistake.
+
+    The client's case: a checklist created against the wrong assignee
+    or vehicle. Real and reasonable -- and the reason the create guard
+    now scopes to assigned vehicles, but mistakes still happen within
+    that scope.
+
+    Two rules, in order:
+
+      * scope, via get_visible -- a driver may only delete their OWN
+        drafts, and a 404 (not 403) so an id cannot be probed;
+      * status, via delete_draft -- only a DRAFT goes. A SUBMITTED
+        inspection is a record a reviewer has acted on, so deleting it
+        is refused with a message, not a 500.
+    """
+    svc = VehicleChecklistService()
+    cl = svc.get_visible(cid, api_user)
+    if cl is None:
+        return jsonify({"error": "not_found",
+                        "message": "Checklist not found."}), 404
+    if not svc.delete_draft(cid, api_user):
+        return jsonify({
+            "error": "conflict",
+            "message": ("This inspection has already been submitted and "
+                        "is part of the record. It can no longer be "
+                        "deleted."),
+        }), 409
+    return jsonify({"deleted": True, "id": cid})
+
+
 @bp.route("/checklists/<int:cid>/submit", methods=["POST"])
 @api_auth_required("checklist.submit")
 def checklist_submit(api_user, cid):
