@@ -612,13 +612,23 @@ def test_mo_print_company_is_an_empty_object_when_unconfigured(db, client,
                                                                mol_env):
     """A fresh install has no CompanyProfile row at all. The client
     falls back to a neutral label rather than the endpoint 500ing or
-    inventing a name."""
+    inventing a name.
+
+    Asserts the PROPERTY -- every letterhead field present and null --
+    rather than `== {{}}`, which was the old mechanism. company_letterhead
+    now returns the full shape with nulls so a print view reading
+    company.company_name gets null and renders its "Company Name"
+    placeholder, instead of getting undefined off an empty dict and
+    rendering a blank header. The fallback this test protects is
+    unchanged; only its representation moved.
+    """
     _grant_create(db, mol_env)
     order = _order(db, mol_env)
     status, body = _get(client, f"/api/v1/maintenance-orders/{order.id}",
                         _token(client))
     assert status == 200
-    assert body["company"] == {}
+    assert body["company"]["company_name"] is None
+    assert "logo_url" in body["company"]
 
 
 # ── Print documents available for an order ─────────────────────────────────

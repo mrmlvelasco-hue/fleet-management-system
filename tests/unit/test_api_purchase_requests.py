@@ -643,9 +643,18 @@ def test_pr_detail_carries_the_configured_company_letterhead(db, client,
     assert detail["company"]["city"] == "Carmona, Cavite"
 
 
-def test_pr_detail_company_is_empty_when_unconfigured(db, client, pr_env):
+def test_pr_detail_company_is_null_when_unconfigured(db, client, pr_env):
+    """A fresh install has no CompanyProfile row.
+
+    Asserts the PROPERTY -- letterhead fields present and null -- rather
+    than `== {}`. company_letterhead now returns the full shape so a
+    print view reading company.company_name gets null and renders its
+    "Company Name" placeholder, instead of undefined off an empty dict
+    and a blank header.
+    """
     _status, pr = _post(client, "/api/v1/purchase-requests", _token(client),
                         _pr_payload(pr_env))
     _status, detail = _get(
         client, f"/api/v1/purchase-requests/{pr['id']}", _token(client))
-    assert detail["company"] == {}
+    assert detail["company"]["company_name"] is None
+    assert "logo_url" in detail["company"]
