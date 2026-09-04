@@ -32,6 +32,8 @@ def _company_json(p):
             "phone": None,
             "email": None,
             "tin": None,
+            "logo_url": None,
+            "logo_filename": None,
             "logo_filename": None,
         }
     return {
@@ -44,6 +46,12 @@ def _company_json(p):
         "phone": p.phone,
         "email": p.email,
         "tin": p.tin,
+        # Same shape as company_letterhead(): a URL when a logo is
+        # configured, null otherwise, so the screen renders a preview or
+        # an empty state without a second request.
+        "logo_url": ("/api/v1/company/logo"
+                     if getattr(p, "logo_attachment_id", None) else None),
+        "logo_filename": p.logo_filename,
         "logo_filename": p.logo_filename,
     }
 

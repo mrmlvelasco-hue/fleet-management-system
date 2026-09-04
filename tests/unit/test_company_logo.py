@@ -141,3 +141,31 @@ def test_serving_with_no_company_configured_is_a_404_not_a_crash(app, client,
                                                                   admin):
     assert client.get("/api/v1/company/logo",
                       headers=_hdr(client)).status_code == 404
+
+
+def test_the_company_payload_reports_the_logo(app, client, company, admin):
+    """So the Company Profile screen can show a preview without a
+    second request, and can tell 'no logo yet' from 'failed to load'."""
+    before = json.loads(client.get("/api/v1/admin/company",
+                                   headers=_hdr(client)).get_data(as_text=True))
+    assert before["logo_url"] is None
+    assert before["logo_filename"] is None
+
+    _upload(client, name="brand.png")
+
+    after = json.loads(client.get("/api/v1/admin/company",
+                                  headers=_hdr(client)).get_data(as_text=True))
+    assert after["logo_url"] == "/api/v1/company/logo"
+    assert after["logo_filename"] == "brand.png"
+
+
+def test_saving_the_profile_does_not_clear_the_logo(app, client, company,
+                                                     admin):
+    """The logo is uploaded separately from the text fields, so a PUT
+    that knows nothing about it must leave it alone -- otherwise editing
+    a phone number would silently strip the letterhead."""
+    _upload(client)
+    client.put("/api/v1/admin/company", headers=_hdr(client),
+               json={"company_name": "Excellence", "phone": "0917"})
+
+    assert company_letterhead()["logo_url"] == "/api/v1/company/logo"
