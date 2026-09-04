@@ -34,6 +34,7 @@ def seed_all(admin_password):
     db.session.commit()
     _seed_admin(admin_password)
     _seed_field_roles()
+    _seed_checklist_templates()
     _seed_system_parameters()
     _seed_dashboard_widgets()
     _seed_lookups()
@@ -274,6 +275,122 @@ def _seed_field_roles() -> None:
         ]
         db.session.add(role)
         click.echo(f"Role created: {name} ({len(role.permissions)} permissions).")
+
+
+#: The BLOWBAGETS pre-trip inspection.
+#:
+#: A real mnemonic that drivers are taught, so the ORDER is part of the
+#: standard: someone reciting it while working down the screen must not
+#: have to jump around. Both Bs are distinct -- Battery opens, Brakes
+#: sits fifth -- which is the obvious way to get this wrong.
+#:
+#: S is the only entry about the PERSON rather than the vehicle, and it
+#: ends the sequence deliberately: the last question before driving is
+#: whether the driver is fit to.
+#:
+#: (letter, category name, [(item, is_safety)])
+BLOWBAGETS = [
+    ("B", "Battery", [
+        ("Battery holds proper charge", False),
+        ("Terminals clean and free of corrosion", False),
+    ]),
+    ("L", "Lights", [
+        ("Headlights working (high and low beam)", True),
+        ("Taillights and brake lights working", True),
+        ("Signal lights and hazards working", True),
+    ]),
+    ("O", "Oil", [
+        ("Engine oil at correct level", False),
+        ("No oil leaks under the vehicle", False),
+    ]),
+    ("W", "Water", [
+        ("Radiator coolant at correct level", False),
+        ("Windshield washer and other fluids topped up", False),
+    ]),
+    ("B", "Brakes", [
+        ("Brake pedal feel is firm", True),
+        ("Brake fluid at correct level", True),
+        ("Handbrake holds", True),
+    ]),
+    ("A", "Air", [
+        ("Tire pressure correct on all wheels", True),
+        ("Spare tire present and inflated", False),
+    ]),
+    ("G", "Gas", [
+        ("Sufficient fuel for the planned trip", False),
+    ]),
+    ("E", "Engine", [
+        ("No unusual sounds on start-up", False),
+        ("No unusual vibration when running", False),
+    ]),
+    ("T", "Tires", [
+        ("No visible wear or damage", True),
+        ("Tread depth within limit", True),
+    ]),
+    ("S", "Self", [
+        ("Driver is alert and rested", True),
+        ("Driver is fit to drive and holds a valid licence", True),
+    ]),
+]
+
+#: Named so the template can be found again on re-seed. Carries the
+#: mnemonic so nobody renames it to something that loses the standard.
+BLOWBAGETS_TEMPLATE = "Daily Pre-Trip Inspection (BLOWBAGETS)"
+
+
+def _seed_checklist_templates() -> None:
+    """Create the standard pre-trip inspection if it is absent.
+
+    No template was seeded at ALL before this, so every install built
+    one by hand and its order was whatever somebody happened to type --
+    the same failure as the roles, where the right answer lived in a
+    person's memory rather than in the system.
+
+    CREATES, never reconciles. Fleet tailoring the list for a vehicle
+    type must not have their work reverted the next time somebody runs
+    seed.
+
+    Order is DATA -- category.sort_order -- not a hard-coded sort, so
+    items can be added, retired or reordered without a code change.
+    """
+    from app.modules.transactions.vehicle_checklist.models import (
+        ChecklistCategory, ChecklistItem, ChecklistTemplate)
+
+    if ChecklistTemplate.query.filter_by(
+            name=BLOWBAGETS_TEMPLATE).first() is not None:
+        return
+
+    template = ChecklistTemplate(
+        name=BLOWBAGETS_TEMPLATE,
+        description=("Standard BLOWBAGETS pre-trip inspection: Battery, "
+                     "Lights, Oil, Water, Brakes, Air, Gas, Engine, Tires, "
+                     "Self."),
+        status="ACTIVE")
+    db.session.add(template)
+    db.session.flush()
+
+    for position, (letter, name, items) in enumerate(BLOWBAGETS, start=1):
+        # The letter is part of the displayed name so the mnemonic is
+        # visible to the driver on the screen, not just implied by the
+        # order.
+        category = ChecklistCategory(
+            template_id=template.id, name=f"{letter} — {name}",
+            sort_order=position)
+        db.session.add(category)
+        db.session.flush()
+        for item_position, (label, is_safety) in enumerate(items, start=1):
+            db.session.add(ChecklistItem(
+                category_id=category.id, name=label,
+                required=True, is_safety=is_safety,
+                # A safety failure is worth a photo: it is the one a
+                # Fleet reviewer will want evidence for before deciding
+                # whether the vehicle moves.
+                photo_required_on_fail=is_safety,
+                maintenance_allowed=True,
+                sort_order=item_position))
+
+    click.echo(f"Checklist template created: {BLOWBAGETS_TEMPLATE} "
+               f"({len(BLOWBAGETS)} categories).")
 
 
 def _seed_data_quality_fields() -> None:
