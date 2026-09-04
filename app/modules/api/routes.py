@@ -21,6 +21,7 @@ from flask import Blueprint, jsonify, request
 
 from app.extensions import db
 from app.modules.api.auth import api_auth_required, issue_token
+from app.modules.api.pagination import default_page_size
 from app.core.security.password import verify_password
 
 bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
@@ -258,6 +259,12 @@ def me(api_user):
         # endpoint, which looks exactly like a wrong password from the
         # driver's side -- they would retype until the account locked.
         "mobile_access": bool(api_user.mobile_access),
+        # The configured LIST_PAGES, so React's list hook uses the same
+        # page size as the API instead of its own literal. Carried on
+        # /me rather than a new endpoint because /me is already fetched
+        # once per session and cached -- a settings call per list screen
+        # would be a round trip to learn a number that never changes.
+        "list_page_size": default_page_size(),
         # Always present, null when unlinked. A client forced to tell
         # "no assignee" from "this server predates the field app" by a
         # missing key ends up guessing.

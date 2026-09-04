@@ -62,11 +62,21 @@ class VehicleChecklist(db.Model, BaseModel):
     vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"),
                            nullable=False, index=True)
     driver_id = db.Column(db.Integer, db.ForeignKey("drivers.id"), nullable=True)
-    branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"), nullable=True)
+    # Indexed: every list filters on branch, and at a daily checklist per
+    # vehicle this table grows by ~1.8M rows a year for 5,000 vehicles.
+    # An unindexed filter there is a full scan on MySQL -- which SQLite
+    # at 300k rows will not reveal.
+    branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
+                          nullable=True, index=True)
     odometer = db.Column(db.Integer, nullable=True)
-    inspection_date = db.Column(db.Date, nullable=False, default=date.today)
+    # THE most-filtered column once the history becomes a daily log:
+    # "what did we find last Tuesday" is the question this table exists
+    # to answer.
+    inspection_date = db.Column(db.Date, nullable=False, default=date.today,
+                                index=True)
     inspection_time = db.Column(db.Time, nullable=True)
-    status = db.Column(db.String(20), nullable=False, default="DRAFT")
+    status = db.Column(db.String(20), nullable=False, default="DRAFT",
+                       index=True)
     result = db.Column(db.String(20), nullable=True)
     score = db.Column(db.Numeric(5, 2), nullable=True)
     applicable_count = db.Column(db.Integer, nullable=True)

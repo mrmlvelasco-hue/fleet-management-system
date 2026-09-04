@@ -6,6 +6,7 @@ from flask import jsonify, request
 from app.extensions import db
 from app.modules.api.auth import api_auth_required
 from app.modules.api.coercion import Coercer, FieldValueError
+from app.modules.api.pagination import resolve_page_size
 from app.modules.api.routes import bp
 from app.modules.transactions.vehicle_checklist.service import (
     VehicleChecklistService, ChecklistError,
@@ -210,7 +211,10 @@ def checklist_list(api_user):
     except FieldValueError as e:
         return _bad(str(e), e.field)
     page = int(c.get("page") or 1)
-    per_page = min(int(c.get("per_page") or 25), 100)
+    # The DEFAULT now comes from the LIST_PAGES system parameter rather
+    # than a literal 25. An explicit per_page from the caller still
+    # wins.
+    per_page = resolve_page_size(c.get("per_page"), maximum=100)
     rows, total = VehicleChecklistService().list_checklists(
         branch_id=c.get("branch_id"), vehicle_id=c.get("vehicle_id"),
         result=request.args.get("result") or None,

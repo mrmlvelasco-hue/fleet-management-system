@@ -2,6 +2,7 @@
 from flask import jsonify, request
 
 from app.modules.api.auth import api_auth_required
+from app.modules.api.pagination import resolve_page_size
 from app.modules.api.routes import bp
 
 
@@ -82,7 +83,8 @@ def list_users(api_user):
         items.append(_user_json(u))
     try:
         page = max(1, int(request.args.get("page", 1)))
-        page_size = max(1, min(int(request.args.get("page_size", 25)), 100))
+        page_size = resolve_page_size(request.args.get("page_size"),
+                                      maximum=100)
     except (TypeError, ValueError):
         return _bad("page and page_size must be integers.")
     total = len(items)
