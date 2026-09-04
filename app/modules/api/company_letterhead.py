@@ -50,4 +50,17 @@ def company_letterhead():
         "phone": company.phone,
         "email": company.email,
         "tin": company.tin,
+        # The configured logo, as a URL every print view can render.
+        #
+        # Served by /api/v1/company/logo, which requires authentication
+        # but NO permission code -- exactly the reasoning above. Gating
+        # a printed letterhead behind company.view would mean handing
+        # that admin permission to everyone who prints, or shipping
+        # documents with a blank header for most users.
+        #
+        # None when unset, so a client renders its own fallback rather
+        # than a broken image.
+        "logo_url": ("/api/v1/company/logo"
+                     if getattr(company, "logo_attachment_id", None)
+                     else None),
     }

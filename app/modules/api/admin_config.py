@@ -1,6 +1,7 @@
 """System Administration config APIs for React: company, lookups, parameters."""
 from flask import jsonify, request
 
+from app.extensions import db
 from app.modules.api.auth import api_auth_required
 from app.modules.api.routes import bp
 
@@ -214,3 +215,97 @@ def update_parameter(api_user, pid):
         "data_type": row.data_type,
         "group_name": row.group_name,
     })
+
+
+@bp.route("/admin/company/logo", methods=["POST"])
+@api_auth_required("company.update")
+def admin_company_logo_upload(api_user):
+    """Upload the letterhead logo.
+
+    Through AttachmentService, which already permits jpg/jpeg/png/gif in
+    its default allow-list -- so nothing has to be widened and no new
+    exposure is created. (The APK could not reuse it for exactly that
+    reason: `apk` would have had to be added, letting anyone with
+    vehicle.update attach an executable to a vehicle.)
+    """
+    from io import BytesIO  # noqa: F401  (kept for symmetry with download)
+    from app.core.attachments.attachment_service import (
+        AttachmentError, AttachmentService)
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return jsonify({"error": "validation_error",
+                        "message": "Choose an image file."}), 400
+
+    company = CompanyProfileService().get()
+    if company is None:
+        return jsonify({
+            "error": "validation_error",
+            "message": ("Set up the Company Profile before uploading a "
+                        "logo."),
+        }), 400
+
+    try:
+        att = AttachmentService().upload(file, "company_profiles",
+                                         company.id, user=api_user)
+    except AttachmentError as e:
+        return jsonify({"error": "validation_error",
+                        "message": str(e)}), 400
+
+    company.logo_attachment_id = att.id
+    company.logo_filename = att.original_filename or att.filename
+    db.session.commit()
+    return jsonify({"logo_url": "/api/v1/company/logo",
+                    "logo_filename": company.logo_filename}), 201
+
+
+@bp.route("/admin/company/logo", methods=["DELETE"])
+@api_auth_required("company.update")
+def admin_company_logo_clear(api_user):
+    """Remove the logo, falling the letterhead back to text only."""
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+
+    company = CompanyProfileService().get()
+    if company is not None:
+        company.logo_attachment_id = None
+        company.logo_filename = None
+        db.session.commit()
+    return jsonify({"logo_url": None})
+
+
+@bp.route("/company/logo", methods=["GET"])
+@api_auth_required()
+def company_logo(api_user):
+    """The letterhead logo image.
+
+    Authenticated but with NO permission code, matching how the rest of
+    the letterhead is exposed. Anyone who can print a document must be
+    able to render its header; requiring company.view would put a System
+    Administration permission in the path of an ordinary trip ticket.
+    """
+    from io import BytesIO
+    from flask import send_file
+    from app.core.models.attachment import Attachment
+    from app.core.attachments.attachment_service import AttachmentService
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+
+    company = CompanyProfileService().get()
+    if company is None or not company.logo_attachment_id:
+        return jsonify({"error": "not_found",
+                        "message": "No logo configured."}), 404
+
+    att = db.session.get(Attachment, company.logo_attachment_id)
+    if att is None or not att.is_active:
+        return jsonify({"error": "not_found",
+                        "message": "No logo configured."}), 404
+
+    # Bytes through the service, never att.file_data -- that is the
+    # storage boundary, and a standing test enforces it.
+    data = AttachmentService().get_bytes(att) or b""
+    return send_file(BytesIO(data),
+                     mimetype=att.mime_type or "image/png",
+                     download_name=att.original_filename or "logo.png")

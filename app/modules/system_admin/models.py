@@ -41,6 +41,22 @@ class CompanyProfile(db.Model, BaseModel):
     tin = db.Column(db.String(50))
     logo_filename = db.Column(db.String(255))
 
+    #: The uploaded logo, through AttachmentService.
+    #:
+    #: An ID, not a blob. CompanyProfile is read for EVERY printed
+    #: letterhead, so a binary column here would drag the image into
+    #: memory on every document -- the same trap the APK release tables
+    #: were split to avoid.
+    #:
+    #: AttachmentService is reused (unlike the APK, which needed its own
+    #: storage) because jpg/jpeg/png/gif are ALREADY in the default
+    #: allow-list. Nothing has to be widened, so there is no new
+    #: exposure -- the reason the APK could not use it does not apply.
+    #:
+    #: logo_filename is kept alongside for display; it existed before
+    #: and nothing populated it.
+    logo_attachment_id = db.Column(db.Integer, nullable=True)
+
 
 class EmailConfig(db.Model, BaseModel):
     """SMTP delivery settings — singleton row, same pattern as
