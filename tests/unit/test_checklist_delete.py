@@ -65,7 +65,8 @@ def env(app):
     db.session.commit()
     ju = _user("juan", DRIVER, b.id)
     mu = _user("maria", DRIVER, b.id)
-    fleet = _user("fleet", DRIVER + ["checklist.submit"], b.id)
+    fleet = _user("fleet", DRIVER + ["checklist.review",
+                                     "checklist.submit"], b.id)
     juan = Driver(person_id="P1", employee_number="E1", first_name="Juan",
                   last_name="Cruz", assignee_type="DRIVER", branch_id=b.id)
     maria = Driver(person_id="P2", employee_number="E2", first_name="Maria",
@@ -164,7 +165,7 @@ def test_a_driver_cannot_delete_another_drivers_draft(app, client, env):
 
 
 def test_a_reviewer_can_delete_any_draft(app, client, env):
-    """checklist.submit is the reviewer signal used everywhere else; a
+    """checklist.review is the reviewer signal used everywhere else; a
     Fleet Officer can clean up a mistaken draft on a driver's behalf."""
     v, tpl, *_ = env
     cid = _make_draft(client, v, tpl)

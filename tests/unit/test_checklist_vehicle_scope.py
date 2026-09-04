@@ -11,7 +11,7 @@ Narrowing the picker alone would not fix it. A picker is a convenience;
 the create endpoint is the control. So the check lives here, and the
 picker follows.
 
-`checklist.submit` is the reviewer signal, exactly as it is for list and
+`checklist.review` is the reviewer signal, exactly as it is for list and
 detail visibility. A Fleet Officer legitimately raises checklists
 against any vehicle in scope; a driver does not.
 """
@@ -70,7 +70,8 @@ def env(app):
     db.session.commit()
 
     ju = _user("juan", DRIVER_CODES, b.id)
-    fu = _user("fleet", DRIVER_CODES + ["checklist.submit"], b.id)
+    fu = _user("fleet", DRIVER_CODES + ["checklist.review",
+                                        "checklist.submit"], b.id)
 
     juan = Driver(person_id="PID-1", employee_number="EMP-001",
                   first_name="Juan", last_name="Cruz",
@@ -136,7 +137,7 @@ def test_the_refusal_explains_itself(app, client, env):
 
 
 def test_a_fleet_reviewer_may_check_any_vehicle_in_scope(app, client, env):
-    """checklist.submit is the reviewer signal, as it is for list and
+    """checklist.review is the reviewer signal, as it is for list and
     detail. A Fleet Officer legitimately raises checklists against any
     vehicle they can see."""
     _mine, theirs, tpl = env

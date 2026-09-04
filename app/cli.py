@@ -226,10 +226,19 @@ FIELD_ROLES = {
             "vehicle.update",
             "checklist.create",
             "checklist.update",
-            # checklist.submit is deliberately ABSENT. Filling an
-            # inspection and signing it off are two different people's
-            # jobs; granting it here would let a driver approve their
-            # own inspection and quietly collapse the control.
+            # Client decision, 2026-09-04: the driver finalises their
+            # own inspection, and SUBMITTED means "final, ready for
+            # Fleet to review".
+            #
+            # Safe to grant only because checklist.submit was split from
+            # checklist.review. It used to mean BOTH "may finalise" and
+            # "is a reviewer", gating list, detail, create and delete
+            # scope as well -- so granting it here before the split
+            # would have handed every driver the whole fleet's
+            # inspections and reopened the branch-wide create leak.
+            "checklist.submit",
+            # checklist.review is deliberately ABSENT: reviewing
+            # everyone's inspections remains a Fleet Officer's job.
         ],
     ),
     "Fleet Officer": (
@@ -241,7 +250,7 @@ FIELD_ROLES = {
             "driver.view", "driver.create", "driver.update", "driver.print",
             "checklist.view", "checklist.create", "checklist.update",
             # What separates a reviewer from a driver.
-            "checklist.submit", "checklist.report",
+            "checklist.submit", "checklist.review", "checklist.report",
             "atd.view", "atd.create", "atd.update", "atd.print",
             "maintenanceorder.view", "maintenanceorder.create",
             "tripticket.view", "tripticket.create",

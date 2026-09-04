@@ -120,7 +120,7 @@ class VehicleChecklistService:
         # A driver sees only what THEY created, unconditionally -- this
         # is a mandatory scope applied before any other filter, not an
         # optional "mine=true" a caller could simply omit to see
-        # everyone's inspections. checklist.submit is the signal for
+        # everyone's inspections. checklist.review is the signal for
         # "this person reviews checklists, not just fills in their
         # own": it already gates the one action (POST
         # /checklists/:id/submit) that makes someone a reviewer rather
@@ -128,7 +128,7 @@ class VehicleChecklistService:
         # built around. Holding it is what the rest of this codebase
         # already treats as the reviewer role; this is not a new
         # permission invented for this filter.
-        if user is not None and not user.has_permission("checklist.submit"):
+        if user is not None and not user.has_permission("checklist.review"):
             q = q.filter_by(created_by=user.id)
         if branch_id:
             q = q.filter_by(branch_id=branch_id)
@@ -160,7 +160,7 @@ class VehicleChecklistService:
         The rule is deliberately not re-derived here. Detail must not
         have a different rule from the list that produced the link --
         two definitions of "yours" would drift, and the drift would be
-        invisible until someone probed for it. `checklist.submit` is the
+        invisible until someone probed for it. `checklist.review` is the
         reviewer signal in both places.
 
         Returns None on a miss, and callers return 404 rather than 403:
@@ -171,7 +171,7 @@ class VehicleChecklistService:
         cl = self.get(cid)
         if cl is None:
             return None
-        if user is not None and not user.has_permission("checklist.submit"):
+        if user is not None and not user.has_permission("checklist.review"):
             if cl.created_by != user.id:
                 return None
         return cl
@@ -382,13 +382,23 @@ class VehicleChecklistService:
                 cl.vehicle.current_odometer is None
                 or cl.odometer > cl.vehicle.current_odometer):
             cl.vehicle.current_odometer = cl.odometer
+        # NO maintenance order is raised here.
+        #
+        # Client decision, 2026-09-04: submitting an inspection REPORTS
+        # what was found; deciding what to do about it is the Fleet
+        # Officer's job afterwards, and may become a PMS rather than a
+        # corrective order.
+        #
+        # Auto-raising one at submit made that decision for them, from a
+        # driver's tick-box, before anyone had looked at the defect --
+        # and a work order opened in error still has to be cancelled by
+        # hand.
+        #
+        # The defect rows still carry create_maintenance and
+        # maintenance_order_id: the flag is now a REQUEST ("this looks
+        # like it needs work") that Fleet acts on, and the id is filled
+        # when they do. Nothing is lost; the trigger moved.
         created_mos = []
-        for d in cl.defects:
-            if d.create_maintenance:
-                mo = self._open_maintenance(cl, d, user)
-                if mo is not None:
-                    d.maintenance_order_id = mo.id
-                    created_mos.append(mo.document_number)
         db.session.commit()
         return cl, created_mos
 

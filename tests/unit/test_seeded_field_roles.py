@@ -54,12 +54,31 @@ def test_assignee_can_do_the_work(app, seeded):
     assert "checklist.update" in codes
 
 
-def test_assignee_cannot_submit_their_own_inspection(app, seeded):
-    """The workflow boundary. checklist.submit is what separates a
-    driver from a reviewer -- a driver filling a checklist and signing
-    it off are two different people's jobs, and granting it here would
-    quietly collapse them."""
-    assert "checklist.submit" not in _codes(ASSIGNEE)
+def test_assignee_CAN_submit_their_own_inspection(app, seeded):
+    """Reversed by the client on 2026-09-04.
+
+    This test previously asserted the opposite: that a driver must not
+    finalise their own inspection, because filling one and signing it
+    off were two different people's jobs. The client has since decided
+    the driver submits, and SUBMITTED means "final, ready for Fleet to
+    review".
+
+    Safe only because checklist.submit was SPLIT from checklist.review
+    at the same time. Before the split this one code also widened list,
+    detail, create and delete scope, so granting it here would have
+    handed every driver the whole fleet's inspections -- silently.
+    """
+    assert "checklist.submit" in _codes(ASSIGNEE)
+
+
+def test_assignee_cannot_REVIEW_everyone_elses(app, seeded):
+    """The boundary that replaced it, and the one now doing the work.
+
+    Reviewing other people's inspections stays a Fleet Officer's job.
+    If this code ever appears in the Assignee role, every scoping guard
+    in the checklist module opens at once.
+    """
+    assert "checklist.review" not in _codes(ASSIGNEE)
 
 
 def test_assignee_holds_nothing_administrative(app, seeded):
@@ -71,6 +90,7 @@ def test_assignee_holds_nothing_administrative(app, seeded):
 
 def test_fleet_officer_can_review(app, seeded):
     codes = _codes(REVIEWER)
+    assert "checklist.review" in codes
     assert "checklist.submit" in codes
     assert "checklist.view" in codes
 

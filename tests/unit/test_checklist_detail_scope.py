@@ -64,7 +64,8 @@ def env(app):
     driver_codes = ["checklist.view", "checklist.create", "checklist.update"]
     juan = _user("juan", driver_codes, b.id)
     maria = _user("maria", driver_codes, b.id)
-    reviewer = _user("reviewer", driver_codes + ["checklist.submit"], b.id)
+    reviewer = _user("reviewer", driver_codes + ["checklist.review",
+                                                 "checklist.submit"], b.id)
     return b, vt, v, juan, maria, reviewer
 
 

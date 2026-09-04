@@ -237,10 +237,15 @@ def checklist_create(api_user):
     # convenience; THIS is the control, and it is what a request built
     # by hand hits.
     #
-    # checklist.submit is the reviewer signal, exactly as it is for list
+    # checklist.review is the reviewer signal, exactly as it is for list
     # and detail visibility: a Fleet Officer legitimately raises
     # checklists against any vehicle in scope, a driver does not.
-    if not api_user.has_permission("checklist.submit"):
+    #
+    # Deliberately NOT checklist.submit. Drivers now hold that so they
+    # can finalise their own inspection, and if it still gated this the
+    # branch-wide create leak would have reopened the moment they got
+    # it.
+    if not api_user.has_permission("checklist.review"):
         from app.modules.user_management.assignee_scope_service import (
             AssigneeScopeService)
         if not AssigneeScopeService().covers_vehicle(

@@ -11,7 +11,7 @@ server decides who sees what based on the CALLER's actual permissions,
 never a client-supplied flag. A "mine=true" query param a driver could
 simply omit would not be a real control.
 
-checklist.submit is the signal used to distinguish the two roles, not
+checklist.review is the signal used to distinguish the two roles, not
 a new permission invented for this: it already gates the one action
 that makes someone a reviewer rather than a filler-in -- POST
 /checklists/:id/submit, the step that finalises the driver's
@@ -47,7 +47,8 @@ def env(db):
     reviewer_role = Role(name="Fleet Reviewer")
     reviewer_role.permissions = Permission.query.filter(
         Permission.code.in_(
-            ["checklist.view", "checklist.create", "checklist.submit"])
+            ["checklist.view", "checklist.create", "checklist.review",
+             "checklist.submit"])
     ).all()
 
     driver_a = User(username="driver_a", email="da@e.com",

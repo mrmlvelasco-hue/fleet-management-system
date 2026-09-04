@@ -63,6 +63,12 @@ for _mod in ["tripticket", "atd", "vehiclemovement", "maintenanceorder",
         _code = f"{_mod}.{_act}"
         registry.register(_code, _mod, _act, f"{_act.title()} {_mod}")
 for _code, _act in (("checklist.submit", "submit"),
+                    # Split out of checklist.submit, which was doing two
+                    # unrelated jobs: "may finalise" AND "is a
+                    # reviewer". Drivers now hold submit so they can
+                    # finalise their OWN inspection; review stays with
+                    # Fleet and is what widens visibility to everyone's.
+                    ("checklist.review", "review"),
                     ("checklist.report", "report"),
                     ("checklist.manage", "manage")):
     registry.register(_code, "checklist", _act, f"{_act.title()} checklist")
