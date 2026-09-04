@@ -3,6 +3,7 @@ from datetime import date
 
 from flask import jsonify, request
 
+from app.modules.api.approval_eligibility import can_act_on
 from app.modules.api.auth import api_auth_required
 from app.modules.api.routes import bp
 
@@ -113,8 +114,8 @@ def _atd_print_extras(a, data, api_user=None):
             })
         data["approval_instance_status"] = inst.status
         data["approval_current_level"] = inst.current_level
-        data["can_act"] = bool(
-            api_user and engine.is_eligible_approver(inst, api_user))
+        data["can_act"] = can_act_on(inst, api_user,
+                                          data.get("status"))
     else:
         data["approval_instance_status"] = None
         data["approval_current_level"] = None
@@ -280,42 +281,20 @@ def atd_print(api_user, aid):
     if a is None:
         return _not_found()
 
-    data = _atd_json(a, detail=True)
-
-    # Extra print fields used by the official slip
-    driver = a.driver
-    data["driver_department"] = (
-        driver.department.name
-        if driver is not None and getattr(driver, "department", None)
-        else None)
-    data["driver_employee_number"] = getattr(driver, "employee_number", None) if driver else None
-    data["driver_license_number"] = getattr(driver, "license_number", None) if driver else None
-    vehicle = a.vehicle
-    data["vehicle_brand"] = getattr(vehicle, "brand", None) if vehicle else None
-    data["vehicle_model"] = getattr(vehicle, "model", None) if vehicle else None
-
-    requester = getattr(a, "requester", None)
-    data["requester_name"] = (
-        getattr(requester, "full_name", None) or getattr(requester, "username", None)
-        if requester else None)
-
-    chain = []
-    inst = getattr(a, "approval_instance", None)
-    if inst is not None:
-        levels = getattr(inst, "levels", None) or getattr(inst, "level_actions", None) or []
-        for lvl in levels:
-            status = getattr(lvl, "status", None)
-            if status != "APPROVED":
-                continue
-            chain.append({
-                "status": status,
-                "acted_by_name": (
-                    getattr(lvl, "acted_by_name", None)
-                    or getattr(getattr(lvl, "acted_by", None), "full_name", None)
-                    or getattr(getattr(lvl, "acted_by", None), "username", None)
-                ),
-            })
-    data["approval_chain"] = chain
+    # Through _atd_print_extras -- the SAME helper the detail endpoint
+    # and /my/atds/<id>/print use.
+    #
+    # This endpoint used to hand-roll its own approval chain by reading
+    # `inst.levels` or `inst.level_actions`. Neither attribute exists,
+    # so the chain was ALWAYS empty and the printed permit showed no
+    # approver at all -- while the phone, which went through this
+    # helper, printed the names correctly. Two implementations of "who
+    # approved this", and only one of them worked.
+    #
+    # The real source is ApprovalEngine().get_approval_chain(), which
+    # _atd_print_extras already calls.
+    data = _atd_print_extras(a, _atd_json(a, detail=True),
+                             api_user=api_user)
 
     return jsonify({
         "atd": data,

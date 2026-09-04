@@ -14,6 +14,7 @@ actually be accepted.
 """
 from flask import jsonify, request
 
+from app.modules.api.approval_eligibility import can_act_on
 from app.modules.api.auth import api_auth_required
 from app.modules.api.coercion import Coercer, FieldValueError
 from app.modules.api.routes import bp
@@ -112,8 +113,8 @@ def _mv_json(mv, *, detail=False, api_user=None):
                 })
             data["approval_instance_status"] = inst.status
             data["approval_current_level"] = inst.current_level
-            data["can_act"] = bool(
-                api_user and engine.is_eligible_approver(inst, api_user))
+            data["can_act"] = can_act_on(inst, api_user,
+                                          data.get("status"))
         else:
             data["approval_instance_status"] = None
             data["approval_current_level"] = None

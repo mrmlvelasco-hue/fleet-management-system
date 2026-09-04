@@ -373,3 +373,12 @@ def test_draft_binaries_are_not_purged_by_publishing_another(app):
     svc.publish(newer.id)
 
     assert svc.bytes_for(draft.id) == APK
+
+
+def test_upload_still_works_on_sqlite_where_there_is_no_packet_limit(app):
+    """The packet probe must not block uploads on a backend that has no
+    such setting -- and must not fail the whole upload if the probe
+    itself errors."""
+    r = _upload(code=500, name="5.0.0")
+    assert r.status == "DRAFT"
+    assert MobileReleaseService().bytes_for(r.id) == APK

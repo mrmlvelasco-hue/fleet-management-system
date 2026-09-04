@@ -19,6 +19,8 @@ otherwise, and the first person to write `MobileAppRelease.query.all()`
 would not notice until the office wifi did. Splitting makes the binary a
 deliberate second fetch that only bytes_for() performs.
 """
+from sqlalchemy.dialects.mysql import LONGBLOB
+
 from app.core.models.base import BaseModel
 from app.extensions import db
 
@@ -88,7 +90,17 @@ class MobileAppReleaseFile(db.Model, BaseModel):
     release_id = db.Column(db.Integer,
                            db.ForeignKey("mobile_app_releases.id"),
                            nullable=False, unique=True)
-    file_data = db.Column(db.LargeBinary, nullable=False)
+    #: LONGBLOB on MySQL, NOT plain LargeBinary.
+    #:
+    #: SQLAlchemy's LargeBinary maps to MySQL BLOB -- 65,535 bytes. A
+    #: real APK is 10-30 MB, so every upload failed at the server with
+    #: "Data too long for column 'file_data'" while the SQLite suite
+    #: passed, because SQLite has no such limit.
+    #:
+    #: attachments.file_data already used this variant. The pattern was
+    #: in the codebase and this table did not follow it.
+    file_data = db.Column(
+        db.LargeBinary().with_variant(LONGBLOB, "mysql"), nullable=False)
 
     # No backref onto MobileAppRelease. A relationship there would be
     # one autoflush or one lazy access away from undoing the whole

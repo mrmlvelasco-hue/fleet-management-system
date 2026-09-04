@@ -26,6 +26,43 @@ class MobileReleaseError(Exception):
     """Something an administrator can read and act on."""
 
 
+def _check_packet_size(size_bytes):
+    """Refuse early if MySQL cannot accept a row this large.
+
+    max_allowed_packet caps the size of a single statement. An INSERT
+    carrying a 14 MB APK against the 4 MB default fails at the server
+    with a dropped connection -- a message that mentions nothing about
+    size and sends an administrator looking in entirely the wrong place.
+
+    Checked before the write so the refusal names the setting, the
+    current value and the file size. Skipped silently on SQLite, which
+    has no such limit.
+    """
+    from sqlalchemy import text
+    from app.extensions import db
+
+    try:
+        if db.session.bind.dialect.name != "mysql":
+            return
+        row = db.session.execute(
+            text("SELECT @@max_allowed_packet")).scalar()
+        limit = int(row)
+    except Exception:
+        # Never block an upload because the probe itself failed. The
+        # real INSERT will still report a problem if there is one.
+        return
+
+    # Headroom for the rest of the statement and protocol overhead.
+    if size_bytes > limit * 0.9:
+        raise MobileReleaseError(
+            f"This APK is {size_bytes // (1024 * 1024)} MB, but the MySQL "
+            f"server accepts at most {limit // (1024 * 1024)} MB in a "
+            f"single statement (max_allowed_packet). Raise "
+            f"max_allowed_packet on the database server to at least "
+            f"{max(64, (size_bytes // (1024 * 1024)) * 2)}M and restart "
+            f"it, then upload again.")
+
+
 class MobileReleaseService:
 
     # ── writes ──────────────────────────────────────────────────────
@@ -75,6 +112,13 @@ class MobileReleaseService:
         if len(data) > MAX_APK_MB * 1024 * 1024:
             raise MobileReleaseError(
                 f"That file is larger than the {MAX_APK_MB} MB limit.")
+
+        # A file this size fails at the SERVER, not in Python, if MySQL's
+        # max_allowed_packet is smaller than the APK. The error that
+        # comes back ("MySQL server has gone away", or a packet error)
+        # says nothing about size, so the cause is checked here and
+        # named while the upload can still be explained.
+        _check_packet_size(len(data))
 
         release = MobileAppRelease(
             version_name=str(version_name).strip(),
