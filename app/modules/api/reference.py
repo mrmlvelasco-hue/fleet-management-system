@@ -393,6 +393,38 @@ def reference_vehicles(api_user):
 
     q = (request.args.get("q") or "").strip()
 
+    # scope=assigned narrows to the caller's OWN vehicles.
+    #
+    # Requested by the field app, where a driver picking a vehicle for a
+    # checklist should see the one they hold, not the branch. Opt-in
+    # because this endpoint also serves trip tickets and maintenance
+    # orders on the web, where org scope is correct.
+    #
+    # This is a PICKER convenience, not the control. A request built by
+    # hand ignores it entirely, which is why the checklist create
+    # endpoint checks assignment itself. Narrowing here only stops the
+    # app offering something the server would refuse.
+    if request.args.get("scope") == "assigned":
+        from app.modules.user_management.assignee_scope_service import (
+            AssigneeScopeService)
+        ids = AssigneeScopeService().assigned_vehicle_ids(api_user)
+        if not ids:
+            return jsonify({"items": [], "has_more": False})
+        rows = [v for v in VehicleService().list(user=api_user)
+                if v.id in ids and v.status != "DISPOSED"]
+        if q:
+            ql = q.lower()
+            rows = [v for v in rows
+                    if ql in (v.plate_number or "").lower()
+                    or ql in (v.conduction_number or "").lower()
+                    or ql in (v.brand or "").lower()
+                    or ql in (v.model or "").lower()]
+        return jsonify({"items": [{
+            "id": v.id,
+            "label": (f"{v.plate_number or v.conduction_number} — "
+                      f"{v.brand or ''} {v.model or ''}".strip()),
+        } for v in rows], "has_more": False})
+
     # list_page filters and scopes in SQL. page_size is a DISPLAY cap
     # here, not a limit on what is reachable -- the search is what
     # reaches.

@@ -224,6 +224,33 @@ def checklist_create(api_user):
         return _bad("Vehicle is required.", "vehicle_id")
     if not c.get("template_id"):
         return _bad("Template is required.", "template_id")
+
+    # A driver may only raise a checklist against a vehicle assigned to
+    # them.
+    #
+    # Found on a real device: the New Vehicle Checklist picker listed
+    # the whole branch for a driver holding one vehicle. That is finding
+    # J1 surfacing in a screen built before the /my/* namespace existed
+    # -- the picker calls /reference/vehicles, which scopes on ORG.
+    #
+    # Narrowing the picker alone would not have fixed it. A picker is a
+    # convenience; THIS is the control, and it is what a request built
+    # by hand hits.
+    #
+    # checklist.submit is the reviewer signal, exactly as it is for list
+    # and detail visibility: a Fleet Officer legitimately raises
+    # checklists against any vehicle in scope, a driver does not.
+    if not api_user.has_permission("checklist.submit"):
+        from app.modules.user_management.assignee_scope_service import (
+            AssigneeScopeService)
+        if not AssigneeScopeService().covers_vehicle(
+                api_user, c["vehicle_id"]):
+            return jsonify({
+                "error": "forbidden",
+                "message": ("That vehicle is not assigned to you. You can "
+                            "only start a checklist for your own vehicle."),
+            }), 403
+
     try:
         cl = VehicleChecklistService().create(
             vehicle_id=c["vehicle_id"], template_id=c["template_id"],
