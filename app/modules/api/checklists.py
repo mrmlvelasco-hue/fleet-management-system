@@ -3,6 +3,7 @@ from datetime import date
 
 from flask import jsonify, request
 
+from app.extensions import db
 from app.modules.api.auth import api_auth_required
 from app.modules.api.coercion import Coercer, FieldValueError
 from app.modules.api.routes import bp
@@ -71,6 +72,16 @@ def _row(cl, detail=False):
             "response": ln.response,
             "is_required": ln.is_required,
             "is_safety": ln.is_safety,
+            # The evidence photo, if one was taken. An attachment id --
+            # the app fetches the image through the authenticated
+            # attachment route rather than the payload carrying bytes
+            # for 45 lines.
+            "photo_attachment_id": ln.photo_attachment_id,
+            # Surfaced from the template so the app can tell the driver
+            # a picture is expected BEFORE they try to submit, rather
+            # than refusing at the end.
+            "photo_required_on_fail": bool(
+                ln.item.photo_required_on_fail if ln.item else False),
         })
     d["groups"] = [{"category": k, "items": v} for k, v in groups.items()]
     d["defects"] = [{
@@ -332,6 +343,92 @@ def checklist_delete(api_user, cid):
                         "deleted."),
         }), 409
     return jsonify({"deleted": True, "id": cid})
+
+
+@bp.route("/checklists/<int:cid>/lines/<int:lid>/photo", methods=["POST"])
+@api_auth_required("checklist.update")
+def checklist_line_photo(api_user, cid, lid):
+    """Attach evidence to an ATTENTION or FAILED response.
+
+    Only those two responses. A photo of something that passed is not
+    evidence of anything, and allowing it would fill the store with
+    pictures nobody looks at -- on a 45-item inspection, run daily.
+
+    Refused once the checklist is SUBMITTED: the inspection is the
+    record a Fleet Officer reviews, and evidence that can be swapped
+    afterwards is not evidence.
+
+    Scoped through get_visible, so a driver may only attach to their own
+    inspection, and a miss is a 404 rather than a 403.
+    """
+    from app.core.attachments.attachment_service import (
+        AttachmentError, AttachmentService)
+    from app.modules.transactions.vehicle_checklist.models import (
+        VehicleChecklistLine)
+
+    svc = VehicleChecklistService()
+    cl = svc.get_visible(cid, api_user)
+    if cl is None:
+        return jsonify({"error": "not_found",
+                        "message": "Checklist not found."}), 404
+    if cl.status != "DRAFT":
+        return jsonify({
+            "error": "conflict",
+            "message": ("This inspection has been submitted. Its photos "
+                        "can no longer be changed."),
+        }), 409
+
+    line = db.session.get(VehicleChecklistLine, lid)
+    if line is None or line.checklist_id != cl.id:
+        return jsonify({"error": "not_found",
+                        "message": "Checklist item not found."}), 404
+    if line.response not in ("ATTENTION", "FAILED"):
+        return jsonify({
+            "error": "validation_error",
+            "message": ("Photos are for items marked Attention or Failed. "
+                        "Mark the item first, then add the picture."),
+        }), 400
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return jsonify({"error": "validation_error",
+                        "message": "No photo was received."}), 400
+
+    try:
+        att = AttachmentService().upload(file, "vehicle_checklists", cl.id,
+                                         user=api_user)
+    except AttachmentError as e:
+        return jsonify({"error": "validation_error",
+                        "message": str(e)}), 400
+
+    line.photo_attachment_id = att.id
+    db.session.commit()
+    return jsonify({"line_id": line.id,
+                    "photo_attachment_id": att.id}), 201
+
+
+@bp.route("/checklists/<int:cid>/lines/<int:lid>/photo", methods=["DELETE"])
+@api_auth_required("checklist.update")
+def checklist_line_photo_clear(api_user, cid, lid):
+    """Remove a photo from a draft -- a retake, or one taken by mistake."""
+    from app.modules.transactions.vehicle_checklist.models import (
+        VehicleChecklistLine)
+
+    svc = VehicleChecklistService()
+    cl = svc.get_visible(cid, api_user)
+    if cl is None:
+        return jsonify({"error": "not_found",
+                        "message": "Checklist not found."}), 404
+    if cl.status != "DRAFT":
+        return jsonify({"error": "conflict",
+                        "message": "This inspection has been submitted."}), 409
+    line = db.session.get(VehicleChecklistLine, lid)
+    if line is None or line.checklist_id != cl.id:
+        return jsonify({"error": "not_found",
+                        "message": "Checklist item not found."}), 404
+    line.photo_attachment_id = None
+    db.session.commit()
+    return jsonify({"line_id": line.id, "photo_attachment_id": None})
 
 
 @bp.route("/checklists/<int:cid>/submit", methods=["POST"])

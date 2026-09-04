@@ -103,6 +103,23 @@ class VehicleChecklistLine(db.Model, BaseModel):
     is_safety = db.Column(db.Boolean, nullable=False, default=False)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
 
+    #: Evidence for an ATTENTION or FAILED response.
+    #:
+    #: On the LINE, not the defect. A response is what the driver
+    #: records; a defect is the observation that follows it. Hanging the
+    #: photo off the defect would mean the picture only exists once
+    #: someone has written a description, which is backwards on a phone
+    #: -- the driver photographs the cracked light and then types.
+    #:
+    #: An attachment id, not bytes: this table has a row per checklist
+    #: ITEM (45 on the BLOWBAGETS template), so a blob column here would
+    #: be loaded on every line of every inspection.
+    #:
+    #: items.photo_required_on_fail already existed and the BLOWBAGETS
+    #: seed sets it on all four safety categories -- the intent was
+    #: modelled long before there was anywhere to put the picture.
+    photo_attachment_id = db.Column(db.Integer, nullable=True)
+
     item = db.relationship("ChecklistItem")
 
 
