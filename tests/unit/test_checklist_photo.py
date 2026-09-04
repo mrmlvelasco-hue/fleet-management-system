@@ -227,3 +227,24 @@ def test_a_submitted_inspection_refuses_new_photos(app, client, env):
     r = _post_photo(client, cl, line)
 
     assert r.status_code == 409
+
+
+def test_the_detail_payload_carries_the_real_letterhead(app, client, env):
+    """The printed checklist said "Fleet Management System" -- a
+    hardcoded product name standing in for the client's own company."""
+    cl, _ju = env
+    body = json.loads(client.get(f"/api/v1/checklists/{cl.id}",
+                                 headers=_hdr(client)).get_data(as_text=True))
+    assert "company" in body
+    assert "company_name" in body["company"]
+    assert "logo_url" in body["company"]
+
+
+def test_list_rows_do_NOT_carry_the_letterhead(app, client, env):
+    """Identical for every row, so carrying it 50 times a page would be
+    pure weight on a query just optimised from 104 statements to 3."""
+    cl, _ju = env
+    rows = json.loads(client.get("/api/v1/checklists",
+                                 headers=_hdr(client)).get_data(as_text=True))["items"]
+    assert rows
+    assert "company" not in rows[0]

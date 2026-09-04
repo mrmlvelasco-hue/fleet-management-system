@@ -85,6 +85,18 @@ def _row(cl, detail=False):
                 ln.item.photo_required_on_fail if ln.item else False),
         })
     d["groups"] = [{"category": k, "items": v} for k, v in groups.items()]
+    # The real letterhead, on the DETAIL payload only.
+    #
+    # Not on list rows: the letterhead is identical for every row, so
+    # carrying it 50 times per page would be pure weight on the query
+    # this module just went to some trouble to make cheap.
+    #
+    # Without this the printed checklist said "Fleet Management System"
+    # -- a hardcoded product name standing in for the client's own
+    # company, which is exactly what PrintLetterhead was written to stop
+    # and what the configurable logo was added for.
+    from app.modules.api.company_letterhead import company_letterhead
+    d["company"] = company_letterhead()
     d["defects"] = [{
         "id": df.id,
         "line_id": df.line_id,

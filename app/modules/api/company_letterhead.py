@@ -40,7 +40,24 @@ def company_letterhead():
 
     company = CompanyProfileService().get()
     if company is None:
-        return {}
+        # The full SHAPE with nulls, not a bare {}.
+        #
+        # A print view reading company.company_name off an empty dict
+        # gets undefined and renders a blank header; with an explicit
+        # null it renders its "Company Name" placeholder, which is a
+        # prompt to go and configure one. Same reasoning as
+        # _company_json, and the two now agree.
+        return {
+            "company_name": None,
+            "address_line1": None,
+            "address_line2": None,
+            "city": None,
+            "country": None,
+            "phone": None,
+            "email": None,
+            "tin": None,
+            "logo_url": None,
+        }
     return {
         "company_name": company.company_name,
         "address_line1": company.address_line1,
