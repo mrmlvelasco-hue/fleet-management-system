@@ -16,6 +16,10 @@ class InvalidMovementTypeError(Exception):
     pass
 
 
+class InvalidMovementStateError(Exception):
+    """An operation attempted from a state that does not allow it."""
+
+
 class VehicleMovementService(BaseTransactionService):
     model = VehicleMovement
     document_type_code = "VM"
@@ -67,13 +71,81 @@ class VehicleMovementService(BaseTransactionService):
         return mv
 
     def start_transit(self, movement_id: int):
+        """Begin the move.
+
+        Guarded the same way Trip Ticket's release() and ATD's
+        activate() are. This set the status from ANY state with no
+        approval check -- the same bypass found in vehicle registration,
+        and the real-world consequence is a vehicle moving between
+        branches on a movement nobody authorised.
+        """
         mv = db.session.get(VehicleMovement, movement_id)
+        if mv is None:
+            raise InvalidMovementStateError("That movement does not exist.")
+        if mv.status != "DRAFT":
+            raise InvalidMovementStateError(
+                f"This movement is {mv.status.replace('_', ' ').lower()} "
+                f"and cannot be started again.")
+        # Checked against the DOCUMENT TYPE, not merely against whether
+        # an instance happens to exist.
+        #
+        # Trip Ticket and ATD use the weaker convention -- `if
+        # instance and status != APPROVED` -- which permits the
+        # transition when NO instance was ever created. That is fine
+        # when approval is genuinely not configured, and a hole when it
+        # is configured and submit was simply skipped. Recorded in the
+        # apply guide as a recommended alignment for those two, rather
+        # than changed here mid-testing.
+        from app.modules.document_config.models import DocumentType
+        dt = DocumentType.query.filter_by(code="VEHICLEMOVEMENT").first()
+        requires_approval = bool(dt and dt.requires_approval)
+        inst = mv.approval_instance
+        if requires_approval and (inst is None or inst.status != "APPROVED"):
+            raise InvalidMovementStateError(
+                "Vehicle Movement must be APPROVED before transit can "
+                "start.")
+        if inst is not None and inst.status != "APPROVED":
+            raise InvalidMovementStateError(
+                "Vehicle Movement must be APPROVED before transit can "
+                "start.")
         mv.status = "IN_TRANSIT"
         db.session.commit()
         return mv
 
     def complete(self, movement_id: int, movement_end_datetime=None):
+        """Close the move.
+
+        Guards APPROVAL, not the transit step.
+        
+        An earlier version of this required IN_TRANSIT, which broke a
+        legitimate existing flow: a movement closed out after the fact,
+        without anyone having pressed Start Transit. That is a workflow
+        opinion, and imposing it mid-testing would have cost the client
+        a working path for no safety gain.
+        
+        What DOES matter is that a movement cannot be completed without
+        the approval it was configured to need -- the same hole found in
+        vehicle registration. Terminal states are refused so a completed
+        or cancelled movement cannot be reopened.
+        """
+        from app.modules.document_config.models import DocumentType
         mv = db.session.get(VehicleMovement, movement_id)
+        if mv is None:
+            raise InvalidMovementStateError("That movement does not exist.")
+        if mv.status in ("COMPLETED", "CANCELLED"):
+            raise InvalidMovementStateError(
+                f"This movement is already {mv.status.lower()}.")
+        dt = DocumentType.query.filter_by(code="VEHICLEMOVEMENT").first()
+        requires_approval = bool(dt and dt.requires_approval)
+        inst = mv.approval_instance
+        if requires_approval and (inst is None or inst.status != "APPROVED"):
+            raise InvalidMovementStateError(
+                "Vehicle Movement must be APPROVED before it can be "
+                "completed.")
+        if inst is not None and inst.status != "APPROVED":
+            raise InvalidMovementStateError(
+                "Vehicle Movement must be APPROVED before it can be "
+                "completed.")
         mv.status = "COMPLETED"
         if movement_end_datetime is not None:
             mv.movement_end_datetime = movement_end_datetime

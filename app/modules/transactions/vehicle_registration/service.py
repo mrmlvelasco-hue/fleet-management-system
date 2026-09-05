@@ -26,6 +26,16 @@ class InvalidRegistrationStateError(Exception):
     pass
 
 
+class RegistrationNotApprovedError(Exception):
+    """Completion attempted before the registration was approved.
+
+    Recording the OR/CR is the LAST step -- it happens after someone has
+    authorised the spend. Completing a DRAFT skips that entirely, which
+    is what the client hit: a draft that had never been submitted showed
+    a Complete Registration button and completed.
+    """
+
+
 class RegistrationDateOrderError(Exception):
     pass
 
@@ -169,9 +179,47 @@ class VehicleRegistrationService(BaseTransactionService):
         db.session.commit()
         return item
 
+    def _requires_approval(self) -> bool:
+        """Whether the VEHICLEREGISTRATION document type needs approval.
+
+        Read from Document Type rather than hardcoded, per "no values
+        shall be hardcoded". A client who configures registration as
+        needing no approval must still be able to complete a draft
+        directly -- which is exactly how tire transactions already
+        behave.
+        """
+        from app.modules.document_config.models import DocumentType
+        dt = DocumentType.query.filter_by(
+            code="VEHICLEREGISTRATION").first()
+        return bool(dt and dt.requires_approval)
+
     def complete(self, registration_id: int, *, or_number, cr_number,
                 plate_number=None):
         reg = db.session.get(VehicleRegistration, registration_id)
+
+        # Approval gate.
+        #
+        # complete() previously set status = COMPLETED from ANY state,
+        # so a DRAFT that had never been submitted could be completed --
+        # an approval bypass on the one document where the approval is
+        # the point. Found in the client's own walkthrough.
+        #
+        # Terminal states are refused regardless of approval: a
+        # COMPLETED record re-completed would re-assign the plate and
+        # overwrite issued document numbers, and a CANCELLED one should
+        # not come back to life.
+        if reg is None:
+            raise RegistrationNotApprovedError(
+                "That registration does not exist.")
+        if reg.status in ("COMPLETED", "CANCELLED"):
+            raise RegistrationNotApprovedError(
+                f"This registration is already {reg.status.lower()} and "
+                f"cannot be completed again.")
+        if self._requires_approval() and reg.status != "APPROVED":
+            raise RegistrationNotApprovedError(
+                "This registration has not been approved yet. Enter the "
+                "estimated cost, submit it for approval, and record the "
+                "OR/CR once it is approved.")
 
         # Rule: a COMPLETED record can never have its registration date
         # after its own expiry date — that would mean the certificate
