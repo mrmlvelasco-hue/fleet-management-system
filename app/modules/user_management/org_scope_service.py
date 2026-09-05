@@ -32,19 +32,81 @@ class UserOrgScopeService:
                             if scope_type == "BUSINESS_UNIT" else None)
         db.session.add(scope)
         db.session.commit()
+        # A request that GRANTS a scope and then re-reads it must not
+        # see the answer it cached moments earlier.
+        self.invalidate_cache()
         return scope
 
     def list_for_user(self, user_id: int, include_inactive: bool = False) -> list:
-        q = UserOrgScope.query.filter_by(user_id=user_id)
-        if not include_inactive:
-            q = q.filter_by(is_active=True)
-        return q.all()
+        """A user's org scopes, memoised for the life of the request.
+
+        covers() calls this on EVERY invocation, and covers() is called
+        once per row when filtering a list by org scope. Measured on the
+        dashboard at 5,000 vehicles: 6,589 identical queries returning
+        the same handful of rows -- 99% of every query the dashboard
+        issued, and about two seconds of it.
+
+        Stored on `flask.g` AND cleared by a teardown_request hook
+        registered in the app factory.
+
+        Both halves are required, and the second is easy to miss:
+        flask.g is scoped to the APP context, not the request. Under a
+        long-lived app context -- a Celery worker, or a test that pushes
+        one around several requests -- g survives from one request to
+        the next, so a scope revoked between them would still read as
+        granted. A test caught exactly that. The teardown hook is what
+        makes the lifetime actually per-request.
+
+        Outside a request context (CLI, Celery task bodies) it falls
+        straight through to the query rather than caching at all.
+
+        include_inactive is part of the key: the two answers differ, and
+        sharing one slot would let a maintenance screen asking for
+        inactive rows poison the security check that must not see them.
+        """
+        def _query():
+            q = UserOrgScope.query.filter_by(user_id=user_id)
+            if not include_inactive:
+                q = q.filter_by(is_active=True)
+            return q.all()
+
+        try:
+            from flask import g, has_request_context
+            if not has_request_context():
+                return _query()
+        except Exception:
+            return _query()
+
+        cache = getattr(g, "_fms_org_scopes", None)
+        if cache is None:
+            cache = {}
+            g._fms_org_scopes = cache
+        key = (user_id, include_inactive)
+        if key not in cache:
+            cache[key] = _query()
+        return cache[key]
+
+    @staticmethod
+    def invalidate_cache():
+        """Drop the per-request memo.
+
+        Called after a scope is added or removed so a request that
+        CHANGES scopes and then re-reads them does not see the stale
+        answer it cached moments earlier.
+        """
+        try:
+            from flask import g, has_request_context
+            if has_request_context() and hasattr(g, "_fms_org_scopes"):
+                del g._fms_org_scopes
+        except Exception:
+            pass
 
     def remove(self, scope_id: int) -> None:
         scope = db.session.get(UserOrgScope, scope_id)
         if scope:
             scope.is_active = False
             db.session.commit()
+            self.invalidate_cache()
 
     def covers(self, user_id: int, branch_id: int = None,
               business_unit_id: int = None) -> bool:

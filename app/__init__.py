@@ -378,6 +378,24 @@ def create_app(config_name: str | None = None) -> Flask:
         formatted = "{:,.2f}".format(amount)
         return f"₱{formatted}" if symbol else formatted
 
+    @app.teardown_request
+    def _clear_org_scope_cache(exc=None):
+        """Drop the per-request org-scope memo.
+
+        flask.g is scoped to the APP context, not the request. Under a
+        long-lived app context -- a Celery worker, or a test pushing one
+        around several requests -- g survives between requests, so a
+        scope revoked in between would still read as granted. Clearing
+        here is what makes UserOrgScopeService's cache genuinely
+        per-request rather than merely usually-per-request.
+        """
+        from flask import g
+        if hasattr(g, "_fms_org_scopes"):
+            del g._fms_org_scopes
+        # Same reasoning for the LIST_PAGES memo.
+        if hasattr(g, "_fms_list_pages"):
+            del g._fms_list_pages
+
     return app
 
 

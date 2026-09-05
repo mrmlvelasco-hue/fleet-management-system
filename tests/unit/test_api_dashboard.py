@@ -415,14 +415,21 @@ def test_awaiting_approval_url_is_null_for_an_unbuilt_module(db, client,
                                      auto_numbering=True)
     dt = DocumentType.query.filter_by(code="MO").first()
     inst = ApprovalInstance(document_type_id=dt.id,
-                            reference_table="trip_tickets", reference_id=888,
+                            # maintenance_invoices, not trip_tickets: the latter gained a
+                            # React detail screen and is now mapped. The
+                            # CONTRACT under test -- an unmapped table yields a
+                            # null url -- is unchanged; only the example had to
+                            # move to a table that is still genuinely
+                            # screenless.
+                            reference_table="maintenance_invoices",
+                            reference_id=888,
                             status="PENDING", current_level=1,
                             branch_id=branch.id)
     _db.session.add(inst)
     _db.session.flush()
     _db.session.add(ApprovalTask(
         approval_instance_id=inst.id, level_number=1, document_type_id=dt.id,
-        document_number="TT-888", reference_table="trip_tickets",
+        document_number="TT-888", reference_table="maintenance_invoices",
         reference_id=888, assigned_user_id=user.id, branch_id=branch.id,
         status="PENDING"))
     _db.session.commit()
