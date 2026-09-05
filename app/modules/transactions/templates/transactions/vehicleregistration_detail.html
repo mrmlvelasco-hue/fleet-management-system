@@ -52,7 +52,15 @@
         {% endif %}
       </div>
 
-      {% if item.status == 'DRAFT' and current_user.has_permission('vehicleregistration.update') %}
+      {# Shown once APPROVED -- previously `status == 'DRAFT'`, which was
+         exactly backwards: the OR/CR block appeared on an unsubmitted
+         draft and disappeared the moment the registration was approved.
+         Recording the issued documents is the LAST step, after someone
+         has authorised the spend, and the service now refuses it
+         earlier, so offering the form on a draft only produced an
+         error. #}
+      {% if item.status == 'APPROVED'
+            and current_user.has_permission('vehicleregistration.update') %}
       <hr>
       <form method="post" action="{{ url_for('transactions.vehicleregistration_complete', rid=item.id) }}" class="row g-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
