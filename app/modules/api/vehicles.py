@@ -1220,3 +1220,41 @@ def vehicle_types(api_user):
         {"id": t.id, "code": t.code, "name": t.name,
          "category": getattr(t, "category", None)}
         for t in rows]})
+
+
+@bp.route("/vehicles/odometer-logs", methods=["GET"])
+@api_auth_required("vehicle.view")
+def vehicle_odometer_logs(api_user):
+    """The odometer audit list.
+
+    The client's request: a way to check what was pushed from the phone.
+    Filterable by vehicle, source and date, because "which readings came
+    from mobile last week" is the question actually being asked.
+    """
+    from app.modules.api.pagination import resolve_page_size
+    from app.modules.master_data.vehicle.odometer_service import (
+        OdometerService)
+
+    rows, total = OdometerService().history(
+        vehicle_id=request.args.get("vehicle_id", type=int),
+        source=request.args.get("source") or None,
+        date_from=request.args.get("date_from") or None,
+        date_to=request.args.get("date_to") or None,
+        page=request.args.get("page", 1, type=int),
+        per_page=resolve_page_size(request.args.get("per_page")))
+    return jsonify({
+        "items": [{
+            "id": e.id,
+            "vehicle_id": e.vehicle_id,
+            "plate_number": (e.vehicle.plate_number
+                             or e.vehicle.conduction_number) if e.vehicle else None,
+            "reading": e.reading,
+            "previous_reading": e.previous_reading,
+            "delta": e.delta,
+            "source": e.source,
+            "recorded_at": e.recorded_at.isoformat() if e.recorded_at else None,
+            "recorded_by": e.user.full_name if e.user else None,
+            "remarks": e.remarks,
+        } for e in rows],
+        "total": total,
+    })

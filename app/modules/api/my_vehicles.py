@@ -175,8 +175,18 @@ def my_vehicle_odometer(api_user, vid):
                         f"recorded {v.current_odometer}."),
             "field": "odometer"}), 400
 
-    v.current_odometer = reading
-    db.session.commit()
+    # Through OdometerService so the reading is LOGGED, not merely
+    # applied. source=MOBILE is what makes the client's question --
+    # "how do I check the update pushed from the phone" -- answerable at
+    # all.
+    from app.modules.master_data.vehicle.odometer_service import (
+        OdometerError, OdometerService)
+    try:
+        OdometerService().record(v.id, reading, source="MOBILE",
+                                 user=api_user)
+    except OdometerError as e:
+        return jsonify({"error": "validation_error",
+                        "message": str(e), "field": "odometer"}), 400
     return jsonify(_row(v))
 
 
@@ -371,3 +381,29 @@ def my_atd_print(api_user, aid):
         # the phone and the Jinja slip cannot disagree about it.
         "copies": 2,
     })
+
+
+@bp.route("/my/vehicles/<int:vid>/odometer", methods=["GET"])
+@api_auth_required("vehicle.view")
+def my_vehicle_odometer_history(api_user, vid):
+    """Recent readings for a vehicle the caller holds.
+
+    So a driver can see what they submitted rather than guessing whether
+    this morning's entry went through -- the mobile equivalent of the
+    admin history.
+    """
+    from app.modules.master_data.vehicle.odometer_service import (
+        OdometerService)
+
+    if _assigned_vehicle(vid, api_user) is None:
+        return _not_found()
+    rows, total = OdometerService().history(vehicle_id=vid, per_page=30)
+    return jsonify({"items": [{
+        "id": e.id,
+        "reading": e.reading,
+        "previous_reading": e.previous_reading,
+        "delta": e.delta,
+        "source": e.source,
+        "recorded_at": e.recorded_at.isoformat() if e.recorded_at else None,
+        "recorded_by": e.user.full_name if e.user else None,
+    } for e in rows], "total": total})

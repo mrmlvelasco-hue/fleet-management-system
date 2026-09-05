@@ -313,7 +313,7 @@ def get_vehicle(api_user, vehicle_id):
     return jsonify(detail_json(vehicle))
 
 
-def _apply_odometer_update(vehicle, raw):
+def _apply_odometer_update(vehicle, raw, api_user=None):
     """Shared by both the vehicle_id and plate-number odometer
     endpoints, so the two entry points can never enforce different
     rules -- there is exactly one place that decides what a valid
@@ -344,8 +344,18 @@ def _apply_odometer_update(vehicle, raw):
             "current_odometer": previous,
         }, 409
 
-    vehicle.current_odometer = reading
-    db.session.commit()
+    # Logged as well as applied. This is the by-plate endpoint used by
+    # telematics integrations, so source=API distinguishes a machine
+    # feed from a driver's entry in the history -- which is most of the
+    # value of having a history at all.
+    from app.modules.master_data.vehicle.odometer_service import (
+        OdometerService)
+    # api_user is threaded in from the caller rather than read from a
+    # global: this helper is shared by the vehicle_id and by-plate
+    # endpoints precisely so the two can never enforce different rules,
+    # and it must not start depending on which one called it.
+    OdometerService().record(vehicle.id, reading, source="API",
+                             user=api_user)
 
     return {
         "vehicle_id": vehicle.id,
@@ -382,7 +392,8 @@ def update_odometer(api_user, vehicle_id):
                                   "this account."}), 404
 
     payload = request.get_json(silent=True) or {}
-    body, status = _apply_odometer_update(vehicle, payload.get("odometer"))
+    body, status = _apply_odometer_update(vehicle, payload.get("odometer"),
+                                          api_user=api_user)
     return jsonify(body), status
 
 
@@ -417,7 +428,8 @@ def update_odometer_by_plate(api_user):
                       f"'{plate}'.",
         }), 404
 
-    body, status = _apply_odometer_update(match, payload.get("odometer"))
+    body, status = _apply_odometer_update(match, payload.get("odometer"),
+                                          api_user=api_user)
     return jsonify(body), status
 
 
