@@ -1,6 +1,7 @@
 """Users, Roles, Numbering schemes, Approval paths/matrix for React admin."""
 from flask import jsonify, request
 
+from app.extensions import db
 from app.modules.api.auth import api_auth_required
 from app.modules.api.pagination import resolve_page_size
 from app.modules.api.routes import bp
@@ -685,3 +686,97 @@ def create_numbering(api_user):
     except Exception as e:
         return _conflict(str(e))
     return jsonify(_scheme_json(s)), 201
+
+
+# ── Organizational scope ─────────────────────────────────────────────
+#
+# The assignment that actually governs what a user can SEE.
+#
+# Two different things share the word "branch", and conflating them is
+# what produced the client's report that a user "assigned only to East
+# Asia Laboratories Inc." still saw every branch:
+#
+#   users.branch_id  -- a dropdown on the User form. Home branch,
+#                       informational, read by nothing that filters.
+#   UserOrgScope     -- what UserOrgScopeService.covers() reads.
+#
+# The scope engine was never broken. It was simply that UserOrgScope
+# could only be assigned from a Jinja screen, with no API endpoint and
+# so no React equivalent -- an administrator working in React set
+# "Branch" on the user, reasonably believed access was restricted, and
+# never touched the record the rule reads.
+
+def _scope_json(s):
+    return {
+        "id": s.id,
+        "scope_type": s.scope_type,
+        "branch_id": s.branch_id,
+        "branch_name": s.branch.name if getattr(s, "branch", None) else None,
+        "business_unit_id": s.business_unit_id,
+        "business_unit_name": (s.business_unit.name
+                               if getattr(s, "business_unit", None) else None),
+    }
+
+
+@bp.route("/admin/users/<int:uid>/org-scopes", methods=["GET"])
+@api_auth_required("user.view")
+def user_org_scopes(api_user, uid):
+    from app.modules.user_management.models import User
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+
+    if db.session.get(User, uid) is None:
+        return jsonify({"error": "not_found",
+                        "message": "User not found."}), 404
+    scopes = UserOrgScopeService().list_for_user(uid)
+    return jsonify({
+        "items": [_scope_json(s) for s in scopes],
+        # Stated explicitly rather than left for the client to infer
+        # from an empty list. "No scopes" means GLOBAL ACCESS, not "no
+        # access" -- the opposite of what an empty list looks like, and
+        # the exact misreading behind the original report.
+        "global_access": len(scopes) == 0,
+    })
+
+
+@bp.route("/admin/users/<int:uid>/org-scopes", methods=["POST"])
+@api_auth_required("user.update")
+def user_org_scope_add(api_user, uid):
+    """Grant a scope. Deciding what someone may SEE is a
+    user-administration act, so this needs user.update, not user.view."""
+    from app.modules.user_management.models import User
+    from app.modules.user_management.org_scope_service import (
+        InvalidScopeError, UserOrgScopeService)
+
+    if db.session.get(User, uid) is None:
+        return jsonify({"error": "not_found",
+                        "message": "User not found."}), 404
+    p = request.get_json(silent=True) or {}
+    try:
+        scope = UserOrgScopeService().assign(
+            uid, scope_type=(p.get("scope_type") or "").upper(),
+            branch_id=p.get("branch_id"),
+            business_unit_id=p.get("business_unit_id"))
+    except InvalidScopeError as e:
+        return jsonify({"error": "validation_error",
+                        "message": str(e)}), 400
+    return jsonify(_scope_json(scope)), 201
+
+
+@bp.route("/admin/users/<int:uid>/org-scopes/<int:sid>", methods=["DELETE"])
+@api_auth_required("user.update")
+def user_org_scope_remove(api_user, uid, sid):
+    """Revoke a scope.
+
+    Removing the LAST one returns the user to global access rather than
+    to no access. Surprising, and correct -- it matches the documented
+    rule -- so the response says so and the screen can warn.
+    """
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+
+    svc = UserOrgScopeService()
+    svc.remove(sid)
+    remaining = svc.list_for_user(uid)
+    return jsonify({"deleted": True, "id": sid,
+                    "global_access": len(remaining) == 0})
