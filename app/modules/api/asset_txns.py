@@ -62,7 +62,8 @@ def _vehicle_bits(txn):
     }
 
 
-def _txn_json(txn, *, asset_attr, serial_key, detail=False):
+def _txn_json(txn, *, asset_attr, serial_key, detail=False,
+              api_user=None):
     # odometer_at_service is read via getattr because BatteryTransaction
     # has no such column at all -- reporting None for a field the model
     # does not have is honest; inventing a key it could never populate
@@ -88,8 +89,50 @@ def _txn_json(txn, *, asset_attr, serial_key, detail=False):
     data.update(_vehicle_bits(txn))
     if detail:
         from app.modules.api.company_letterhead import company_letterhead
+        from app.modules.api.approval_eligibility import can_act_on
+
         data["company"] = company_letterhead()
+
+        # Approval state.
+        #
+        # This payload carried only `status`, so after a successful
+        # submit the screen had nothing to react to: it kept offering
+        # Submit and Cancel, and the workflow panel kept saying "not yet
+        # submitted". The submit itself worked -- the UI simply could
+        # not see it.
+        #
+        # Same keys every other transaction module reports, so the
+        # shared React panels behave identically here.
+        # api_user is passed in rather than read from a global: the
+        # serialiser is shared by list and detail across two modules,
+        # and a hidden dependency on request state would make it work in
+        # some of those paths and not others.
+        inst = getattr(txn, "approval_instance", None)
+        data["has_approval_instance"] = inst is not None
+        data["approval_instance_status"] = inst.status if inst else None
+        data["is_requester"] = bool(
+            api_user and txn.requested_by == getattr(api_user, "id", None))
+        data["can_act"] = can_act_on(inst, api_user, data.get("status"))
+        data["approval_chain"] = _approval_chain(inst)
     return data
+
+
+def _approval_chain(inst):
+    """The levels, for the workflow panel.
+
+    Built through ApprovalEngine rather than read off the instance --
+    the ATD print endpoint hand-rolled its own version from attributes
+    that do not exist, and printed an empty chain for months.
+    """
+    if inst is None:
+        return []
+    try:
+        from app.core.approval.engine import ApprovalEngine
+        return ApprovalEngine().get_approval_chain(inst) or []
+    except Exception:
+        # A workflow panel that cannot render must not take the whole
+        # detail screen with it.
+        return []
 
 
 def _list(api_user, service_cls, **json_kw):
@@ -112,12 +155,26 @@ def _lifecycle(api_user, tid, method_name, model_cls, service_cls, label,
         return _not_found(label)
     p = request.get_json(silent=True) or {}
     try:
-        getattr(service_cls(), method_name)(tid, user=api_user,
-                                            remarks=p.get("remarks"))
+        # submit() takes no `remarks`; approve/reject/cancel do.
+        #
+        # This dispatcher passed remarks to ALL of them, so every submit
+        # raised TypeError -- caught below and returned as a 409 whose
+        # message was a Python signature error. Tire and battery submit
+        # was broken outright: the client pressed Submit, the request
+        # failed, and the screen simply kept showing the pre-submit
+        # state.
+        #
+        # Keyed off the method rather than swallowing the TypeError,
+        # because "this argument does not apply here" is a fact about
+        # the API, not an error to recover from.
+        kwargs = {} if method_name == "submit" else {
+            "remarks": p.get("remarks")}
+        getattr(service_cls(), method_name)(tid, user=api_user, **kwargs)
     except Exception as exc:
         return _conflict(str(exc))
     fresh = model_cls.query.filter_by(id=tid).first()
-    return jsonify(_txn_json(fresh, detail=True, **json_kw))
+    return jsonify(_txn_json(fresh, detail=True, api_user=api_user,
+                             **json_kw))
 
 
 # ── Tire transactions ───────────────────────────────────────────────────────
@@ -175,7 +232,8 @@ def create_tire_txn(api_user):
         return _bad(str(exc), "action")
     except Exception as exc:
         return _conflict(str(exc))
-    return jsonify(_txn_json(txn, detail=True, **_TIRE_JSON)), 201
+    return jsonify(_txn_json(txn, detail=True, api_user=api_user,
+                             **_TIRE_JSON)), 201
 
 
 @bp.route("/tire-transactions/<int:tid>", methods=["GET"])
@@ -186,7 +244,8 @@ def tire_txn_detail(api_user, tid):
     txn = TireTransaction.query.filter_by(id=tid).first()
     if txn is None:
         return _not_found("Tire Transaction")
-    return jsonify(_txn_json(txn, detail=True, **_TIRE_JSON))
+    return jsonify(_txn_json(txn, detail=True, api_user=api_user,
+                             **_TIRE_JSON))
 
 
 def _tire_lifecycle(api_user, tid, method_name):
@@ -280,7 +339,8 @@ def create_battery_txn(api_user):
         return _bad(str(exc), "action")
     except Exception as exc:
         return _conflict(str(exc))
-    return jsonify(_txn_json(txn, detail=True, **_BATT_JSON)), 201
+    return jsonify(_txn_json(txn, detail=True, api_user=api_user,
+                             **_BATT_JSON)), 201
 
 
 @bp.route("/battery-transactions/<int:tid>", methods=["GET"])
@@ -292,7 +352,8 @@ def battery_txn_detail(api_user, tid):
     txn = BatteryTransaction.query.filter_by(id=tid).first()
     if txn is None:
         return _not_found("Battery Transaction")
-    return jsonify(_txn_json(txn, detail=True, **_BATT_JSON))
+    return jsonify(_txn_json(txn, detail=True, api_user=api_user,
+                             **_BATT_JSON))
 
 
 def _batt_lifecycle(api_user, tid, method_name):
