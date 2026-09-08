@@ -1228,8 +1228,15 @@ def vehicle_odometer_logs(api_user):
     """The odometer audit list.
 
     The client's request: a way to check what was pushed from the phone.
-    Filterable by vehicle, source and date, because "which readings came
-    from mobile last week" is the question actually being asked.
+    Filterable by vehicle, source, date and now plate number, because
+    "which readings came from mobile last week for NZO-619" is the
+    question actually being asked.
+
+    SCOPED per the client's expected architecture: a Vehicle Assignee
+    sees only their own assigned vehicles; everyone else sees vehicles
+    in their assigned branch(es), or every branch if they hold no branch
+    assignment (global access). Found carrying no scoping at all --
+    vehicle.view alone showed every vehicle's history company-wide.
     """
     from app.modules.api.pagination import resolve_page_size
     from app.modules.master_data.vehicle.odometer_service import (
@@ -1240,8 +1247,10 @@ def vehicle_odometer_logs(api_user):
         source=request.args.get("source") or None,
         date_from=request.args.get("date_from") or None,
         date_to=request.args.get("date_to") or None,
+        plate=request.args.get("plate") or None,
         page=request.args.get("page", 1, type=int),
-        per_page=resolve_page_size(request.args.get("per_page")))
+        per_page=resolve_page_size(request.args.get("per_page")),
+        user=api_user)
     return jsonify({
         "items": [{
             "id": e.id,
