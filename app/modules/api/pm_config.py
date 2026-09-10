@@ -23,6 +23,50 @@ def _validation(message, field="_"):
                     "fields": {field: message}}), 400
 
 
+# Section 4 of the Jinja form. Enumerated there as a <select>; an
+# arbitrary string would reach the due-calculation scheduler and match
+# none of its branches, so it is rejected at the edge rather than stored
+# and silently ignored later.
+_NEXT_PMS_GENERATION = ("MANUAL", "AUTO_SCHEDULE", "AUTO_MO")
+_NEXT_DUE_METHOD = ("ACTUAL_COMPLETION", "ORIGINAL_SCHEDULE", "ADMIN_CHOICE")
+
+
+class _FieldError(ValueError):
+    """Carries the field name so the response can highlight the input."""
+
+    def __init__(self, message, field):
+        super().__init__(message)
+        self.field = field
+
+
+def _parse_date(raw, field="effective_date"):
+    """ISO date, or None for an empty value.
+
+    "" must mean NULL rather than "not supplied": a date the user
+    cleared has to actually clear, or the field becomes one-way and the
+    only way to undo a mistake is a DB edit.
+    """
+    if raw in (None, ""):
+        return None
+    from datetime import date, datetime
+    if isinstance(raw, date):
+        return raw
+    try:
+        return datetime.strptime(str(raw).strip()[:10], "%Y-%m-%d").date()
+    except ValueError:
+        raise _FieldError(f"{field} must be an ISO date (YYYY-MM-DD).", field)
+
+
+def _parse_choice(raw, allowed, field, default=None):
+    if raw in (None, ""):
+        return default
+    value = str(raw).strip().upper()
+    if value not in allowed:
+        raise _FieldError(
+            f"{field} must be one of: {', '.join(allowed)}.", field)
+    return value
+
+
 def _page(rows):
     try:
         page = int(request.args.get("page", 1))
@@ -59,6 +103,16 @@ def _sched_json(s, *, detail=False):
         "vehicle_type": s.vehicle_type.name if s.vehicle_type else None,
         "vehicle_brand_id": s.vehicle_brand_id,
         "vehicle_model_id": s.vehicle_model_id,
+        # The NAMES, not just the ids. The Make / Model column on the
+        # list renders "{brand} {model} ({variant})" and falls back to
+        # the free-text pair only when the FK pair is absent -- the
+        # client cannot make that choice, or draw the cell at all, from
+        # ids. Both are eager-loaded by list_paginated, so this costs
+        # nothing per row.
+        "vehicle_brand": s.vehicle_brand.name if s.vehicle_brand else None,
+        "vehicle_model_ref": (
+            s.vehicle_model_ref.name if s.vehicle_model_ref else None),
+        "variant": s.variant,
         "vehicle_make": s.vehicle_make,
         "vehicle_model": s.vehicle_model,
         "priority": s.priority,
@@ -66,7 +120,6 @@ def _sched_json(s, *, detail=False):
     }
     if detail:
         data.update({
-            "variant": s.variant,
             "engine_type": s.engine_type,
             "fuel_type": s.fuel_type,
             "transmission": s.transmission,
@@ -82,6 +135,18 @@ def _sched_json(s, *, detail=False):
             "work_description_template": s.work_description_template,
             "next_pms_generation": s.next_pms_generation,
             "next_due_calculation_method": s.next_due_calculation_method,
+            # Detail only, deliberately. The Jinja detail screen renders
+            # a collapsible activity table per linked scope template;
+            # putting these on the LIST would reload every activity row
+            # for every template on screen, which is the exact cost the
+            # scope list was rewritten to avoid (see
+            # PMScopeTemplateService.list_paginated).
+            "scope_templates": [
+                _scope_json(t, detail=True) | {"item_count": len(t.items or [])}
+                for t in sorted(s.scope_templates or [],
+                                key=lambda t: (t.name or ""))
+                if t.is_active
+            ],
         })
     return data
 
@@ -89,18 +154,51 @@ def _sched_json(s, *, detail=False):
 @bp.route("/pm-templates", methods=["GET"])
 @api_auth_required("pmschedule.view")
 def list_pm_templates(api_user):
+    """One page of PM templates, paginated and filtered in SQL.
+
+    This previously called `PMScheduleService().list(include_inactive=
+    True)` -- every row in the table -- filtered in Python and sliced
+    the result. On the client's 4,626-template VEMS import that built
+    thousands of ORM objects, with four eager relationship loads each,
+    on every single page view, to return 25 of them.
+
+    `list_paginated` was already sitting in the same service, already
+    used by the Jinja screen, already doing server-side search, the
+    maintenance-type filter and the same eager loads. Using it is the
+    whole fix. `test_list_never_selects_pm_schedules_without_a_limit`
+    guards the regression by watching the emitted SQL rather than the
+    row count -- a Python slice returns a correct-looking page while
+    having already paid the full cost.
+    """
     from app.modules.maintenance_config.service import PMScheduleService
-    q = (request.args.get("q") or "").strip().lower()
-    rows = PMScheduleService().list(include_inactive=True)
-    if q:
-        rows = [s for s in rows if q in " ".join(filter(None, [
-            s.profile_code, s.profile_description, s.vehicle_make,
-            s.vehicle_model,
-            s.maintenance_type.name if s.maintenance_type else None,
-            s.vehicle_type.name if s.vehicle_type else None,
-        ])).lower()]
-    payload, err = _page([_sched_json(s) for s in rows])
-    return err if err else jsonify(payload)
+    try:
+        page = int(request.args.get("page", 1))
+        page_size = int(request.args.get("page_size", 25))
+    except (TypeError, ValueError):
+        return _bad("page and page_size must be integers.")
+    if page < 1 or page_size < 1:
+        return _bad("page and page_size must be 1 or greater.")
+    page_size = min(page_size, 200)
+
+    mt_raw = request.args.get("maintenance_type_id")
+    if mt_raw:
+        try:
+            int(mt_raw)
+        except (TypeError, ValueError):
+            return _bad("maintenance_type_id must be an integer.")
+
+    rows, pagination = PMScheduleService().list_paginated(
+        page=page, per_page=page_size,
+        search=(request.args.get("q") or "").strip() or None,
+        maintenance_type_id=mt_raw or None,
+        include_inactive=True)
+    return jsonify({
+        "items": [_sched_json(s) for s in rows],
+        "total": pagination.total,
+        "page": pagination.page,
+        "page_size": pagination.per_page,
+        "pages": max(1, pagination.pages),
+    })
 
 
 @bp.route("/pm-templates/<int:sid>", methods=["GET"])
@@ -134,9 +232,23 @@ def create_pm_template(api_user):
         return int(v)
 
     try:
+        effective_date = _parse_date(p.get("effective_date"))
+        next_gen = _parse_choice(
+            p.get("next_pms_generation"), _NEXT_PMS_GENERATION,
+            "next_pms_generation", default="AUTO_SCHEDULE")
+        next_due = _parse_choice(
+            p.get("next_due_calculation_method"), _NEXT_DUE_METHOD,
+            "next_due_calculation_method", default="ACTUAL_COMPLETION")
+    except _FieldError as e:
+        return _validation(str(e), e.field)
+
+    try:
         s = PMScheduleService().create(
             maintenance_type_id=mt_id,
             trigger_mode=trigger,
+            effective_date=effective_date,
+            next_pms_generation=next_gen,
+            next_due_calculation_method=next_due,
             vehicle_type_id=_int("vehicle_type_id"),
             vehicle_make=p.get("vehicle_make") or None,
             vehicle_model=p.get("vehicle_model") or None,
@@ -184,6 +296,24 @@ def update_pm_template(api_user, sid):
     ):
         if k in p:
             fields[k] = p[k]
+    # Parsed rather than passed through: these three are typed columns
+    # (a Date and two enumerations) that were previously absent from the
+    # list above entirely, so the Jinja form's Effective Date and its
+    # whole "Scheduling Policy & Recalculation" section were accepted by
+    # the screen and discarded by the API.
+    try:
+        if "effective_date" in p:
+            fields["effective_date"] = _parse_date(p["effective_date"])
+        if "next_pms_generation" in p:
+            fields["next_pms_generation"] = _parse_choice(
+                p["next_pms_generation"], _NEXT_PMS_GENERATION,
+                "next_pms_generation", default="AUTO_SCHEDULE")
+        if "next_due_calculation_method" in p:
+            fields["next_due_calculation_method"] = _parse_choice(
+                p["next_due_calculation_method"], _NEXT_DUE_METHOD,
+                "next_due_calculation_method", default="ACTUAL_COMPLETION")
+    except _FieldError as e:
+        return _validation(str(e), e.field)
     try:
         s = PMScheduleService().update(sid, **fields)
     except Exception as e:
@@ -205,6 +335,25 @@ def deactivate_pm_template(api_user, sid):
 
 # ── PM Scope Templates ──────────────────────────────────────────────────────
 
+def _pm_schedule_label(s):
+    """How a linked PM Template reads in a cell.
+
+    Profile code first because that is what the client's own data is
+    organised by (S02-00001 and friends); the maintenance type name is
+    the fallback for schedules imported without one. None when there is
+    no link at all, which is a real and common state -- a scope template
+    with no pm_schedule_id is the generic one matched by maintenance
+    type alone.
+    """
+    if s is None:
+        return None
+    if s.profile_code:
+        return s.profile_code
+    if s.maintenance_type is not None:
+        return s.maintenance_type.name
+    return f"Template #{s.id}"
+
+
 def _scope_json(t, *, detail=False):
     data = {
         "id": t.id,
@@ -214,6 +363,12 @@ def _scope_json(t, *, detail=False):
         "maintenance_type": (
             t.maintenance_type.name if t.maintenance_type else None),
         "pm_schedule_id": t.pm_schedule_id,
+        # The Jinja scope list has a "Linked PM Template" column. An id
+        # is not renderable, and resolving it client-side would be one
+        # request per row. Uses the profile code when there is one and
+        # falls back to the maintenance type name, matching what the
+        # Jinja cell prints.
+        "pm_schedule": _pm_schedule_label(t.pm_schedule),
         # item_count is filled by the list endpoint via GROUP BY; avoid
         # len(t.items) here — that would lazy-load every activity row.
         "item_count": 0,
@@ -232,6 +387,10 @@ def _scope_json(t, *, detail=False):
                 "estimated_cost": (
                     float(i.estimated_cost)
                     if i.estimated_cost is not None else None),
+                # A Parts column on both the scope detail table and the
+                # inline table on the PM template detail. Omitted here
+                # while both screens rendered it from Jinja directly.
+                "required_parts": i.required_parts,
             }
             for i in (t.items or [])
         ]
@@ -457,4 +616,73 @@ def get_pms_profile(api_user, profile_code):
             }
             for pkg in packages
         ],
+    })
+
+
+# ── Export & Import ─────────────────────────────────────────────────────────
+
+@bp.route("/pm-templates/export", methods=["GET"])
+@api_auth_required("pmschedule.view")
+def export_pm_templates(api_user):
+    """The same XLSX the Jinja Export button produces, over bearer auth.
+
+    The Jinja button points at `master_data_export`, which is
+    `@login_required` and reads `current_user` -- a session route. React
+    holds a bearer token and no session cookie, so it could not reach
+    it, and copying the generator would have meant two exports that
+    drift. This reuses `generate_master_data_xlsx` unchanged and only
+    swaps the authentication in front of it.
+
+    Guarded on `pmschedule.view`, matching `_EXPORT_PERMISSIONS` on the
+    Jinja side: an export is a full dump of the module, so it must
+    require exactly what viewing the screen requires. Anything looser
+    hands someone every row they cannot see on screen.
+    """
+    from io import BytesIO
+
+    from flask import send_file
+
+    from app.core.reporting.master_data_exports import (
+        generate_master_data_xlsx)
+
+    data, filename = generate_master_data_xlsx("pm-schedules")
+    return send_file(
+        BytesIO(data), as_attachment=True, download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument"
+                 ".spreadsheetml.sheet")
+
+
+@bp.route("/pm-templates/import", methods=["POST"])
+@api_auth_required("pmschedule.create")
+def import_pm_templates(api_user):
+    """CSV import, reusing PMScheduleImportService unchanged.
+
+    Requires `pmschedule.create`, not `.view` -- this writes rows.
+
+    Row-level errors come back with a 200 and the created/skipped
+    counts, exactly as the Jinja screen renders them. Failing the whole
+    request on one bad row would tell the user their file was rejected
+    without telling them which line to fix, and would throw away the
+    rows that were fine.
+    """
+    import io
+
+    file = request.files.get("csv_file")
+    if file is None or not file.filename:
+        return _validation("Please choose a CSV file.", "csv_file")
+
+    from app.modules.maintenance_config.import_service import (
+        PMScheduleImportService)
+    try:
+        content = file.read().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return _validation(
+            "That file is not UTF-8 text. Export it as CSV UTF-8 and "
+            "try again.", "csv_file")
+
+    result = PMScheduleImportService().import_csv(io.StringIO(content))
+    return jsonify({
+        "created": result.get("created", 0),
+        "skipped": result.get("skipped", 0),
+        "errors": result.get("errors", []),
     })
