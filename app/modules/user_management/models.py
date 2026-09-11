@@ -111,6 +111,26 @@ class User(db.Model, BaseModel, UserMixin):
     # changes nothing else grants nobody native access -- the closed
     # default is what makes it safe to add a gate to a live endpoint.
     mobile_access = db.Column(db.Boolean, default=False, nullable=False)
+    #: Narrow this account to the vehicles CURRENTLY assigned to it.
+    #:
+    #: Org scope answers "which vehicles may this ROLE see" -- for a
+    #: Fleet Officer, correctly the whole branch. This answers "which
+    #: vehicles is this PERSON responsible for", which for an assignee
+    #: is one or two. The two INTERSECT: switching this on never widens
+    #: access beyond the user's branch scope, it only narrows within it.
+    #:
+    #: Deliberately a per-user flag rather than a check on the "Vehicle
+    #: Assignee" role. Keying on a role name would hard-code a value
+    #: that is configuration (the role list is maintained in System
+    #: Administration), and it would silently change access for anyone
+    #: who holds that role alongside another -- a Fleet Officer who also
+    #: drives would lose the ability to raise a Maintenance Order for a
+    #: vehicle that is not theirs.
+    #:
+    #: Defaults to False, so an install that runs the migration and
+    #: changes nothing else restricts nobody.
+    restrict_to_assigned_vehicles = db.Column(db.Boolean, default=False,
+                                              nullable=False)
     roles = db.relationship("Role", secondary=user_roles, backref="users")
     branch = db.relationship("Branch", foreign_keys=[branch_id])
     department = db.relationship("Department")

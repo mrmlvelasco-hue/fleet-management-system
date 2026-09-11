@@ -46,6 +46,8 @@ def _user_json(u, *, detail=False):
         # still decide what the person may DO once inside, on either
         # channel.
         "mobile_access": bool(getattr(u, "mobile_access", False)),
+        "restrict_to_assigned_vehicles": bool(
+            getattr(u, "restrict_to_assigned_vehicles", False)),
         "is_superuser": bool(getattr(u, "is_superuser", False)),
         "failed_login_attempts": u.failed_login_attempts or 0,
         "last_login_at": (
@@ -138,6 +140,8 @@ def create_user(api_user):
             department_id=p.get("department_id") or None,
             role_ids=p.get("role_ids") or [],
             mobile_access=bool(p.get("mobile_access", False)),
+            restrict_to_assigned_vehicles=bool(
+                p.get("restrict_to_assigned_vehicles", False)),
         )
     except Exception as e:
         return _conflict(str(e))
@@ -167,6 +171,13 @@ def update_user(api_user, uid):
     # false must revoke, or the switch only ever turns on.
     if "mobile_access" in p:
         kwargs["mobile_access"] = bool(p["mobile_access"])
+    # Presence-checked, not defaulted: a PATCH that omits the key must
+    # leave the existing value alone. Defaulting it to False here would
+    # silently un-restrict a user every time an admin edited their
+    # email.
+    if "restrict_to_assigned_vehicles" in p:
+        kwargs["restrict_to_assigned_vehicles"] = bool(
+            p["restrict_to_assigned_vehicles"])
     try:
         u = UserService().update_user(uid, **kwargs)
     except Exception as e:

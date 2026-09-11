@@ -22,7 +22,8 @@ class UserService:
     def create_user(self, username, email, password, first_name=None,
                     last_name=None, role_ids=None, must_change_password=False,
                     employee_id=None, branch_id=None, department_id=None,
-                    is_lockout_exempt=False, mobile_access=False):
+                    is_lockout_exempt=False, mobile_access=False,
+                    restrict_to_assigned_vehicles=False):
         if self.users.get_by_username(username) is not None:
             raise DuplicateUsernameError(f"Username '{username}' already exists.")
         user = self.users.create(
@@ -33,7 +34,8 @@ class UserService:
             department_id=department_id,
             must_change_password=must_change_password,
             is_lockout_exempt=is_lockout_exempt,
-            mobile_access=mobile_access)
+            mobile_access=mobile_access,
+            restrict_to_assigned_vehicles=restrict_to_assigned_vehicles)
         self._assign_roles(user, role_ids or [])
         db.session.flush()
         from app.core.security.password_policy import PasswordPolicyService
@@ -44,7 +46,8 @@ class UserService:
     def update_user(self, user_id, *, email=None, first_name=None,
                     last_name=None, role_ids=None, password=None,
                     employee_id=None, branch_id=None, department_id=None,
-                    is_lockout_exempt=None, mobile_access=None):
+                    is_lockout_exempt=None, mobile_access=None,
+                    restrict_to_assigned_vehicles=None):
         user = self.users.get_by_id(user_id, include_inactive=True)
         if user is None:
             return None
@@ -58,6 +61,10 @@ class UserService:
         # not a kill switch.
         if mobile_access is not None:
             user.mobile_access = mobile_access
+        # None means "not supplied" and leaves the stored value alone;
+        # False is a real value that clears the restriction.
+        if restrict_to_assigned_vehicles is not None:
+            user.restrict_to_assigned_vehicles = restrict_to_assigned_vehicles
         if email is not None:
             user.email = email
         if first_name is not None:

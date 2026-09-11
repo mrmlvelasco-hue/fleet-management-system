@@ -302,6 +302,16 @@ class VehicleService:
             return None
         if user is None:
             return obj
+        # Checked FIRST, before the created_by and org-scope allowances
+        # below. Hiding a row from the list while this still returned
+        # the record would leave the vehicle reachable by typing its id
+        # into the URL -- which is how J1 was originally reachable.
+        if getattr(user, "restrict_to_assigned_vehicles", False):
+            from app.modules.user_management.assignee_scope_service import (
+                AssigneeScopeService)
+            if not AssigneeScopeService().covers_vehicle(user, obj.id):
+                return None
+            return obj
         if obj.created_by == getattr(user, "id", None):
             return obj
         from app.modules.user_management.org_scope_service import (
@@ -337,9 +347,20 @@ class VehicleService:
         from app.modules.user_management.org_scope_service import (
             UserOrgScopeService)
         scope_svc = UserOrgScopeService()
-        return [v for v in records
-               if v.created_by == getattr(user, "id", None)
-               or scope_svc.covers(user.id, branch_id=v.branch_id)]
+        visible = [v for v in records
+                   if v.created_by == getattr(user, "id", None)
+                   or scope_svc.covers(user.id, branch_id=v.branch_id)]
+        # Same further narrowing as list_page(). A test asserts the two
+        # return identical ids, because the dashboard counts through
+        # this path and the screen pages through the other -- if they
+        # drift the header states one number and the table shows a
+        # different set.
+        if getattr(user, "restrict_to_assigned_vehicles", False):
+            from app.modules.user_management.assignee_scope_service import (
+                AssigneeScopeService)
+            assigned = set(AssigneeScopeService().assigned_vehicle_ids(user))
+            visible = [v for v in visible if v.id in assigned]
+        return visible
 
     def list_page(self, user=None, q=None, status=None, vehicle_type_id=None,
                   branch_id=None, sort="plate", direction="asc",
@@ -391,6 +412,28 @@ class VehicleService:
                         Vehicle.created_by == user.id,
                         Vehicle.branch_id.in_(ids) if ids else False,
                     ))
+
+            # Assignment scope, applied AFTER org scope and as a further
+            # narrowing -- never as an alternative to it. A vehicle
+            # assigned to someone in a branch their scope does not cover
+            # stays hidden, or an assignment would become a way around
+            # org scope.
+            #
+            # Note this also overrides the created_by escape above: a
+            # restricted assignee who happens to have created a vehicle
+            # record does not thereby keep sight of it once it is
+            # someone else's to drive.
+            if getattr(user, "restrict_to_assigned_vehicles", False):
+                from app.modules.user_management.assignee_scope_service import (
+                    AssigneeScopeService)
+                assigned_ids = AssigneeScopeService().assigned_vehicle_ids(user)
+                # An empty list means "assigned nothing", which is a
+                # real answer and must render an empty fleet. Falling
+                # back to the branch here would reintroduce J1 through
+                # the very flag written to prevent it.
+                query = (query.filter(Vehicle.id.in_(assigned_ids))
+                         if assigned_ids
+                         else query.filter(db.false()))
 
         if status:
             query = query.filter(Vehicle.status == status)
