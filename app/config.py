@@ -136,6 +136,17 @@ class BaseConfig:
     WTF_CSRF_TIME_LIMIT = None
     REMEMBER_COOKIE_HTTPONLY = True
     SESSION_COOKIE_HTTPONLY = True
+    # SameSite="Lax" allows session cookies to be sent when users click
+    # "Open link in new tab" or "Open in new window" (cross-tab navigation).
+    # This is the industry standard for web apps and maintains security:
+    # it blocks cross-origin cookie theft and CSRF attacks while allowing
+    # the normal user workflow of viewing multiple vehicles in parallel tabs.
+    #
+    # Before this fix, SameSite defaulted to "Strict", which blocked
+    # cookies on cross-tab navigation, forcing users to log in again
+    # every time they opened a link in a new tab — making it impossible
+    # to compare vehicle info between tabs without a back button redirect.
+    SESSION_COOKIE_SAMESITE = "Lax"
 
 
 class DevelopmentConfig(BaseConfig):
@@ -158,6 +169,8 @@ class ProductionConfig(BaseConfig):
     DEBUG = False
     SESSION_COOKIE_SECURE = True
     REMEMBER_COOKIE_SECURE = True
+    # Explicitly set (inherited from BaseConfig, but making it visible).
+    SESSION_COOKIE_SAMESITE = "Lax"
 
 
 CONFIG_MAP = {
