@@ -26,12 +26,103 @@ from urllib.parse import quote_plus
 # subdirectory. python-dotenv never overrides a variable already present
 # in os.environ, so an env var set by the real shell or CI still wins --
 # this only fills in what nothing else already provided.
+def _dotenv_candidates() -> list:
+    """Where to look for .env, in order of precedence.
+
+    Two locations, because one is not enough:
+
+      1. Upward from the CURRENT WORKING DIRECTORY. This is what
+         find_dotenv(usecwd=True) does on its own, and it is right for
+         `flask run` from the project root. It also lets a developer
+         deliberately point the app at a different file by launching
+         from elsewhere, so it is searched FIRST.
+
+      2. Beside the application package, derived from THIS FILE's own
+         path. This is the one that makes discovery independent of the
+         launcher.
+
+    (2) exists because (1) searches upward only. A PyCharm run
+    configuration whose working directory is the repository root, with
+    the application in a subdirectory, puts .env BELOW the search --
+    never above it. Nothing is found, nothing is logged, and every
+    variable quietly falls back to its default. What that looked like in
+    practice was a setting that would not take effect no matter how many
+    times the file was corrected.
+    """
+    candidates = []
+    try:
+        from dotenv import find_dotenv
+        found = find_dotenv(usecwd=True)
+        if found:
+            candidates.append(os.path.abspath(found))
+    except ImportError:
+        pass
+    # config.py lives at app/config.py, so the project root -- where
+    # .env sits next to wsgi.py and requirements.txt -- is two levels up.
+    package_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates.append(os.path.join(package_root, ".env"))
+    # Preserve order while removing the duplicate that appears whenever
+    # the app is launched from its own root and both resolve to the same
+    # file.
+    seen, unique = set(), []
+    for path in candidates:
+        key = os.path.normcase(os.path.normpath(path))
+        if key not in seen:
+            seen.add(key)
+            unique.append(path)
+    return unique
+
+
 try:
-    from dotenv import find_dotenv, load_dotenv
-    load_dotenv(find_dotenv(usecwd=True))
+    from dotenv import load_dotenv
+    for _candidate in _dotenv_candidates():
+        # override=False throughout: a variable already exported by the
+        # real shell, by CI, or typed into an IDE run configuration must
+        # still win. This only fills in what nothing else provided --
+        # which also means the FIRST file to define a key wins, matching
+        # the documented precedence above.
+        load_dotenv(_candidate, override=False)
 except ImportError:
     pass  # python-dotenv is in requirements.txt; this is a defensive
           # fallback only, not the expected path.
+
+
+#: Values that switch a boolean env var OFF. Anything else -- including
+#: a typo, an empty string, or an unset variable -- leaves it ON.
+#:
+#: Deliberately an allow-list rather than the usual `value.lower() not in
+#: ("false", "0")` shortcut. For REFRESH_COOKIE_SECURE the cost of
+#: guessing wrong is asymmetric: reading "flase" as false would ship an
+#: insecure cookie to production, while reading it as true only fails a
+#: LAN test in a way the operator sees immediately.
+_FALSEY = frozenset({"0", "false", "no", "off"})
+
+
+def _refresh_cookie_secure(env=None) -> bool:
+    """Whether the refresh cookie carries the Secure attribute.
+
+    Its OWN switch, not a consequence of DEBUG.
+
+    This used to be `not DEBUG`, which tied a security attribute of the
+    authentication cookie to the flag that also enables the interactive
+    debugger -- two things with no reason to move together. It also made
+    the React app's "open link in new tab" flow depend on how Flask was
+    launched: a PyCharm run configuration whose working directory sat
+    above the project never loaded .env, FLASK_ENV came out unset, and
+    the cookie arrived at a plain-http LAN address carrying Secure.
+    Chrome drops such a cookie silently. Login still looked fine,
+    because the access token travels in the JSON body; the refresh
+    cookie was simply never stored, and the failure surfaced one step
+    later as a 401 from /auth/refresh in the new tab.
+
+    Defaults to True so that an operator who sets nothing gets the safe
+    value, and an on-prem HTTPS deployment needs no configuration at
+    all. Set REFRESH_COOKIE_SECURE=0 only for http testing on a trusted
+    LAN.
+    """
+    env = os.environ if env is None else env
+    return str(env.get("REFRESH_COOKIE_SECURE", "")).strip().lower() \
+        not in _FALSEY
 
 
 def _build_database_uri() -> str:
@@ -147,6 +238,10 @@ class BaseConfig:
     # every time they opened a link in a new tab — making it impossible
     # to compare vehicle info between tabs without a back button redirect.
     SESSION_COOKIE_SAMESITE = "Lax"
+    # The API refresh cookie's Secure attribute. See
+    # _refresh_cookie_secure() for why this is not derived from DEBUG.
+    # Secure unless deliberately switched off for http LAN testing.
+    REFRESH_COOKIE_SECURE = _refresh_cookie_secure()
 
 
 class DevelopmentConfig(BaseConfig):
@@ -171,6 +266,14 @@ class ProductionConfig(BaseConfig):
     REMEMBER_COOKIE_SECURE = True
     # Explicitly set (inherited from BaseConfig, but making it visible).
     SESSION_COOKIE_SAMESITE = "Lax"
+    # Pinned, NOT read from the environment.
+    #
+    # The escape hatch exists for http testing on a trusted LAN; there
+    # is no such thing as a legitimate insecure refresh cookie in
+    # production. Hard-coding it here means a REFRESH_COOKIE_SECURE=0
+    # left behind in a shell profile or a copied .env cannot follow the
+    # app into production and quietly downgrade it.
+    REFRESH_COOKIE_SECURE = True
 
 
 CONFIG_MAP = {

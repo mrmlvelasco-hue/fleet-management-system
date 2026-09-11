@@ -141,6 +141,22 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.core.cors import init_cors
     init_cors(app)
 
+    # An insecure refresh cookie must never be SILENT.
+    #
+    # REFRESH_COOKIE_SECURE=0 is legitimate for http testing on a
+    # trusted LAN and dangerous anywhere else, and the difference is
+    # invisible from inside the process. The previous version of this
+    # setting was derived from DEBUG and printed nothing either way,
+    # which is how a Secure cookie ended up being dropped by the browser
+    # for days without anyone being told. This is the counterpart: say
+    # so at startup, every time, so the state is never a surprise.
+    if not app.config.get("REFRESH_COOKIE_SECURE", True):
+        app.logger.warning(
+            "REFRESH_COOKIE_SECURE is OFF -- the API refresh cookie will be "
+            "sent without the Secure attribute. This is intended only for "
+            "http testing on a trusted network. Do NOT use this setting for "
+            "an internet-facing deployment; serve over HTTPS and unset it.")
+
     from app.modules.system_admin.services.notification_engine import (
         register_notification_hooks)
     register_notification_hooks()

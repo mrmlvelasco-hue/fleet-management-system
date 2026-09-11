@@ -194,10 +194,16 @@ def set_refresh_cookie(response, token, expires_at, remember=True):
         # top-level navigation into a new tab, which is the case this
         # whole mechanism exists to serve.
         samesite="Lax",
-        # Secure follows the deployment. Forcing it on in development
-        # would silently drop the cookie over plain http and make the
-        # feature look broken.
-        secure=not current_app.config.get("DEBUG", False),
+        # Its own setting, NOT `not DEBUG`.
+        #
+        # Deriving it from DEBUG tied this to how Flask was launched: a
+        # run configuration that never loaded .env produced a Secure
+        # cookie on a plain-http LAN address, which Chrome drops on
+        # arrival without an error anyone would notice. Login kept
+        # working (the access token is in the body), so the damage only
+        # showed up later as a 401 from /auth/refresh in a new tab.
+        # Defaults secure; see app.config._refresh_cookie_secure.
+        secure=current_app.config.get("REFRESH_COOKIE_SECURE", True),
         path=REFRESH_COOKIE_PATH,
         # Omitted entirely when not remembering -- a cookie with no
         # expiry is a session cookie. Setting expires=None explicitly
