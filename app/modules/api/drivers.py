@@ -661,17 +661,16 @@ def driver_print(api_user, driver_id):
                         "message": "Driver not found or not visible to "
                                    "this account."}), 404
 
-    from app.modules.system_admin.services.company_service import (
-        CompanyProfileService)
-    company = CompanyProfileService().get()
+    from app.modules.api.company_letterhead import company_letterhead
 
     return jsonify({
         "driver": _serialise_detail(d),
-        "company": {
-            "company_name": getattr(company, "company_name", None),
-            "address_line": getattr(company, "address_line", None),
-            "city": getattr(company, "city", None),
-        } if company else {},
+        # The SHARED helper. This hand-rolled block read
+        # `address_line`, which is not a CompanyProfile column (the real
+        # one is address_line1), so the printed address had always been
+        # blank -- the same silent drift company_letterhead's docstring
+        # records from ATD, repeated here in a second module.
+        "company": company_letterhead(),
         "generated_at": datetime.now().isoformat(),
     })
 

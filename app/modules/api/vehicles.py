@@ -1083,9 +1083,7 @@ def vehicle_print(api_user, vehicle_id):
                         "message": "Vehicle not found or not visible to "
                                    "this account."}), 404
 
-    from app.modules.system_admin.services.company_service import (
-        CompanyProfileService)
-    company = CompanyProfileService().get()
+    from app.modules.api.company_letterhead import company_letterhead
 
     def _iso(v):
         if v is None:
@@ -1180,19 +1178,13 @@ def vehicle_print(api_user, vehicle_id):
         utilization = {}
         outlet_history = []
 
-    addr1 = None
-    if company:
-        addr1 = (getattr(company, "address_line1", None)
-                 or getattr(company, "address_line", None))
-
     return jsonify({
         "vehicle": detail_json(vehicle),
-        "company": {
-            "company_name": getattr(company, "company_name", None),
-            "address_line": addr1,
-            "address_line1": addr1,
-            "city": getattr(company, "city", None),
-        } if company else {},
+        # The SHARED helper, not a hand-rolled subset. This endpoint
+        # previously returned four fields, so PrintLetterhead's contact
+        # line and logo were always blank on anything built from this
+        # payload -- including the handover checklist print-out.
+        "company": company_letterhead(),
         "generated_at": datetime.now().isoformat(),
         "attachments": attachments,
         "attachment_doc_types": doc_type_labels,
