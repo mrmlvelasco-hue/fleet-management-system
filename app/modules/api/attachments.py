@@ -606,6 +606,55 @@ def upload_trip_ticket_attachment(api_user, trip_id):
     return jsonify(_attachment_json(attachment)), 201
 
 
+@bp.route("/vendors/<int:vendor_id>/attachments", methods=["GET"])
+@api_auth_required("vendor.view")
+def vendor_attachments(api_user, vendor_id):
+    """Mirrors registration_attachments() exactly.
+
+    Flask's Jinja form gets this for free from one fully generic
+    /master/attachments/upload route keyed by a bare reference_table
+    string -- vendor attachments already work there with zero
+    vendor-specific code. The JSON API deliberately does NOT mirror
+    that genericness: each entity gets its own route pair so the
+    permission code and the visibility check stay entity-specific
+    (vendor.view / VendorService().get_visible(), not a blanket
+    attachment permission that couldn't tell a vendor from a vehicle).
+    """
+    from app.modules.master_data.vendor.service import VendorService
+    if VendorService().get_visible(vendor_id, api_user) is None:
+        return _not_found("Vendor")
+    from app.core.attachments.attachment_service import AttachmentService
+    rows = AttachmentService().list_for("vendors", vendor_id)
+    return jsonify({
+        "items": [_attachment_json(a) for a in rows],
+        "attachment_allowed": _attachments_allowed_for("vendors"),
+    })
+
+
+@bp.route("/vendors/<int:vendor_id>/attachments", methods=["POST"])
+@api_auth_required("vendor.update")
+def upload_vendor_attachment(api_user, vendor_id):
+    from app.modules.master_data.vendor.service import VendorService
+    if VendorService().get_visible(vendor_id, api_user) is None:
+        return _not_found("Vendor")
+    if not _attachments_allowed_for("vendors"):
+        return _attachments_blocked("vendors")
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+
+    from app.core.attachments.attachment_service import (AttachmentError,
+                                                         AttachmentService)
+    try:
+        attachment = AttachmentService().upload(
+            file, "vendors", vendor_id, user=api_user,
+            document_type=(request.form.get("document_type") or None))
+    except AttachmentError as exc:
+        return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
+
+
 @bp.route("/vehicle-registrations/<int:reg_id>/attachments", methods=["GET"])
 @api_auth_required("vehicleregistration.view")
 def registration_attachments(api_user, reg_id):
