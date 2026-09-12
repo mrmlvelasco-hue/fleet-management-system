@@ -304,7 +304,16 @@ class VehicleHandoverService:
                 "return_": i.return_mark, "return_qty": i.return_qty,
             } for i in items]}
 
+        from app.modules.api.company_letterhead import company_letterhead
+
         return {
+            # The SHARED letterhead. Omitting it entirely was why the
+            # printed header showed the "COMPANY NAME" placeholder even
+            # with a company configured: PrintLetterhead got undefined
+            # and fell back. The vehicle print-out route was fixed in
+            # flask-v257; this second print path was missed because I
+            # only looked at the one I had just written.
+            "company": company_letterhead(),
             "assignee_name": doc.assignee_name,
             "position": doc.position,
             "company_bu": doc.company_bu,

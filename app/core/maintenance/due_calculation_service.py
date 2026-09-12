@@ -164,6 +164,37 @@ class _Prefetch:
         return result
 
     def _resolve_schedules(self, vehicle, maintenance_type_id=None):
+        """Most-specific-wins, resolved PER MAINTENANCE TYPE.
+
+        When a single type is requested this walks the tiers and
+        returns the first match, exactly as before.
+
+        When ALL types are requested (maintenance_type_id=None) it
+        resolves each type INDEPENDENTLY and unions the winners.
+        Returning the first non-empty tier wholesale -- which is what
+        this used to do -- meant one type's specificity suppressed
+        every other type that only existed lower down. Live symptom:
+        every tire schedule carried brand/model FKs and no make/model
+        text, so it sat in the FK and global tiers; the PM, battery and
+        aircon schedules used the legacy make/model text. A vehicle
+        with no brand/model FKs skipped the FK tier, matched make/model
+        text, and stopped -- so tires never appeared as due, however
+        far past the interval the vehicle was.
+
+        Specificity still means something WITHIN a type: two tire
+        schedules at different tiers still resolve to the more specific
+        one. It just no longer decides which types exist at all.
+        """
+        if maintenance_type_id is None:
+            winners = {}
+            for tid in self._candidate_type_ids(vehicle):
+                matched = self._resolve_schedules(vehicle, tid)
+                if matched:
+                    winners[tid] = matched
+            # Flattened in a stable order so callers that dedupe on
+            # maintenance_type_id see a deterministic winner.
+            return [s for tid in sorted(winners) for s in winners[tid]]
+
         if vehicle.pm_schedule_id:
             sched = self.schedules_by_id.get(vehicle.pm_schedule_id)
             if sched and sched.is_active and (
@@ -196,6 +227,36 @@ class _Prefetch:
             return type_matches
 
         return _of_type(self._global_generic)
+
+    def _candidate_type_ids(self, vehicle):
+        """Maintenance types with at least one schedule that could match
+        this vehicle, across every tier.
+
+        Deliberately a UNION of the tiers rather than the winning tier:
+        the whole point is that a type present only at a lower tier must
+        still be considered. Narrowing happens per type in
+        _resolve_schedules, which re-applies most-specific-wins.
+        """
+        ids = set()
+        if vehicle.pm_schedule_id:
+            pinned = self.schedules_by_id.get(vehicle.pm_schedule_id)
+            if pinned is not None and pinned.is_active:
+                ids.add(pinned.maintenance_type_id)
+
+        brand_id = getattr(vehicle, "vehicle_brand_id", None)
+        model_id = getattr(vehicle, "vehicle_model_id", None)
+        buckets = []
+        if brand_id and model_id:
+            buckets.append(self._by_fk.get((brand_id, model_id), ()))
+        key = ((vehicle.brand or "").strip().lower(),
+              (vehicle.model or "").strip().lower())
+        buckets.append(self._by_make_model.get(key, ()))
+        buckets.append(self._by_type_generic.get(vehicle.vehicle_type_id, ()))
+        buckets.append(self._global_generic)
+        for bucket in buckets:
+            for s in bucket:
+                ids.add(s.maintenance_type_id)
+        return ids
 
     def last_service_for(self, vehicle, maintenance_type_id):
         """In-memory equivalent of _last_service(), including the
