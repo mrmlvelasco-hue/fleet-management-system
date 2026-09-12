@@ -30,8 +30,12 @@ so concurrent generations still never collide with each other.
 enforce it.)
 """
 from datetime import datetime, timezone
+import random
+import time
 
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.extensions import db
 from app.modules.document_config.models import NumberingCounter
@@ -41,6 +45,12 @@ from app.modules.document_config.repository import (
 
 class NoSchemeError(Exception):
     """Raised when the document type has no active numbering scheme."""
+
+
+#: How many times generate() retries the counter advance before giving
+#: up. Bounded on purpose -- see generate()'s docstring for why 50
+#: retries would be exactly the wrong instinct here.
+_MAX_ADVANCE_ATTEMPTS = 3
 
 
 def format_number(scheme, number: int, year: int, month: int) -> str:
@@ -76,6 +86,37 @@ class AutoNumberingService:
         permanently consumed the moment this call returns -- it does
         NOT depend on the caller committing anything, and a later
         rollback in the caller's own transaction cannot undo it.
+
+        The FIRST generate() for a given scheme+year+month has no
+        counter row to lock (see _advance_counter's docstring), so two
+        transactions reaching that moment together both fall to INSERT
+        and one must wait for the other. That is normal and should
+        resolve in milliseconds -- but which exception surfaces from a
+        real race is driver-dependent, not one fixed type. Confirmed
+        directly by running the actual two-thread race rather than
+        assumed from documentation: SQLite raises IntegrityError
+        immediately on the unique-constraint collision; a genuinely
+        contended MySQL connection raises OperationalError once its own
+        lock-wait timeout elapses; and a THIRD case surfaced under real
+        threading that neither of those explains -- one thread's UPDATE
+        matched zero rows and SQLAlchemy raised StaleDataError, because
+        the row it expected to update had already moved under it. All
+        three are the same underlying race wearing a different label
+        depending on exactly when the collision is detected, and a
+        retry that only caught two of the three would still fail
+        exactly the customers unlucky enough to hit the third.
+
+        Retried a SMALL, bounded number of times with jittered backoff,
+        not retried aggressively or indefinitely: a genuine race
+        between two live, well-behaved transactions clears on the
+        first retry because the winner has already committed. An
+        abandoned transaction that will never commit -- a killed
+        dev-server process is the ordinary way this happens -- cannot
+        be out-waited by retrying, so failing fast after a few
+        attempts and surfacing the real exception is more useful to
+        whoever has to fix it than either succeeding by luck or hanging
+        the request for the database's full lock-wait window on every
+        attempt.
         """
         dt = self.doc_types.get_by_code(document_type_code)
         scheme = (self.schemes.get_for_document_type(dt.id)
@@ -92,8 +133,20 @@ class AutoNumberingService:
         elif scheme.reset_policy == "MONTHLY":
             scope_year, scope_month = year, month
 
-        next_number = self._advance_counter(scheme.id, scope_year, scope_month)
-        return format_number(scheme, next_number, year, month)
+        last_error = None
+        for attempt in range(_MAX_ADVANCE_ATTEMPTS):
+            try:
+                next_number = self._advance_counter(
+                    scheme.id, scope_year, scope_month)
+                return format_number(scheme, next_number, year, month)
+            except (IntegrityError, OperationalError, StaleDataError) as exc:
+                last_error = exc
+                if attempt < _MAX_ADVANCE_ATTEMPTS - 1:
+                    # Jittered rather than a fixed pause, so two
+                    # threads that raced into the SAME failure do not
+                    # then race their retries in lockstep too.
+                    time.sleep(random.uniform(0.02, 0.08))
+        raise last_error
 
     @staticmethod
     def _advance_counter(scheme_id: int, scope_year: int, scope_month: int) -> int:
