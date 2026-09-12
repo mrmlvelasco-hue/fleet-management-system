@@ -49,8 +49,31 @@ class VehicleHandoverService:
         has to remember to run -- the same reasoning PermissionRegistry
         already applies to permission codes, applied here to numbering
         so `create()` works the first time this module is ever called.
+
+        COMMITS before returning, and that is not incidental tidiness.
+        generate() deliberately opens an INDEPENDENT session (so an
+        issued number survives a caller rollback), and its INSERT into
+        numbering_counters takes an FK lock on the numbering_schemes
+        row created here. If that row were merely flushed, it would be
+        locked by THIS still-open transaction, which is itself blocked
+        waiting for generate() to return -- the request deadlocks
+        against itself and MySQL kills it 50s later with
+
+            (1205, 'Lock wait timeout exceeded')
+
+        Observed exactly that way in production against InnoDB. The
+        retry added in flask-v254 cannot rescue it, because a
+        self-deadlock is not a transient race: every retry deadlocks
+        identically.
+
+        Every other document type avoids this by being seeded from a
+        CLI command (app/cli.py), where the commit lands at the end of
+        the whole seed run rather than mid-request. This module is the
+        only one that creates its scheme inline and numbers against it
+        immediately, so it is the only one that has to commit here.
         """
         dt = DocumentType.query.filter_by(code=DOCUMENT_TYPE_CODE).first()
+        created = False
         if dt is None:
             dt = DocumentType(
                 code=DOCUMENT_TYPE_CODE, name="Vehicle Handover Checklist",
@@ -61,12 +84,15 @@ class VehicleHandoverService:
                             "from the periodic inspection checklist module.")
             db.session.add(dt)
             db.session.flush()
+            created = True
         if dt.numbering_scheme is None:
             db.session.add(NumberingScheme(
                 document_type_id=dt.id, prefix=DOCUMENT_TYPE_CODE,
                 include_year=True, include_month=False, digit_count=6,
                 separator="-", reset_policy="YEARLY"))
-            db.session.flush()
+            created = True
+        if created:
+            db.session.commit()
         return dt
 
     # ── create ───────────────────────────────────────────────────────
