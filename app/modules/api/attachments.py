@@ -642,6 +642,51 @@ def upload_registration_attachment(api_user, reg_id):
     return jsonify(_attachment_json(attachment)), 201
 
 
+@bp.route("/vehicle-handovers/<int:hid>/attachments", methods=["GET"])
+@api_auth_required("vehiclehandover.view")
+def handover_attachments(api_user, hid):
+    """Mirrors registration_attachments() exactly. Damage photos and
+    scanned receipts attach here through the generic AttachmentService
+    -- reused because it is cross-cutting infrastructure, not part of
+    the checklist module this feature must stay independent of."""
+    from app.modules.transactions.vehicle_handover.service import (
+        VehicleHandoverService)
+    if VehicleHandoverService().get_visible(hid, api_user) is None:
+        return _not_found("Vehicle Handover Checklist")
+    from app.core.attachments.attachment_service import AttachmentService
+    rows = AttachmentService().list_for("vehicle_handover_checklists", hid)
+    return jsonify({
+        "items": [_attachment_json(a) for a in rows],
+        "attachment_allowed": _attachments_allowed_for(
+            "vehicle_handover_checklists"),
+    })
+
+
+@bp.route("/vehicle-handovers/<int:hid>/attachments", methods=["POST"])
+@api_auth_required("vehiclehandover.update")
+def upload_handover_attachment(api_user, hid):
+    from app.modules.transactions.vehicle_handover.service import (
+        VehicleHandoverService)
+    if VehicleHandoverService().get_visible(hid, api_user) is None:
+        return _not_found("Vehicle Handover Checklist")
+    if not _attachments_allowed_for("vehicle_handover_checklists"):
+        return _attachments_blocked("vehicle_handover_checklists")
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+
+    from app.core.attachments.attachment_service import (AttachmentError,
+                                                         AttachmentService)
+    try:
+        attachment = AttachmentService().upload(
+            file, "vehicle_handover_checklists", hid, user=api_user,
+            document_type=(request.form.get("document_type") or None))
+    except AttachmentError as exc:
+        return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
+
+
 @bp.route("/vehicle-movements/<int:move_id>/attachments", methods=["GET"])
 @api_auth_required("vehiclemovement.view")
 def movement_attachments(api_user, move_id):

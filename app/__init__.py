@@ -123,6 +123,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.api import asset_txns as _api_asset_txns  # noqa: F401
     from app.modules.api import fuel as _api_fuel  # noqa: F401
     from app.modules.api import checklists as _api_checklists  # noqa: F401
+    from app.modules.api import vehicle_handover as _api_vehicle_handover  # noqa: F401
     from app.modules.api import my_vehicles as _api_my  # noqa: F401
     from app.modules.api import mobile_releases as _api_rel  # noqa: F401
     from app.modules.api import comments as _api_comments  # noqa: F401
