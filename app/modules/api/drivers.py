@@ -538,7 +538,11 @@ def _read_payload():
 def _write_errors():
     from app.modules.master_data.driver import service as dsvc
     return (FieldValueError, dsvc.DuplicateDriverError,
-            dsvc.InvalidAssigneeError)
+            dsvc.InvalidAssigneeError,
+            # Raised by link_user for the one-account-one-assignee
+            # rule. Without it that rule would surface as a 500 with
+            # no message the administrator could act on.
+            dsvc.DuplicateAssigneeLinkError)
 
 
 def _validation_response(exc):
@@ -576,8 +580,14 @@ def create_driver(api_user):
     payload, photo_file = _read_payload()
     try:
         fields = _COERCER.fields(payload, _WRITABLE)
-        driver = DriverService().create(user=api_user, photo_file=photo_file,
-                                        **fields)
+        svc = DriverService()
+        driver = svc.create(user=api_user, photo_file=photo_file, **fields)
+        # Same separate link step as update() and as Flask's own create
+        # route -- see the note there for why user_id is not in
+        # _WRITABLE. Without this a new assignee silently loses the
+        # system account chosen on the form.
+        if payload.get("user_id"):
+            driver = svc.link_user(driver.id, payload["user_id"])
     except _write_errors() as exc:
         return _validation_response(exc)
     except TypeError as exc:
@@ -612,6 +622,20 @@ def update_driver(api_user, driver_id):
         fields = _COERCER.fields(payload, _WRITABLE)
         driver = svc.update(driver_id, user=api_user, photo_file=photo_file,
                             **fields)
+        # The system-account link, applied as a SEPARATE step -- exactly
+        # what Flask's Jinja route does (master_data/routes.py). It is
+        # kept out of _WRITABLE on purpose: the link has rules (the
+        # account must exist and be active; one account links to at most
+        # one assignee) that live in DriverService.link_user, and a rule
+        # reachable through a second door is not a rule.
+        #
+        # Presence-checked, not defaulted. This is a PARTIAL update: a
+        # payload that omits user_id must leave an existing link alone,
+        # or editing an unrelated field would silently unlink someone.
+        # An explicit "" or None DOES clear it, which is how the React
+        # picker reports "cleared".
+        if "user_id" in payload:
+            driver = svc.link_user(driver_id, payload.get("user_id") or None)
     except _write_errors() as exc:
         return _validation_response(exc)
 
