@@ -85,7 +85,26 @@ def get_handover(api_user, hid):
     doc = VehicleHandoverService().get_visible(hid, api_user)
     if doc is None:
         return _not_found()
-    return jsonify(VehicleHandoverService().to_report(hid) | _row(doc))
+    # Two shapes, deliberately layered rather than one.
+    #
+    # to_report() strips item/damage ids on purpose -- it is the exact
+    # prop contract for VehicleChecklistReport (react-v191), which is a
+    # PRINT view and has no business editing anything. The detail/edit
+    # screen needs ids to PATCH a specific item or DELETE a specific
+    # damage mark, so those go in separately as "items" and "damages"
+    # (flat lists, sort_order preserved) rather than by adding an id
+    # into the report's per-column lines and hoping nothing downstream
+    # ever prints it by accident.
+    editable = {
+        "items": [{
+            "id": i.id, "item_name": i.item_name, "sort_order": i.sort_order,
+            "issuance_mark": i.issuance_mark, "issuance_qty": i.issuance_qty,
+            "return_mark": i.return_mark, "return_qty": i.return_qty,
+        } for i in doc.items],
+        "damages": [{"id": d.id, "kind": d.kind, "x": d.x, "y": d.y,
+                     "note": d.note} for d in doc.damages],
+    }
+    return jsonify(VehicleHandoverService().to_report(hid) | _row(doc) | editable)
 
 
 @bp.route("/vehicle-handovers/<int:hid>/report", methods=["GET"])
