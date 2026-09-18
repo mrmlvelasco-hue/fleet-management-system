@@ -4,9 +4,11 @@ from decimal import Decimal, InvalidOperation
 
 from flask import jsonify, request
 
+from app.core.reporting.token_resolver import resolve_pm_tokens
 from app.modules.api.approval_eligibility import can_act_on
 from app.modules.api.auth import api_auth_required
 from app.modules.api.routes import bp
+
 
 
 def _bad(message, code=400):
@@ -356,7 +358,12 @@ def _order_json(o, *, detail=False):
                 {
                     "id": i.id,
                     "activity_code": i.activity_code,
-                    "activity_description": i.activity_description,
+                    "activity_description": (
+                        resolve_pm_tokens(
+                            i.activity_description,
+                            vehicle=o.vehicle,
+                            maintenance_type_id=o.maintenance_type_id)
+                        if i.activity_description else i.activity_description),
                     "is_done": bool(i.is_done),
                     "sort_order": i.sort_order,
                     "done_at": _iso(i.done_at),
@@ -484,6 +491,7 @@ def list_maintenance_orders_v2(api_user):
 @api_auth_required("maintenanceorder.view")
 def get_maintenance_order(api_user, oid):
     from app.modules.transactions.maintenance_order.models import MaintenanceOrder
+    from app.core.reporting.token_resolver import resolve_pm_tokens
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService)
     from app.extensions import db
@@ -554,8 +562,17 @@ def create_maintenance_order(api_user):
         if v in (None, ""):
             return None
         try:
-            return Decimal(str(v))
-        except (InvalidOperation, ValueError):
+            # Accept normal user-entered currency formats such as
+            # "15000", "15,000", "15,000.00", and "15000.00".
+            # The React form may send a formatted amount with commas.
+            text = str(v).strip().replace(",", "")
+        except (TypeError, ValueError):
+            return None
+        if not text:
+            return None
+        try:
+            return Decimal(text)
+        except (InvalidOperation, ValueError, TypeError):
             return None
 
     try:
@@ -597,13 +614,31 @@ def update_maintenance_order(api_user, oid):
     p = request.get_json(silent=True) or {}
     fields = {}
     for k in (
-        "scheduled_date", "odometer_at_service", "estimated_cost",
+        "scheduled_date", "odometer_at_service",
         "maintenance_type_id", "transaction_type_id",
         "assignment_classification", "assigned_mechanic", "description",
         "vendor_id",
     ):
         if k in p:
             fields[k] = p[k]
+
+    # estimated_cost is a monetary value. Normalize formatted input such
+    # as "15,000" before it reaches the SQLAlchemy Numeric column.
+    if "estimated_cost" in p:
+        value = p.get("estimated_cost")
+        if value in (None, ""):
+            fields["estimated_cost"] = None
+        else:
+            try:
+                fields["estimated_cost"] = Decimal(
+                    str(value).strip().replace(",", "")
+                )
+            except (InvalidOperation, ValueError, TypeError):
+                return _validation(
+                    "Estimated Cost must be a valid amount.",
+                    "estimated_cost",
+                )
+
     try:
         order = MaintenanceOrderService().update(oid, user=api_user, **fields)
     except InvalidOrderStateError as e:
@@ -1246,7 +1281,7 @@ def maintenance_order_new_prefill(api_user):
 @bp.route("/maintenance-orders/scope-template-details", methods=["GET"])
 @api_auth_required("maintenanceorder.create")
 def maintenance_order_scope_template_details(api_user):
-    """Powers the New Maintenance Order form's "Work Description
+    """Powers the New Maintenance Order form's "Work Description"
     Template" box and the collapsible "View Scope Details" table --
     reuses Flask's own get_pm_scope_template_details logic exactly
     (app/modules/api_search/routes.py), including token resolution
@@ -1258,6 +1293,7 @@ def maintenance_order_scope_template_details(api_user):
     Flask's own contract exactly, since the client's collapse panel
     just stays hidden either way.
     """
+    from app.core.reporting.token_resolver import resolve_pm_tokens
     from app.modules.maintenance_config.service import PMScopeTemplateService
 
     template_id = request.args.get("template_id", type=int)
@@ -1277,7 +1313,12 @@ def maintenance_order_scope_template_details(api_user):
             vehicle = Vehicle.query.filter_by(id=vehicle_id).first()
         if vehicle is not None:
             from app.core.reporting.token_resolver import resolve_pm_tokens
-            work_description = resolve_pm_tokens(raw, vehicle=vehicle)
+            work_description = resolve_pm_tokens(
+                raw,
+                vehicle=vehicle,
+                maintenance_type_id=(
+                    tmpl.pm_schedule.maintenance_type_id
+                    if tmpl.pm_schedule else None))
         else:
             work_description = raw
 
@@ -1288,7 +1329,14 @@ def maintenance_order_scope_template_details(api_user):
         "items": [{
             "sort_order": i.sort_order,
             "activity_code": i.activity_code,
-            "activity_description": i.activity_description,
+            "activity_description": (
+                resolve_pm_tokens(
+                    i.activity_description,
+                    vehicle=vehicle,
+                    maintenance_type_id=(
+                        tmpl.pm_schedule.maintenance_type_id
+                        if tmpl.pm_schedule else None))
+                if i.activity_description else i.activity_description),
             "standard_labor_hours": (str(i.standard_labor_hours)
                                     if i.standard_labor_hours else None),
             "required_parts": i.required_parts,

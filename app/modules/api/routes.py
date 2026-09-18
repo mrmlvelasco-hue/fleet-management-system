@@ -252,6 +252,10 @@ def me(api_user):
         "full_name": api_user.full_name,
         "email": api_user.email,
         "roles": [r.name for r in api_user.roles],
+        # User.branch_id is the single dashboard data-access boundary.
+        # NULL deliberately means GLOBAL; React uses this only to reset
+        # the branch selector when the authenticated user changes.
+        "branch_id": api_user.branch_id,
         "permissions": sorted(
             p.code for r in api_user.roles for p in r.permissions),
         # Reported so the app can say something TRUE when the answer is

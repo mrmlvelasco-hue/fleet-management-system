@@ -112,7 +112,66 @@ def mobile_release_download(api_user, rid):
         BytesIO(data), as_attachment=True,
         download_name=release.file_name or f"fms-{release.version_name}.apk",
         mimetype="application/vnd.android.package-archive")
+# ============================================================
+# PUBLIC FIRST INSTALL
+# ============================================================
+#
+# This endpoint is intentionally NOT authenticated.
+#
+# It is used by a phone that does not have FMS installed yet.
+# The phone scans a QR code, opens this URL in its browser,
+# and downloads the currently published Android APK.
+#
+# Existing installed-app updates continue using the
+# authenticated /mobile/releases/<id>/download endpoint above.
+#
+@bp.route("/mobile/install", methods=["GET"])
+def mobile_install():
+    """Download the current Android APK for first-time installation."""
 
+    svc = MobileReleaseService()
+
+    # Only the published/current Android build is offered.
+    release = svc.current("ANDROID")
+
+    if release is None:
+        return jsonify({
+            "error": "not_found",
+            "message": "No published Android APK is currently available."
+        }), 404
+
+    # Retrieve the actual APK binary.
+    data = svc.bytes_for(release.id)
+
+    if data is None:
+        return jsonify({
+            "error": "not_found",
+            "message": (
+                "The current Android release is available in the "
+                "release list, but its APK file is no longer available."
+            ),
+        }), 404
+
+    filename = (
+        release.file_name
+        or f"fms-field-{release.version_name}.apk"
+    )
+
+    response = send_file(
+        BytesIO(data),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.android.package-archive",
+    )
+
+    # Prevent the phone/browser from reusing an old APK from cache.
+    response.headers["Cache-Control"] = (
+        "no-store, no-cache, must-revalidate"
+    )
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
+    return response
 
 @bp.route("/mobile/releases", methods=["GET"])
 @api_auth_required("mobileapp.view")

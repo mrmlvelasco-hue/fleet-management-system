@@ -31,19 +31,21 @@ from app.modules.api.routes import bp
 
 
 def _requested_branch_id(user):
-    """Parse and validate ?branch_id=.
+    """Resolve the dashboard branch within the user's branch access.
+
+    Branch access is deliberately single-valued on User: ``branch_id``
+    NULL means GLOBAL, while a non-NULL branch_id means that user is
+    restricted to that branch.  The dashboard must therefore never turn
+    an empty branch filter into company-wide data for a branch-scoped user.
 
     Returns (branch_id_or_None, error_response_or_None).
-
-    An unknown or unreadable branch id is REJECTED rather than ignored.
-    Silently dropping it would render a full company-wide dashboard to
-    someone who believes they are looking at one branch -- the numbers
-    would be real, which is what makes it dangerous: nothing on screen
-    would look wrong.
     """
     raw = request.args.get("branch_id")
+
+    # A user with no assigned branch is GLOBAL.  Only GLOBAL users may
+    # request the unfiltered/all-branches dashboard.
     if raw is None or raw == "":
-        return None, None
+        return user.branch_id, None
     try:
         branch_id = int(raw)
     except (TypeError, ValueError):
@@ -52,22 +54,22 @@ def _requested_branch_id(user):
             "message": "branch_id must be an integer."}), 400)
 
     from app.modules.master_data.org.models import Branch
-    from app.modules.user_management.org_scope_service import (
-        UserOrgScopeService)
-
     branch = Branch.query.filter_by(id=branch_id, is_active=True).first()
     if branch is None:
         return None, (jsonify({
             "error": "bad_request",
             "message": f"No active branch with id {branch_id}."}), 400)
 
-    # Same 404-shaped answer for "doesn't exist" and "you can't see it",
-    # so the endpoint can't be used to enumerate branch ids the caller
-    # has no access to.
-    if not UserOrgScopeService().covers(user.id, branch_id=branch_id):
+    # User.branch_id is the dashboard data-access boundary. NULL means
+    # GLOBAL; a branch-scoped user may not switch to another branch.
+    if user.branch_id is not None and branch_id != user.branch_id:
         return None, (jsonify({
             "error": "bad_request",
             "message": f"No active branch with id {branch_id}."}), 400)
+
+    # UserOrgScope is reserved for approval eligibility. Dashboard data
+    # access follows the single User.branch_id rule defined by FMS: NULL
+    # is GLOBAL, otherwise only the assigned branch is accessible.
     return branch_id, None
 
 
@@ -181,16 +183,23 @@ def dashboard_summary(api_user):
     dash = DashboardService()
     analytics = DashboardAnalyticsService()
     fleet_status = analytics.fleet_by_status(user=api_user, branch_id=branch_id)
-    # Shared with /due-maintenance — one due pass, not two.
-    due_rows = _shared_due_rows(api_user, branch_id)
+    # Report widgets are permission-gated independently from vehicle.view.
+    # A user may legitimately see vehicles without being allowed to see
+    # the PMS compliance / due report. Never calculate or return that
+    # report population for such a user.
+    can_pm_report = api_user.has_permission("reportpmscompliance.view")
+    can_registration_report = api_user.has_permission("reportregistrationexpiry.view")
+    due_rows = (_shared_due_rows(api_user, branch_id)
+                if can_pm_report else [])
 
     return jsonify({
         "fleet_count": dash.fleet_count(user=api_user, branch_id=branch_id),
         "maintenance_due_count": len(due_rows),
         "approvals_pending_count": dash.approvals_pending_count(
             api_user, branch_id=branch_id),
-        "registrations_expiring_count": dash.registrations_expiring_count(
-            user=api_user, branch_id=branch_id),
+        "registrations_expiring_count": (
+            dash.registrations_expiring_count(user=api_user, branch_id=branch_id)
+            if can_registration_report else 0),
         "tire_stock_count": dash.tire_stock_count(
             user=api_user, branch_id=branch_id),
         "battery_stock_count": dash.battery_stock_count(
@@ -289,7 +298,7 @@ def dashboard_trends(api_user):
 
 
 @bp.route("/dashboard/due-maintenance", methods=["GET"])
-@api_auth_required("vehicle.view")
+@api_auth_required("reportpmscompliance.view")
 def dashboard_due_maintenance(api_user):
     """Vehicles that are DUE_SOON or OVERDUE for preventive maintenance.
 
@@ -328,13 +337,25 @@ def dashboard_branches(api_user):
     from app.modules.user_management.org_scope_service import (
         UserOrgScopeService)
 
-    scope_svc = UserOrgScopeService()
-    branches = Branch.query.filter_by(is_active=True).order_by(
-        Branch.name).all()
-    return jsonify({"items": [
-        {"id": b.id, "code": b.code, "name": b.name}
-        for b in branches
-        if scope_svc.covers(api_user.id, branch_id=b.id)]})
+    # Dashboard data access follows User.branch_id: NULL is GLOBAL,
+    # otherwise only the user's single assigned branch is selectable.
+    if api_user.branch_id is None:
+        branches = Branch.query.filter_by(is_active=True).order_by(
+            Branch.name).all()
+        global_access = True
+    else:
+        branches = Branch.query.filter_by(
+            id=api_user.branch_id, is_active=True).all()
+        global_access = False
+
+    return jsonify({
+        "items": [
+            {"id": b.id, "code": b.code, "name": b.name}
+            for b in branches
+        ],
+        "global_access": global_access,
+        "selected_branch_id": api_user.branch_id,
+    })
 
 
 @bp.route("/dashboard/awaiting-approval", methods=["GET"])
@@ -531,7 +552,11 @@ def dashboard_bootstrap(api_user):
     dash = DashboardService()
     analytics = DashboardAnalyticsService()
     fleet_status = analytics.fleet_by_status(user=api_user, branch_id=branch_id)
-    due_rows = _shared_due_rows(api_user, branch_id)
+
+    can_pm_report = api_user.has_permission("reportpmscompliance.view")
+    can_registration_report = api_user.has_permission("reportregistrationexpiry.view")
+    due_rows = (_shared_due_rows(api_user, branch_id)
+                if can_pm_report else [])
 
     analytics_wf = analytics.approval_workflow_counts(user=api_user)
     trends = analytics.kpi_trends(user=api_user)
@@ -540,15 +565,20 @@ def dashboard_bootstrap(api_user):
     ).get("registration_status")
 
     from app.modules.master_data.org.models import Branch
-    from app.modules.user_management.org_scope_service import UserOrgScopeService
-    scope_svc = UserOrgScopeService()
+    if api_user.branch_id is None:
+        branch_rows = Branch.query.filter_by(is_active=True).order_by(Branch.name).all()
+        global_access = True
+    else:
+        branch_rows = Branch.query.filter_by(
+            id=api_user.branch_id, is_active=True).all()
+        global_access = False
     branches = [
         {"id": b.id, "code": b.code, "name": b.name}
-        for b in Branch.query.filter_by(is_active=True).order_by(Branch.name).all()
-        if scope_svc.covers(api_user.id, branch_id=b.id)
+        for b in branch_rows
     ]
 
     awaiting = {"items": [], "total": 0}
+    tasks = []
     try:
         from flask import request as _req
         # Reuse the same queue as /dashboard/awaiting-approval, first page only.
@@ -574,46 +604,90 @@ def dashboard_bootstrap(api_user):
     except Exception:
         awaiting = {"items": [], "total": 0}
 
-    due_reg = {"items": [], "total": 0}
+    # Role-based "For My Action" tiles. These are grouped from the SAME
+    # ApprovalTaskService queue as awaiting_approval, so the dashboard never
+    # turns report counts into fake action items. A user sees a tile only
+    # when an approval task is actually assigned to that user (directly or
+    # through one of their active roles and org scope).
+    _ACTION_TILE_META = {
+        "maintenance_orders": ("Maintenance Orders", "bi-wrench-adjustable",
+                                "/maintenance-orders"),
+        "purchase_requests": ("Purchase Requests", "bi-cart",
+                               "/purchase-requests"),
+        "authority_to_drives": ("ATD Requests", "bi-person-badge",
+                                 "/atd"),
+        "vehicle_movements": ("Vehicle Movements", "bi-arrow-left-right",
+                               "/vehicle-movements"),
+        "vehicle_registrations": ("Registration Renewals", "bi-card-checklist",
+                                   "/vehicle-registrations"),
+        "trip_tickets": ("Trip Tickets", "bi-ticket-detailed",
+                          "/trip-tickets"),
+        "tire_transactions": ("Tire Transactions", "bi-circle",
+                               "/tire-transactions"),
+        "battery_transactions": ("Battery Transactions", "bi-battery-half",
+                                  "/battery-transactions"),
+    }
+    action_counts = {}
     try:
-        from app.modules.registration_config.service import (
-            RegistrationDueCalculationService)
-        from datetime import date as _date
-        due = RegistrationDueCalculationService().get_all_due_vehicles()
-        if branch_id is not None:
-            due = [d for d in due if d["vehicle"].branch_id == branch_id]
-        due = [d for d in due
-               if scope_svc.covers(api_user.id, branch_id=d["vehicle"].branch_id)]
-        def _sort_key(d):
-            date = d.get("next_due_date")
-            return (0 if d.get("status") == "OVERDUE" else 1, date or _date.max)
-        due.sort(key=_sort_key)
-        items = []
-        for d in due[:5]:
-            v = d["vehicle"]
-            expiry = d.get("next_due_date")
-            items.append({
-                "vehicle_id": v.id,
-                "plate_number": v.plate_number,
-                "conduction_number": v.conduction_number,
-                "vehicle": f"{v.brand} {v.model}".strip(),
-                "branch": v.branch.name if v.branch else None,
-                "status": d.get("status"),
-                "expiry_date": expiry.isoformat() if expiry else None,
-                "days_remaining": d.get("days_remaining"),
-            })
-        due_reg = {"items": items, "total": len(due)}
+        for task in tasks:
+            action_counts[task.reference_table] = (
+                action_counts.get(task.reference_table, 0) + 1)
     except Exception:
-        due_reg = {"items": [], "total": 0}
+        action_counts = {}
+    action_tiles = []
+    for table, count in sorted(action_counts.items(), key=lambda kv: -kv[1]):
+        meta = _ACTION_TILE_META.get(table)
+        if meta is None:
+            label = table.replace("_", " ").title()
+            icon = "bi-inbox"
+            url = None
+        else:
+            label, icon, url = meta
+        action_tiles.append({"key": table, "label": label, "icon": icon,
+                             "count": count, "url": url})
 
+    due_reg = {"items": [], "total": 0}
+    if can_registration_report:
+      try:
+          from app.modules.registration_config.service import (
+              RegistrationDueCalculationService)
+          from datetime import date as _date
+          due = RegistrationDueCalculationService().get_all_due_vehicles()
+          if branch_id is not None:
+              due = [d for d in due if d["vehicle"].branch_id == branch_id]
+          due = [d for d in due
+                 if scope_svc.covers(api_user.id, branch_id=d["vehicle"].branch_id)]
+          def _sort_key(d):
+              date = d.get("next_due_date")
+              return (0 if d.get("status") == "OVERDUE" else 1, date or _date.max)
+          due.sort(key=_sort_key)
+          items = []
+          for d in due[:5]:
+              v = d["vehicle"]
+              expiry = d.get("next_due_date")
+              items.append({
+                  "vehicle_id": v.id,
+                  "plate_number": v.plate_number,
+                  "conduction_number": v.conduction_number,
+                  "vehicle": f"{v.brand} {v.model}".strip(),
+                  "branch": v.branch.name if v.branch else None,
+                  "status": d.get("status"),
+                  "expiry_date": expiry.isoformat() if expiry else None,
+                  "days_remaining": d.get("days_remaining"),
+              })
+          due_reg = {"items": items, "total": len(due)}
+      except Exception:
+          due_reg = {"items": [], "total": 0}
     return jsonify({
         "summary": {
             "fleet_count": dash.fleet_count(user=api_user, branch_id=branch_id),
             "maintenance_due_count": len(due_rows),
             "approvals_pending_count": dash.approvals_pending_count(
             api_user, branch_id=branch_id),
-            "registrations_expiring_count": dash.registrations_expiring_count(
-                user=api_user, branch_id=branch_id),
+            "registrations_expiring_count": (
+                dash.registrations_expiring_count(
+                    user=api_user, branch_id=branch_id)
+                if can_registration_report else 0),
             "tire_stock_count": dash.tire_stock_count(
                 user=api_user, branch_id=branch_id),
             "battery_stock_count": dash.battery_stock_count(
@@ -629,13 +703,18 @@ def dashboard_bootstrap(api_user):
         "workflow": analytics_wf,
         "trends": trends,
         "registration_status": registration_status,
-        "branches": {"items": branches},
+        "branches": {
+            "items": branches,
+            "global_access": global_access,
+            "selected_branch_id": api_user.branch_id,
+        },
         "awaiting_approval": awaiting,
+        "action_tiles": action_tiles,
         "due_registration": due_reg,
     })
 
 @bp.route("/dashboard/due-registration", methods=["GET"])
-@api_auth_required("vehicle.view")
+@api_auth_required("reportregistrationexpiry.view")
 def dashboard_due_registration(api_user):
     """Vehicles whose LTO registration is expiring or expired.
 

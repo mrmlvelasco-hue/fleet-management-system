@@ -1,5 +1,6 @@
 """Admin ops APIs: notifications, rules, print templates, backup, reports."""
 from flask import jsonify, request
+from datetime import datetime
 
 from app.extensions import db
 from app.modules.api.auth import api_auth_required
@@ -19,6 +20,21 @@ def notifications_list(api_user):
         InAppNotificationService)
     limit = min(request.args.get("limit", 20, type=int) or 20, 50)
     items = InAppNotificationService().list_for_user(api_user, limit=limit)
+    print(
+        "DEBUG MOBILE NOTIFICATIONS:",
+        [
+            {
+                "id": n.id,
+                "title": n.title,
+                "event_code": n.event_code,
+                "reference_table": n.reference_table,
+                "reference_id": n.reference_id,
+                "is_read": n.is_read,
+            }
+            for n in items
+        ],
+        flush=True,
+    )
     return jsonify({
         "unread": InAppNotificationService().unread_count(api_user),
         "items": [{
@@ -666,3 +682,462 @@ def delete_custom_report(api_user, rid):
         CustomReportService)
     CustomReportService().deactivate(rid)
     return jsonify({"ok": True})
+
+# ── Fleet Broadcasts ──────────────────────────────────────────────────────
+
+def _broadcast_iso(v):
+    return v.isoformat() if v else None
+
+
+def _broadcast_json(row):
+    return {
+        "id": row.id,
+        "broadcast_no": row.broadcast_no,
+        "broadcast_type": row.broadcast_type,
+        "category": row.category,
+        "title": row.title,
+        "message": row.message,
+        "priority": row.priority,
+        "status": row.status,
+        "effective_date": _broadcast_iso(row.effective_date),
+        "expiry_date": _broadcast_iso(row.expiry_date),
+        "created_by": row.created_by,
+        "created_by_name": (
+            getattr(row.creator, "full_name", None)
+            or getattr(row.creator, "username", None)
+            if row.creator else None
+        ),
+        "published_by": row.published_by,
+        "published_by_name": (
+            getattr(row.publisher, "full_name", None)
+            or getattr(row.publisher, "username", None)
+            if row.publisher else None
+        ),
+        "published_at": _broadcast_iso(row.published_at),
+        "recipients": [
+            {
+                "id": r.id,
+                "recipient_type": r.recipient_type,
+                "role_id": r.role_id,
+                "role_name": r.role.name if r.role else None,
+                "user_id": r.user_id,
+                "user_name": (
+                    getattr(r.user, "full_name", None)
+                    or getattr(r.user, "username", None)
+                    if r.user else None
+                ),
+                "branch_id": r.branch_id,
+                "department_id": r.department_id,
+            }
+            for r in row.recipients
+        ],
+    }
+
+
+def _broadcast_datetime(value):
+    if not value:
+        return None
+
+    value = str(value).strip()
+
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError(
+            f"Invalid date/time value '{value}'. "
+            "Use ISO 8601 format."
+        )
+
+
+@bp.route("/admin/fleet-broadcasts", methods=["GET"])
+@api_auth_required("fleetbroadcast.view")
+def list_fleet_broadcasts(api_user):
+    from app.modules.system_admin.services.fleet_broadcast_service import (
+        FleetBroadcastService
+    )
+
+    status = request.args.get("status")
+    rows = FleetBroadcastService().list(status=status)
+
+    return jsonify({
+        "items": [_broadcast_json(row) for row in rows]
+    })
+
+
+@bp.route("/admin/fleet-broadcasts/<int:bid>", methods=["GET"])
+@api_auth_required("fleetbroadcast.view")
+def get_fleet_broadcast(api_user, bid):
+    from app.modules.system_admin.services.fleet_broadcast_service import (
+        FleetBroadcastService
+    )
+
+    row = FleetBroadcastService().get(bid)
+
+    if row is None:
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet broadcast not found."
+        }), 404
+
+    return jsonify(_broadcast_json(row))
+
+
+@bp.route("/admin/fleet-broadcasts", methods=["POST"])
+@api_auth_required("fleetbroadcast.create")
+def create_fleet_broadcast(api_user):
+    from app.modules.system_admin.services.fleet_broadcast_service import (
+        FleetBroadcastService
+    )
+
+    p = request.get_json(silent=True) or {}
+
+    try:
+        row = FleetBroadcastService().create(
+            user=api_user,
+            broadcast_no=p.get("broadcast_no"),
+            broadcast_type=p.get("broadcast_type") or "ANNOUNCEMENT",
+            category=p.get("category") or "GENERAL",
+            title=p.get("title"),
+            message=p.get("message"),
+            priority=p.get("priority") or "NORMAL",
+            effective_date=_broadcast_datetime(
+                p.get("effective_date")
+            ) if p.get("effective_date") else None,
+            expiry_date=_broadcast_datetime(
+                p.get("expiry_date")
+            ) if p.get("expiry_date") else None,
+            recipients=p.get("recipients") or [],
+        )
+    except ValueError as exc:
+        return jsonify({
+            "error": "validation",
+            "message": str(exc)
+        }), 400
+
+    return jsonify(_broadcast_json(row)), 201
+
+
+@bp.route("/admin/fleet-broadcasts/<int:bid>",
+           methods=["PUT", "PATCH"])
+@api_auth_required("fleetbroadcast.update")
+def update_fleet_broadcast(api_user, bid):
+    from app.modules.system_admin.services.fleet_broadcast_service import (
+        FleetBroadcastService
+    )
+
+    p = request.get_json(silent=True) or {}
+
+    try:
+        row = FleetBroadcastService().update(
+            bid,
+            broadcast_type=p.get("broadcast_type"),
+            category=p.get("category"),
+            title=p.get("title"),
+            message=p.get("message"),
+            priority=p.get("priority"),
+            effective_date=_broadcast_datetime(
+                p.get("effective_date")
+            ) if p.get("effective_date") else None,
+            expiry_date=_broadcast_datetime(
+                p.get("expiry_date")
+            ) if p.get("expiry_date") else None,
+            recipients=p.get("recipients")
+            if "recipients" in p else None,
+        )
+    except ValueError as exc:
+        return jsonify({
+            "error": "validation",
+            "message": str(exc)
+        }), 400
+
+    if row is None:
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet broadcast not found."
+        }), 404
+
+    return jsonify(_broadcast_json(row))
+
+
+@bp.route("/admin/fleet-broadcasts/<int:bid>/publish",
+           methods=["POST"])
+@api_auth_required("fleetbroadcast.update")
+def publish_fleet_broadcast(api_user, bid):
+    from app.modules.system_admin.services.fleet_broadcast_service import (
+        FleetBroadcastService
+    )
+
+    try:
+        row = FleetBroadcastService().publish(
+            bid,
+            user=api_user
+        )
+    except ValueError as exc:
+        return jsonify({
+            "error": "validation",
+            "message": str(exc)
+        }), 400
+
+    if row is None:
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet broadcast not found."
+        }), 404
+
+    return jsonify(_broadcast_json(row))
+
+
+@bp.route("/fleet-broadcasts/<int:bid>/acknowledge", methods=["POST"])
+@api_auth_required("fleetbroadcast.acknowledge")
+def acknowledge_fleet_broadcast(api_user, bid):
+    from app.modules.system_admin.services.fleet_broadcast_service import (
+        FleetBroadcastService
+    )
+
+    try:
+        ack = FleetBroadcastService().acknowledge(
+            bid,
+            user=api_user
+        )
+    except ValueError as exc:
+        return jsonify({
+            "error": "validation",
+            "message": str(exc)
+        }), 400
+
+    if ack is None:
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet broadcast not found."
+        }), 404
+
+    return jsonify({
+        "id": ack.id,
+        "broadcast_id": ack.broadcast_id,
+        "user_id": ack.user_id,
+        "acknowledged_at": _broadcast_iso(
+            ack.acknowledged_at
+        ),
+    })
+
+
+@bp.route("/admin/fleet-broadcasts/<int:bid>/acknowledgements",
+           methods=["GET"])
+@api_auth_required("fleetbroadcast.view")
+def list_fleet_broadcast_acknowledgements(api_user, bid):
+    from app.modules.system_admin.services.fleet_broadcast_service import (
+        FleetBroadcastService
+    )
+
+    row = FleetBroadcastService().get(bid)
+
+    if row is None:
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet broadcast not found."
+        }), 404
+
+    items = FleetBroadcastService().acknowledgements(bid)
+
+    return jsonify({
+        "broadcast_id": bid,
+        "items": [
+            {
+                "id": ack.id,
+                "user_id": ack.user_id,
+                "user_name": (
+                    getattr(ack.user, "full_name", None)
+                    or getattr(ack.user, "username", None)
+                    if ack.user else None
+                ),
+                "acknowledged_at": _broadcast_iso(
+                    ack.acknowledged_at
+                ),
+            }
+            for ack in items
+        ]
+    })
+
+# ── Fleet Broadcasts: User Inbox ─────────────────────────────────────────
+
+def _user_can_receive_broadcast(broadcast, user):
+    """Return True when the current user belongs to a broadcast audience."""
+    for recipient in broadcast.recipients:
+        recipient_type = recipient.recipient_type
+
+        if recipient_type == "ALL_USERS":
+            return True
+
+        if recipient_type == "SPECIFIC_USER":
+            if recipient.user_id == user.id:
+                return True
+
+        elif recipient_type == "ROLE":
+            if recipient.role_id and any(
+                getattr(role, "id", None) == recipient.role_id
+                for role in (user.roles or [])
+            ):
+                return True
+
+        elif recipient_type == "BRANCH":
+            if (
+                recipient.branch_id is not None
+                and recipient.branch_id == getattr(user, "branch_id", None)
+            ):
+                return True
+
+        elif recipient_type == "DEPARTMENT":
+            if (
+                recipient.department_id is not None
+                and recipient.department_id == getattr(user, "department_id", None)
+            ):
+                return True
+
+    return False
+
+
+def _user_broadcast_json(row, user):
+    from app.modules.system_admin.models import (
+        FleetBroadcastAcknowledgement,
+        InAppNotification,
+    )
+
+    ack = FleetBroadcastAcknowledgement.query.filter_by(
+        broadcast_id=row.id,
+        user_id=user.id,
+    ).first()
+
+    notification = InAppNotification.query.filter_by(
+        user_id=user.id,
+        reference_table="fleet_broadcasts",
+        reference_id=row.id,
+    ).order_by(
+        InAppNotification.id.desc()
+    ).first()
+
+    return {
+        "id": row.id,
+        "broadcast_no": row.broadcast_no,
+        "broadcast_type": row.broadcast_type,
+        "category": row.category,
+        "title": row.title,
+        "message": row.message,
+        "priority": row.priority,
+        "status": row.status,
+        "effective_date": _broadcast_iso(row.effective_date),
+        "expiry_date": _broadcast_iso(row.expiry_date),
+        "published_at": _broadcast_iso(row.published_at),
+        "is_read": bool(notification.is_read) if notification else False,
+        "read_at": (
+            _broadcast_iso(notification.read_at)
+            if notification else None
+        ),
+        "is_acknowledged": ack is not None,
+        "acknowledged_at": (
+            _broadcast_iso(ack.acknowledged_at)
+            if ack else None
+        ),
+    }
+
+
+@bp.route("/my/fleet-broadcasts", methods=["GET"])
+@api_auth_required()
+def list_my_fleet_broadcasts(api_user):
+    """Return published, active broadcasts addressed to the current user."""
+    from app.modules.system_admin.models import FleetBroadcast
+
+    rows = FleetBroadcast.query.filter_by(
+        status="PUBLISHED"
+    ).order_by(
+        FleetBroadcast.published_at.desc(),
+        FleetBroadcast.id.desc(),
+    ).all()
+
+    now = datetime.utcnow()
+    items = []
+
+    for row in rows:
+        if row.effective_date and row.effective_date > now:
+            continue
+        if row.expiry_date and row.expiry_date < now:
+            continue
+        if not _user_can_receive_broadcast(row, api_user):
+            continue
+        items.append(_user_broadcast_json(row, api_user))
+
+    return jsonify({"items": items})
+
+
+@bp.route("/my/fleet-broadcasts/<int:bid>", methods=["GET"])
+@api_auth_required()
+def get_my_fleet_broadcast(api_user, bid):
+    """Return one published, active broadcast addressed to the current user."""
+    from app.modules.system_admin.models import FleetBroadcast
+
+    row = db.session.get(FleetBroadcast, bid)
+
+    if row is None or row.status != "PUBLISHED":
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet Broadcast not found.",
+        }), 404
+
+    if not _user_can_receive_broadcast(row, api_user):
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet Broadcast not found.",
+        }), 404
+
+    now = datetime.utcnow()
+    if row.effective_date and row.effective_date > now:
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet Broadcast is not yet effective.",
+        }), 404
+    if row.expiry_date and row.expiry_date < now:
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet Broadcast has expired.",
+        }), 404
+
+    return jsonify(_user_broadcast_json(row, api_user))
+
+
+@bp.route("/fleet-broadcasts/<int:bid>/ack-status", methods=["GET"])
+@api_auth_required("fleetbroadcast.acknowledge")
+def fleet_broadcast_ack_status(api_user, bid):
+    """Return acknowledgement status for the current user."""
+    from app.modules.system_admin.models import (
+        FleetBroadcast,
+        FleetBroadcastAcknowledgement,
+    )
+
+    row = db.session.get(FleetBroadcast, bid)
+
+    if row is None or not _user_can_receive_broadcast(row, api_user):
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet Broadcast not found.",
+        }), 404
+
+    ack = FleetBroadcastAcknowledgement.query.filter_by(
+        broadcast_id=bid,
+        user_id=api_user.id,
+    ).first()
+
+    if ack is None:
+        return jsonify({
+            "id": None,
+            "broadcast_id": bid,
+            "user_id": api_user.id,
+            "acknowledged_at": None,
+            "acknowledged": False,
+        })
+
+    return jsonify({
+        "id": ack.id,
+        "broadcast_id": ack.broadcast_id,
+        "user_id": ack.user_id,
+        "acknowledged_at": _broadcast_iso(ack.acknowledged_at),
+        "acknowledged": True,
+    })

@@ -767,21 +767,43 @@ def _seed_notification_rules() -> None:
     from app.modules.system_admin.models import NotificationRule
 
     rules = [
-        ("submitted", "BOTH", "CURRENT_APPROVER"),
-        ("resubmitted", "BOTH", "CURRENT_APPROVER"),
-        ("approved_level", "BOTH", "CURRENT_APPROVER"),
-        ("approved_final", "BOTH", "SUBMITTER"),
-        ("rejected", "BOTH", "SUBMITTER"),
-        ("returned", "BOTH", "SUBMITTER"),
-        ("cancelled", "IN_APP", "SUBMITTER"),
+        ("submitted", "BOTH", "CURRENT_APPROVER", None),
+        ("resubmitted", "BOTH", "CURRENT_APPROVER", None),
+        ("approved_level", "BOTH", "CURRENT_APPROVER", None),
+        ("approved_final", "BOTH", "SUBMITTER", None),
+        ("rejected", "BOTH", "SUBMITTER", None),
+        ("returned", "BOTH", "SUBMITTER", None),
+        ("cancelled", "IN_APP", "SUBMITTER", None),
+
+        # Scheduled Preventive Maintenance alerts. These are delivered
+        # in-app to active users assigned to the Fleet Officer role.
+        # The PMS due-check task dispatches these exact event codes.
+        ("pm_due_soon", "IN_APP", "ROLE", "Fleet Officer"),
+        ("pm_overdue", "IN_APP", "ROLE", "Fleet Officer"),
     ]
-    for event_code, channel, recipient_type in rules:
+
+    for event_code, channel, recipient_type, role_name in rules:
         exists = NotificationRule.query.filter_by(
             event_code=event_code, recipient_type=recipient_type).first()
-        if not exists:
-            db.session.add(NotificationRule(
-                event_code=event_code, channel=channel,
-                recipient_type=recipient_type))
+        if exists:
+            continue
+
+        role_id = None
+        if recipient_type == "ROLE":
+            role = Role.query.filter_by(name=role_name).first()
+            if role is None:
+                click.echo(
+                    f"Notification rule skipped: role '{role_name}' "
+                    f"does not exist yet.")
+                continue
+            role_id = role.id
+
+        db.session.add(NotificationRule(
+            event_code=event_code,
+            channel=channel,
+            recipient_type=recipient_type,
+            role_id=role_id))
+
     db.session.flush()
 
 

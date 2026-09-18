@@ -79,6 +79,12 @@ for _code, _desc in [
     # Its own family rather than folding into user.* or vehicle.*.
     # Publishing an executable that runs on company phones is its own
     # authority and should be grantable to exactly the people who do it.
+    # ── Fleet Broadcasts ───────────────────────────────────────────────
+    ("fleetbroadcast.view", "View Fleet Broadcasts"),
+    ("fleetbroadcast.create", "Create Fleet Broadcasts"),
+    ("fleetbroadcast.update", "Edit and publish Fleet Broadcasts"),
+    ("fleetbroadcast.acknowledge", "Acknowledge Fleet Broadcasts"),
+
     ("mobileapp.view", "View mobile app releases"),
     ("mobileapp.create", "Upload a new mobile app release (APK)"),
     ("mobileapp.update", "Publish a release, or set the minimum supported version"),

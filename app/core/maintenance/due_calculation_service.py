@@ -47,6 +47,7 @@ class _Prefetch:
 
     __slots__ = ("schedules_by_id", "active_schedules", "types_by_id",
                  "type_ids_by_name", "last_service", "vehicles_by_id",
+                 "historical_untyped", "_brand_ids_by_name", "_model_ids_by_brand_name",
                  "_by_fk", "_by_make_model", "_by_type_generic",
                  "_global_generic", "_match_memo")
 
@@ -68,6 +69,23 @@ class _Prefetch:
         for t in types:
             key = (t.name or "").strip().lower()
             self.type_ids_by_name.setdefault(key, []).append(t.id)
+
+        # 2 small queries -- resolve Vehicle.brand/model text to the real
+        # master-data foreign keys used by PMSchedule.vehicle_brand_id and
+        # PMSchedule.vehicle_model_id. Vehicle stores the display values
+        # (brand/model), not these FK columns, so the bulk path must perform
+        # the same resolution as PMDueCalculationService._resolve_vehicle_brand_model_ids().
+        from app.modules.master_data.vehicle_brand.models import (
+            VehicleBrand, VehicleModel)
+        self._brand_ids_by_name = {}
+        for b in VehicleBrand.query.all():
+            key = (b.name or "").strip().lower()
+            self._brand_ids_by_name.setdefault(key, []).append(b.id)
+
+        self._model_ids_by_brand_name = {}
+        for m in VehicleModel.query.all():
+            key = (m.brand_id, (m.name or "").strip().lower())
+            self._model_ids_by_brand_name.setdefault(key, []).append(m.id)
 
         # 1 query -- latest COMPLETED order per (vehicle, maintenance
         # type). Ordered ascending so the last write per key wins, which
@@ -102,6 +120,19 @@ class _Prefetch:
             self.last_service[(o.vehicle_id, o.maintenance_type_id)] = o
 
         self.vehicles_by_id = {}
+
+        # Historical migration rows created by older versions of the
+        # migration importer may have maintenance_type_id=NULL. Keep those
+        # rows in memory so the due engine can recover a maintenance-specific
+        # baseline from the description (Tire/Battery/Aircon) instead of
+        # incorrectly using Vehicle.last_pm_* for every PM type.
+        self.historical_untyped = {}
+        for o in rows:
+            if not getattr(o, "is_historical", False):
+                continue
+            if o.maintenance_type_id is not None:
+                continue
+            self.historical_untyped.setdefault(o.vehicle_id, []).append(o)
 
         # ------------------------------------------------------------------
         # Pre-built match buckets.
@@ -164,37 +195,6 @@ class _Prefetch:
         return result
 
     def _resolve_schedules(self, vehicle, maintenance_type_id=None):
-        """Most-specific-wins, resolved PER MAINTENANCE TYPE.
-
-        When a single type is requested this walks the tiers and
-        returns the first match, exactly as before.
-
-        When ALL types are requested (maintenance_type_id=None) it
-        resolves each type INDEPENDENTLY and unions the winners.
-        Returning the first non-empty tier wholesale -- which is what
-        this used to do -- meant one type's specificity suppressed
-        every other type that only existed lower down. Live symptom:
-        every tire schedule carried brand/model FKs and no make/model
-        text, so it sat in the FK and global tiers; the PM, battery and
-        aircon schedules used the legacy make/model text. A vehicle
-        with no brand/model FKs skipped the FK tier, matched make/model
-        text, and stopped -- so tires never appeared as due, however
-        far past the interval the vehicle was.
-
-        Specificity still means something WITHIN a type: two tire
-        schedules at different tiers still resolve to the more specific
-        one. It just no longer decides which types exist at all.
-        """
-        if maintenance_type_id is None:
-            winners = {}
-            for tid in self._candidate_type_ids(vehicle):
-                matched = self._resolve_schedules(vehicle, tid)
-                if matched:
-                    winners[tid] = matched
-            # Flattened in a stable order so callers that dedupe on
-            # maintenance_type_id see a deterministic winner.
-            return [s for tid in sorted(winners) for s in winners[tid]]
-
         if vehicle.pm_schedule_id:
             sched = self.schedules_by_id.get(vehicle.pm_schedule_id)
             if sched and sched.is_active and (
@@ -208,8 +208,17 @@ class _Prefetch:
             return [s for s in candidates
                    if s.maintenance_type_id == maintenance_type_id]
 
-        brand_id = getattr(vehicle, "vehicle_brand_id", None)
-        model_id = getattr(vehicle, "vehicle_model_id", None)
+        # Vehicle does not have vehicle_brand_id / vehicle_model_id columns.
+        # Resolve its stored brand/model text to the master-data FKs before
+        # checking FK-based PM schedules. Without this, the bulk PMS report
+        # can never match schedules such as Tire Replacement that are keyed
+        # by vehicle_brand_id + vehicle_model_id.
+        brand_key = (getattr(vehicle, "brand", None) or "").strip().lower()
+        brand_ids = self._brand_ids_by_name.get(brand_key, ())
+        brand_id = brand_ids[0] if brand_ids else None
+        model_key = (getattr(vehicle, "model", None) or "").strip().lower()
+        model_ids = self._model_ids_by_brand_name.get((brand_id, model_key), ()) if brand_id else ()
+        model_id = model_ids[0] if model_ids else None
         if brand_id and model_id:
             fk_matches = _of_type(self._by_fk.get((brand_id, model_id), ()))
             if fk_matches:
@@ -228,40 +237,18 @@ class _Prefetch:
 
         return _of_type(self._global_generic)
 
-    def _candidate_type_ids(self, vehicle):
-        """Maintenance types with at least one schedule that could match
-        this vehicle, across every tier.
-
-        Deliberately a UNION of the tiers rather than the winning tier:
-        the whole point is that a type present only at a lower tier must
-        still be considered. Narrowing happens per type in
-        _resolve_schedules, which re-applies most-specific-wins.
-        """
-        ids = set()
-        if vehicle.pm_schedule_id:
-            pinned = self.schedules_by_id.get(vehicle.pm_schedule_id)
-            if pinned is not None and pinned.is_active:
-                ids.add(pinned.maintenance_type_id)
-
-        brand_id = getattr(vehicle, "vehicle_brand_id", None)
-        model_id = getattr(vehicle, "vehicle_model_id", None)
-        buckets = []
-        if brand_id and model_id:
-            buckets.append(self._by_fk.get((brand_id, model_id), ()))
-        key = ((vehicle.brand or "").strip().lower(),
-              (vehicle.model or "").strip().lower())
-        buckets.append(self._by_make_model.get(key, ()))
-        buckets.append(self._by_type_generic.get(vehicle.vehicle_type_id, ()))
-        buckets.append(self._global_generic)
-        for bucket in buckets:
-            for s in bucket:
-                ids.add(s.maintenance_type_id)
-        return ids
-
     def last_service_for(self, vehicle, maintenance_type_id):
-        """In-memory equivalent of _last_service(), including the
-        same-name MaintenanceType fallback and both odometer
-        fallbacks."""
+        """In-memory equivalent of _last_service(), including migration-safe
+        handling for historical rows imported before maintenance_type_id was
+        captured by the history importer.
+
+        Vehicle.last_pm_* is a LEGACY GENERAL-PMS baseline and therefore is
+        only valid for PMS-PREV (maintenance_type_id=1). Tire/Battery/Aircon
+        must not inherit that baseline merely because the vehicle came from a
+        migration. Older historical rows with no maintenance_type_id are
+        recovered conservatively from their descriptions for the independent
+        PM types.
+        """
         order = self.last_service.get((vehicle.id, maintenance_type_id))
         if order is None:
             target = self.types_by_id.get(maintenance_type_id)
@@ -278,11 +265,34 @@ class _Prefetch:
                             candidates,
                             key=lambda o: (o.completed_date is not None,
                                           o.completed_date))
+
+        if order is None and maintenance_type_id in (2, 3, 4):
+            keywords = {
+                2: ("tire", "tyre"),
+                3: ("battery",),
+                4: ("aircon", "air-con", "air conditioning", "air-conditioning"),
+            }.get(maintenance_type_id, ())
+            candidates = []
+            for historical in self.historical_untyped.get(vehicle.id, ()):
+                description = (historical.description or "").strip().lower()
+                if description and any(k in description for k in keywords):
+                    candidates.append(historical)
+            if candidates:
+                order = max(
+                    candidates,
+                    key=lambda o: (
+                        o.completed_date is not None,
+                        o.completed_date or date.min))
+
         if order:
             if order.odometer_at_service is not None:
                 return order.odometer_at_service, order.completed_date
             return (vehicle.current_odometer or 0), order.completed_date
-        if (vehicle.last_pm_odometer is not None
+
+        # last_pm_* is explicitly a legacy GENERAL PMS baseline. Never reuse
+        # it as the baseline for independent PM types.
+        if maintenance_type_id == 1 and (
+                vehicle.last_pm_odometer is not None
                 or vehicle.last_pm_date is not None):
             return vehicle.last_pm_odometer or 0, vehicle.last_pm_date
         return 0, None
@@ -413,26 +423,51 @@ class PMDueCalculationService:
         if order:
             if order.odometer_at_service is not None:
                 return order.odometer_at_service, order.completed_date
-            # The completing user left Odometer at Service blank — falling
-            # back to a hardcoded 0 here was the actual bug: it made the
-            # due-calculation treat "we don't know" as "the vehicle has
-            # travelled 0 km ever", so a just-completed service NEVER
-            # cleared a DUE_SOON/OVERDUE status. The vehicle's own
-            # current_odometer (kept in sync by MO/Trip Ticket completion
-            # elsewhere) is a far better proxy for "how far has this
-            # vehicle actually gone" than assuming zero.
+            # The completing user left Odometer at Service blank — use the
+            # vehicle's current odometer as the best available proxy.
             vehicle = db.session.get(Vehicle, vehicle_id)
             fallback_km = (vehicle.current_odometer or 0) if vehicle else 0
             return fallback_km, order.completed_date
-        # No completed Maintenance Order exists in this system at all —
-        # for a freshly, manually-registered LEGACY vehicle (one with
-        # real prior service history that just predates being added
-        # here), assuming "0 km, never serviced" is wrong and causes it
-        # to show OVERDUE the moment it's registered. Fall back to the
-        # captured legacy baseline if one was provided at registration.
+
+        # Older history migrations created COMPLETED orders without a
+        # maintenance_type_id. Recover an independent PM baseline from the
+        # description when it is explicit enough to identify Tire/Battery/
+        # Aircon. This keeps migrated history useful without guessing across
+        # unrelated maintenance types.
+        if maintenance_type_id in (2, 3, 4):
+            keywords = {
+                2: ("tire", "tyre"),
+                3: ("battery",),
+                4: ("aircon", "air-con", "air conditioning", "air-conditioning"),
+            }[maintenance_type_id]
+            candidates = (MaintenanceOrder.query
+                          .filter_by(vehicle_id=vehicle_id,
+                                    maintenance_type_id=None,
+                                    status="COMPLETED",
+                                    is_historical=True)
+                          .all())
+            matched = [
+                o for o in candidates
+                if any(k in (o.description or "").strip().lower()
+                       for k in keywords)]
+            if matched:
+                order = max(
+                    matched,
+                    key=lambda o: (
+                        o.completed_date is not None,
+                        o.completed_date or date.min))
+                if order.odometer_at_service is not None:
+                    return order.odometer_at_service, order.completed_date
+                vehicle = db.session.get(Vehicle, vehicle_id)
+                fallback_km = (vehicle.current_odometer or 0) if vehicle else 0
+                return fallback_km, order.completed_date
+
+        # last_pm_* is a GENERAL PMS migration baseline. It applies only to
+        # Preventive Maintenance Service itself (maintenance_type_id=1).
         vehicle = db.session.get(Vehicle, vehicle_id)
-        if vehicle and (vehicle.last_pm_odometer is not None
-                       or vehicle.last_pm_date is not None):
+        if (maintenance_type_id == 1 and vehicle and
+                (vehicle.last_pm_odometer is not None
+                 or vehicle.last_pm_date is not None)):
             return vehicle.last_pm_odometer or 0, vehicle.last_pm_date
         return 0, None
 
@@ -583,17 +618,49 @@ class PMDueCalculationService:
                            joinedload(Vehicle.vehicle_type))
                    .filter_by(is_active=True)
                    .filter(Vehicle.status.in_(DUE_ELIGIBLE_STATUSES)).all())
+
+        # IMPORTANT: do not call applicable_schedules(vehicle) with no
+        # maintenance_type_id here. That method intentionally returns the
+        # single most-specific schedule bucket for the *first* applicable
+        # maintenance type. Using it as the bulk-report source makes a
+        # vehicle's assigned PMS schedule hide independent schedules such
+        # as Tire Management, Battery, etc.
+        #
+        # The bulk report must resolve schedules independently PER
+        # maintenance type. This preserves precedence for the vehicle's
+        # assigned PMS type while still allowing a generic/type-specific
+        # Tire schedule to be evaluated when the assigned schedule belongs
+        # to a different maintenance type.
+        active_type_ids = {
+            s.maintenance_type_id for s in prefetch.active_schedules
+            if s.maintenance_type_id is not None
+        }
+
         for vehicle in vehicles:
-            schedules = prefetch.applicable_schedules(vehicle)
+            # Include the directly assigned schedule's type even if an
+            # unusual data state means it is not represented in the active
+            # schedule snapshot (e.g. an inactive assigned schedule).
+            assigned = prefetch.schedules_by_id.get(vehicle.pm_schedule_id)
+            type_ids = set(active_type_ids)
+            if assigned and assigned.maintenance_type_id is not None:
+                type_ids.add(assigned.maintenance_type_id)
+
             seen_types = set()
-            for schedule in schedules:
-                if schedule.maintenance_type_id in seen_types:
+            for maintenance_type_id in type_ids:
+                if maintenance_type_id in seen_types:
                     continue
-                seen_types.add(schedule.maintenance_type_id)
-                if (vehicle.id, schedule.maintenance_type_id) in open_pairs:
+                seen_types.add(maintenance_type_id)
+
+                schedules = prefetch.applicable_schedules(
+                    vehicle, maintenance_type_id)
+                if not schedules:
+                    continue
+
+                if (vehicle.id, maintenance_type_id) in open_pairs:
                     continue  # already raised — not actionable again
+
                 result = self.get_due_status(
-                    vehicle, maintenance_type_id=schedule.maintenance_type_id,
+                    vehicle, maintenance_type_id=maintenance_type_id,
                     as_of_date=as_of_date, _prefetch=prefetch)
                 if result["status"] != "GOOD":
                     results.append({**result, "vehicle": vehicle})

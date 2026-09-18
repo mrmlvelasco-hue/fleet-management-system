@@ -93,6 +93,33 @@ def _visible_movement(move_id, api_user):
     return mv if mv.id in visible_ids else None
 
 
+def _visible_atd(atd_id, api_user):
+    """Return the ATD when it is visible to the current API user.
+
+    ATD is a transaction document, so attachment visibility must follow
+    the same organization/branch visibility as the ATD itself. This is
+    especially important for approvers: they need to read supporting
+    documents on ATDs assigned to their approval workflow.
+    """
+    from app.modules.transactions.atd.models import AuthorityToDrive
+    from app.modules.transactions.atd.service import ATDService
+
+    atd = AuthorityToDrive.query.filter_by(id=atd_id).first()
+    if atd is None:
+        return None
+
+    service = ATDService()
+    list_filtered = getattr(service, "list_filtered", None)
+    if callable(list_filtered):
+        rows = list_filtered(user=api_user, page=1, per_page=100000)[0]
+        return atd if any(row.id == atd_id for row in rows) else None
+
+    # Defensive fallback for older ATD service variants.
+    if getattr(atd, "requested_by", None) == getattr(api_user, "id", None):
+        return atd
+    return None
+
+
 def _visible_registration(reg_id, api_user):
     """Reuses list_filtered's org-scope rule, same as the other
     transaction helpers here."""
@@ -141,6 +168,8 @@ def _parent_visible(reference_table, reference_id, api_user):
         return _visible_registration(reference_id, api_user) is not None
     if reference_table == "vehicle_movements":
         return _visible_movement(reference_id, api_user) is not None
+    if reference_table == "atds":
+        return _visible_atd(reference_id, api_user) is not None
     return False
 
 
@@ -361,7 +390,8 @@ def delete_attachment(api_user, attachment_id):
             "trip_tickets": "tripticket.update",
             "vehicle_registrations": "vehicleregistration.update",
             "vehicle_checklists": "checklist.update",
-            "vehicle_movements": "vehiclemovement.update"}.get(
+            "vehicle_movements": "vehiclemovement.update",
+            "atds": "atd.update"}.get(
         att.reference_table)
     if need and not _can(api_user, need):
         return jsonify({"error": "forbidden",
@@ -603,6 +633,70 @@ def upload_trip_ticket_attachment(api_user, trip_id):
             document_type=(request.form.get("document_type") or None))
     except AttachmentError as exc:
         return _bad(str(exc))
+    return jsonify(_attachment_json(attachment)), 201
+
+
+@bp.route("/atds/<int:atd_id>/attachments", methods=["GET"])
+@api_auth_required("atd.view")
+def atd_attachments(api_user, atd_id):
+    if _visible_atd(atd_id, api_user) is None:
+        return _not_found("Authority To Drive")
+
+    from app.core.attachments.attachment_service import AttachmentService
+    rows = AttachmentService().list_for("atds", atd_id)
+    return jsonify({
+        "items": [_attachment_json(a) for a in rows],
+        "attachment_allowed": _attachments_allowed_for("atds"),
+    })
+
+
+@bp.route("/atds/<int:atd_id>/attachments", methods=["POST"])
+@api_auth_required("atd.update")
+def upload_atd_attachment(api_user, atd_id):
+    if _visible_atd(atd_id, api_user) is None:
+        return _not_found("Authority To Drive")
+    if not _attachments_allowed_for("atds"):
+        return _attachments_blocked("atds")
+
+    from app.extensions import db
+    from app.modules.transactions.atd.models import AuthorityToDrive
+    atd = db.session.get(AuthorityToDrive, atd_id)
+    if atd is None:
+        return _not_found("Authority To Drive")
+
+    approval_status = (
+        getattr(getattr(atd, "approval_instance", None), "status", None) or ""
+    ).upper()
+
+    # Supporting files may be added while preparing a draft or correcting
+    # a returned request. Once approval is pending/approved, the document
+    # is locked and the approver sees the existing files read-only.
+    if atd.status != "DRAFT" or approval_status not in ("", "RETURNED"):
+        return jsonify({
+            "error": "conflict",
+            "message": (
+                "This ATD is not editable. Attachments can only be added "
+                "to a draft or a returned ATD."
+            ),
+        }), 409
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _bad("No file was uploaded.", kind="bad_request")
+
+    from app.core.attachments.attachment_service import (
+        AttachmentError, AttachmentService)
+    try:
+        attachment = AttachmentService().upload(
+            file,
+            "atds",
+            atd_id,
+            user=api_user,
+            document_type=(request.form.get("document_type") or None),
+        )
+    except AttachmentError as exc:
+        return _bad(str(exc))
+
     return jsonify(_attachment_json(attachment)), 201
 
 

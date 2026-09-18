@@ -212,6 +212,80 @@ def create_atd(api_user):
     return jsonify(_atd_json(a, detail=True)), 201
 
 
+@bp.route("/atd/<int:aid>", methods=["PUT", "PATCH"])
+@api_auth_required("atd.update")
+def update_atd(api_user, aid):
+    from app.modules.transactions.atd.service import (
+        ATDService, InvalidATDStateError)
+
+    p = request.get_json(silent=True) or {}
+    fields = {}
+
+    if "vehicle_id" in p:
+        try:
+            fields["vehicle_id"] = int(p["vehicle_id"])
+        except (TypeError, ValueError):
+            return _validation("vehicle_id must be an integer.", "vehicle_id")
+
+    if "driver_id" in p:
+        try:
+            fields["driver_id"] = int(p["driver_id"])
+        except (TypeError, ValueError):
+            return _validation("driver_id must be an integer.", "driver_id")
+
+    if "purpose" in p:
+        purpose = (p.get("purpose") or "").strip()
+        if not purpose:
+            return _validation("purpose is required.", "purpose")
+        fields["purpose"] = purpose
+
+    for key in ("valid_from", "valid_to"):
+        if key in p:
+            try:
+                fields[key] = date.fromisoformat(str(p[key])[:10])
+            except (TypeError, ValueError):
+                return _validation(
+                    f"{key} must be YYYY-MM-DD.", key)
+
+    if "valid_from" in fields or "valid_to" in fields:
+        current = ATDService().get_visible(aid, api_user)
+        if current is None:
+            return _not_found()
+        start = fields.get("valid_from", current.valid_from)
+        end = fields.get("valid_to", current.valid_to)
+        if end < start:
+            return _validation(
+                "valid_to must be on or after valid_from.", "valid_to")
+
+    if "odometer_out" in p:
+        try:
+            fields["odometer_out"] = (
+                int(p["odometer_out"])
+                if p["odometer_out"] not in (None, "") else None)
+        except (TypeError, ValueError):
+            return _validation("odometer_out must be an integer.", "odometer_out")
+
+    if "maintenance_order_id" in p:
+        try:
+            fields["maintenance_order_id"] = (
+                int(p["maintenance_order_id"])
+                if p["maintenance_order_id"] not in (None, "") else None)
+        except (TypeError, ValueError):
+            return _validation(
+                "maintenance_order_id must be an integer.",
+                "maintenance_order_id")
+
+    try:
+        atd = ATDService().update(aid, user=api_user, **fields)
+    except InvalidATDStateError as e:
+        return _conflict(str(e))
+    except Exception as e:
+        return _conflict(str(e))
+
+    return jsonify(_atd_print_extras(
+        atd, _atd_json(atd, detail=True), api_user=api_user))
+
+
 @bp.route("/atd/<int:aid>/submit", methods=["POST"])
 @api_auth_required("atd.update")
 def submit_atd(api_user, aid):
@@ -221,6 +295,19 @@ def submit_atd(api_user, aid):
     except Exception as e:
         return _conflict(str(e))
     return jsonify({"ok": True})
+
+
+@bp.route("/atd/<int:aid>/resubmit", methods=["POST"])
+@api_auth_required("atd.update")
+def resubmit_atd(api_user, aid):
+    from app.modules.transactions.atd.service import ATDService
+    p = request.get_json(silent=True) or {}
+    try:
+        atd = ATDService().resubmit(aid, api_user, remarks=p.get("remarks"))
+    except Exception as e:
+        return _conflict(str(e))
+    return jsonify(_atd_print_extras(
+        atd, _atd_json(atd, detail=True), api_user=api_user))
 
 
 @bp.route("/atd/<int:aid>/activate", methods=["POST"])

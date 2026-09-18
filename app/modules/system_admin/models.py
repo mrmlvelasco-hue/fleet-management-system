@@ -142,6 +142,116 @@ class InAppNotification(db.Model, BaseModel):
     user = db.relationship("User")
 
 
+class FleetBroadcast(db.Model, BaseModel):
+    """Generic fleet-wide broadcast/announcement.
+
+    A broadcast is the business record; delivery is handled separately
+    through FleetBroadcastRecipient rows and the existing notification
+    infrastructure.
+    """
+    __tablename__ = "fleet_broadcasts"
+
+    broadcast_no = db.Column(db.String(40), unique=True, nullable=False,
+                             index=True)
+    broadcast_type = db.Column(db.String(30), nullable=False,
+                              default="ANNOUNCEMENT")
+    category = db.Column(db.String(50), nullable=False,
+                         default="GENERAL", index=True)
+    title = db.Column(db.String(200), nullable=False)
+    message = db.Column(db.Text, nullable=False, default="")
+    priority = db.Column(db.String(20), nullable=False, default="NORMAL")
+    status = db.Column(db.String(20), nullable=False, default="DRAFT",
+                       index=True)
+    effective_date = db.Column(db.DateTime, nullable=True)
+    expiry_date = db.Column(db.DateTime, nullable=True)
+
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"),
+                           nullable=False)
+    published_by = db.Column(db.Integer, db.ForeignKey("users.id"),
+                             nullable=True)
+    published_at = db.Column(db.DateTime, nullable=True)
+
+    creator = db.relationship("User", foreign_keys=[created_by])
+    publisher = db.relationship("User", foreign_keys=[published_by])
+
+    recipients = db.relationship(
+        "FleetBroadcastRecipient",
+        back_populates="broadcast",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    acknowledgements = db.relationship(
+        "FleetBroadcastAcknowledgement",
+        back_populates="broadcast",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class FleetBroadcastRecipient(db.Model, BaseModel):
+    """Audience definition for a fleet broadcast.
+
+    Recipient types are intentionally data-driven:
+    ALL_USERS | ROLE | SPECIFIC_USER | BRANCH | DEPARTMENT
+    """
+    __tablename__ = "fleet_broadcast_recipients"
+
+    broadcast_id = db.Column(
+        db.Integer,
+        db.ForeignKey("fleet_broadcasts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    recipient_type = db.Column(db.String(30), nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey("roles.id"),
+                        nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"),
+                        nullable=True)
+    branch_id = db.Column(db.Integer, nullable=True, index=True)
+    department_id = db.Column(db.Integer, nullable=True, index=True)
+
+    broadcast = db.relationship(
+        "FleetBroadcast",
+        back_populates="recipients",
+    )
+    role = db.relationship("Role")
+    user = db.relationship("User")
+
+
+class FleetBroadcastAcknowledgement(db.Model, BaseModel):
+    """Records that a user acknowledged a published fleet broadcast."""
+    __tablename__ = "fleet_broadcast_acknowledgements"
+
+    broadcast_id = db.Column(
+        db.Integer,
+        db.ForeignKey("fleet_broadcasts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+    acknowledged_at = db.Column(db.DateTime, nullable=False)
+
+    broadcast = db.relationship(
+        "FleetBroadcast",
+        back_populates="acknowledgements",
+    )
+    user = db.relationship("User")
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "broadcast_id",
+            "user_id",
+            name="uq_fleet_broadcast_ack_user",
+        ),
+    )
+
+
 class DashboardWidget(db.Model, BaseModel):
     __tablename__ = "dashboard_widgets"
     code = db.Column(db.String(80), unique=True, nullable=False)

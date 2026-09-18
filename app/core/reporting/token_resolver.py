@@ -29,18 +29,36 @@ PM_TOKEN_LABELS = {
 _TOKEN_PATTERN = re.compile(r"\bpm\d+\b", re.IGNORECASE)
 
 
-def _last_completed_maintenance_order(vehicle):
+def _last_completed_maintenance_order(vehicle, maintenance_type_id=None):
+    """Return the latest completed Maintenance Order relevant to the PM token.
+
+    When ``maintenance_type_id`` is supplied, pm8/pm9 are scoped to that
+    maintenance type. This is required for PM templates because operational
+    orders (for example relocation/assignment/transfer, which have no
+    maintenance_type_id) must never become the "last work order" for Tire,
+    Battery, Aircon, or Preventive Maintenance.
+
+    When no maintenance type is supplied, preserve the legacy behavior and
+    return the latest completed order for the vehicle. Callers that know the
+    PM context should always pass the maintenance type explicitly.
+    """
     if vehicle is None:
         return None
+
     from app.modules.transactions.maintenance_order.models import MaintenanceOrder
-    return (MaintenanceOrder.query
-           .filter_by(vehicle_id=vehicle.id, status="COMPLETED")
-           .filter(MaintenanceOrder.completed_date.isnot(None))
-           .order_by(MaintenanceOrder.completed_date.desc())
-           .first())
+
+    query = (MaintenanceOrder.query
+             .filter_by(vehicle_id=vehicle.id, status="COMPLETED")
+             .filter(MaintenanceOrder.completed_date.isnot(None)))
+
+    if maintenance_type_id is not None:
+        query = query.filter(
+            MaintenanceOrder.maintenance_type_id == maintenance_type_id)
+
+    return query.order_by(MaintenanceOrder.completed_date.desc()).first()
 
 
-def resolve_pm_tokens(text, vehicle, last_work_order=None) -> str:
+def resolve_pm_tokens(text, vehicle, last_work_order=None, maintenance_type_id=None) -> str:
     """Replaces every recognized pmN token in `text` with live data about
     `vehicle`. Unrecognized tokens (e.g. "pm99") are left untouched
     rather than blanked out, since that's more likely a typo worth
@@ -51,14 +69,20 @@ def resolve_pm_tokens(text, vehicle, last_work_order=None) -> str:
 
     `last_work_order` can be passed explicitly (e.g. a route that already
     computed it) to avoid a redundant query; otherwise it's looked up
-    automatically from the vehicle's Maintenance Order history."""
+    automatically from the vehicle's Maintenance Order history.
+
+    `maintenance_type_id` scopes pm8/pm9 to the current PM maintenance type
+    (for example PMS-TIRE=2). This prevents an operational or unrelated
+    maintenance order from being used as the PM reference WO."""
     if not text:
         return text
 
     driver = getattr(vehicle, "assigned_driver", None) if vehicle else None
     branch = getattr(vehicle, "branch", None) if vehicle else None
     if last_work_order is None:
-        last_work_order = _last_completed_maintenance_order(vehicle)
+        # Scope pm8/pm9 to the current PMS maintenance type when provided.
+        last_work_order = _last_completed_maintenance_order(
+            vehicle, maintenance_type_id=maintenance_type_id)
 
     values = {
         "pm2": getattr(vehicle, "brand", None) or "",
