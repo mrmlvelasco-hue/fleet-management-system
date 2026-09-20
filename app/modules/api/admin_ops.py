@@ -961,39 +961,18 @@ def list_fleet_broadcast_acknowledgements(api_user, bid):
 # ── Fleet Broadcasts: User Inbox ─────────────────────────────────────────
 
 def _user_can_receive_broadcast(broadcast, user):
-    """Return True when the current user belongs to a broadcast audience."""
-    for recipient in broadcast.recipients:
-        recipient_type = recipient.recipient_type
+    """Return True when the current user belongs to a broadcast audience.
 
-        if recipient_type == "ALL_USERS":
-            return True
-
-        if recipient_type == "SPECIFIC_USER":
-            if recipient.user_id == user.id:
-                return True
-
-        elif recipient_type == "ROLE":
-            if recipient.role_id and any(
-                getattr(role, "id", None) == recipient.role_id
-                for role in (user.roles or [])
-            ):
-                return True
-
-        elif recipient_type == "BRANCH":
-            if (
-                recipient.branch_id is not None
-                and recipient.branch_id == getattr(user, "branch_id", None)
-            ):
-                return True
-
-        elif recipient_type == "DEPARTMENT":
-            if (
-                recipient.department_id is not None
-                and recipient.department_id == getattr(user, "department_id", None)
-            ):
-                return True
-
-    return False
+    Delegates to FleetBroadcastService, which is also what decides who
+    gets notified on publish. This function used to keep its own copy of
+    the same rule, missing the is_active checks the service's version
+    has -- meaning a deactivated user or role could still see a broadcast
+    here even though they would never have been notified of it.
+    """
+    from app.modules.system_admin.services.fleet_broadcast_service import (
+        FleetBroadcastService)
+    return FleetBroadcastService().user_matches_broadcast_audience(
+        broadcast, user)
 
 
 def _user_broadcast_json(row, user):
@@ -1047,13 +1026,13 @@ def list_my_fleet_broadcasts(api_user):
     from app.modules.system_admin.models import FleetBroadcast
 
     rows = FleetBroadcast.query.filter_by(
-        status="PUBLISHED"
+        status="PUBLISHED", is_active=True
     ).order_by(
         FleetBroadcast.published_at.desc(),
         FleetBroadcast.id.desc(),
     ).all()
 
-    now = datetime.utcnow()
+    now = datetime.now()
     items = []
 
     for row in rows:
@@ -1088,7 +1067,7 @@ def get_my_fleet_broadcast(api_user, bid):
             "message": "Fleet Broadcast not found.",
         }), 404
 
-    now = datetime.utcnow()
+    now = datetime.now()
     if row.effective_date and row.effective_date > now:
         return jsonify({
             "error": "not_found",
