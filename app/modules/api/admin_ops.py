@@ -939,6 +939,14 @@ def list_fleet_broadcast_acknowledgements(api_user, bid):
 
     items = FleetBroadcastService().acknowledgements(bid)
 
+    def _role_name(user):
+        # First role only: this table is a quick organizational lookup,
+        # not a full permission audit -- a user's primary role reads
+        # better in one column than every role they hold.
+        if not user or not user.roles:
+            return None
+        return user.roles[0].name
+
     return jsonify({
         "broadcast_id": bid,
         "items": [
@@ -950,6 +958,16 @@ def list_fleet_broadcast_acknowledgements(api_user, bid):
                     or getattr(ack.user, "username", None)
                     if ack.user else None
                 ),
+                "employee_id": getattr(ack.user, "employee_id", None) if ack.user else None,
+                "role": _role_name(ack.user),
+                "department": (
+                    ack.user.department.name
+                    if ack.user and ack.user.department else None
+                ),
+                "branch": (
+                    ack.user.branch.name
+                    if ack.user and ack.user.branch else None
+                ),
                 "acknowledged_at": _broadcast_iso(
                     ack.acknowledged_at
                 ),
@@ -957,6 +975,65 @@ def list_fleet_broadcast_acknowledgements(api_user, bid):
             for ack in items
         ]
     })
+
+@bp.route("/admin/fleet-broadcasts/<int:bid>/unacknowledged", methods=["GET"])
+@api_auth_required("fleetbroadcast.view")
+def list_fleet_broadcast_unacknowledged(api_user, bid):
+    """Who is in this broadcast's audience but has not acknowledged it."""
+    from app.modules.system_admin.services.fleet_broadcast_service import (
+        FleetBroadcastService
+    )
+    from app.modules.system_admin.models import InAppNotification
+    from app.modules.user_management.models import User
+
+    row = FleetBroadcastService().get(bid)
+
+    if row is None:
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet broadcast not found."
+        }), 404
+
+    acked_ids = {
+        a.user_id for a in FleetBroadcastService().acknowledgements(bid)
+    }
+    notes_by_user = {
+        n.user_id: n
+        for n in InAppNotification.query.filter_by(
+            reference_table="fleet_broadcasts", reference_id=bid,
+        ).all()
+    }
+
+    service = FleetBroadcastService()
+    items = []
+    for user in User.query.filter_by(is_active=True).all():
+        if user.id in acked_ids:
+            continue
+        if not service.user_matches_broadcast_audience(row, user):
+            continue
+
+        note = notes_by_user.get(user.id)
+        if note is None:
+            status = "NOT_ACKNOWLEDGED"
+        elif note.is_read:
+            status = "READ"
+        else:
+            status = "UNREAD"
+
+        role_list = user.roles or []
+        items.append({
+            "user_id": user.id,
+            "user_name": user.full_name or user.username,
+            "employee_id": user.employee_id,
+            "role": role_list[0].name if role_list else None,
+            "department": user.department.name if user.department else None,
+            "branch": user.branch.name if user.branch else None,
+            "notification_sent_at": _broadcast_iso(note.created_at) if note else None,
+            "last_seen_at": _broadcast_iso(note.read_at) if note else None,
+            "status": status,
+        })
+
+    return jsonify({"broadcast_id": bid, "items": items})
 
 # ── Fleet Broadcasts: User Inbox ─────────────────────────────────────────
 
