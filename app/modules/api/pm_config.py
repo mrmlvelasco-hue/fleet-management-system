@@ -686,3 +686,88 @@ def import_pm_templates(api_user):
         "skipped": result.get("skipped", 0),
         "errors": result.get("errors", []),
     })
+
+
+def _pm_task_list_module():
+    """scripts/import_pm_task_list.py lives outside the app package
+    (it's a one-off VEMS migration tool, not application code) -- the
+    same reason tests/conftest.py has to add scripts/ to sys.path
+    before it can import from there. This mirrors that exact fix for
+    the running Flask process, since nothing else puts it on the path
+    at request time."""
+    import sys
+    from pathlib import Path
+    scripts_dir = Path(__file__).resolve().parents[3] / "scripts"
+    if scripts_dir.is_dir() and str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    import import_pm_task_list as module
+    return module
+
+
+@bp.route("/pm-task-list/import", methods=["POST"])
+@api_auth_required("pmschedule.create")
+def import_pm_task_list_endpoint(api_user):
+    """The richer VEMS two-sheet importer (main sheet + "Scope Details"),
+    exposed to the React UI with the same dry-run/reset capability the
+    PowerShell guide describes -- reusing import_pm_task_list() and
+    reset_pm_data() from scripts/import_pm_task_list.py completely
+    unchanged. That module's own test file already covers its parsing
+    correctness in depth; this endpoint only needs to prove the HTTP
+    layer wires it up correctly.
+
+    dry_run defaults to true -- a caller that forgets to specify it
+    gets the safe behavior, matching the guide's own "Never skip this."
+    reset is only ever actually executed when both reset=true AND
+    dry_run=false are given explicitly; during a dry run it is reported
+    as skipped rather than silently ignored, so the caller can tell the
+    difference between "nothing to reset" and "reset wasn't attempted".
+    """
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return _validation("Please choose an Excel file.", "file")
+
+    dry_run = request.form.get("dry_run", "true").strip().lower() != "false"
+    do_reset = request.form.get("reset", "false").strip().lower() == "true"
+
+    try:
+        pm_module = _pm_task_list_module()
+    except ImportError as exc:
+        return jsonify({
+            "error": "server_misconfigured",
+            "message": f"Could not load the import script: {exc}",
+        }), 500
+
+    import io
+    file_bytes = file.read()
+    if not file_bytes:
+        return _validation("That file is empty.", "file")
+
+    reset_result = None
+    reset_skipped = False
+    if do_reset:
+        if dry_run:
+            reset_skipped = True
+        else:
+            reset_result = pm_module.reset_pm_data()
+
+    try:
+        result = pm_module.import_pm_task_list(
+            io.BytesIO(file_bytes), dry_run=dry_run)
+    except ValueError as exc:
+        return jsonify({
+            "error": "validation",
+            "message": str(exc),
+        }), 400
+    except Exception as exc:
+        return jsonify({
+            "error": "import_failed",
+            "message": f"Could not read that file as a PM Task List "
+                       f"export: {exc}",
+        }), 400
+
+    return jsonify({
+        "dry_run": dry_run,
+        "reset": reset_result,
+        "reset_skipped_dry_run": reset_skipped,
+        "import": result,
+    })

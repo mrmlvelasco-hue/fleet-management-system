@@ -20,21 +20,6 @@ def notifications_list(api_user):
         InAppNotificationService)
     limit = min(request.args.get("limit", 20, type=int) or 20, 50)
     items = InAppNotificationService().list_for_user(api_user, limit=limit)
-    print(
-        "DEBUG MOBILE NOTIFICATIONS:",
-        [
-            {
-                "id": n.id,
-                "title": n.title,
-                "event_code": n.event_code,
-                "reference_table": n.reference_table,
-                "reference_id": n.reference_id,
-                "is_read": n.is_read,
-            }
-            for n in items
-        ],
-        flush=True,
-    )
     return jsonify({
         "unread": InAppNotificationService().unread_count(api_user),
         "items": [{
@@ -55,7 +40,12 @@ def notifications_list(api_user):
 def notifications_unread(api_user):
     from app.modules.system_admin.services.notification_engine import (
         InAppNotificationService)
-    return jsonify({"count": InAppNotificationService().unread_count(api_user)})
+    count = InAppNotificationService().unread_count(api_user)
+    # Two keys, one value. `/notifications` has always called this `unread`
+    # and the bell reads that; `count` is what this endpoint originally
+    # returned and what every APK already in the field still reads. Keeping
+    # both means the badge can be fixed without a coordinated release.
+    return jsonify({"unread": count, "count": count})
 
 
 @bp.route("/notifications/<int:nid>/read", methods=["POST"])
@@ -689,7 +679,34 @@ def _broadcast_iso(v):
     return v.isoformat() if v else None
 
 
+def _broadcast_counts(row):
+    """(recipient_count, acknowledged_count) for the list page's
+    Recipients column and Acknowledged progress bar.
+
+    A DRAFT has never been sent to anyone -- reporting the audience
+    RULE's size for it (e.g. "3" for an ALL_USERS draft) would be
+    misleading, since nobody has actually been notified. Zero for
+    anything that was never published, real counts otherwise.
+    """
+    if row.status == "DRAFT" or not row.published_at:
+        return 0, 0
+
+    from app.modules.system_admin.services.fleet_broadcast_service import (
+        FleetBroadcastService
+    )
+    from app.modules.user_management.models import User
+
+    service = FleetBroadcastService()
+    recipient_count = sum(
+        1 for user in User.query.filter_by(is_active=True).all()
+        if service.user_matches_broadcast_audience(row, user)
+    )
+    acknowledged_count = len(service.acknowledgements(row.id))
+    return recipient_count, acknowledged_count
+
+
 def _broadcast_json(row):
+    recipient_count, acknowledged_count = _broadcast_counts(row)
     return {
         "id": row.id,
         "broadcast_no": row.broadcast_no,
@@ -701,6 +718,8 @@ def _broadcast_json(row):
         "status": row.status,
         "effective_date": _broadcast_iso(row.effective_date),
         "expiry_date": _broadcast_iso(row.expiry_date),
+        "recipient_count": recipient_count,
+        "acknowledged_count": acknowledged_count,
         "created_by": row.created_by,
         "created_by_name": (
             getattr(row.creator, "full_name", None)
@@ -887,6 +906,34 @@ def publish_fleet_broadcast(api_user, bid):
     return jsonify(_broadcast_json(row))
 
 
+@bp.route("/admin/fleet-broadcasts/<int:bid>/archive",
+           methods=["POST"])
+@api_auth_required("fleetbroadcast.update")
+def archive_fleet_broadcast(api_user, bid):
+    from app.modules.system_admin.services.fleet_broadcast_service import (
+        FleetBroadcastService
+    )
+
+    try:
+        row = FleetBroadcastService().archive(
+            bid,
+            user=api_user
+        )
+    except ValueError as exc:
+        return jsonify({
+            "error": "validation",
+            "message": str(exc)
+        }), 400
+
+    if row is None:
+        return jsonify({
+            "error": "not_found",
+            "message": "Fleet broadcast not found."
+        }), 404
+
+    return jsonify(_broadcast_json(row))
+
+
 @bp.route("/fleet-broadcasts/<int:bid>/acknowledge", methods=["POST"])
 @api_auth_required("fleetbroadcast.acknowledge")
 def acknowledge_fleet_broadcast(api_user, bid):
@@ -976,10 +1023,21 @@ def list_fleet_broadcast_acknowledgements(api_user, bid):
         ]
     })
 
+
 @bp.route("/admin/fleet-broadcasts/<int:bid>/unacknowledged", methods=["GET"])
 @api_auth_required("fleetbroadcast.view")
 def list_fleet_broadcast_unacknowledged(api_user, bid):
-    """Who is in this broadcast's audience but has not acknowledged it."""
+    """Who is in this broadcast's audience but has not acknowledged it.
+
+    Reuses FleetBroadcastService.user_matches_broadcast_audience -- the
+    same rule that decides what a user's own inbox shows -- rather than
+    a second, competing definition of "who receives this broadcast".
+    Status is read from the InAppNotification row this broadcast's
+    publish() already wrote for every recipient: no row at all means
+    the audience computation added someone the original fan-out never
+    reached (added after publish, or the notification write failed),
+    which is a genuinely different situation from "sent but unread".
+    """
     from app.modules.system_admin.services.fleet_broadcast_service import (
         FleetBroadcastService
     )
@@ -1109,6 +1167,12 @@ def list_my_fleet_broadcasts(api_user):
         FleetBroadcast.id.desc(),
     ).all()
 
+    # Server local, naive -- the same clock the dates were entered on.
+    # A datetime-local picker sends no offset, so effective_date and
+    # expiry_date hold the admin's wall time; comparing those against
+    # UTC hid a broadcast for the first 8 hours of its effective day
+    # and expired it 8 hours early. date.today() is the convention
+    # everywhere else in this codebase for exactly this reason.
     now = datetime.now()
     items = []
 
@@ -1144,6 +1208,12 @@ def get_my_fleet_broadcast(api_user, bid):
             "message": "Fleet Broadcast not found.",
         }), 404
 
+    # Server local, naive -- the same clock the dates were entered on.
+    # A datetime-local picker sends no offset, so effective_date and
+    # expiry_date hold the admin's wall time; comparing those against
+    # UTC hid a broadcast for the first 8 hours of its effective day
+    # and expired it 8 hours early. date.today() is the convention
+    # everywhere else in this codebase for exactly this reason.
     now = datetime.now()
     if row.effective_date and row.effective_date > now:
         return jsonify({

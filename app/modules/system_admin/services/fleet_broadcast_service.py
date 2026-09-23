@@ -20,9 +20,9 @@ from app.modules.user_management.models import User
 
 
 #: Document Type code the Auto Numbering Engine issues broadcast numbers
-#: against. Seeded once via migration (a1f9c3d8e6b2_seed_fb_numbering);
-#: prefix, digit count, separator and reset policy stay editable
-#: afterwards in System Administration -> Document Type Maintenance.
+#: against. Seeded by `flask seed` (see cli._seed_fleet_broadcast_numbering)
+#: and editable thereafter in Document Type Maintenance, so the series can
+#: be re-prefixed, reset monthly, or widened without a code change.
 FLEET_BROADCAST_DOCUMENT_TYPE = "FB"
 
 
@@ -233,6 +233,21 @@ class FleetBroadcastService:
     # Publish
     # ------------------------------------------------------------------
 
+    def archive(self, broadcast_id, *, user):
+        row = self.get(broadcast_id)
+
+        if row is None:
+            return None
+
+        if row.status != "PUBLISHED":
+            raise ValueError(
+                "Only published broadcasts can be archived."
+            )
+
+        row.status = "ARCHIVED"
+        db.session.commit()
+        return row
+
     def publish(self, broadcast_id, *, user):
         row = self.get(broadcast_id)
 
@@ -371,7 +386,6 @@ class FleetBroadcastService:
                     item.get("department_id")
                 ),
             )
-            broadcast.recipients.append(row)
 
             required = {
                 "ROLE": ("role_id", row.role_id),
@@ -389,11 +403,18 @@ class FleetBroadcastService:
                     f"{required[0]}."
                 )
 
-            db.session.add(row)
+            # Appended to the relationship, NOT db.session.add()-ed with a
+            # hand-set broadcast_id. The .clear() above forces this
+            # selectin collection to load, and with expire_on_commit=False
+            # a bare session.add() leaves it loaded-but-empty for the rest
+            # of the request -- which is what made publish() reject an
+            # audience it had just saved.
+            broadcast.recipients.append(row)
 
     # ------------------------------------------------------------------
     # Recipient resolution
     # ------------------------------------------------------------------
+
     def user_matches_broadcast_audience(self, broadcast, user):
         """Return True when `user` belongs to `broadcast`'s audience.
 
