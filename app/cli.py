@@ -44,6 +44,7 @@ def seed_all(admin_password):
     _seed_notification_rules()
     _seed_reports()
     _seed_atr_numbering()
+    _seed_fleet_broadcast_numbering()
     _migrate_report_permissions_from_data_permissions()
     _migrate_vehicle_activity_report_permission()
     _seed_maintenance_classes()
@@ -431,6 +432,11 @@ def _seed_system_parameters() -> None:
         # ── Security / session (FMS) ──────────────────────────────────
         ("SESSION_TIMEOUT_MINUTES", "30", "INTEGER", "SECURITY",
          "Session timeout in minutes"),
+        ("SESSION_WARNING_MINUTES", "2", "INTEGER", "SECURITY",
+         "How many minutes before the session timeout to show a "
+         "'you're about to be logged out' warning. Must be less than "
+         "SESSION_TIMEOUT_MINUTES; an invalid value falls back "
+         "automatically."),
         ("MAX_FAILED_LOGIN_ATTEMPTS", "5", "INTEGER", "SECURITY",
          "Max failed login attempts before lockout"),
 
@@ -851,6 +857,39 @@ def _seed_atr_numbering() -> None:
                 reset_policy="YEARLY"))
 
 
+def _seed_fleet_broadcast_numbering() -> None:
+    """Seed the FB (Fleet Broadcast) document type + numbering scheme --
+    FB-2026-0001 style -- so a fleet-wide notice carries a real reference
+    number issued by the same generic Auto Numbering Engine as TT/MO/PR/ATD
+    rather than something an admin types by hand.
+
+    Seeded here for the same reason ATR/ADR are: without it the very first
+    broadcast an admin writes is rejected for a missing scheme, which reads
+    as a broken feature rather than an unfinished setup step. Everything
+    about the series -- prefix, digit count, separator, whether it resets
+    yearly or monthly -- stays editable afterwards in System Administration
+    -> Document Type Maintenance, so this is a starting configuration and
+    not a hardcoded rule.
+    """
+    from app.modules.document_config.models import DocumentType, NumberingScheme
+
+    dt = DocumentType.query.filter_by(code="FB").first()
+    if dt is None:
+        dt = DocumentType(
+            code="FB", name="Fleet Broadcast", requires_approval=False,
+            auto_numbering=True, printable=True, mobile_available=True,
+            attachment_allowed=False,
+            description="Fleet-wide announcement, advisory or policy notice "
+                        "delivered to a configured audience.")
+        db.session.add(dt)
+        db.session.flush()
+    if dt.numbering_scheme is None:
+        db.session.add(NumberingScheme(
+            document_type_id=dt.id, prefix="FB", include_year=True,
+            include_month=False, digit_count=4, separator="-",
+            reset_policy="YEARLY"))
+
+
 def _seed_lookups() -> None:
     """Sync all module-registered lookup types (FUEL_TYPE, LICENSE_TYPE, etc.)
     Must import the master_data routes module first so its lookup
@@ -985,6 +1024,34 @@ def pm_run_due_check():
         auto_generate_due_maintenance_orders)
     created = auto_generate_due_maintenance_orders()
     click.echo(f"Due/overdue scan complete. Maintenance Orders created: {created}")
+
+
+@pm_cli.command("migrate-registration-templates")
+@click.option("--dry-run/--commit", default=True,
+              help="Preview only (default) or actually write the changes.")
+def pm_migrate_registration_templates(dry_run):
+    """Move any 'Vehicle Registration' PM Template that was mistakenly
+    created in the Maintenance PMS system over to the proper Registration
+    Template system, so LTO renewal history stays separate from
+    Maintenance Order history.
+
+    Previously runnable only by hand-typing Python into `flask shell`
+    (scripts/migrate_pm_registration_to_template.py had no command of its
+    own) -- this is that same, unchanged logic, exposed the same way
+    every other one-time data operation in this app already is.
+
+    Idempotent: a record is only matched while still active, and this
+    deactivates its source rows once migrated, so a second run (with or
+    without --commit) finds nothing left to do.
+    """
+    from scripts.migrate_pm_registration_to_template import (
+        migrate_registration_pm_templates)
+    result = migrate_registration_pm_templates(dry_run=dry_run)
+    click.echo(f"Matched: {result['matched']}")
+    click.echo(f"Migrated: {result['migrated']}"
+               + ("  (dry run -- nothing written)" if dry_run else ""))
+    for sample in result["samples"]:
+        click.echo(f"  - {sample}")
 
 
 registration_cli = AppGroup("registration",

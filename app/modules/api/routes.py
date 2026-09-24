@@ -22,6 +22,8 @@ from flask import Blueprint, jsonify, request
 from app.extensions import db
 from app.modules.api.auth import api_auth_required, issue_token
 from app.modules.api.pagination import default_page_size
+from app.modules.api.session_settings import (
+    session_timeout_minutes, session_warning_minutes)
 from app.core.security.password import verify_password
 
 bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
@@ -269,6 +271,14 @@ def me(api_user):
         # once per session and cached -- a settings call per list screen
         # would be a round trip to learn a number that never changes.
         "list_page_size": default_page_size(),
+        # How long the SPA lets someone stay idle before logging them
+        # out, and how much warning to give first -- both live reads of
+        # System Parameters (SESSION_TIMEOUT_MINUTES/_WARNING_MINUTES),
+        # carried on /me for the same reason list_page_size is: fetched
+        # once per session already, no reason for a second round trip
+        # to learn two numbers that rarely change.
+        "session_timeout_minutes": session_timeout_minutes(),
+        "session_warning_minutes": session_warning_minutes(),
         # Always present, null when unlinked. A client forced to tell
         # "no assignee" from "this server predates the field app" by a
         # missing key ends up guessing.
