@@ -700,6 +700,15 @@ def _regtmpl_json(t):
         "priority": t.priority,
         "notify_before_days": t.notify_before_days,
         "is_active": bool(t.is_active),
+        # Create/update already accepted this; nothing previously read
+        # it back, so an edit form had no way to show -- or even know
+        # about -- a template's existing checklist.
+        "checklist_items": [
+            {"id": i.id, "activity_code": i.activity_code,
+             "activity_description": i.activity_description,
+             "sort_order": i.sort_order}
+            for i in t.checklist_items
+        ],
     }
 
 

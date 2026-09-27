@@ -43,6 +43,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl netcat-openbsd \
         tesseract-ocr tesseract-ocr-eng poppler-utils \
+        default-mysql-client \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /wheels /wheels
@@ -52,6 +53,18 @@ RUN pip install --no-index --find-links=/wheels -r requirements.txt \
 
 WORKDIR /app
 COPY . .
+
+# entrypoint.sh is invoked directly (ENTRYPOINT below), so the kernel
+# reads its own shebang line to pick an interpreter. Checked out on
+# Windows with CRLF line endings, that shebang becomes
+# "#!/usr/bin/env bash\r" -- the trailing \r becomes part of the
+# argument env receives, so it looks for a program literally named
+# "bash\r" and fails with "No such file or directory". Normalizing
+# here fixes it regardless of the host's git config (core.autocrlf)
+# or which editor last touched the file, rather than relying on every
+# contributor's local setup being correct.
+RUN sed -i 's/\r$//' docker/entrypoint.sh \
+    && chmod +x docker/entrypoint.sh
 
 # Run as a non-root user. If the container is ever compromised, the
 # attacker lands as an unprivileged account rather than root.

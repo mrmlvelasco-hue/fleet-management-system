@@ -258,7 +258,25 @@ class MaintenanceOrderService(BaseTransactionService):
             db.session.flush()  # let the final attempt's error surface plainly
 
         if scope_template_id:
+            # Fetched by ID alone before this check existed -- nothing
+            # verified it actually belonged to the maintenance_type
+            # also on the request. A tampered request (or a client
+            # bug) could pair a vehicle/maintenance_type with a scope
+            # template built for an entirely different maintenance
+            # discipline and have it silently accepted, copying the
+            # wrong checklist onto the order. Checked here, not just
+            # trusted from whatever the frontend sent, since a
+            # disabled/locked field in the UI is only ever a UX
+            # convenience -- someone editing the request body directly
+            # bypasses it completely.
             template = db.session.get(PMScopeTemplate, scope_template_id)
+            if template is None:
+                raise InvalidOrderCategoryError(
+                    "That PM Scope Template does not exist.")
+            if template.maintenance_type_id != maintenance_type_id:
+                raise InvalidOrderCategoryError(
+                    "That PM Scope Template does not match this order's "
+                    "Maintenance Type.")
             for item in template.items:
                 order.checklist_items.append(MaintenanceChecklistItem(
                     activity_code=item.activity_code,

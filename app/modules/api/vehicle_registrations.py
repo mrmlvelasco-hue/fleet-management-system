@@ -170,6 +170,62 @@ def expiring_vehicle_registrations(api_user):
     } for e in rows]})
 
 
+@bp.route("/vehicle-registrations/new-prefill", methods=["GET"])
+@api_auth_required("vehicleregistration.create")
+def vehicle_registration_new_prefill(api_user):
+    """Vehicle summary + the applicable checklist, resolved BEFORE
+    creation -- mirrors /maintenance-orders/new-prefill exactly.
+
+    Nothing previously let the New Vehicle Registration form preview a
+    checklist: RegistrationTemplateService.find_applicable() only ever
+    ran at actual creation time (VehicleRegistrationService.create()),
+    or on an already-created registration's own checklist toggle.
+    Reused here unchanged -- no second matching algorithm.
+    """
+    from app.extensions import db
+    from app.modules.master_data.vehicle.models import Vehicle
+    from app.modules.registration_config.service import (
+        RegistrationTemplateService)
+
+    vehicle_id = request.args.get("vehicle_id", type=int)
+    if not vehicle_id:
+        return _bad("vehicle_id is required.", "vehicle_id")
+
+    vehicle = db.session.get(Vehicle, vehicle_id)
+    if vehicle is None:
+        return _not_found("Vehicle")
+
+    template = RegistrationTemplateService().find_applicable(vehicle)
+    checklist_items = [
+        {"id": item.id, "activity_code": item.activity_code,
+         "activity_description": item.activity_description}
+        for item in (template.checklist_items if template else [])
+    ]
+
+    return jsonify({
+        "vehicle": {
+            "id": vehicle.id,
+            "plate_number": vehicle.plate_number,
+            "conduction_number": vehicle.conduction_number,
+            "brand": vehicle.brand,
+            "model": vehicle.model,
+            "current_odometer": vehicle.current_odometer,
+            # Same fields, same access pattern as
+            # /maintenance-orders/new-prefill's own vehicle summary --
+            # one "Vehicle Information Summary" panel is reused
+            # visually across both forms, so the two backing shapes
+            # must not quietly diverge.
+            "branch": vehicle.branch.name if vehicle.branch else None,
+            "assigned_driver": (vehicle.assigned_driver.full_name
+                               if vehicle.assigned_driver else None),
+            "assigned_driver_position": (
+                vehicle.assigned_driver.job_title
+                if vehicle.assigned_driver else None),
+        },
+        "checklist_items": checklist_items,
+    })
+
+
 @bp.route("/vehicle-registrations", methods=["POST"])
 @api_auth_required("vehicleregistration.create")
 def create_vehicle_registration(api_user):

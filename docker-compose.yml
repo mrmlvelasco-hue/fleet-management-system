@@ -50,16 +50,25 @@ services:
   web:
     build: .
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
+    # fms-db-1 belongs to a DIFFERENT compose project (your original,
+    # separate FMS_Fleet database stack with your real data) -- it is
+    # not on this project's internal network, so it's reached via the
+    # host machine instead, at the port it already publishes there.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      DATABASE_URL: mysql+pymysql://${DB_USER:-fms_app}:${DB_PASSWORD}@db:3306/${DB_NAME:-fms}?charset=utf8mb4
+      DATABASE_URL: mysql+pymysql://fms_app:FMS2026!@host.docker.internal:3307/Fleet?charset=utf8mb4
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       FLASK_ENV: ${FLASK_ENV:-production}
-      DB_HOST: db
+      DB_HOST: host.docker.internal
+      # Never forwarded before -- Compose only passes through variables
+      # explicitly listed here, not everything in a local .env file.
+      # The web app never needed this (nginx proxies same-origin), but
+      # the APK talks to Flask directly and depends on it entirely.
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
       FMS_ADMIN_PASSWORD: ${FMS_ADMIN_PASSWORD:-}
       SESSION_TIMEOUT_MINUTES: ${SESSION_TIMEOUT_MINUTES:-30}
+      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-1}
       DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
       MAIL_SERVER: ${MAIL_SERVER:-}
@@ -77,14 +86,13 @@ services:
     build: .
     restart: unless-stopped
     command: ["scheduler"]
-    depends_on:
-      db:
-        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      DATABASE_URL: mysql+pymysql://${DB_USER:-fms_app}:${DB_PASSWORD}@db:3306/${DB_NAME:-fms}?charset=utf8mb4
+      DATABASE_URL: mysql+pymysql://fms_app:FMS2026!@host.docker.internal:3307/Fleet?charset=utf8mb4
       SECRET_KEY: ${SECRET_KEY}
       FLASK_ENV: ${FLASK_ENV:-production}
-      DB_HOST: db
+      DB_HOST: host.docker.internal
       SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-60}
       MAIL_SERVER: ${MAIL_SERVER:-}
       MAIL_PORT: ${MAIL_PORT:-465}
@@ -93,6 +101,18 @@ services:
       MAIL_SENDER: ${MAIL_SENDER:-}
     volumes:
       - fms_uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ../FMS_Fleet_React
+      args:
+        VITE_API_BASE_URL: /api/v1
+        VITE_DATA_SOURCE: api
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
 
 volumes:
   fms_db_data:
