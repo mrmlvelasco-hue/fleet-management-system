@@ -354,6 +354,30 @@ def _order_json(o, *, detail=False):
             "disposal_recipient": o.disposal_recipient,
             "disposal_reference_number": o.disposal_reference_number,
             "transfer_reference_number": o.transfer_reference_number,
+            # Print-only, read-only. Flask's MO print resolves the pm2..pm9
+            # tokens in both of these against the order's vehicle; the
+            # React print only had the checklist resolved, so a literal
+            # "pm2 pm3 with Plate no. pm4" could reach paper. `description`
+            # above stays exactly as stored -- the edit form round-trips
+            # it, and rewriting saved text on a read is not this
+            # endpoint's job.
+            #
+            # maintenance_type_id is passed so pm8/pm9 ("last work order")
+            # are scoped to THIS maintenance type, as the checklist lines
+            # already do -- an unrelated completed order (a relocation, a
+            # tire job) must never be printed as the PM reference order.
+            "description_resolved": (
+                resolve_pm_tokens(
+                    o.description, vehicle=o.vehicle,
+                    maintenance_type_id=o.maintenance_type_id)
+                if o.description else o.description),
+            "pm_work_description": (
+                resolve_pm_tokens(
+                    o.pm_schedule.work_description_template,
+                    vehicle=o.vehicle,
+                    maintenance_type_id=o.maintenance_type_id)
+                if o.pm_schedule is not None
+                and o.pm_schedule.work_description_template else None),
             "checklist_items": [
                 {
                     "id": i.id,
