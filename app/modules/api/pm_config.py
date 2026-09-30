@@ -278,6 +278,88 @@ def create_pm_template(api_user):
     return jsonify(_sched_json(s, detail=True)), 201
 
 
+@bp.route("/pm-templates/generate-series", methods=["POST"])
+@api_auth_required("pmschedule.create")
+def generate_pm_series(api_user):
+    """One call creates a whole PMS Profile's service series -- the
+    backend for the approved "New PMS Profile" mock-up's "One Save
+    creates every service and checklist together."
+
+    Attaching a checklist to ANY service additionally requires
+    pmscopetemplate.create -- checked up front, before touching the
+    database, so an account that can create schedules but not scope
+    templates cannot smuggle a checklist in sideways through this
+    batch endpoint.
+    """
+    from app.extensions import db
+    from app.modules.maintenance_config.service import (
+        InvalidScheduleError, InvalidScopeError, PMScheduleService)
+
+    p = request.get_json(silent=True) or {}
+    try:
+        mt_id = int(p["maintenance_type_id"])
+    except (KeyError, TypeError, ValueError):
+        return _validation("maintenance_type_id is required.", "maintenance_type_id")
+    trigger = (p.get("trigger_mode") or "").strip().upper()
+    if trigger not in ("KM", "CALENDAR", "HYBRID"):
+        return _validation("trigger_mode must be KM, CALENDAR, or HYBRID.",
+                           "trigger_mode")
+    services = p.get("services") or []
+    if not isinstance(services, list) or not services:
+        return _validation("services must be a non-empty list.", "services")
+    if any(s.get("items") for s in services) and not api_user.has_permission(
+            "pmscopetemplate.create"):
+        return jsonify({"error": "forbidden",
+                        "message": "pmscopetemplate.create is required to "
+                                   "attach a checklist to a service."}), 403
+
+    def _int(key):
+        v = p.get(key)
+        return None if v in (None, "") else int(v)
+
+    try:
+        effective_date = _parse_date(p.get("effective_date"))
+        next_gen = _parse_choice(
+            p.get("next_pms_generation"), _NEXT_PMS_GENERATION,
+            "next_pms_generation", default="AUTO_SCHEDULE")
+        next_due = _parse_choice(
+            p.get("next_due_calculation_method"), _NEXT_DUE_METHOD,
+            "next_due_calculation_method", default="ACTUAL_COMPLETION")
+    except _FieldError as e:
+        return _validation(str(e), e.field)
+
+    try:
+        rows = PMScheduleService().generate_series(
+            maintenance_type_id=mt_id, trigger_mode=trigger,
+            services=services,
+            vehicle_type_id=_int("vehicle_type_id"),
+            vehicle_brand_id=_int("vehicle_brand_id"),
+            vehicle_model_id=_int("vehicle_model_id"),
+            vehicle_make=p.get("vehicle_make") or None,
+            vehicle_model=p.get("vehicle_model") or None,
+            variant=p.get("variant") or None,
+            engine_type=p.get("engine_type") or None,
+            fuel_type=p.get("fuel_type") or None,
+            transmission=p.get("transmission") or None,
+            model_year_from=_int("model_year_from"),
+            model_year_to=_int("model_year_to"),
+            profile_code=p.get("profile_code") or None,
+            profile_description=p.get("profile_description") or None,
+            effective_date=effective_date,
+            next_pms_generation=next_gen,
+            next_due_calculation_method=next_due,
+            interval_days=_int("interval_days"),
+            priority=(p.get("priority") or "MEDIUM"),
+            notify_before_km=_int("notify_before_km"),
+            notify_before_days=_int("notify_before_days"),
+            escalate_if_overdue=bool(p.get("escalate_if_overdue", True)),
+        )
+    except (InvalidScheduleError, InvalidScopeError, ValueError, TypeError) as e:
+        db.session.rollback()
+        return _validation(str(e))
+    return jsonify({"services": [_sched_json(s, detail=True) for s in rows]}), 201
+
+
 @bp.route("/pm-templates/<int:sid>", methods=["PUT", "PATCH"])
 @api_auth_required("pmschedule.update")
 def update_pm_template(api_user, sid):

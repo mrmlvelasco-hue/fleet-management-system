@@ -119,6 +119,97 @@ class PMScheduleService:
         db.session.commit()
         return sched
 
+    def generate_series(self, *, maintenance_type_id, trigger_mode, services,
+                        vehicle_type_id=None, vehicle_brand_id=None,
+                        vehicle_model_id=None, vehicle_make=None,
+                        vehicle_model=None, variant=None, engine_type=None,
+                        fuel_type=None, transmission=None,
+                        model_year_from=None, model_year_to=None,
+                        profile_code=None, profile_description=None,
+                        effective_date=None,
+                        next_pms_generation="AUTO_SCHEDULE",
+                        next_due_calculation_method="ACTUAL_COMPLETION",
+                        interval_days=None, priority="MEDIUM",
+                        notify_before_km=None, notify_before_days=None,
+                        escalate_if_overdue=True):
+        """Create a whole PMS Profile's service series in one transaction.
+
+        `services` is a list of dicts, each describing one package in
+        the series: cumulative_km (the milestone), optionally its own
+        interval_km (the repeat step FROM the previous package -- falls
+        back to the milestone spacing when omitted), work_description_
+        template, and an optional `items` list for that service's own
+        checklist. Vehicle matching, maintenance type, trigger mode,
+        and every policy/alert field are shared by the whole series --
+        this mirrors the approved mock-up, where those are set once at
+        the top of the page, not re-entered per service.
+
+        Atomic and validated up front, deliberately: every service is
+        checked with _validate_schedule BEFORE any row is added to the
+        session, so a bad entry anywhere in the batch raises before a
+        single INSERT is attempted, and the one db.session.commit() at
+        the end either saves the whole series or nothing does. A
+        service's `items` are optional -- PMScopeTemplate already
+        refuses zero items (InvalidScopeError), so omitting them simply
+        means that service gets no linked checklist, not an error.
+        """
+        if not services:
+            raise InvalidScheduleError("services must not be empty.")
+
+        # Validate every entry BEFORE touching the session, so a bad
+        # entry deep in a 37-service batch never leaves the first 30
+        # sitting half-added.
+        for svc in services:
+            _validate_schedule(
+                trigger_mode, svc.get("interval_km") or svc.get("cumulative_km"),
+                interval_days)
+
+        created = []
+        for position, svc in enumerate(services, start=1):
+            sched = PMSchedule(
+                vehicle_type_id=vehicle_type_id,
+                vehicle_make=(vehicle_make or "").strip() or None,
+                vehicle_model=(vehicle_model or "").strip() or None,
+                vehicle_brand_id=vehicle_brand_id,
+                vehicle_model_id=vehicle_model_id,
+                variant=variant, engine_type=engine_type, fuel_type=fuel_type,
+                transmission=transmission, model_year_from=model_year_from,
+                model_year_to=model_year_to, profile_code=profile_code,
+                profile_description=profile_description,
+                effective_date=effective_date,
+                sequence_position=position,
+                next_pms_generation=next_pms_generation,
+                next_due_calculation_method=next_due_calculation_method,
+                maintenance_type_id=maintenance_type_id,
+                trigger_mode=trigger_mode,
+                interval_km=svc.get("interval_km") or svc.get("cumulative_km"),
+                interval_days=interval_days,
+                cumulative_km=svc.get("cumulative_km"),
+                priority=priority,
+                notify_before_km=notify_before_km,
+                notify_before_days=notify_before_days,
+                escalate_if_overdue=escalate_if_overdue,
+                work_description_template=svc.get("work_description_template"))
+            db.session.add(sched)
+            created.append((sched, svc.get("items"), svc.get("scope_name")))
+
+        db.session.flush()  # assign PKs so scope templates can link by id, before the single commit
+
+        for sched, items, scope_name in created:
+            if items:
+                tmpl = PMScopeTemplate(
+                    maintenance_type_id=maintenance_type_id,
+                    name=scope_name or (
+                        sched.work_description_template
+                        or f"{sched.cumulative_km or sched.interval_km} km service"),
+                    pm_schedule_id=sched.id)
+                for item in items:
+                    tmpl.items.append(PMScopeItem(**item))
+                db.session.add(tmpl)
+
+        db.session.commit()
+        return [sched for sched, _, _ in created]
+
     def update(self, schedule_id, **kwargs):
         sched = db.session.get(PMSchedule, schedule_id)
         if sched is None:
