@@ -1026,6 +1026,21 @@ def pm_run_due_check():
     click.echo(f"Due/overdue scan complete. Maintenance Orders created: {created}")
 
 
+@pm_cli.command("backfill-profile-codes")
+def pm_backfill_profile_codes():
+    """One-time fix for series created via the "New PMS Profile" page
+    with Profile Code left blank — assigns each such series a generated
+    code (BRAND-MODEL-MTYPECODE-N) so it can appear, grouped, in the PM
+    Templates list and be reached by the one-page editor. Never touches
+    a schedule that already has a profile_code, migrated data included.
+    Safe to run repeatedly."""
+    from app.modules.maintenance_config.service import PMScheduleService
+    result = PMScheduleService().backfill_missing_profile_codes()
+    click.echo(
+        f"Backfill complete. Profiles fixed: {result['groups_fixed']}, "
+        f"schedules updated: {result['schedules_updated']}.")
+
+
 @pm_cli.command("migrate-registration-templates")
 @click.option("--dry-run/--commit", default=True,
               help="Preview only (default) or actually write the changes.")

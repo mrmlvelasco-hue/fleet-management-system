@@ -187,17 +187,21 @@ def list_pm_templates(api_user):
         except (TypeError, ValueError):
             return _bad("maintenance_type_id must be an integer.")
 
-    rows, pagination = PMScheduleService().list_paginated(
+    rows, total = PMScheduleService().list_profiles_paginated(
         page=page, per_page=page_size,
         search=(request.args.get("q") or "").strip() or None,
         maintenance_type_id=mt_raw or None,
         include_inactive=True)
+    pages = max(1, (total + page_size - 1) // page_size)
     return jsonify({
-        "items": [_sched_json(s) for s in rows],
-        "total": pagination.total,
-        "page": pagination.page,
-        "page_size": pagination.per_page,
-        "pages": max(1, pagination.pages),
+        "items": [
+            _sched_json(s) | {"package_count": package_count}
+            for s, package_count in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": pages,
     })
 
 
@@ -684,6 +688,44 @@ def get_pms_profile(api_user, profile_code):
             first.vehicle_brand.name if first.vehicle_brand else None),
         "vehicle_model": (
             first.vehicle_model_ref.name if first.vehicle_model_ref else None),
+        # Everything below is additive, for the "Edit PMS Profile" page
+        # specifically -- it needs raw ids to repopulate dropdowns, not
+        # just the display names above (which the read-only PMS
+        # Profiles list already used this same endpoint for).
+        "vehicle_type_id": first.vehicle_type_id,
+        "vehicle_brand_id": first.vehicle_brand_id,
+        "vehicle_model_id": first.vehicle_model_id,
+        "variant": first.variant,
+        "engine_type": first.engine_type,
+        "fuel_type": first.fuel_type,
+        "transmission": first.transmission,
+        "model_year_from": first.model_year_from,
+        "model_year_to": first.model_year_to,
+        "profile_description": first.profile_description,
+        "maintenance_type_id": first.maintenance_type_id,
+        "trigger_mode": first.trigger_mode,
+        "interval_days": first.interval_days,
+        "priority": first.priority,
+        "next_pms_generation": first.next_pms_generation,
+        "next_due_calculation_method": first.next_due_calculation_method,
+        "notify_before_km": first.notify_before_km,
+        "notify_before_days": first.notify_before_days,
+        "escalate_if_overdue": bool(first.escalate_if_overdue),
+        "services": [
+            {
+                "id": pkg.id,
+                "cumulative_km": pkg.cumulative_km,
+                "interval_km": pkg.interval_km,
+                "work_description_template": pkg.work_description_template,
+                "items": [
+                    {"activity_code": i.activity_code,
+                     "activity_description": i.activity_description}
+                    for i in (pkg.scope_templates[0].items
+                             if pkg.scope_templates else [])
+                ],
+            }
+            for pkg in packages
+        ],
         "packages": [
             {
                 "id": pkg.id,
@@ -699,6 +741,101 @@ def get_pms_profile(api_user, profile_code):
             for pkg in packages
         ],
     })
+
+
+@bp.route("/pms-profiles/<path:profile_code>", methods=["PUT"])
+@api_auth_required("pmschedule.update")
+def update_pms_profile(api_user, profile_code):
+    """Apply add/edit/remove changes to an existing PMS Profile series --
+    the backend for the approved "Edit PMS Profile" mock-up's Save.
+
+    Same permission-boundary discipline as generate-series: attaching a
+    checklist to any service additionally requires pmscopetemplate.
+    update (an account able to edit schedules but not checklists cannot
+    smuggle checklist changes in through this endpoint sideways).
+    """
+    from app.extensions import db
+    from app.modules.maintenance_config.service import (
+        InvalidScheduleError, InvalidScopeError, PMScheduleService)
+
+    p = request.get_json(silent=True) or {}
+    try:
+        mt_id = int(p["maintenance_type_id"])
+    except (KeyError, TypeError, ValueError):
+        return _validation("maintenance_type_id is required.", "maintenance_type_id")
+    trigger = (p.get("trigger_mode") or "").strip().upper()
+    if trigger not in ("KM", "CALENDAR", "HYBRID"):
+        return _validation("trigger_mode must be KM, CALENDAR, or HYBRID.",
+                           "trigger_mode")
+    services = p.get("services") or []
+    if not isinstance(services, list) or not services:
+        return _validation("services must be a non-empty list.", "services")
+    if any(s.get("items") for s in services) and not api_user.has_permission(
+            "pmscopetemplate.update"):
+        return jsonify({"error": "forbidden",
+                        "message": "pmscopetemplate.update is required to "
+                                   "change a service's checklist."}), 403
+
+    def _int(key):
+        v = p.get(key)
+        return None if v in (None, "") else int(v)
+
+    try:
+        effective_date = _parse_date(p.get("effective_date"))
+        next_gen = _parse_choice(
+            p.get("next_pms_generation"), _NEXT_PMS_GENERATION,
+            "next_pms_generation", default="AUTO_SCHEDULE")
+        next_due = _parse_choice(
+            p.get("next_due_calculation_method"), _NEXT_DUE_METHOD,
+            "next_due_calculation_method", default="ACTUAL_COMPLETION")
+    except _FieldError as e:
+        return _validation(str(e), e.field)
+
+    try:
+        rows = PMScheduleService().update_series(
+            profile_code, maintenance_type_id=mt_id, trigger_mode=trigger,
+            services=services,
+            vehicle_type_id=_int("vehicle_type_id"),
+            vehicle_brand_id=_int("vehicle_brand_id"),
+            vehicle_model_id=_int("vehicle_model_id"),
+            variant=p.get("variant") or None,
+            engine_type=p.get("engine_type") or None,
+            fuel_type=p.get("fuel_type") or None,
+            transmission=p.get("transmission") or None,
+            model_year_from=_int("model_year_from"),
+            model_year_to=_int("model_year_to"),
+            profile_description=p.get("profile_description") or None,
+            effective_date=effective_date,
+            next_pms_generation=next_gen,
+            next_due_calculation_method=next_due,
+            interval_days=_int("interval_days"),
+            priority=(p.get("priority") or "MEDIUM"),
+            notify_before_km=_int("notify_before_km"),
+            notify_before_days=_int("notify_before_days"),
+            escalate_if_overdue=bool(p.get("escalate_if_overdue", True)),
+        )
+    except (InvalidScheduleError, InvalidScopeError, ValueError, TypeError) as e:
+        db.session.rollback()
+        msg = str(e)
+        if "No PMS Profile found" in msg:
+            return _not_found("PMS Profile")
+        return _validation(msg)
+    return jsonify({
+        "profile_code": profile_code,
+        "services": [
+            {
+                "id": s.id, "cumulative_km": s.cumulative_km,
+                "interval_km": s.interval_km,
+                "work_description_template": s.work_description_template,
+                "items": [
+                    {"activity_code": i.activity_code,
+                     "activity_description": i.activity_description}
+                    for i in (s.scope_templates[0].items if s.scope_templates else [])
+                ],
+            }
+            for s in rows
+        ],
+    }), 200
 
 
 # ── Export & Import ─────────────────────────────────────────────────────────
