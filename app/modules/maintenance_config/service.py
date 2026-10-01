@@ -334,6 +334,23 @@ class PMScheduleService:
             sched.is_active = False
             db.session.commit()
 
+    def deactivate_profile(self, profile_code) -> int:
+        """Deactivate every schedule sharing one profile_code, in one
+        commit -- the grouped list shows one row per profile, so its
+        single Delete action must act on the whole profile, not just
+        whichever schedule happened to be the group's representative
+        row (leaving its siblings silently still active).
+
+        Returns the number of schedules deactivated, so the caller can
+        tell "deactivated 9" from "nothing matched that code".
+        """
+        rows = PMSchedule.query.filter_by(
+            profile_code=profile_code, is_active=True).all()
+        for r in rows:
+            r.is_active = False
+        db.session.commit()
+        return len(rows)
+
     def list(self, include_inactive=False):
         q = PMSchedule.query.options(
             joinedload(PMSchedule.vehicle_brand),

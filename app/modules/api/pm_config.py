@@ -419,6 +419,22 @@ def deactivate_pm_template(api_user, sid):
     return jsonify({"ok": True})
 
 
+@bp.route("/pms-profiles/<path:profile_code>/deactivate", methods=["POST"])
+@api_auth_required("pmschedule.delete")
+def deactivate_pms_profile(api_user, profile_code):
+    """Deactivates every schedule in this profile in one call -- the
+    grouped PM Templates list shows one row per profile, so Delete on
+    that row must act on the whole profile, not just its representative
+    schedule."""
+    from app.modules.maintenance_config.service import PMScheduleService
+    from app.modules.maintenance_config.models import PMSchedule
+    exists = PMSchedule.query.filter_by(profile_code=profile_code).first() is not None
+    if not exists:
+        return _not_found("PMS Profile")
+    count = PMScheduleService().deactivate_profile(profile_code)
+    return jsonify({"ok": True, "deactivated": count})
+
+
 # ── PM Scope Templates ──────────────────────────────────────────────────────
 
 def _pm_schedule_label(s):
