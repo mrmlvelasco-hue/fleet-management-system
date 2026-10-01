@@ -496,11 +496,23 @@ class PMScheduleService:
         if search:
             like = f"%{str(search).strip()}%"
             from sqlalchemy import or_
-            q = q.filter(or_(
-                PMSchedule.profile_description.ilike(like),
-                PMSchedule.profile_code.ilike(like),
-                PMSchedule.vehicle_make.ilike(like),
-                PMSchedule.vehicle_model.ilike(like)))
+            from app.modules.master_data.vehicle_brand.models import (
+                VehicleBrand, VehicleModel)
+            # outerjoin, not join: a schedule matched via the free-text
+            # vehicle_make/vehicle_model fields (or with no vehicle
+            # match at all) has NULL vehicle_brand_id/vehicle_model_id,
+            # and an inner join would silently drop it from the search
+            # entirely -- a second, worse version of the exact bug this
+            # fix addresses.
+            q = (q.outerjoin(VehicleBrand, PMSchedule.vehicle_brand_id == VehicleBrand.id)
+                 .outerjoin(VehicleModel, PMSchedule.vehicle_model_id == VehicleModel.id)
+                 .filter(or_(
+                     PMSchedule.profile_description.ilike(like),
+                     PMSchedule.profile_code.ilike(like),
+                     PMSchedule.vehicle_make.ilike(like),
+                     PMSchedule.vehicle_model.ilike(like),
+                     VehicleBrand.name.ilike(like),
+                     VehicleModel.name.ilike(like))))
 
         id_code_rows = (q.with_entities(PMSchedule.id, PMSchedule.profile_code)
                        .order_by(PMSchedule.id).all())

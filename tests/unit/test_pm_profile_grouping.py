@@ -116,6 +116,55 @@ class TestBackfillMissingProfileCodes:
         assert result2["groups_fixed"] == 0
 
 
+class TestDeactivateWholeProfile:
+    def test_deactivates_every_schedule_sharing_the_profile_code(self, db, env):
+        svc = PMScheduleService()
+        svc.generate_series(
+            maintenance_type_id=env["mt"].id, trigger_mode="KM",
+            vehicle_brand_id=env["brand"].id, vehicle_model_id=env["model"].id,
+            profile_code="GEELY-COOLRAY-PMS-1",
+            services=[{"cumulative_km": k} for k in (1000, 10000, 20000)])
+        db.session.commit()
+
+        count = svc.deactivate_profile("GEELY-COOLRAY-PMS-1")
+
+        assert count == 3
+        rows = PMSchedule.query.filter_by(profile_code="GEELY-COOLRAY-PMS-1").all()
+        assert all(not r.is_active for r in rows)
+
+    def test_does_not_touch_a_different_profile(self, db, env):
+        svc = PMScheduleService()
+        svc.generate_series(
+            maintenance_type_id=env["mt"].id, trigger_mode="KM",
+            vehicle_brand_id=env["brand"].id, vehicle_model_id=env["model"].id,
+            profile_code="PROFILE-A", services=[{"cumulative_km": 1000}])
+        svc.generate_series(
+            maintenance_type_id=env["mt"].id, trigger_mode="KM",
+            vehicle_brand_id=env["brand"].id, vehicle_model_id=env["model"].id,
+            profile_code="PROFILE-B", services=[{"cumulative_km": 5000}])
+        db.session.commit()
+
+        svc.deactivate_profile("PROFILE-A")
+
+        b = PMSchedule.query.filter_by(profile_code="PROFILE-B").first()
+        assert b.is_active is True
+
+    def test_running_it_twice_is_safe_and_reports_zero_the_second_time(
+            self, db, env):
+        svc = PMScheduleService()
+        svc.generate_series(
+            maintenance_type_id=env["mt"].id, trigger_mode="KM",
+            vehicle_brand_id=env["brand"].id, vehicle_model_id=env["model"].id,
+            profile_code="PROFILE-A", services=[{"cumulative_km": 1000}])
+        db.session.commit()
+
+        first = svc.deactivate_profile("PROFILE-A")
+        second = svc.deactivate_profile("PROFILE-A")
+
+        assert first == 1
+        assert second == 0
+
+
 class TestGroupedProfileList:
     def test_one_row_per_profile_regardless_of_interval_count(self, db, env):
         PMScheduleService().generate_series(
@@ -200,4 +249,34 @@ class TestGroupedProfileList:
 
         rows, total = PMScheduleService().list_profiles_paginated(
             page=1, per_page=25, search="no-such-code")
+        assert total == 0
+
+    def test_search_by_brand_or_model_name_finds_a_vehicle_matched_via_the_fk_fields(
+            self, db, env):
+        # The real bug this guards: a series created through the New
+        # PMS Profile page picks Brand/Model from dropdowns, which sets
+        # vehicle_brand_id/vehicle_model_id -- NOT the free-text
+        # vehicle_make/vehicle_model columns the old search only
+        # checked. Confirmed against a real report: searching "geely"
+        # for a Geely Coolray profile created this way returned zero
+        # results, even though the profile genuinely existed.
+        PMScheduleService().generate_series(
+            maintenance_type_id=env["mt"].id, trigger_mode="HYBRID", interval_days=180,
+            vehicle_brand_id=env["brand"].id, vehicle_model_id=env["model"].id,
+            profile_code="PROFILE-X-1",  # deliberately contains none of the
+            # search terms below -- a pass here must come from the
+            # brand/model join, not an accidental profile_code match.
+            services=[{"cumulative_km": 1000}, {"cumulative_km": 10000}])
+        db.session.commit()
+
+        _rows, total = PMScheduleService().list_profiles_paginated(
+            page=1, per_page=25, search="geely")
+        assert total == 1, "searching the vehicle's own brand name found nothing"
+
+        _rows, total = PMScheduleService().list_profiles_paginated(
+            page=1, per_page=25, search="coolray")
+        assert total == 1, "searching the vehicle's own model name found nothing"
+
+        _rows, total = PMScheduleService().list_profiles_paginated(
+            page=1, per_page=25, search="toyota")
         assert total == 0
