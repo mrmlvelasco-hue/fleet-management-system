@@ -149,8 +149,9 @@ class FuelAnalyticsService:
         return {"count": query.count()}
 
     @request_cached("fuel_summary")
-    def summary(self, user=None, days=30) -> dict:
-        """Fleet-wide fuel summary for the given window.
+    def summary(self, user=None, days=30, branch_id=None) -> dict:
+        """Fleet-wide fuel summary for the given window, optionally
+        scoped to one branch.
 
         If the window contains nothing but the fleet DOES have fuel
         history, this falls back to reporting ALL of it rather than
@@ -166,16 +167,30 @@ class FuelAnalyticsService:
         the UI can label the figure honestly ("All time" instead of
         "Last 30 days") rather than let a wider window pass silently as
         if it were the one that was asked for.
+
+        branch_id was previously not accepted at all, while every
+        sibling KPI on the same dashboard already took it -- so this
+        panel kept showing every branch's figures regardless of the
+        header's branch selector. FuelTransaction carries no branch_id
+        of its own, so it's scoped through its vehicle, the same join
+        every other vehicle-based dashboard count already uses.
         """
         from app.modules.transactions.fuel.models import FuelTransaction
+        from app.modules.master_data.vehicle.models import Vehicle
         from datetime import date
         start = date.today() - timedelta(days=days)
 
-        rows = (FuelTransaction.query
-               .filter(FuelTransaction.transaction_date >= start).all())
+        def _scoped(q):
+            if branch_id is not None:
+                q = q.join(Vehicle, FuelTransaction.vehicle_id == Vehicle.id) \
+                     .filter(Vehicle.branch_id == branch_id)
+            return q
+
+        rows = _scoped(FuelTransaction.query
+               .filter(FuelTransaction.transaction_date >= start)).all()
         is_all_time = False
-        if not rows and FuelTransaction.query.first() is not None:
-            rows = FuelTransaction.query.all()
+        if not rows and _scoped(FuelTransaction.query).first() is not None:
+            rows = _scoped(FuelTransaction.query).all()
             is_all_time = True
         if not rows:
             return {"fills": 0, "litres": 0, "spend": 0, "avg_price": 0,

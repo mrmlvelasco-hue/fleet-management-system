@@ -274,14 +274,33 @@ def dashboard_fuel(api_user):
         return jsonify({"error": "bad_request",
                         "message": "days must be an integer."}), 400
     days = max(1, min(days, 365))
-    return jsonify(FuelAnalyticsService().summary(user=api_user, days=days))
+
+    branch_id = None
+    raw_branch = request.args.get("branch_id")
+    if raw_branch:
+        try:
+            branch_id = int(raw_branch)
+        except (TypeError, ValueError):
+            return jsonify({"error": "bad_request",
+                            "message": "branch_id must be an integer."}), 400
+
+    return jsonify(FuelAnalyticsService().summary(
+        user=api_user, days=days, branch_id=branch_id))
 
 
 @bp.route("/dashboard/workflow", methods=["GET"])
 @api_auth_required("vehicle.view")
 def dashboard_workflow(api_user):
+    branch_id = None
+    raw_branch = request.args.get("branch_id")
+    if raw_branch:
+        try:
+            branch_id = int(raw_branch)
+        except (TypeError, ValueError):
+            return jsonify({"error": "bad_request",
+                            "message": "branch_id must be an integer."}), 400
     return jsonify(DashboardAnalyticsService().approval_workflow_counts(
-        user=api_user))
+        user=api_user, branch_id=branch_id))
 
 
 @bp.route("/dashboard/trends", methods=["GET"])
@@ -558,7 +577,8 @@ def dashboard_bootstrap(api_user):
     due_rows = (_shared_due_rows(api_user, branch_id)
                 if can_pm_report else [])
 
-    analytics_wf = analytics.approval_workflow_counts(user=api_user)
+    analytics_wf = analytics.approval_workflow_counts(
+        user=api_user, branch_id=branch_id)
     trends = analytics.kpi_trends(user=api_user)
     registration_status = analytics.all_charts(
         user=api_user, only=["registration_status"], branch_id=branch_id

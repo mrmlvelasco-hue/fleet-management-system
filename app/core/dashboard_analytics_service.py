@@ -439,27 +439,48 @@ class DashboardAnalyticsService:
         return {k: builders[k]() for k in wanted}
 
     @request_cached("chart_approval_workflow")
-    def approval_workflow_counts(self, user=None) -> dict:
-        """Live counts for the Approval Workflow timeline.
+    def approval_workflow_counts(self, user=None, branch_id=None) -> dict:
+        """Live counts for the Approval Workflow timeline, optionally
+        scoped to one branch.
 
         Real counts from ApprovalInstance / MaintenanceOrder status, not
         illustrative numbers -- this sits on an executive dashboard where
         a wrong figure would be read as fact.
+
+        branch_id was previously not accepted at all, while every
+        sibling KPI on the same dashboard already took it (see
+        DashboardService.approvals_pending_count) -- so this panel kept
+        showing every branch's figures regardless of the header's branch
+        selector. MaintenanceOrder carries no branch_id of its own, so
+        it's scoped through its vehicle, the same join every other
+        MO-based dashboard count already uses; ApprovalInstance carries
+        its own branch_id directly (set by the submitting module), so
+        it's filtered on that column instead.
         """
         from app.core.approval.models import ApprovalInstance
+        from app.modules.master_data.vehicle.models import Vehicle
         from app.modules.transactions.maintenance_order.models import (
             MaintenanceOrder)
 
-        def _count(model, **filters):
-            return db.session.query(func.count(model.id)).filter_by(
+        def _mo_count(**filters):
+            q = db.session.query(func.count(MaintenanceOrder.id)).filter_by(**filters)
+            if branch_id is not None:
+                q = q.join(Vehicle, MaintenanceOrder.vehicle_id == Vehicle.id) \
+                     .filter(Vehicle.branch_id == branch_id)
+            return q.scalar() or 0
+
+        def _instance_count(**filters):
+            if branch_id is not None:
+                filters = {**filters, "branch_id": branch_id}
+            return db.session.query(func.count(ApprovalInstance.id)).filter_by(
                 **filters).scalar() or 0
 
         return {
-            "draft": _count(MaintenanceOrder, status="DRAFT"),
-            "submitted": _count(ApprovalInstance, status="PENDING"),
-            "for_approval": _count(ApprovalInstance, status="PENDING"),
-            "approved": _count(ApprovalInstance, status="APPROVED"),
-            "completed": _count(MaintenanceOrder, status="COMPLETED"),
+            "draft": _mo_count(status="DRAFT"),
+            "submitted": _instance_count(status="PENDING"),
+            "for_approval": _instance_count(status="PENDING"),
+            "approved": _instance_count(status="APPROVED"),
+            "completed": _mo_count(status="COMPLETED"),
         }
 
     @request_cached("kpi_trends")
