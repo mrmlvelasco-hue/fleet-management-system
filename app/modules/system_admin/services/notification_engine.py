@@ -56,9 +56,18 @@ class NotificationEngine:
         return []
 
     def _send_in_app(self, user: User, event_name: str, instance) -> None:
+        from app.core.reference_resolver import get_document_number
+        # Confirmed real bug: this used to build "MO #49" directly from
+        # document_type.code + the raw reference_id, bypassing
+        # get_document_number() entirely -- which already exists and
+        # already resolves the real document number (MO-2026-000049)
+        # everywhere else in the app. A recipient had no way to tell
+        # this short-lived id apart from the number printed on the
+        # actual document.
+        doc_number = get_document_number(
+            instance.reference_table, instance.reference_id)
         title = f"Document {event_name.replace('_', ' ').title()}"
-        message = (f"{instance.document_type.code} "
-                   f"#{instance.reference_id} - {event_name}")
+        message = f"{doc_number} - {event_name}"
         notif = InAppNotification(
             user_id=user.id, title=title, message=message,
             event_code=event_name,
@@ -86,9 +95,11 @@ class NotificationEngine:
         if not user or not user.email:
             return
         from app.modules.system_admin.models import EmailOutbox
+        from app.core.reference_resolver import get_document_number
+        doc_number = get_document_number(
+            instance.reference_table, instance.reference_id)
         subject = (f"[FMS] {event_name.replace('_', ' ').title()} - "
-                  f"{instance.document_type.code if instance.document_type else ''} "
-                  f"#{instance.reference_id}").strip()
+                  f"{doc_number}").strip()
         db.session.add(EmailOutbox(
             to_email=user.email, to_user_id=user.id, subject=subject[:255],
             event_code=event_name,

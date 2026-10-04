@@ -675,8 +675,13 @@ def _seed_email_templates() -> None:
       {{ event_code }}, {{ event_label }}
       {{ comment_body }}, {{ author_name }} - populated only for the
                               DOCUMENT_COMMENT event; empty otherwise
+      {{ scope_items }}     - Scope of Work lines, a list of
+                              {code, description}; [] for documents
+                              without one (only Maintenance Orders today)
     """
     from app.modules.system_admin.models import EmailTemplate
+    from app.modules.system_admin.tasks import (
+        SCOPE_BLOCK_HTML, SCOPE_BLOCK_TEXT)
 
     def _tmpl(intro, include_comment=False):
         view_link = (
@@ -693,6 +698,7 @@ def _seed_email_templates() -> None:
                 f"<p>{intro}</p>"
                 f"{comment_block}"
                 f"<p><strong>{{{{ document_number }}}}</strong></p>"
+                + SCOPE_BLOCK_HTML +
                 f'{view_link}')
         comment_text = (
             "{% if comment_body %}\n\"{{ author_name }} wrote: "
@@ -700,6 +706,7 @@ def _seed_email_templates() -> None:
         text = (f"Hello {{{{ recipient_name }}}},\n\n{intro}\n\n"
                 f"{comment_text}"
                 f"{{{{ document_number }}}}\n\n"
+                + SCOPE_BLOCK_TEXT +
                 f"{{% if view_url %}}Open this document: {{{{ view_url }}}}"
                 f"{{% endif %}}")
         return html, text

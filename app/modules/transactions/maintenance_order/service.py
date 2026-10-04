@@ -31,6 +31,67 @@ class InvalidOrderCategoryError(Exception):
     pass
 
 
+class ScopeValidationError(ValueError):
+    """A Scope of Work line failed validation (blank description, or a
+    field longer than its column). Raised BEFORE anything is written, so
+    a bad line never leaves a half-saved order behind."""
+    pass
+
+
+# Column widths of maintenance_checklist_items -- checked here so the
+# user gets a readable message rather than a database truncation error
+# (MySQL strict mode) or silent truncation (non-strict).
+SCOPE_CODE_MAX = 40
+SCOPE_DESCRIPTION_MAX = 255
+
+
+def normalize_scope_rows(rows) -> list:
+    """Validate and clean incoming Scope of Work lines.
+
+    Accepts a list of dicts with optional `id`, optional `activity_code`
+    and required `activity_description`. Returns a list of
+    {"id", "activity_code", "activity_description"} with whitespace
+    trimmed, a blank code turned into None, and `id` coerced to int (or
+    None for a new line). Order of the input list is the sort order.
+    """
+    if rows is None:
+        return []
+    if not isinstance(rows, (list, tuple)):
+        raise ScopeValidationError("Scope of Work must be a list of lines.")
+    out = []
+    for pos, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            raise ScopeValidationError(
+                f"Scope of Work line {pos} is not a valid entry.")
+        desc = str(row.get("activity_description") or "").strip()
+        code = str(row.get("activity_code") or "").strip() or None
+        if not desc:
+            raise ScopeValidationError(
+                f"Scope of Work line {pos}: description is required.")
+        if len(desc) > SCOPE_DESCRIPTION_MAX:
+            raise ScopeValidationError(
+                f"Scope of Work line {pos}: description must be at most "
+                f"{SCOPE_DESCRIPTION_MAX} characters.")
+        if code and len(code) > SCOPE_CODE_MAX:
+            raise ScopeValidationError(
+                f"Scope of Work line {pos}: code must be at most "
+                f"{SCOPE_CODE_MAX} characters.")
+        raw_id = row.get("id")
+        try:
+            row_id = int(raw_id) if raw_id not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ScopeValidationError(
+                f"Scope of Work line {pos} has an invalid id.")
+        # Client hint only (audit/reporting aid): an untouched line the
+        # form pre-filled from a template may say TEMPLATE; anything else
+        # is MANUAL. create() further ignores TEMPLATE when the order has
+        # no template at all.
+        origin = "TEMPLATE" if row.get("origin") == "TEMPLATE" else "MANUAL"
+        out.append({"id": row_id, "activity_code": code,
+                    "activity_description": desc, "origin": origin})
+    return out
+
+
 
 PRINT_TEMPLATE_LABELS = {
     "vehicle_assignment_memo": "Vehicle Assignment Memo",
@@ -138,8 +199,22 @@ class MaintenanceOrderService(BaseTransactionService):
                assigned_mechanic=None, vendor_id=None, estimated_cost=None,
                driver_id=None, destination_branch_id=None,
                disposal_value=None, disposal_recipient=None,
-               assignment_classification=None):
+               assignment_classification=None, scope_items=None):
+        """Create a DRAFT order.
+
+        scope_items -- optional list of Scope of Work lines (see
+        normalize_scope_rows). When supplied (even as an empty list) it
+        IS the order's scope: the form pre-fills from the chosen template
+        and the user may have edited it, so the edited lines win over a
+        fresh template copy. When omitted (None), the template's items
+        are copied exactly as before -- every existing caller keeps its
+        behaviour. Valid for every order category.
+        """
         from app.modules.master_data.vehicle.models import Vehicle
+        # Validated before anything is written: a bad line must not leave
+        # a numbered, half-built order behind.
+        manual_rows = (normalize_scope_rows(scope_items)
+                       if scope_items is not None else None)
         vehicle = db.session.get(Vehicle, vehicle_id)
         # A vehicle must not have two PM orders open at once: if a PMS is
         # already DRAFT / awaiting approval / IN_PROGRESS, a second one
@@ -277,13 +352,96 @@ class MaintenanceOrderService(BaseTransactionService):
                 raise InvalidOrderCategoryError(
                     "That PM Scope Template does not match this order's "
                     "Maintenance Type.")
-            for item in template.items:
+            if manual_rows is None:
+                self._copy_template_items(order, template)
+
+        if manual_rows is not None:
+            # Lines supplied by the caller -- any category, template or
+            # not. A line keeps the client's TEMPLATE hint only when the
+            # order really has a template (an OPERATIONAL order has its
+            # template nulled above, so its lines are always MANUAL).
+            has_template = bool(order.scope_template_id)
+            for pos, row in enumerate(manual_rows, start=1):
+                origin = ("TEMPLATE" if has_template
+                          and row["origin"] == "TEMPLATE" else "MANUAL")
                 order.checklist_items.append(MaintenanceChecklistItem(
-                    activity_code=item.activity_code,
-                    activity_description=item.activity_description,
-                    sort_order=item.sort_order))
+                    activity_code=row["activity_code"],
+                    activity_description=row["activity_description"],
+                    sort_order=pos, origin=origin))
 
         db.session.commit()
+        return order
+
+    @staticmethod
+    def _copy_template_items(order, template) -> None:
+        """Snapshot a PM Scope Template's items onto the order. A copy:
+        the template is read, never written."""
+        for item in template.items:
+            order.checklist_items.append(MaintenanceChecklistItem(
+                activity_code=item.activity_code or None,
+                activity_description=item.activity_description,
+                sort_order=item.sort_order, origin="TEMPLATE"))
+
+    def replace_scope(self, order_id: int, rows, user=None):
+        """Replace an order's Scope of Work with `rows`, in order.
+
+        Allowed only while editable_scope() is "FULL" -- a Draft never
+        submitted, or one an approver Returned. Once it is with an
+        approver (PENDING) or approved, the scope is what was approved
+        and must not move underneath it.
+
+        Diffed by line id rather than delete-all/insert-all, so the audit
+        trail records an UPDATE for a corrected line instead of a
+        delete-and-recreate, and a line keeps its identity (and origin)
+        across edits:
+
+          * a row with an `id` belonging to this order -> updated in place
+          * a row without an `id`                      -> new MANUAL line
+          * an existing line not in `rows`             -> deleted
+
+        The master PM Scope Template is never touched.
+        """
+        order = db.session.get(MaintenanceOrder, order_id)
+        if order is None:
+            raise InvalidOrderStateError("Maintenance Order not found.")
+        if self.editable_scope(order) != "FULL":
+            if order.status == "DRAFT":
+                raise InvalidOrderStateError(
+                    "This order is awaiting approval, so its Scope of Work "
+                    "is locked. Ask the approver to return it if it needs "
+                    "changes.")
+            raise InvalidOrderStateError(
+                f"The Scope of Work of a {order.status} order can no "
+                f"longer be changed.")
+
+        clean = normalize_scope_rows(rows)
+        existing = {i.id: i for i in order.checklist_items}
+        for row in clean:
+            if row["id"] is not None and row["id"] not in existing:
+                raise ScopeValidationError(
+                    "A Scope of Work line does not belong to this order.")
+
+        keep_ids = {r["id"] for r in clean if r["id"] is not None}
+        for item in list(order.checklist_items):
+            if item.id not in keep_ids:
+                order.checklist_items.remove(item)  # delete-orphan
+
+        for pos, row in enumerate(clean, start=1):
+            if row["id"] is not None:
+                item = existing[row["id"]]
+                item.activity_code = row["activity_code"]
+                item.activity_description = row["activity_description"]
+                item.sort_order = pos
+            else:
+                order.checklist_items.append(MaintenanceChecklistItem(
+                    activity_code=row["activity_code"],
+                    activity_description=row["activity_description"],
+                    sort_order=pos, origin="MANUAL"))
+        order.updated_by = user.id if user else None
+        db.session.commit()
+        # Relationship-changing write with expire_on_commit=False: drop
+        # the cached collection so the caller reads the real rows.
+        db.session.expire(order)
         return order
 
     def editable_scope(self, order) -> str:
@@ -374,11 +532,40 @@ class MaintenanceOrderService(BaseTransactionService):
             "destination_branch_id", "assignment_classification",
             "disposal_value", "disposal_recipient",
         }
+        # Changing the template on an editable order re-seeds its Scope
+        # of Work from the new template. Before this, update() set
+        # scope_template_id and left the OLD template's lines in place,
+        # so an order could claim template B while carrying template A's
+        # checklist. Only on an actual CHANGE: the edit form re-posts the
+        # current template id on every save, and that must not wipe lines
+        # the user edited. Clearing the template keeps the lines (they
+        # may be manual).
+        reseed_template = None
+        if "scope_template_id" in fields and scope == "FULL":
+            new_tid = fields["scope_template_id"]
+            if new_tid and new_tid != order.scope_template_id:
+                reseed_template = db.session.get(PMScopeTemplate, new_tid)
+                if reseed_template is None:
+                    raise InvalidOrderCategoryError(
+                        "That PM Scope Template does not exist.")
+                target_mtype = fields.get("maintenance_type_id",
+                                          order.maintenance_type_id)
+                if reseed_template.maintenance_type_id != target_mtype:
+                    raise InvalidOrderCategoryError(
+                        "That PM Scope Template does not match this "
+                        "order's Maintenance Type.")
+
         for key, value in fields.items():
             if key in editable:
                 setattr(order, key, value)
+        if reseed_template is not None:
+            for item in list(order.checklist_items):
+                order.checklist_items.remove(item)
+            self._copy_template_items(order, reseed_template)
         order.updated_by = user.id if user else None
         db.session.commit()
+        if reseed_template is not None:
+            db.session.expire(order)
         return order
 
     def start_work(self, order_id: int):

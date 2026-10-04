@@ -77,6 +77,47 @@ def get_document_number(reference_table: str, reference_id: int) -> str:
         return fallback
 
 
+def _load_record(reference_table: str, reference_id: int):
+    """The registered model row for (reference_table, reference_id), or
+    None when the table is unregistered, the row is missing, or the
+    lookup fails for any reason -- notification rendering must never
+    break because one optional detail could not be resolved."""
+    entry = _REGISTRY.get(reference_table)
+    if entry is None:
+        return None
+    module_path, class_name, _ = entry
+    try:
+        import importlib
+        module = importlib.import_module(module_path)
+        model = getattr(module, class_name)
+        from app.extensions import db
+        return db.session.get(model, reference_id)
+    except Exception:
+        return None
+
+
+def get_scope_items(reference_table: str, reference_id: int) -> list:
+    """Scope of Work line items for a document, as
+    [{"code": str, "description": str}, ...] -- for the
+    `{{ scope_items }}` email context variable.
+
+    Duck-typed: any registered model exposing a `scope_of_work_lines`
+    property (today, MaintenanceOrder) gets its lines into emails with no
+    change here. Every other document returns [] so templates can always
+    write `{% if scope_items %}` safely.
+    """
+    record = _load_record(reference_table, reference_id)
+    if record is None:
+        return []
+    try:
+        lines = getattr(record, "scope_of_work_lines", None) or []
+        return [{"code": str(line.get("code") or ""),
+                 "description": str(line.get("description") or "")}
+                for line in lines]
+    except Exception:
+        return []
+
+
 def get_view_url(reference_table: str, reference_id: int) -> str | None:
     """Absolute-path URL back into the app for this document, for the
     "Open this document" link in notification emails. Returns None if the

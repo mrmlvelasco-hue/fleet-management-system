@@ -29,15 +29,38 @@ from app.modules.system_admin.services.email_config_service import (
 logger = logging.getLogger(__name__)
 
 _FALLBACK_SUBJECT = "{{ event_label }}: {{ reference_table }} #{{ reference_id }}"
+# Scope of Work block, shared by the fallback body below and the seeded
+# templates in cli._seed_email_templates (and the data migration that
+# adds it to already-seeded templates). Renders nothing when the document
+# has no scope lines, so it is safe in every approval template.
+#
+# |e on every value: these templates render with a plain jinja2.Template
+# (no autoescape) and line descriptions are user-entered, so an
+# unescaped "<" from a description must not become markup in the email.
+SCOPE_BLOCK_HTML = (
+    "{% if scope_items %}"
+    "<p><strong>Scope of Work</strong></p><ol>"
+    "{% for line in scope_items %}<li>"
+    "{% if line.code %}{{ line.code|e }} &ndash; {% endif %}"
+    "{{ line.description|e }}</li>{% endfor %}</ol>"
+    "{% endif %}")
+SCOPE_BLOCK_TEXT = (
+    "{% if scope_items %}Scope of Work:\n"
+    "{% for line in scope_items %}  {{ loop.index }}. "
+    "{% if line.code %}{{ line.code }} - {% endif %}"
+    "{{ line.description }}\n{% endfor %}\n{% endif %}")
+
 _FALLBACK_BODY_HTML = (
     "<p>Hello {{ recipient_name }},</p>"
     "<p>This is a notification regarding <strong>{{ reference_table }} "
     "#{{ reference_id }}</strong> ({{ event_label }}).</p>"
+    + SCOPE_BLOCK_HTML +
     "<p>Please log in to the Fleet Management System to view details.</p>")
 _FALLBACK_BODY_TEXT = (
     "Hello {{ recipient_name }},\n\n"
     "This is a notification regarding {{ reference_table }} "
     "#{{ reference_id }} ({{ event_label }}).\n\n"
+    + SCOPE_BLOCK_TEXT +
     "Please log in to the Fleet Management System to view details.")
 
 
@@ -66,7 +89,8 @@ def _build_notification_context(user, event_code, reference_table,
     """Everything a template might want to reference. Kept in one place
     so every template (built-in or admin-added) has access to the same
     fields regardless of event type."""
-    from app.core.reference_resolver import get_document_number, get_view_url
+    from app.core.reference_resolver import (
+        get_document_number, get_scope_items, get_view_url)
 
     context = {
         "recipient_name": user.full_name if hasattr(user, "full_name") else user.username,
@@ -79,6 +103,10 @@ def _build_notification_context(user, event_code, reference_table,
         # every email showed, which is meaningless to a recipient.
         "document_number": get_document_number(reference_table, reference_id),
         "view_url": get_view_url(reference_table, reference_id) or "",
+        # Scope of Work lines ([{code, description}]) for documents that
+        # have them (Maintenance Orders); [] otherwise, so a template can
+        # always use {% if scope_items %}.
+        "scope_items": get_scope_items(reference_table, reference_id),
         "comment_body": "",
         "author_name": "",
     }

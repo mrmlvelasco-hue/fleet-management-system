@@ -242,13 +242,57 @@ class MaintenanceOrder(db.Model, BaseModel):
         order_by="MaintenanceChecklistItem.sort_order",
         cascade="all, delete-orphan")
 
+    @property
+    def scope_of_work_lines(self) -> list:
+        """The order's Scope of Work as plain {code, description} dicts,
+        pm2..pm9 tokens resolved against this order's vehicle -- the same
+        resolution the API applies to checklist_items.
+
+        Read duck-typed by reference_resolver.get_scope_items() so the
+        notification email context can show line items for any document
+        that offers this property, without the resolver knowing about
+        Maintenance Orders specifically.
+        """
+        from app.core.reporting.token_resolver import resolve_pm_tokens
+        lines = []
+        for item in sorted(self.checklist_items or [],
+                           key=lambda i: (i.sort_order or 0, i.id or 0)):
+            desc = item.activity_description or ""
+            if desc:
+                desc = resolve_pm_tokens(
+                    desc, vehicle=self.vehicle,
+                    maintenance_type_id=self.maintenance_type_id)
+            lines.append({"code": item.activity_code or "",
+                          "description": desc})
+        return lines
+
 
 class MaintenanceChecklistItem(db.Model, BaseModel):
+    """One line of an order's Scope of Work.
+
+    A per-order SNAPSHOT: lines copied from a PM Scope Template at
+    creation, or entered by hand, live here and never write back to the
+    master template -- so editing an order's scope can never change what
+    the next order copies.
+
+    Any order category may carry lines (Maintenance and Operational
+    alike). They are editable only while the order's editable_scope() is
+    "FULL" (Draft never submitted, or Returned) -- see
+    MaintenanceOrderService.replace_scope().
+    """
     __tablename__ = "maintenance_checklist_items"
     order_id = db.Column(db.Integer, db.ForeignKey("maintenance_orders.id"),
                          nullable=False)
-    activity_code = db.Column(db.String(40), nullable=False)
+    # Optional: a hand-entered line (e.g. "Repaint left door") often has
+    # no activity code. Template-copied lines keep the template's code.
+    activity_code = db.Column(db.String(40), nullable=True)
     activity_description = db.Column(db.String(255), nullable=False)
+    # TEMPLATE | MANUAL -- where the line came from. Reporting/audit aid
+    # only; behaviour (completion gate, print, email) treats both alike.
+    # server_default so rows that predate this column read as TEMPLATE,
+    # which is the only way a line could be created before it existed.
+    origin = db.Column(db.String(10), nullable=False, default="TEMPLATE",
+                       server_default="TEMPLATE")
     is_done = db.Column(db.Boolean, default=False, nullable=False)
     done_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     done_at = db.Column(db.DateTime, nullable=True)

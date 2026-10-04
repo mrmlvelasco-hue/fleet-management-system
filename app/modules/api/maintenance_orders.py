@@ -391,6 +391,9 @@ def _order_json(o, *, detail=False):
                     "is_done": bool(i.is_done),
                     "sort_order": i.sort_order,
                     "done_at": _iso(i.done_at),
+                    # TEMPLATE | MANUAL -- lets the Scope of Work editor
+                    # mark lines that came from the template.
+                    "origin": getattr(i, "origin", None) or "TEMPLATE",
                 }
                 for i in (o.checklist_items or [])
             ],
@@ -556,7 +559,7 @@ def get_maintenance_order(api_user, oid):
 def create_maintenance_order(api_user):
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService, InvalidOrderCategoryError,
-        InvalidOrderStateError)
+        InvalidOrderStateError, ScopeValidationError)
 
     p = request.get_json(silent=True) or {}
     try:
@@ -619,7 +622,13 @@ def create_maintenance_order(api_user):
             disposal_value=_cost("disposal_value"),
             disposal_recipient=p.get("disposal_recipient") or None,
             assignment_classification=p.get("assignment_classification") or None,
+            # Scope of Work lines. Absent key -> None -> the template is
+            # copied as before; present (even []) -> these lines ARE the
+            # order's scope. Any order category.
+            scope_items=p.get("scope_items") if "scope_items" in p else None,
         )
+    except ScopeValidationError as e:
+        return _validation(str(e), "scope_items")
     except InvalidOrderCategoryError as e:
         return _validation(str(e), "order_category")
     except InvalidOrderStateError as e:
@@ -670,6 +679,39 @@ def update_maintenance_order(api_user, oid):
     if order is None:
         return _not_found()
     return jsonify(_order_json(order, detail=True))
+
+
+@bp.route("/maintenance-orders/<int:oid>/scope", methods=["PUT"])
+@api_auth_required("maintenanceorder.update")
+def replace_maintenance_order_scope(api_user, oid):
+    """Replace the order's Scope of Work lines.
+
+    Body: {"items": [{"id"?: int, "activity_code"?: str,
+                      "activity_description": str}, ...]} -- the full,
+    ordered list; lines left out are removed. Allowed only while the
+    order is editable in full (Draft never submitted, or Returned): 409
+    otherwise. Permission is maintenanceorder.update -- editing scope is
+    editing the order, so no new permission code is introduced.
+    """
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService, InvalidOrderStateError,
+        ScopeValidationError)
+    p = request.get_json(silent=True) or {}
+    items = p.get("items")
+    if items is None:
+        return _validation("items is required.", "scope_items")
+    svc = MaintenanceOrderService()
+    try:
+        order = svc.replace_scope(oid, items, user=api_user)
+    except ScopeValidationError as e:
+        return _validation(str(e), "scope_items")
+    except InvalidOrderStateError as e:
+        if "not found" in str(e).lower():
+            return _not_found()
+        return _conflict(str(e))
+    data = _order_json(order, detail=True)
+    data["editable"] = svc.editable_scope(order)
+    return jsonify(data)
 
 
 @bp.route("/maintenance-orders/<int:oid>/submit", methods=["POST"])
@@ -1328,13 +1370,17 @@ def maintenance_order_scope_template_details(api_user):
 
     items = sorted(tmpl.items, key=lambda i: i.sort_order)
     work_description = None
+    # Resolved up front, not inside the work-description branch below:
+    # the item list needs `vehicle` too, and a generic template with no
+    # linked PM schedule used to reach it unbound (UnboundLocalError ->
+    # 500), which broke the form's Scope of Work pre-fill.
+    vehicle_id = request.args.get("vehicle_id", type=int)
+    vehicle = None
+    if vehicle_id:
+        from app.modules.master_data.vehicle.models import Vehicle
+        vehicle = Vehicle.query.filter_by(id=vehicle_id).first()
     if tmpl.pm_schedule and tmpl.pm_schedule.work_description_template:
         raw = tmpl.pm_schedule.work_description_template
-        vehicle_id = request.args.get("vehicle_id", type=int)
-        vehicle = None
-        if vehicle_id:
-            from app.modules.master_data.vehicle.models import Vehicle
-            vehicle = Vehicle.query.filter_by(id=vehicle_id).first()
         if vehicle is not None:
             from app.core.reporting.token_resolver import resolve_pm_tokens
             work_description = resolve_pm_tokens(
