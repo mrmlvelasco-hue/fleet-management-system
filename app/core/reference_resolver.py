@@ -96,6 +96,26 @@ def _load_record(reference_table: str, reference_id: int):
         return None
 
 
+def get_description(reference_table: str, reference_id: int) -> str:
+    """A one-line human summary of the document -- for notification
+    messages and email subjects. Duck-typed: any registered model with
+    a `notification_description` property gets its value; every other
+    document returns "".
+
+    Examples:
+      maintenance_orders  -> "Corrective MO · Isuzu Elf NAO-907"
+      trip_tickets        -> "Trip Ticket TT-2026-000012 · Juan Driver"
+    """
+    record = _load_record(reference_table, reference_id)
+    if record is None:
+        return ""
+    try:
+        val = getattr(record, "notification_description", None)
+        return str(val).strip() if val else ""
+    except Exception:
+        return ""
+
+
 def get_scope_items(reference_table: str, reference_id: int) -> list:
     """Scope of Work line items for a document, as
     [{"code": str, "description": str}, ...] -- for the

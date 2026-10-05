@@ -90,7 +90,7 @@ def _build_notification_context(user, event_code, reference_table,
     so every template (built-in or admin-added) has access to the same
     fields regardless of event type."""
     from app.core.reference_resolver import (
-        get_document_number, get_scope_items, get_view_url)
+        get_description, get_document_number, get_scope_items, get_view_url)
 
     context = {
         "recipient_name": user.full_name if hasattr(user, "full_name") else user.username,
@@ -107,6 +107,9 @@ def _build_notification_context(user, event_code, reference_table,
         # have them (Maintenance Orders); [] otherwise, so a template can
         # always use {% if scope_items %}.
         "scope_items": get_scope_items(reference_table, reference_id),
+        # One-line plain-text summary of the document (vehicle, type, etc.)
+        # for email subjects and body intros.
+        "description": get_description(reference_table, reference_id),
         "comment_body": "",
         "author_name": "",
     }

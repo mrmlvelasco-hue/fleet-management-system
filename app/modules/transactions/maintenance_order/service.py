@@ -604,6 +604,67 @@ class MaintenanceOrderService(BaseTransactionService):
         db.session.commit()
         return order
 
+    def save_scope_as_template(self, order_id: int, *,
+                                name: str,
+                                description: str | None = None):
+        """Promote the order's current Scope of Work rows to a new
+        PM Scope Template.
+
+        The resulting template is a snapshot of the ORDER's own rows
+        (the same ones that appear on the detail screen), not a copy of
+        any master template. So manual edits made after creation are
+        preserved, and the master template is never written.
+
+        Requires:
+          - the order is a MAINTENANCE-category order (it has a
+            maintenance_type_id);
+          - the order has at least one checklist row.
+          - name is non-blank.
+
+        The template is created with the order's maintenance_type_id and
+        with pm_schedule_id=None (generic, not tied to a specific PM
+        schedule), so it appears in the scope-template picker for any
+        order of the same maintenance type.
+
+        Permission is checked at the API layer (pmscopetemplate.create),
+        not here.
+        """
+        from app.modules.maintenance_config.models import (
+            PMScopeTemplate, PMScopeItem)
+        order = db.session.get(MaintenanceOrder, order_id)
+        if order is None:
+            raise InvalidOrderStateError("Maintenance Order not found.")
+        if order.order_category != "MAINTENANCE" or not order.maintenance_type_id:
+            raise InvalidOrderCategoryError(
+                "Only Maintenance-category orders can create a PM Scope "
+                "Template (Operational orders have no maintenance type).")
+        name = (name or "").strip()
+        if not name:
+            raise ScopeValidationError("name is required.")
+        if not order.checklist_items:
+            raise InvalidOrderStateError(
+                "This order has no activities -- save some scope lines "
+                "before saving as a template.")
+        tmpl = PMScopeTemplate(
+            maintenance_type_id=order.maintenance_type_id,
+            name=name, description=description or None,
+            pm_schedule_id=None)
+        db.session.add(tmpl)
+        for item in sorted(order.checklist_items,
+                           key=lambda i: (i.sort_order or 0, i.id or 0)):
+            tmpl.items.append(PMScopeItem(
+                # activity_code is nullable in PMScopeItem as of the
+                # mo_phase_b migration; preserve None for manual lines.
+                activity_code=item.activity_code or None,
+                activity_description=item.activity_description,
+                sort_order=item.sort_order or 0,
+                standard_labor_hours=None,
+                estimated_cost=None,
+                required_parts=None,
+                vendor_recommendation=None))
+        db.session.commit()
+        return tmpl
+
     def toggle_checklist_item(self, item_id: int, done: bool, user):
         item = db.session.get(MaintenanceChecklistItem, item_id)
         order = item.order

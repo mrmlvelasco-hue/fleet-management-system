@@ -681,6 +681,36 @@ def update_maintenance_order(api_user, oid):
     return jsonify(_order_json(order, detail=True))
 
 
+@bp.route("/maintenance-orders/<int:oid>/save-as-template", methods=["POST"])
+@api_auth_required("pmscopetemplate.create")
+def save_mo_scope_as_template(api_user, oid):
+    """Promote this order's Scope of Work to a new PM Scope Template.
+
+    Body: {"name": str, "description"?: str}
+    Returns 201 with the new template JSON.
+    Requires pmscopetemplate.create (same as creating a template directly).
+    Only works for MAINTENANCE-category orders; 400 for Operational.
+    """
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService, InvalidOrderCategoryError,
+        InvalidOrderStateError, ScopeValidationError)
+    from app.modules.api.pm_config import _scope_json
+    p = request.get_json(silent=True) or {}
+    name = (p.get("name") or "").strip()
+    if not name:
+        return _validation("name is required.", "name")
+    try:
+        tmpl = MaintenanceOrderService().save_scope_as_template(
+            oid, name=name, description=p.get("description") or None)
+    except (InvalidOrderCategoryError, ScopeValidationError) as e:
+        return _validation(str(e), "name")
+    except InvalidOrderStateError as e:
+        if "not found" in str(e).lower():
+            return _not_found()
+        return _validation(str(e), "items")
+    return jsonify(_scope_json(tmpl, detail=True)), 201
+
+
 @bp.route("/maintenance-orders/<int:oid>/scope", methods=["PUT"])
 @api_auth_required("maintenanceorder.update")
 def replace_maintenance_order_scope(api_user, oid):

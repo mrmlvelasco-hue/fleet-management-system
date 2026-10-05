@@ -56,18 +56,26 @@ class NotificationEngine:
         return []
 
     def _send_in_app(self, user: User, event_name: str, instance) -> None:
-        from app.core.reference_resolver import get_document_number
-        # Confirmed real bug: this used to build "MO #49" directly from
-        # document_type.code + the raw reference_id, bypassing
-        # get_document_number() entirely -- which already exists and
-        # already resolves the real document number (MO-2026-000049)
-        # everywhere else in the app. A recipient had no way to tell
-        # this short-lived id apart from the number printed on the
-        # actual document.
+        """Write an InAppNotification row. The message now shows the real
+        document number (e.g. MO-2026-000051) instead of the raw
+        reference_id, and a one-line description so the recipient
+        understands the document without opening it."""
+        from app.core.reference_resolver import get_document_number, get_description
         doc_number = get_document_number(
             instance.reference_table, instance.reference_id)
-        title = f"Document {event_name.replace('_', ' ').title()}"
-        message = f"{doc_number} - {event_name}"
+        description = get_description(
+            instance.reference_table, instance.reference_id)
+        doc_type = (instance.document_type.code
+                    if getattr(instance, "document_type", None) else
+                    instance.reference_table)
+        event_label = event_name.replace("_", " ").title()
+        # Human-readable title: "<DocType>: <Event>" -- e.g. "MO: Returned"
+        title = f"{doc_type}: {event_label}"
+        # One-line message: "<document_number> — <description> [event]"
+        parts = [doc_number]
+        if description:
+            parts.append(description)
+        message = " — ".join(parts) + f" [{event_label}]"
         notif = InAppNotification(
             user_id=user.id, title=title, message=message,
             event_code=event_name,
@@ -98,8 +106,10 @@ class NotificationEngine:
         from app.core.reference_resolver import get_document_number
         doc_number = get_document_number(
             instance.reference_table, instance.reference_id)
+        doc_type = (instance.document_type.code
+                    if getattr(instance, "document_type", None) else "")
         subject = (f"[FMS] {event_name.replace('_', ' ').title()} - "
-                  f"{doc_number}").strip()
+                   f"{doc_type} {doc_number}").strip()
         db.session.add(EmailOutbox(
             to_email=user.email, to_user_id=user.id, subject=subject[:255],
             event_code=event_name,
@@ -158,3 +168,6 @@ def register_notification_hooks() -> None:
     _subscribers.append(
         lambda event_name, instance: engine.dispatch(event_name, instance))
     _HOOKS_REGISTERED = True
+
+# Alias so callers can import by either name.
+NotificationEngineService = NotificationEngine

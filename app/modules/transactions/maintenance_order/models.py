@@ -243,6 +243,25 @@ class MaintenanceOrder(db.Model, BaseModel):
         cascade="all, delete-orphan")
 
     @property
+    def notification_description(self) -> str:
+        """One-line summary for notification messages and email subjects.
+        Shows the maintenance discipline and the vehicle's identifying
+        plate or conduction number, so the recipient understands what
+        the MO is about before opening it."""
+        type_name = (getattr(self.maintenance_type, "name", None)
+                     or getattr(self.transaction_type, "name", None)
+                     or self.order_category or "Maintenance Order")
+        vehicle = self.vehicle
+        if vehicle is None:
+            return type_name
+        plate = (getattr(vehicle, "plate_number", None)
+                 or getattr(vehicle, "conduction_number", None) or "")
+        brand = getattr(vehicle, "brand", "") or ""
+        model = getattr(vehicle, "model", "") or ""
+        vehicle_label = " ".join(filter(None, [brand, model, plate])).strip()
+        return " · ".join(filter(None, [type_name, vehicle_label]))
+
+    @property
     def scope_of_work_lines(self) -> list:
         """The order's Scope of Work as plain {code, description} dicts,
         pm2..pm9 tokens resolved against this order's vehicle -- the same

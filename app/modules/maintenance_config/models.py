@@ -138,7 +138,8 @@ class PMScopeItem(db.Model, BaseModel):
     __tablename__ = "pm_scope_items"
     template_id = db.Column(db.Integer, db.ForeignKey("pm_scope_templates.id"),
                             nullable=False, index=True)
-    activity_code = db.Column(db.String(40), nullable=False)
+    # nullable=True: save-as-template from an MO may have code=None lines.
+    activity_code = db.Column(db.String(40), nullable=True)
     activity_description = db.Column(db.String(255), nullable=False)
     standard_labor_hours = db.Column(db.Numeric(6, 2), nullable=True)
     estimated_cost = db.Column(db.Numeric(18, 2), nullable=True)

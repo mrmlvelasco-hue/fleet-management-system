@@ -1362,6 +1362,59 @@ def attachments_backfill_from_disk(dry_run):
         click.echo("\nRe-run WITHOUT --dry-run to actually write the data.")
 
 
+notifications_cli = AppGroup("notifications",
+                             help="In-app notification maintenance commands.")
+
+
+@notifications_cli.command("backfill-document-numbers")
+@with_appcontext
+def notifications_backfill_document_numbers():
+    """Replace raw reference-id messages with real document numbers.
+
+    In-app notification rows created before the engine fix contain
+    messages like "MO #51 - submitted", where "#51" is the raw database
+    id. This command updates them to use the real document number
+    (MO-2026-000051) that was already stored on the document at that
+    time, so the notification history is readable.
+
+    The pattern matched is "<table_code> #<id>" anywhere in the message.
+    Rows whose message already contains the real document number, or
+    where get_document_number() cannot resolve the number (very old
+    drafts, deleted records), are left unchanged.
+
+    Safe to run more than once: rows already updated are skipped.
+    Print a summary to stdout.
+    """
+    import re
+    from app.extensions import db
+    from app.modules.system_admin.models import InAppNotification
+    from app.core.reference_resolver import get_document_number
+
+    pattern = re.compile(r'(\S+) #(\d+)')
+    rows = (InAppNotification.query
+            .filter(InAppNotification.reference_id.isnot(None))
+            .filter(InAppNotification.reference_table.isnot(None))
+            .all())
+    updated = skipped = 0
+    for row in rows:
+        m = pattern.search(row.message)
+        if not m:
+            skipped += 1
+            continue
+        token = f"#{row.reference_id}"
+        if token not in row.message:
+            skipped += 1
+            continue
+        real = get_document_number(row.reference_table, row.reference_id)
+        if not real or real.startswith(row.reference_table):
+            skipped += 1
+            continue
+        row.message = row.message.replace(token, real, 1)
+        updated += 1
+    db.session.commit()
+    print(f"Notifications backfill: {updated} updated, {skipped} skipped.")
+
+
 def register_cli(app):
     app.cli.add_command(ocr_check_command)
     app.cli.add_command(attachments_cli)
@@ -1371,6 +1424,7 @@ def register_cli(app):
     app.cli.add_command(pm_cli)
     app.cli.add_command(registration_cli)
     app.cli.add_command(report_cli)
+    app.cli.add_command(notifications_cli)
     from app.modules.master_data.vehicle.backfill_cli import (
         register_vehicle_backfill_cli)
     register_vehicle_backfill_cli(app)

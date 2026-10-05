@@ -500,9 +500,17 @@ def dashboard_awaiting_approval(api_user):
     returned_items = []
     for inst in returned_rows:
         labels = get_worklist_labels(inst.reference_table, inst.reference_id)
+        ret_doc_num = get_document_number(
+            inst.reference_table, inst.reference_id)
+        # Same filter as for approval tasks: skip the generic
+        # "<table> #<id>" fallback that is noise on the dashboard.
+        ret_doc_num = (
+            ret_doc_num
+            if ret_doc_num and not ret_doc_num.startswith(inst.reference_table)
+            else None)
         returned_items.append({
             "task_id": None,
-            "document_number": None,
+            "document_number": ret_doc_num,
             "document_type": (inst.document_type.name
                               if getattr(inst, "document_type", None) else None),
             "plate_number": labels.get("plate_number"),
