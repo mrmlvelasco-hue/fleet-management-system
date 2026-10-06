@@ -909,6 +909,11 @@ def list_mo_transaction_types(api_user):
                 "name": t.name,
                 "order_category": t.order_category,
                 "group": t.group,
+                # PREVENTIVE | CORRECTIVE | PREDICTIVE | null. The New MO
+                # form needs it to know whether the vehicle's due PM
+                # package is relevant: a Repainting (CORRECTIVE) order
+                # must not be pre-filled with a Tire Replacement PM.
+                "maintenance_class": t.maintenance_class,
                 "print_template": resolve_print_template(t),
                 "print_label": PRINT_TEMPLATE_LABELS.get(
                     resolve_print_template(t), "Work Order"),
@@ -1337,6 +1342,7 @@ def maintenance_order_new_prefill(api_user):
     # just because the vehicle has one due.
     mt_category = None
     if maintenance_type_id:
+        from app.extensions import db
         from app.modules.master_data.reference.models import MaintenanceType
         mt = db.session.get(MaintenanceType, maintenance_type_id)
         mt_category = mt.category if mt else None
