@@ -249,6 +249,12 @@ def _order_json(o, *, detail=False):
         "maintenance_type_id": o.maintenance_type_id,
         "maintenance_type": (
             o.maintenance_type.name if o.maintenance_type else None),
+        # category code from the MaintenanceType master (e.g. "PM", "CM",
+        # "NOR") -- used by the React detail header to label the panel
+        # title and sub-header body line correctly without hardcoding
+        # "Preventive Maintenance Service Plan" on every non-operational MO.
+        "maintenance_type_category": (
+            o.maintenance_type.category if o.maintenance_type else None),
         "transaction_type_id": o.transaction_type_id,
         "transaction_type": (
             o.transaction_type.name if o.transaction_type else None),

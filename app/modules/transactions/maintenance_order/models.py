@@ -67,6 +67,18 @@ class TransactionType(db.Model, BaseModel):
     # NULL is meaningful: an OPERATIONAL type has no maintenance class.
     maintenance_class = db.Column(db.String(20), nullable=True)
     sort_order = db.Column(db.Integer, default=0, nullable=False)
+    # When set, new MOs created with this transaction type pre-fill their
+    # Scope of Work from this PM Scope Template. NULL = no default; the
+    # user picks one in the New MO form or leaves it empty.
+    # ON DELETE SET NULL: deactivating a template does not cascade into
+    # the transaction type record -- the FK just becomes NULL and the
+    # next MO opens with no pre-fill until an admin reassigns it.
+    default_scope_template_id = db.Column(
+        db.Integer,
+        db.ForeignKey("pm_scope_templates.id", ondelete="SET NULL"),
+        nullable=True)
+    default_scope_template = db.relationship(
+        "PMScopeTemplate", foreign_keys=[default_scope_template_id])
 
 
 class MaintenanceOrder(db.Model, BaseModel):

@@ -132,10 +132,64 @@ def resolve_print_template(tt):
     return "maintenanceorder_print"
 
 class TransactionTypeService:
-    def create(self, *, code, name, order_category, group=None, sort_order=0):
+    def create(self, *, code, name, order_category, group=None,
+               sort_order=0, default_scope_template_id=None):
         tt = TransactionType(code=code, name=name, order_category=order_category,
-                             group=group, sort_order=sort_order)
+                             group=group, sort_order=sort_order,
+                             default_scope_template_id=default_scope_template_id)
         db.session.add(tt)
+        db.session.commit()
+        return tt
+
+    def update(self, tt_id, *, name=None, order_category=None, group=None,
+               sort_order=None, maintenance_class=None,
+               default_scope_template_id="__unset__"):
+        """Update editable fields on a TransactionType.
+
+        default_scope_template_id uses a sentinel default (__unset__)
+        so the caller can explicitly pass None (clear the template) vs
+        not passing it at all (leave unchanged).
+        """
+        from app.modules.maintenance_config.models import PMScopeTemplate
+        tt = self.get_by_id(tt_id)
+        if tt is None:
+            raise InvalidOrderStateError("Transaction type not found.")
+        if name is not None:
+            tt.name = name.strip()
+        if order_category is not None:
+            if order_category not in ("MAINTENANCE", "OPERATIONAL"):
+                raise InvalidOrderCategoryError(
+                    "order_category must be MAINTENANCE or OPERATIONAL.")
+            tt.order_category = order_category
+        if group is not None:
+            tt.group = group or None
+        if sort_order is not None:
+            tt.sort_order = int(sort_order)
+        if maintenance_class is not None:
+            valid = {"PREVENTIVE", "CORRECTIVE", "PREDICTIVE", None, ""}
+            mc = maintenance_class or None
+            if mc and mc not in valid:
+                raise InvalidOrderCategoryError(
+                    "maintenance_class must be PREVENTIVE, CORRECTIVE, "
+                    "PREDICTIVE, or empty.")
+            tt.maintenance_class = mc or None
+        if default_scope_template_id != "__unset__":
+            if default_scope_template_id is not None:
+                tmpl = db.session.get(PMScopeTemplate,
+                                      default_scope_template_id)
+                if tmpl is None or not tmpl.is_active:
+                    raise InvalidOrderStateError(
+                        "That PM Scope Template does not exist or is "
+                        "inactive.")
+                if (tt.order_category == "OPERATIONAL"
+                        or (tt.order_category == "MAINTENANCE"
+                            and tmpl.maintenance_type_id is None)):
+                    pass  # generic templates have no type constraint
+                # Template's maintenance type must match the MO's type
+                # when this TT is used. Not enforced here since the TT
+                # doesn't have a maintenance_type itself -- the check
+                # happens at MO-create time.
+            tt.default_scope_template_id = default_scope_template_id
         db.session.commit()
         return tt
 

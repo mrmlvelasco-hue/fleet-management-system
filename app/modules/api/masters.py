@@ -800,13 +800,17 @@ def deactivate_registration_template(api_user, tid):
 # ── MO Transaction Types (admin master) ─────────────────────────────────────
 
 def _mott_json(t):
+    dst = t.default_scope_template
     return {
         "id": t.id,
         "code": t.code,
         "name": t.name,
         "order_category": t.order_category,
         "group": t.group,
+        "maintenance_class": getattr(t, "maintenance_class", None),
         "is_active": bool(t.is_active),
+        "default_scope_template_id": t.default_scope_template_id,
+        "default_scope_template_name": dst.name if dst else None,
     }
 
 
@@ -842,6 +846,47 @@ def create_mo_transaction_type(api_user):
         group=(p.get("group") or None),
         sort_order=int(p.get("sort_order") or 0))
     return jsonify(_mott_json(t)), 201
+
+
+@bp.route("/mo-transaction-types/admin/<int:tt_id>", methods=["PUT", "PATCH"])
+@api_auth_required("motransactiontype.update")
+def update_mo_transaction_type(api_user, tt_id):
+    """Update editable fields on a transaction type.
+
+    All fields optional -- send only what changed.
+    default_scope_template_id:
+      - an integer id  → set that template as the default
+      - null / 0       → clear the default (no pre-fill)
+      - absent from body → leave unchanged
+    """
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService, InvalidOrderCategoryError,
+        InvalidOrderStateError)
+    p = request.get_json(silent=True) or {}
+    kwargs = {}
+    for field in ("name", "order_category", "group", "maintenance_class"):
+        if field in p:
+            kwargs[field] = p[field]
+    if "sort_order" in p:
+        try:
+            kwargs["sort_order"] = int(p["sort_order"])
+        except (TypeError, ValueError):
+            return _validation("sort_order must be an integer.", "sort_order")
+    if "default_scope_template_id" in p:
+        raw = p["default_scope_template_id"]
+        try:
+            kwargs["default_scope_template_id"] = (
+                int(raw) if raw not in (None, "", 0, "0") else None)
+        except (TypeError, ValueError):
+            return _validation("default_scope_template_id must be an integer "
+                               "or null.", "default_scope_template_id")
+    try:
+        tt = TransactionTypeService().update(tt_id, **kwargs)
+    except InvalidOrderStateError as e:
+        return _not_found() if "not found" in str(e).lower() else _conflict(str(e))
+    except InvalidOrderCategoryError as e:
+        return _validation(str(e), "order_category")
+    return jsonify(_mott_json(tt))
 
 
 @bp.route("/mo-transaction-types/admin/<int:tt_id>/deactivate", methods=["POST"])

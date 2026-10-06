@@ -31,6 +31,7 @@ for _code, _desc in [
     ("pmprofile.view", "View PMS Profiles"),
     ("motransactiontype.view", "View MO Transaction Types"),
     ("motransactiontype.create", "Create MO Transaction Types"),
+    ("motransactiontype.update", "Edit MO Transaction Types"),
     ("motransactiontype.delete", "Deactivate MO Transaction Types"),
 ]:
     _m, _a = _code.split(".")
