@@ -1369,10 +1369,21 @@ def maintenance_order_new_prefill(api_user):
     else:
         templates = PMScopeTemplateService().list_applicable_for_vehicle(
             vehicle, maintenance_type_id=maintenance_type_id)
-        rec = PMScopeTemplateService().get_next_due_recommendation(
-            vehicle, maintenance_type_id=maintenance_type_id)
-        due_template = PMScopeTemplateService().get_next_due_scope_template(
-            vehicle, maintenance_type_id=maintenance_type_id)
+        if maintenance_type_id:
+            rec = PMScopeTemplateService().get_next_due_recommendation(
+                vehicle, maintenance_type_id=maintenance_type_id)
+            due_template = PMScopeTemplateService().get_next_due_scope_template(
+                vehicle, maintenance_type_id=maintenance_type_id)
+        else:
+            # No type chosen yet: compare every PM profile on the vehicle
+            # and offer the most urgent package, not whichever profile the
+            # database happens to return first.
+            rec = PMScopeTemplateService().get_most_urgent_recommendation(
+                vehicle)
+            pkg = rec.get("recommended_package")
+            due_template = (pkg.scope_templates[0]
+                            if pkg is not None and pkg.scope_templates
+                            else None)
 
     return jsonify({
         "vehicle": {

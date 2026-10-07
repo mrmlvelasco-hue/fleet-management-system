@@ -639,6 +639,50 @@ class PMScopeTemplateService:
             return None
         return pkg.scope_templates[0]
 
+    def get_most_urgent_recommendation(self, vehicle):
+        """The most urgent PM package across EVERY PM profile that applies
+        to this vehicle (Tire Replacement, PMS, Aircon, Battery...).
+
+        get_next_due_recommendation(vehicle) with no Maintenance Type
+        looks only at the first applicable schedule the database returns
+        (recommend() uses schedules[0], unordered) -- in practice the
+        profile created first. That auto-selected TIL-120's Tire
+        Replacement package, due only at 45,000 km / 2028, ahead of
+        whatever was actually due. Used by the New MO prefill only;
+        recommend() is left as it is because other screens share it.
+
+        Order: OVERDUE, DUE, UPCOMING, GOOD; ties -> earliest due date,
+        then fewest km remaining. A vehicle with a single profile gets
+        exactly the old answer.
+        """
+        from datetime import date as _date
+        from app.core.maintenance.due_calculation_service import (
+            PMDueCalculationService)
+        schedules = PMDueCalculationService()._applicable_schedules(
+            vehicle, None)
+        type_ids = []
+        for s in schedules:
+            if s.maintenance_type_id not in type_ids:
+                type_ids.append(s.maintenance_type_id)
+        if len(type_ids) <= 1:
+            return self.get_next_due_recommendation(
+                vehicle, type_ids[0] if type_ids else None)
+
+        rank = {"OVERDUE": 0, "DUE": 1, "UPCOMING": 2, "GOOD": 3}
+        current_km = vehicle.current_odometer or 0
+        best, best_key = None, None
+        for mt_id in type_ids:
+            rec = self.get_next_due_recommendation(vehicle, mt_id)
+            km_left = (rec["due_odometer"] - current_km
+                       if rec.get("due_odometer") is not None
+                       else float("inf"))
+            key = (rank.get(rec.get("status"), 9),
+                   rec.get("due_date") or _date.max,
+                   km_left)
+            if best_key is None or key < best_key:
+                best, best_key = rec, key
+        return best
+
     def get_next_due_recommendation(self, vehicle, maintenance_type_id=None):
         """Full structured recommendation (package, status, due-by, due
         odometer/date, reason) for the vehicle's next PM package -- used
