@@ -44,9 +44,13 @@ def _vehicle_json(v, include_pm=False):
                            if v.assigned_driver else None),
     }
     if include_pm:
-        from app.core.maintenance.pm_package_recommendation_service import (
-            PMPackageRecommendationService)
-        rec = PMPackageRecommendationService().recommend(v)
+        # Most urgent across ALL of the vehicle's PM profiles (tire, PMS,
+        # aircon...). recommend(v) alone looks only at the first schedule
+        # the database returns (schedules[0], unordered), so a vehicle
+        # with a due PMS reported its not-yet-due tire package instead.
+        from app.modules.maintenance_config.service import (
+            PMScopeTemplateService)
+        rec = PMScopeTemplateService().get_most_urgent_recommendation(v)
         pkg = rec.get("recommended_package")
         data["pm_status"] = {
             "status": rec["status"],

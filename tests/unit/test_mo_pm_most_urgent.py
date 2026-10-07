@@ -71,7 +71,8 @@ def env(db):
     _db.session.add_all([role, user])
     _db.session.commit()
     return {"vehicle": vehicle, "tire": tire, "pms": pms,
-            "tire_t": tire_t, "pms_t": pms_t}
+            "tire_t": tire_t, "pms_t": pms_t,
+            "tire_pkg": tire_pkg, "pms_pkg": pms_pkg}
 
 
 def _prefill(client, env, mt_id=None):
@@ -125,3 +126,23 @@ def test_status_beats_an_earlier_looking_date(client, db, env):
     rec = _prefill(client, env)
     assert rec["status"] == "DUE"
     assert rec["scope_template_id"] == env["pms_t"].id
+
+
+
+# ── the vehicle's own PM status (pm-status endpoint, odometer response) ──
+
+def test_vehicle_pm_status_reports_the_most_urgent_package(client, db, env):
+    """GET /vehicles/<id>/pm-status (and the pm_status returned after an
+    odometer reading) used recommend(vehicle) -> schedules[0], i.e. the
+    first profile in database order. It must report what is actually most
+    urgent."""
+    r = client.post("/api/v1/auth/token",
+                    json={"username": "muuser", "password": "secret123"})
+    hdr = {"Authorization":
+           f"Bearer {json.loads(r.get_data(as_text=True))['access_token']}"}
+    r = client.get(f"/api/v1/vehicles/{env['vehicle'].id}/pm-status",
+                   headers=hdr)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["status"] == "DUE"
+    assert body["recommended_package_id"] == env["pms_pkg"].id
