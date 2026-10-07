@@ -909,6 +909,19 @@ def list_mo_transaction_types(api_user):
                 "name": t.name,
                 "order_category": t.order_category,
                 "group": t.group,
+                # PREVENTIVE | CORRECTIVE | PREDICTIVE | null. The New MO
+                # form needs it to know whether the vehicle's due PM
+                # package is relevant: a Repainting (CORRECTIVE) order
+                # must not be pre-filled with a Tire Replacement PM.
+                "maintenance_class": t.maintenance_class,
+                # Template that pre-fills the Scope of Work when this
+                # Transaction Type is chosen (System Administration). An
+                # inactive template is reported as none, so a retired
+                # checklist is never pre-filled onto a new order.
+                "default_scope_template_id": (
+                    t.default_scope_template_id
+                    if t.default_scope_template is not None
+                    and t.default_scope_template.is_active else None),
                 "print_template": resolve_print_template(t),
                 "print_label": PRINT_TEMPLATE_LABELS.get(
                     resolve_print_template(t), "Work Order"),
@@ -1330,12 +1343,36 @@ def maintenance_order_new_prefill(api_user):
 
     maintenance_type_id = request.args.get("maintenance_type_id", type=int)
 
-    templates = PMScopeTemplateService().list_applicable_for_vehicle(
-        vehicle, maintenance_type_id=maintenance_type_id)
-    rec = PMScopeTemplateService().get_next_due_recommendation(
-        vehicle, maintenance_type_id=maintenance_type_id)
-    due_template = PMScopeTemplateService().get_next_due_scope_template(
-        vehicle, maintenance_type_id=maintenance_type_id)
+    # Only look up PM recommendations when the maintenance type is
+    # actually PM-category. NOR (Normal Work Order) and CM (Corrective)
+    # maintenance types should never auto-select a PM scope template --
+    # a Repainting order must not inherit a Tire Replacement PM package
+    # just because the vehicle has one due.
+    mt_category = None
+    if maintenance_type_id:
+        from app.extensions import db
+        from app.modules.master_data.reference.models import MaintenanceType
+        mt = db.session.get(MaintenanceType, maintenance_type_id)
+        mt_category = mt.category if mt else None
+
+    is_pm_type = (mt_category or "").upper() in ("PM", "PREVENTIVE", "")
+    # When no maintenance_type_id is supplied yet (form just loaded),
+    # we still show the recommendation as a hint, but we don't force
+    # it if the user has already picked a non-PM type.
+    if maintenance_type_id and not is_pm_type:
+        rec = {"status": "N/A", "reason": "Not a PM type", "due_by": None,
+               "due_odometer": None, "due_date": None,
+               "beyond_defined_cycle": False}
+        due_template = None
+        templates = PMScopeTemplateService().list_applicable_for_vehicle(
+            vehicle, maintenance_type_id=maintenance_type_id)
+    else:
+        templates = PMScopeTemplateService().list_applicable_for_vehicle(
+            vehicle, maintenance_type_id=maintenance_type_id)
+        rec = PMScopeTemplateService().get_next_due_recommendation(
+            vehicle, maintenance_type_id=maintenance_type_id)
+        due_template = PMScopeTemplateService().get_next_due_scope_template(
+            vehicle, maintenance_type_id=maintenance_type_id)
 
     return jsonify({
         "vehicle": {

@@ -607,6 +607,23 @@ class PMScopeTemplateService:
                 if tmpl.id not in seen_ids and tmpl.is_active:
                     seen_ids.add(tmpl.id)
                     results.append(tmpl)
+        # Generic templates -- no PM schedule attached, matched by
+        # Maintenance Type only (the model's documented fallback). This is
+        # what "Save as Template" on a Maintenance Order creates; without
+        # this they existed in Configuration but could never be picked on
+        # a new order. Only once a Maintenance Type is chosen: listing
+        # every generic template of every type would bring back the
+        # "unrelated template on this vehicle" problem fixed above.
+        if maintenance_type_id:
+            generics = (PMScopeTemplate.query
+                        .filter_by(maintenance_type_id=maintenance_type_id,
+                                   pm_schedule_id=None, is_active=True)
+                        .order_by(PMScopeTemplate.name)
+                        .all())
+            for tmpl in generics:
+                if tmpl.id not in seen_ids:
+                    seen_ids.add(tmpl.id)
+                    results.append(tmpl)
         return results
 
     def get_next_due_scope_template(self, vehicle, maintenance_type_id=None):
