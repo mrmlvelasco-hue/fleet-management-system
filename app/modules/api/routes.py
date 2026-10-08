@@ -23,7 +23,8 @@ from app.extensions import db
 from app.modules.api.auth import api_auth_required, issue_token
 from app.modules.api.pagination import default_page_size
 from app.modules.api.session_settings import (
-    session_timeout_minutes, session_warning_minutes)
+    session_timeout_minutes, session_warning_minutes,
+    session_remember_policy, refresh_token_lifetime, ALWAYS_TIMEOUT)
 from app.core.security.password import verify_password
 
 bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
@@ -123,7 +124,8 @@ def auth_token():
 
     from app.modules.api.auth import (issue_refresh_token,
                                       set_refresh_cookie)
-    refresh, expires_at = issue_refresh_token(user)
+    refresh, expires_at = issue_refresh_token(
+        user, lifetime=refresh_token_lifetime())
     body = issue_token(user)
 
     # A native client asks for the refresh token in the BODY.
@@ -162,6 +164,13 @@ def auth_token():
     # Browser flow unchanged: the refresh token rides in an httpOnly
     # cookie and never appears in the body, so script can neither read
     # it nor replay it cross-site.
+    # ALWAYS_TIMEOUT: the cookie always carries the (short) token expiry,
+    # ticked or not, so a browser restart within the idle window still
+    # works and after it nothing does. "Remember me" no longer extends a
+    # session under this policy -- the login page offers "Remember my
+    # username" instead.
+    if session_remember_policy() == ALWAYS_TIMEOUT:
+        remember = True
     return set_refresh_cookie(response, refresh, expires_at,
                               remember=remember)
 
@@ -212,7 +221,8 @@ def auth_refresh():
     # active session never has to re-login on a fixed schedule. Rotation
     # matters MORE on a device, not less: the token sits on hardware
     # that gets lost, lent and resold.
-    refresh, expires_at = issue_refresh_token(user)
+    refresh, expires_at = issue_refresh_token(
+        user, lifetime=refresh_token_lifetime())
     body = issue_token(user)
 
     # Answered the way it was asked. A client that sent its token in the
@@ -224,6 +234,15 @@ def auth_refresh():
         return jsonify(body)
 
     return set_refresh_cookie(jsonify(body), refresh, expires_at)
+
+
+@bp.route("/auth/session-policy", methods=["GET"])
+def auth_session_policy():
+    """Public (no sign-in): the login page needs the policy BEFORE anyone
+    signs in, to label the checkbox ("Remember my username" under
+    ALWAYS_TIMEOUT, "Remember me on this device" under REMEMBER_EXTENDS).
+    Reveals nothing about any user."""
+    return jsonify({"session_remember_policy": session_remember_policy()})
 
 
 @bp.route("/auth/logout", methods=["POST"])
@@ -282,6 +301,10 @@ def me(api_user):
         # once per session already, no reason for a second round trip
         # to learn two numbers that rarely change.
         "session_timeout_minutes": session_timeout_minutes(),
+        # ALWAYS_TIMEOUT | REMEMBER_EXTENDS (System Parameters). The app
+        # keeps the refresh token alive while the user is active under
+        # ALWAYS_TIMEOUT.
+        "session_remember_policy": session_remember_policy(),
         "session_warning_minutes": session_warning_minutes(),
         # Always present, null when unlinked. A client forced to tell
         # "no assignee" from "this server predates the field app" by a

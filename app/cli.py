@@ -437,6 +437,11 @@ def _seed_system_parameters() -> None:
          "'you're about to be logged out' warning. Must be less than "
          "SESSION_TIMEOUT_MINUTES; an invalid value falls back "
          "automatically."),
+        ("SESSION_REMEMBER_POLICY", "ALWAYS_TIMEOUT", "STRING", "SECURITY",
+         "ALWAYS_TIMEOUT = sign in again after SESSION_TIMEOUT_MINUTES of "
+         "inactivity, even if the browser was closed ('Remember me' only "
+         "remembers the username). REMEMBER_EXTENDS = 'Remember me' keeps "
+         "the user signed in for up to 14 days."),
         ("MAX_FAILED_LOGIN_ATTEMPTS", "5", "INTEGER", "SECURITY",
          "Max failed login attempts before lockout"),
 

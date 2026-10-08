@@ -10,6 +10,14 @@ should not imply otherwise.
 Default TRUE, matching what the system has always done. Flipping the
 default would silently start signing everyone out daily -- a change
 nobody asked for.
+
+These tests describe SESSION_REMEMBER_POLICY = REMEMBER_EXTENDS, which
+is what the system always did and is still selectable in System
+Parameters. The default is now ALWAYS_TIMEOUT (sign in again after the
+idle timeout, browser closed or not -- what the client asked for); that
+policy is covered in test_session_remember_policy.py. The fixture below
+pins this file to REMEMBER_EXTENDS so every test here keeps meaning
+exactly what it says.
 """
 import json
 
@@ -23,6 +31,10 @@ from app.modules.user_management.models import User
 
 @pytest.fixture()
 def user(app):
+    from app.modules.system_admin.models import SystemParameter
+    db.session.add(SystemParameter(code="SESSION_REMEMBER_POLICY",
+                                   value="REMEMBER_EXTENDS",
+                                   data_type="STRING", group_name="SECURITY"))
     u = User(username="juan", email="juan@example.com",
              password_hash=hash_password("secret123"), is_active=True,
              mobile_access=True)

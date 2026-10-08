@@ -83,3 +83,43 @@ def session_warning_minutes() -> int:
 
     g._fms_session_warning = minutes
     return minutes
+
+
+# ── SESSION_REMEMBER_POLICY ─────────────────────────────────────────────
+#: A -- the refresh token lives exactly SESSION_TIMEOUT_MINUTES and is
+#: renewed on every refresh: a server-enforced idle window, so walking
+#: away longer than the timeout means signing in again even if the
+#: browser was closed (the idle timer in the page dies with the tab).
+ALWAYS_TIMEOUT = "ALWAYS_TIMEOUT"
+#: B -- previous behaviour: "Remember me" keeps the 14-day refresh cookie.
+REMEMBER_EXTENDS = "REMEMBER_EXTENDS"
+_POLICIES = (ALWAYS_TIMEOUT, REMEMBER_EXTENDS)
+
+
+def session_remember_policy() -> str:
+    """ALWAYS_TIMEOUT (default) or REMEMBER_EXTENDS. Missing, blank or
+    unknown values fall back to ALWAYS_TIMEOUT: a typo must fail safe,
+    never quietly open up 14-day sessions."""
+    cached = getattr(g, "_fms_remember_policy", None)
+    if cached is not None:
+        return cached
+    try:
+        value = str(SystemParameterService().get(
+            "SESSION_REMEMBER_POLICY", default=ALWAYS_TIMEOUT) or "")
+        policy = value.strip().upper()
+        if policy not in _POLICIES:
+            policy = ALWAYS_TIMEOUT
+    except Exception:
+        policy = ALWAYS_TIMEOUT
+    g._fms_remember_policy = policy
+    return policy
+
+
+def refresh_token_lifetime():
+    """How long a refresh token is valid under the current policy:
+    SESSION_TIMEOUT_MINUTES under ALWAYS_TIMEOUT, None (= the default
+    14 days) under REMEMBER_EXTENDS."""
+    from datetime import timedelta
+    if session_remember_policy() == ALWAYS_TIMEOUT:
+        return timedelta(minutes=session_timeout_minutes())
+    return None

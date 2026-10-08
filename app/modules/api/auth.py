@@ -125,8 +125,13 @@ REFRESH_TTL_DAYS = 14
 REFRESH_COOKIE_PATH = "/api/v1/auth"
 
 
-def issue_refresh_token(user: User) -> tuple:
+def issue_refresh_token(user: User, lifetime=None) -> tuple:
     """Returns (token, expires_at).
+
+    `lifetime` (a timedelta) overrides the default 14 days -- under
+    SESSION_REMEMBER_POLICY=ALWAYS_TIMEOUT it is SESSION_TIMEOUT_MINUTES,
+    which turns the refresh token into a server-enforced idle window
+    (see session_settings.refresh_token_lifetime).
 
     The jti makes every issued token unique. Without it, two tokens
     minted in the same second for the same user are BYTE-IDENTICAL --
@@ -145,7 +150,7 @@ def issue_refresh_token(user: User) -> tuple:
     reissuing anyone's credentials.
     """
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(days=REFRESH_TTL_DAYS)
+    expires_at = now + (lifetime or timedelta(days=REFRESH_TTL_DAYS))
     token = jwt.encode({
         "sub": str(user.id),
         "typ": "refresh",
