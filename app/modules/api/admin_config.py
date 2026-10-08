@@ -35,6 +35,8 @@ def _company_json(p):
             "logo_url": None,
             "logo_filename": None,
             "logo_filename": None,
+            "login_picture_url": None,
+            "login_picture_filename": None,
         }
     return {
         "id": p.id,
@@ -53,7 +55,17 @@ def _company_json(p):
                      if getattr(p, "logo_attachment_id", None) else None),
         "logo_filename": p.logo_filename,
         "logo_filename": p.logo_filename,
+        "login_picture_url": _login_picture_url(p),
+        "login_picture_filename": getattr(p, "login_picture_filename", None),
     }
+
+
+def _login_picture_url(company):
+    """Public URL of the uploaded login picture, or None for the default.
+    ?v=<attachment id> changes with every upload, so browsers fetch the
+    new picture instead of showing a cached old one."""
+    att_id = getattr(company, "login_picture_attachment_id", None) if company else None
+    return f"/api/v1/branding/login-picture?v={att_id}" if att_id else None
 
 
 @bp.route("/admin/company", methods=["GET"])
@@ -317,3 +329,110 @@ def company_logo(api_user):
     return send_file(BytesIO(data),
                      mimetype=att.mime_type or "image/png",
                      download_name=att.original_filename or "logo.png")
+
+
+
+# ── Login page picture ──────────────────────────────────────────────────
+#: A picture, not any attachment type the general allow-list accepts.
+_LOGIN_PICTURE_TYPES = (".jpg", ".jpeg", ".png")
+_LOGIN_PICTURE_MAX_BYTES = 3 * 1024 * 1024
+
+
+@bp.route("/admin/company/login-picture", methods=["POST"])
+@api_auth_required("company.update")
+def admin_login_picture_upload(api_user):
+    """Upload the picture shown on the right of the login page.
+
+    Stored through AttachmentService like the logo (same storage and
+    checks), but narrower: JPG/PNG only, at most 3 MB -- it is shown to
+    every visitor of the login page."""
+    from app.core.attachments.attachment_service import (
+        AttachmentError, AttachmentService)
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return jsonify({"error": "validation_error",
+                        "message": "Choose a picture to upload."}), 400
+    if not file.filename.lower().endswith(_LOGIN_PICTURE_TYPES):
+        return jsonify({"error": "validation_error",
+                        "message": "The login picture must be a JPG or PNG image."}), 400
+    data = file.read()
+    if len(data) > _LOGIN_PICTURE_MAX_BYTES:
+        return jsonify({"error": "validation_error",
+                        "message": "The login picture must be 3 MB or smaller."}), 400
+    file.stream.seek(0)
+
+    company = CompanyProfileService().get()
+    if company is None:
+        return jsonify({"error": "validation_error",
+                        "message": ("Set up the Company Profile before uploading "
+                                    "a login picture.")}), 400
+    try:
+        att = AttachmentService().upload(file, "company_profiles",
+                                         company.id, user=api_user)
+    except AttachmentError as e:
+        return jsonify({"error": "validation_error", "message": str(e)}), 400
+
+    company.login_picture_attachment_id = att.id
+    company.login_picture_filename = att.original_filename or att.filename
+    db.session.commit()
+    return jsonify({"login_picture_url": _login_picture_url(company),
+                    "login_picture_filename": company.login_picture_filename}), 201
+
+
+@bp.route("/admin/company/login-picture", methods=["DELETE"])
+@api_auth_required("company.update")
+def admin_login_picture_clear(api_user):
+    """Restore the default login picture."""
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    company = CompanyProfileService().get()
+    if company is not None:
+        company.login_picture_attachment_id = None
+        company.login_picture_filename = None
+        db.session.commit()
+    return jsonify({"login_picture_url": None})
+
+
+def _active_login_picture():
+    from app.core.models.attachment import Attachment
+    from app.modules.system_admin.services.company_service import (
+        CompanyProfileService)
+    company = CompanyProfileService().get()
+    att_id = getattr(company, "login_picture_attachment_id", None) if company else None
+    if not att_id:
+        return company, None
+    att = db.session.get(Attachment, att_id)
+    if att is None or not att.is_active:
+        return company, None
+    return company, att
+
+
+@bp.route("/branding", methods=["GET"])
+def public_branding():
+    """PUBLIC (no sign-in): what the login page needs before anyone signs
+    in. Only the login picture's URL -- nothing about any user or record."""
+    company, att = _active_login_picture()
+    return jsonify({"login_picture_url": _login_picture_url(company) if att else None})
+
+
+@bp.route("/branding/login-picture", methods=["GET"])
+def public_login_picture():
+    """PUBLIC (no sign-in): the login picture itself -- and only that.
+    Served only if the stored file really is an image."""
+    from io import BytesIO
+    from flask import send_file
+    from app.core.attachments.attachment_service import AttachmentService
+    _, att = _active_login_picture()
+    if att is None or not (att.mime_type or "").startswith("image/"):
+        return jsonify({"error": "not_found",
+                        "message": "No login picture configured."}), 404
+    data = AttachmentService().get_bytes(att) or b""
+    resp = send_file(BytesIO(data), mimetype=att.mime_type,
+                     download_name=att.original_filename or "login-picture")
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    # The ?v= in the URL changes with every upload, so caching is safe.
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
