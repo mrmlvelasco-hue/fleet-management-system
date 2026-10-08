@@ -12,7 +12,9 @@ from sqlalchemy import event, inspect
 from app.extensions import db
 from app.core.models.audit_log import AuditLog
 
-_EXCLUDED_TABLES = {"audit_logs"}
+# user_preferences: personal display state (chart type...), not a business
+# record -- auditing it would add a row per chart click and bury history.
+_EXCLUDED_TABLES = {"audit_logs", "user_preferences"}
 _registered = False
 
 

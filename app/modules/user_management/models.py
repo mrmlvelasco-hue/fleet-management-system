@@ -184,3 +184,23 @@ class PasswordHistory(db.Model, BaseModel):
 @login_manager.user_loader
 def load_user(user_id: str):
     return db.session.get(User, int(user_id))
+
+
+
+class UserPreference(db.Model, BaseModel):
+    """A per-user UI preference (e.g. the dashboard's chart type).
+
+    Kept on the server so a choice follows the user to every device --
+    the mobile app renders the same screens. One row per (user, key);
+    the value is small JSON. Not a business record: excluded from the
+    audit trail (core/audit/audit_service._EXCLUDED_TABLES).
+    """
+    __tablename__ = "user_preferences"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "pref_key", name="uq_user_preference"),
+    )
+    user_id = db.Column(db.Integer,
+                        db.ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    pref_key = db.Column(db.String(80), nullable=False)
+    value_json = db.Column(db.Text, nullable=False)

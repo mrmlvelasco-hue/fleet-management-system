@@ -245,6 +245,59 @@ def auth_session_policy():
     return jsonify({"session_remember_policy": session_remember_policy()})
 
 
+# ── Per-user UI preferences ─────────────────────────────────────────────
+import json
+import re as _re
+
+_PREF_KEY = _re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
+#: A preference is a setting, not a document.
+_PREF_MAX_BYTES = 2000
+
+
+@bp.route("/me/preferences", methods=["GET"])
+@api_auth_required()
+def my_preferences(api_user):
+    """The caller's own UI preferences as {key: value}. Per user, on the
+    server, so a choice made on one device applies on every other (the
+    mobile app renders the same Dashboard)."""
+    from app.modules.user_management.models import UserPreference
+    out = {}
+    for p in UserPreference.query.filter_by(user_id=api_user.id).all():
+        try:
+            out[p.pref_key] = json.loads(p.value_json)
+        except ValueError:
+            continue        # a damaged row must not break the dashboard
+    return jsonify(out)
+
+
+@bp.route("/me/preferences/<pref_key>", methods=["PUT"])
+@api_auth_required()
+def set_my_preference(api_user, pref_key):
+    """Save one preference for the caller. Body: {"value": <any JSON>}."""
+    from app.modules.user_management.models import UserPreference
+    if not _PREF_KEY.match(pref_key or ""):
+        return jsonify({"error": "validation",
+                        "message": "Invalid preference key."}), 400
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or "value" not in payload:
+        return jsonify({"error": "validation",
+                        "message": "Body must be {\"value\": ...}."}), 400
+    value_json = json.dumps(payload["value"], separators=(",", ":"))
+    if len(value_json.encode("utf-8")) > _PREF_MAX_BYTES:
+        return jsonify({"error": "validation",
+                        "message": "Preference value is too large."}), 400
+    row = UserPreference.query.filter_by(
+        user_id=api_user.id, pref_key=pref_key).first()
+    if row is None:
+        row = UserPreference(user_id=api_user.id, pref_key=pref_key,
+                             value_json=value_json)
+        db.session.add(row)
+    else:
+        row.value_json = value_json
+    db.session.commit()
+    return jsonify({"key": pref_key, "value": payload["value"]})
+
+
 @bp.route("/auth/logout", methods=["POST"])
 def auth_logout():
     """Clear the refresh cookie.
