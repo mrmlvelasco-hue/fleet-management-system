@@ -37,8 +37,12 @@ def env(db):
     order = MaintenanceOrderService().create(
         vehicle_id=vehicle.id, maintenance_type_id=mt.id,
         scheduled_date=date.today(), user=None)
-    order.status = "COMPLETED"
-    order.completed_date = date.today()
+    # IN_PROGRESS, not COMPLETED: invoices are recorded while the work is
+    # under way; completing the order takes actual_cost from them and
+    # locks them (58f5fb1). This fixture marked the order COMPLETED and
+    # then added lines -- exactly what that rule refuses -- so the VAT /
+    # discount / summary arithmetic these tests exist for never ran.
+    order.status = "IN_PROGRESS"
     from app.extensions import db
     db.session.commit()
     return branch, vehicle, vendor, order
@@ -196,3 +200,24 @@ def test_multiple_invoices_per_maintenance_order(db, env):
     invoices = MaintenanceInvoiceService().list_for_order(order.id)
     assert len(invoices) == 2
     assert {i.vendor_id for i in invoices} == {vendor.id, vendor2.id}
+
+
+def test_a_completed_order_refuses_new_invoice_lines(db, env):
+    """Pins 58f5fb1: completing an MO takes actual_cost from its invoices
+    and locks them -- after that no line can be added. (The fixture now
+    uses an IN_PROGRESS order, so this rule needs its own test.)"""
+    from app.extensions import db as _db
+    from app.modules.transactions.maintenance_invoice.service import (
+        InvoiceLockedError)
+    branch, vehicle, vendor, order = env
+    inv = MaintenanceInvoiceService().create(
+        maintenance_order_id=order.id, vendor_id=vendor.id,
+        invoice_number="INV-LOCK-1", invoice_date=date.today(),
+        vat_type="VAT_EXCLUSIVE", vat_percentage=12, user=None)
+    order.status = "COMPLETED"
+    order.completed_date = date.today()
+    _db.session.commit()
+    with pytest.raises(InvoiceLockedError):
+        MaintenanceInvoiceService().add_line(
+            inv.id, part_description="Late part", expense_category="PARTS",
+            charged_to="COMPANY", quantity=1, unit_cost=100)

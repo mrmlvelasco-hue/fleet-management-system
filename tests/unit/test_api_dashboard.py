@@ -31,7 +31,12 @@ def dash_env(db):
 
     role = Role(name="Dashboard Role")
     role.permissions = Permission.query.filter(
-        Permission.code.in_(["vehicle.view", "maintenanceorder.view"])).all()
+        # reportpmscompliance.view: /dashboard/due-maintenance has required
+        # it since 9efbe4d (it was vehicle.view); the Dashboard hides the
+        # panel by the same rule. Gating pinned in
+        # test_due_maintenance_requires_the_pm_compliance_report_permission.
+        Permission.code.in_(["vehicle.view", "maintenanceorder.view",
+                             "reportpmscompliance.view"])).all()
     db.session.add(role)
 
     user = User(username="dashuser", email="dash@example.com",
@@ -539,3 +544,23 @@ def test_cost_trend_grouped_bad_branch_id_is_a_clean_400(db, client, dash_env):
         "/api/v1/dashboard/maintenance-cost-trend-grouped?branch_id=abc",
         _token(client))
     assert status == 400
+
+
+
+def test_due_maintenance_requires_the_pm_compliance_report_permission(
+        db, client, dash_env):
+    """Pins the deliberate gating from 9efbe4d: vehicle.view alone is not
+    enough -- the Due for Maintenance list is a report."""
+    from app.modules.user_management.models import Role, User
+    from app.core.security.password import hash_password
+    role = Role(name="No PM report")
+    role.permissions = Permission.query.filter(
+        Permission.code.in_(["vehicle.view"])).all()
+    u = User(username="noreport", email="noreport@e.com",
+             password_hash=hash_password("secret123"), is_active=True)
+    u.roles = [role]
+    db.session.add_all([role, u])
+    db.session.commit()
+    status, _ = _get(client, "/api/v1/dashboard/due-maintenance",
+                     _token(client, "noreport"))
+    assert status == 403

@@ -26,7 +26,11 @@ def panel_env(db):
 
     full = Role(name="Panel Full")
     full.permissions = Permission.query.filter(
-        Permission.code.in_(["vehicle.view", "fuel.view"])).all()
+        # reportregistrationexpiry.view: /dashboard/due-registration has
+        # required it since 9efbe4d (it was vehicle.view). Gating pinned in
+        # test_due_registration_requires_the_registration_report_permission.
+        Permission.code.in_(["vehicle.view", "fuel.view",
+                             "reportregistrationexpiry.view"])).all()
     fuelless = Role(name="Panel No Fuel")
     fuelless.permissions = Permission.query.filter(
         Permission.code.in_(["vehicle.view"])).all()
@@ -221,3 +225,13 @@ def test_due_registration_count_matches_the_summary_card(db, client, panel_env):
     _, summary = _get(client, "/api/v1/dashboard/summary", token)
     _, body = _get(client, "/api/v1/dashboard/due-registration", token)
     assert body["total"] == summary["registrations_expiring_count"]
+
+
+
+def test_due_registration_requires_the_registration_report_permission(
+        db, client, panel_env):
+    """Pins the deliberate gating from 9efbe4d: the fuel-less user has
+    vehicle.view only, which is not enough for this report panel."""
+    status, _ = _get(client, "/api/v1/dashboard/due-registration",
+                     _token(client, "nofuel"))
+    assert status == 403

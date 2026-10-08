@@ -34,6 +34,39 @@ def _worse(a: str, b: str) -> str:
     return a if _STATUS_RANK[a] >= _STATUS_RANK[b] else b
 
 
+def _most_specific_per_type(tiers, maintenance_type_id=None):
+    """Pick PM schedules from `tiers` (most specific first) PER
+    MAINTENANCE TYPE.
+
+    With a type given: the first tier that has that type wins (unchanged).
+    With no type (resolve every type at once): each type is taken from
+    the most specific tier that has it. Previously the first non-empty
+    tier won for ALL types together, so a type configured at a lower tier
+    vanished whenever another type matched higher -- e.g. Tire
+    Replacement (global / brand-model FK) never showed up on Vehicles Due
+    for Maintenance for vehicles whose PMS and Battery schedules matched
+    by make/model text. A whole tier is kept for a type (several packages
+    of one profile live together), and a directly assigned schedule
+    (tier 0) overrides only its own type.
+    """
+    if maintenance_type_id:
+        for tier in tiers:
+            hits = [s for s in tier if s.maintenance_type_id == maintenance_type_id]
+            if hits:
+                return hits
+        return []
+    result, seen = [], set()
+    for tier in tiers:
+        added = set()
+        for s in tier:
+            if s.maintenance_type_id in seen:
+                continue
+            result.append(s)
+            added.add(s.maintenance_type_id)
+        seen |= added
+    return result
+
+
 class _Prefetch:
     """In-memory snapshot of everything the due calculation needs.
 
@@ -195,18 +228,11 @@ class _Prefetch:
         return result
 
     def _resolve_schedules(self, vehicle, maintenance_type_id=None):
+        tiers = []
         if vehicle.pm_schedule_id:
             sched = self.schedules_by_id.get(vehicle.pm_schedule_id)
-            if sched and sched.is_active and (
-                    not maintenance_type_id or
-                    sched.maintenance_type_id == maintenance_type_id):
-                return [sched]
-
-        def _of_type(candidates):
-            if not maintenance_type_id:
-                return list(candidates)
-            return [s for s in candidates
-                   if s.maintenance_type_id == maintenance_type_id]
+            if sched and sched.is_active:
+                tiers.append([sched])
 
         # Vehicle does not have vehicle_brand_id / vehicle_model_id columns.
         # Resolve its stored brand/model text to the master-data FKs before
@@ -220,22 +246,14 @@ class _Prefetch:
         model_ids = self._model_ids_by_brand_name.get((brand_id, model_key), ()) if brand_id else ()
         model_id = model_ids[0] if model_ids else None
         if brand_id and model_id:
-            fk_matches = _of_type(self._by_fk.get((brand_id, model_id), ()))
-            if fk_matches:
-                return fk_matches
+            tiers.append(list(self._by_fk.get((brand_id, model_id), ())))
 
         key = ((vehicle.brand or "").strip().lower(),
               (vehicle.model or "").strip().lower())
-        make_model = _of_type(self._by_make_model.get(key, ()))
-        if make_model:
-            return make_model
-
-        type_matches = _of_type(
-            self._by_type_generic.get(vehicle.vehicle_type_id, ()))
-        if type_matches:
-            return type_matches
-
-        return _of_type(self._global_generic)
+        tiers.append(list(self._by_make_model.get(key, ())))
+        tiers.append(list(self._by_type_generic.get(vehicle.vehicle_type_id, ())))
+        tiers.append(list(self._global_generic))
+        return _most_specific_per_type(tiers, maintenance_type_id)
 
     def last_service_for(self, vehicle, maintenance_type_id):
         """In-memory equivalent of _last_service(), including migration-safe
@@ -346,12 +364,11 @@ class PMDueCalculationService:
         4. vehicle_type_id match
         5. Global schedule (vehicle_type_id AND make/model all NULL)
         """
+        tiers = []
         if vehicle.pm_schedule_id:
             sched = db.session.get(PMSchedule, vehicle.pm_schedule_id)
-            if sched and sched.is_active and (
-                    not maintenance_type_id or
-                    sched.maintenance_type_id == maintenance_type_id):
-                return [sched]
+            if sched and sched.is_active:
+                tiers.append([sched])
 
         base_query = PMSchedule.query.filter_by(is_active=True)
         if maintenance_type_id:
@@ -360,10 +377,8 @@ class PMDueCalculationService:
 
         brand_id, model_id = self._resolve_vehicle_brand_model_ids(vehicle)
         if brand_id and model_id:
-            fk_matches = base_query.filter_by(
-                vehicle_brand_id=brand_id, vehicle_model_id=model_id).all()
-            if fk_matches:
-                return fk_matches
+            tiers.append(base_query.filter_by(
+                vehicle_brand_id=brand_id, vehicle_model_id=model_id).all())
 
         make = (vehicle.brand or "").strip().lower()
         model = (vehicle.model or "").strip().lower()
@@ -372,19 +387,19 @@ class PMDueCalculationService:
             if s.vehicle_make and s.vehicle_model
             and s.vehicle_make.strip().lower() == make
             and s.vehicle_model.strip().lower() == model]
-        if make_model_matches:
-            return make_model_matches
+        tiers.append(make_model_matches)
 
         type_matches = base_query.filter_by(
             vehicle_type_id=vehicle.vehicle_type_id).all()
-        type_matches = [s for s in type_matches
-                       if not s.vehicle_make and not s.vehicle_model]
-        if type_matches:
-            return type_matches
+        tiers.append([s for s in type_matches
+                      if not s.vehicle_make and not s.vehicle_model])
 
         global_matches = base_query.filter_by(vehicle_type_id=None).all()
-        return [s for s in global_matches
-               if not s.vehicle_make and not s.vehicle_model]
+        tiers.append([s for s in global_matches
+                      if not s.vehicle_make and not s.vehicle_model])
+        # Same per-type rule as the batched _Prefetch -- see
+        # _most_specific_per_type.
+        return _most_specific_per_type(tiers, maintenance_type_id)
 
     def _last_service(self, vehicle_id: int, maintenance_type_id: int):
         order = (MaintenanceOrder.query

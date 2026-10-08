@@ -163,3 +163,56 @@ class TestDueListIncludesTires:
                 if d["vehicle"].id == rig["vehicle"].id}
         assert rig["tire"].id not in types
         assert rig["prev"].id in types
+
+
+class TestTheNonBatchedLookupAgrees:
+    """PMDueCalculationService._applicable_schedules -- the per-vehicle
+    lookup behind PM recommendations, the vehicle's PM status and the New
+    MO "most urgent package" -- had the same first-tier-wins flaw as the
+    batched _Prefetch used by the due list."""
+
+    def test_all_types_includes_a_lower_tier_type(self, db, rig):
+        schedules = PMDueCalculationService()._applicable_schedules(rig["vehicle"])
+        assert _type_ids(schedules) == {rig["prev"].id, rig["batt"].id,
+                                        rig["tire"].id}
+
+    def test_filtering_by_one_type_is_unchanged(self, db, rig):
+        only = PMDueCalculationService()._applicable_schedules(
+            rig["vehicle"], rig["batt"].id)
+        assert _type_ids(only) == {rig["batt"].id}
+
+
+class TestADirectlyAssignedScheduleOnlyOverridesItsOwnType:
+    """A schedule assigned to the vehicle (pm_schedule_id) wins for ITS
+    type, but must not hide every other type when all are resolved."""
+
+    @pytest.fixture()
+    def assigned(self, db, rig):
+        own = PMSchedule(maintenance_type_id=rig["prev"].id, trigger_mode="KM",
+                         interval_km=7000, is_active=True,
+                         vehicle_make="Toyota", vehicle_model="Vios")
+        db.session.add(own)
+        db.session.flush()
+        rig["vehicle"].pm_schedule_id = own.id
+        db.session.commit()
+        return own
+
+    @pytest.mark.parametrize("lookup", ["batched", "per_vehicle"])
+    def test_other_types_still_resolve(self, db, rig, assigned, lookup):
+        from app.core.maintenance.due_calculation_service import _Prefetch
+        schedules = (_Prefetch().applicable_schedules(rig["vehicle"])
+                     if lookup == "batched" else
+                     PMDueCalculationService()._applicable_schedules(rig["vehicle"]))
+        prev_rows = [s for s in schedules if s.maintenance_type_id == rig["prev"].id]
+        assert [s.id for s in prev_rows] == [assigned.id]      # assignment wins its type
+        assert {rig["batt"].id, rig["tire"].id} <= _type_ids(schedules)
+
+    @pytest.mark.parametrize("lookup", ["batched", "per_vehicle"])
+    def test_filtering_by_the_assigned_type_returns_only_it(
+            self, db, rig, assigned, lookup):
+        from app.core.maintenance.due_calculation_service import _Prefetch
+        schedules = (_Prefetch().applicable_schedules(rig["vehicle"], rig["prev"].id)
+                     if lookup == "batched" else
+                     PMDueCalculationService()._applicable_schedules(
+                         rig["vehicle"], rig["prev"].id))
+        assert [s.id for s in schedules] == [assigned.id]
