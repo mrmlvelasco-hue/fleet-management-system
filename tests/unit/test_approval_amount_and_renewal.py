@@ -46,10 +46,17 @@ def test_purchase_request_still_routes_on_amount(db):
     assert _svc()._approval_amount(_FakePR()) == Decimal("75000")
 
 
-def test_record_with_no_monetary_field_yields_none(db):
+def test_record_with_no_monetary_field_routes_as_zero(db):
+    """Was `... yields None` (09c62cc). dce7155 deliberately changed it to
+    0 so an operational document with no figure (Vehicle Assignment Memo,
+    transfer, disposal) matches a matrix whose range starts at 0.
+    ApprovalMatrixService.resolve() treats a missing amount as 0 too, and
+    a matrix with no minimum/maximum still matches 0 -- so documents
+    without any money field keep routing to their catch-all matrix."""
+    from decimal import Decimal
     class _NoMoney:
         pass
-    assert _svc()._approval_amount(_NoMoney()) is None
+    assert _svc()._approval_amount(_NoMoney()) == Decimal("0")
 
 
 def test_zero_cost_is_not_treated_as_missing(db):

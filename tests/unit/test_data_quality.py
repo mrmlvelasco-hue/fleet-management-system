@@ -42,10 +42,22 @@ def _only(db, *names, weights=None):
 
 
 def test_sync_registers_every_business_field(db, graded):
+    """Every Vehicle column outside EXCLUDED_FIELDS, exactly -- plus, since
+    ffa3b31 ("data quality can score vehicle attachments by document
+    type"), virtual attachment:<CODE> fields: a catch-all, the built-in
+    document types, and any document type added in Lookup Maintenance.
+    Those are not columns, so they are checked separately."""
     from app.modules.master_data.vehicle.models import Vehicle
+    from app.core.data_quality_service import (
+        ANY_ATTACHMENT, ATTACHMENT_PREFIX, DEFAULT_ATTACHMENT_TYPES)
     registered = {f.field_name for f in DataQualityField.query.all()}
+    columns = {n for n in registered if not n.startswith(ATTACHMENT_PREFIX)}
+    attachments = registered - columns
     expected = {c.name for c in Vehicle.__table__.columns} - EXCLUDED_FIELDS
-    assert registered == expected
+    assert columns == expected
+    assert ANY_ATTACHMENT in attachments
+    assert {ATTACHMENT_PREFIX + code for code, _ in DEFAULT_ATTACHMENT_TYPES} \
+        <= attachments
 
 
 def test_plumbing_columns_are_never_scoreable(db, graded):

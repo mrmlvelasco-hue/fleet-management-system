@@ -235,9 +235,9 @@ class PMScheduleService:
         checked with _validate_schedule BEFORE any row is touched, so
         one bad entry never leaves the series half-updated.
         """
-        existing = {s.cumulative_km: s for s in
-                   PMSchedule.query.filter_by(profile_code=profile_code).all()}
-        if not existing:
+        saved = (PMSchedule.query.filter_by(profile_code=profile_code)
+                 .order_by(PMSchedule.sequence_position, PMSchedule.id).all())
+        if not saved:
             raise InvalidScheduleError(f"No PMS Profile found for '{profile_code}'.")
         if not services:
             raise InvalidScheduleError("services must not be empty.")
@@ -247,9 +247,51 @@ class PMScheduleService:
                 trigger_mode, svc.get("interval_km") or svc.get("cumulative_km"),
                 shared_fields.get("interval_days"))
 
-        incoming_kms = {svc["cumulative_km"] for svc in services}
-        for km, sched in existing.items():
-            if km not in incoming_kms:
+        # Match each incoming service to a saved row; each saved row is
+        # claimed at most once. Keyed by cumulative_km alone, every
+        # calendar-only service (cumulative_km None) shared ONE key: all
+        # of them updated the same row and the other saved rows were
+        # never matched, so a service removed in the editor stayed put.
+        #   1. by id, when the client sends it (must belong here);
+        #   2. otherwise by cumulative_km (km-based services, as before);
+        #   3. otherwise calendar-only services pair with the saved
+        #      calendar-only rows in their saved order.
+        by_id = {r.id: r for r in saved}
+        plan = [None] * len(services)
+        claimed = set()
+        for i, svc in enumerate(services):
+            sid = svc.get("id")
+            if sid in (None, ""):
+                continue
+            try:
+                sid = int(sid)
+            except (TypeError, ValueError):
+                raise InvalidScheduleError(f"Invalid service id {sid!r}.")
+            if sid not in by_id:
+                raise InvalidScheduleError(
+                    f"Service {sid} is not part of PMS Profile '{profile_code}'.")
+            if sid in claimed:
+                raise InvalidScheduleError(f"Service {sid} appears twice.")
+            plan[i] = by_id[sid]
+            claimed.add(sid)
+        by_km = {}
+        for r in saved:
+            if r.cumulative_km is not None and r.id not in claimed:
+                by_km.setdefault(r.cumulative_km, []).append(r)
+        for i, svc in enumerate(services):
+            km = svc.get("cumulative_km")
+            if plan[i] is None and km is not None and by_km.get(km):
+                plan[i] = by_km[km].pop(0)
+                claimed.add(plan[i].id)
+        calendar_only = [r for r in saved
+                         if r.cumulative_km is None and r.id not in claimed]
+        for i, svc in enumerate(services):
+            if plan[i] is None and svc.get("cumulative_km") is None and calendar_only:
+                plan[i] = calendar_only.pop(0)
+                claimed.add(plan[i].id)
+
+        for sched in saved:
+            if sched.id not in claimed:
                 for tmpl in list(sched.scope_templates):
                     PMScopeItem.query.filter_by(template_id=tmpl.id).delete()
                     db.session.delete(tmpl)
@@ -257,11 +299,12 @@ class PMScheduleService:
 
         result = []
         for position, svc in enumerate(services, start=1):
-            km = svc["cumulative_km"]
-            sched = existing.get(km)
+            km = svc.get("cumulative_km")
+            sched = plan[position - 1]
             if sched is None:
                 sched = PMSchedule(profile_code=profile_code, cumulative_km=km)
                 db.session.add(sched)
+            sched.cumulative_km = km  # matched by id, the milestone may move
             sched.sequence_position = position
             sched.maintenance_type_id = maintenance_type_id
             sched.trigger_mode = trigger_mode
@@ -474,20 +517,22 @@ class PMScheduleService:
         one row per standalone schedule (profile_code still NULL --
         never merged with other standalone ones just for sharing NULL).
 
-        Two passes, deliberately, for the same reason list_paginated's
-        own docstring already documents: a real VEMS import produces
-        thousands of raw schedule rows, and this must not build that
-        many full ORM objects (with four eager relationship loads each)
-        just to group and paginate them.
+        Grouping AND pagination happen in SQL. A real VEMS import has
+        thousands of schedule rows (4,626 at the client); this used to
+        fetch (id, profile_code) for every matching row on each page view
+        and group them in Python -- lighter than full ORM objects, but
+        still proportional to the whole table, which is exactly what
+        test_list_never_selects_pm_schedules_without_a_limit forbids.
 
-        Pass 1 -- lightweight: (id, profile_code) only, for every row
-        matching the filters. Grouping and pagination both happen here,
-        in Python, over plain tuples -- cheap even at thousands of rows.
-
-        Pass 2 -- only for the current PAGE's representative ids (at
-        most `per_page` of them): load the real PMSchedule objects,
-        with their eager-loaded relationships, for JSON output.
+          1. one page of GROUPS: GROUP BY (profile_code, or the row's own
+             id when it has none) with LIMIT/OFFSET -> each group's lowest
+             id (its representative, as before) and its package count;
+             ordered by that lowest id, i.e. the same order as before;
+          2. the total number of groups: one COUNT over the grouping;
+          3. the page's representatives (at most `per_page`) as full
+             PMSchedule objects with their eager loads, for JSON output.
         """
+        from sqlalchemy import String, case, cast, func, literal
         q = PMSchedule.query
         if not include_inactive:
             q = q.filter_by(is_active=True)
@@ -514,23 +559,25 @@ class PMScheduleService:
                      VehicleBrand.name.ilike(like),
                      VehicleModel.name.ilike(like))))
 
-        id_code_rows = (q.with_entities(PMSchedule.id, PMSchedule.profile_code)
-                       .order_by(PMSchedule.id).all())
-
-        groups: dict = {}
-        order: list = []
-        for sid, code in id_code_rows:
-            key = code if code is not None else f"__standalone_{sid}__"
-            if key not in groups:
-                groups[key] = []
-                order.append(key)
-            groups[key].append(sid)
-
-        total = len(order)
-        start = (page - 1) * per_page
-        page_keys = order[start:start + per_page]
-        representative_ids = [groups[k][0] for k in page_keys]
-        package_counts = {groups[k][0]: len(groups[k]) for k in page_keys}
+        # A standalone schedule (profile_code NULL) is its own group --
+        # never merged with other standalone ones just for sharing NULL.
+        # The "S:"/"P:" prefixes keep a profile code that happens to look
+        # like an id from colliding with a standalone row's key.
+        group_key = case(
+            (PMSchedule.profile_code.is_(None),
+             literal("S:") + cast(PMSchedule.id, String)),
+            else_=literal("P:") + PMSchedule.profile_code)
+        # The key is only GROUPED BY, never selected: MySQL's default
+        # ONLY_FULL_GROUP_BY can reject a SELECT expression that repeats a
+        # GROUP BY expression containing bound parameters.
+        grouped = (q.with_entities(func.min(PMSchedule.id).label("rep_id"),
+                                   func.count(PMSchedule.id).label("n"))
+                   .group_by(group_key))
+        total = grouped.order_by(None).count()
+        page_rows = (grouped.order_by(func.min(PMSchedule.id))
+                     .limit(per_page).offset((page - 1) * per_page).all())
+        representative_ids = [r.rep_id for r in page_rows]
+        package_counts = {r.rep_id: r.n for r in page_rows}
 
         reps = (PMSchedule.query.options(
                    joinedload(PMSchedule.vehicle_brand),
@@ -538,6 +585,9 @@ class PMScheduleService:
                    joinedload(PMSchedule.vehicle_type),
                    joinedload(PMSchedule.maintenance_type))
                .filter(PMSchedule.id.in_(representative_ids))
+               # already bounded by the page; stated so it is visible in
+               # the SQL (and to the no-unbounded-SELECT guard)
+               .limit(len(representative_ids))
                .all()) if representative_ids else []
         reps_by_id = {r.id: r for r in reps}
         # Re-ordered to match the page's own group order -- .in_() gives
