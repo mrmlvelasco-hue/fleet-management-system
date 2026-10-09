@@ -56,6 +56,11 @@ class CompanyProfile(db.Model, BaseModel):
     #: logo_filename is kept alongside for display; it existed before
     #: and nothing populated it.
     logo_attachment_id = db.Column(db.Integer, nullable=True)
+    # Picture on the right of the login page, uploaded by the client's
+    # administrator (Company Profile). Public -- the login page is shown
+    # before sign-in -- unlike the logo. NULL = the bundled default.
+    login_picture_attachment_id = db.Column(db.Integer, nullable=True)
+    login_picture_filename = db.Column(db.String(255), nullable=True)
 
 
 class EmailConfig(db.Model, BaseModel):
