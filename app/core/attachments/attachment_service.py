@@ -1,8 +1,10 @@
 """Generic attachment service — upload, list, delete for any module.
 
-Allowed extensions and max file size are read from SystemParameters
-(ATTACHMENT_ALLOWED_EXTENSIONS, ATTACHMENT_MAX_SIZE_MB) so they are
-configurable without code changes.
+Allowed extensions, max file size, and the maximum pixel dimension an
+image is shrunk to before storage are read from SystemParameters
+(ATTACHMENT_ALLOWED_EXTENSIONS, ATTACHMENT_MAX_SIZE_MB,
+ATTACHMENT_IMAGE_MAX_DIMENSION_PX) so they are configurable without
+code changes.
 """
 import os
 import uuid
@@ -11,10 +13,15 @@ from flask import current_app
 
 from app.extensions import db
 from app.core.models.attachment import Attachment
+from app.core.attachments.image_resize import shrink_to_max_dimension
 
 DEFAULT_ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx",
                                "jpg", "jpeg", "png", "gif"}
 DEFAULT_MAX_MB = 10
+#: Applied to every image regardless of what it's a picture of -- see
+#: image_resize.py for why this replaces the old per-category IMG_*_PX
+#: parameters.
+DEFAULT_IMAGE_MAX_DIMENSION_PX = 1600
 
 
 def _get_upload_dir(reference_table: str) -> str:
@@ -46,9 +53,13 @@ class AttachmentService:
             max_mb = svc.get("ATTACHMENT_MAX_SIZE_MB",
                              default=DEFAULT_MAX_MB)
             self._max_bytes = int(max_mb) * 1024 * 1024
+            max_dim = svc.get("ATTACHMENT_IMAGE_MAX_DIMENSION_PX",
+                              default=DEFAULT_IMAGE_MAX_DIMENSION_PX)
+            self._image_max_dimension = int(max_dim)
         except Exception:
             self._allowed = DEFAULT_ALLOWED_EXTENSIONS
             self._max_bytes = DEFAULT_MAX_MB * 1024 * 1024
+            self._image_max_dimension = DEFAULT_IMAGE_MAX_DIMENSION_PX
 
     def upload(self, file, reference_table: str, reference_id: int,
                user=None, document_type=None) -> Attachment:
@@ -85,6 +96,14 @@ class AttachmentService:
                 f"File type not allowed. Permitted: "
                 f"{', '.join(sorted(self._allowed))}")
         content = file.read()
+        # Shrink BEFORE the size check, not after: this is what actually
+        # limits database growth from attached pictures, and it also
+        # lets an otherwise-oversized photo succeed instead of being
+        # rejected outright, as long as the image itself shrinks under
+        # the configured file-size cap. A non-image, or an image already
+        # within ATTACHMENT_IMAGE_MAX_DIMENSION_PX, comes back unchanged.
+        content = shrink_to_max_dimension(
+            content, self._image_max_dimension, file.content_type)
         if len(content) > self._max_bytes:
             raise AttachmentError(
                 f"File exceeds maximum size of "

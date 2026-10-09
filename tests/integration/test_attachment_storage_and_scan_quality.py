@@ -104,6 +104,14 @@ def test_nothing_outside_the_service_reads_file_data_directly(app):
         # (copying legacy disk files into it); that is storage
         # maintenance, not application code reading a document.
         "cli.py",
+        # False positive, not a real offender: MobileReleaseService's
+        # `row.file_data` is MobileAppReleaseFile.file_data -- a
+        # completely different model/table (mobile_app_release_files),
+        # unrelated to Attachment. `bytes_for()` there IS that model's
+        # own storage-boundary method (the same role get_bytes() plays
+        # for Attachment above), and nothing outside this file touches
+        # MobileAppReleaseFile at all.
+        "modules/system_admin/mobile_release_service.py",
     }
     # Instance reads -- `att.file_data` -- are what couple a caller to
     # where bytes live. Class-level column expressions
@@ -165,6 +173,104 @@ def test_the_service_limit_still_produces_the_readable_error(app, db, admin,
     with pytest.raises(AttachmentError) as exc:
         AttachmentService().upload(_Big(), "vehicles", vehicle.id)
     assert "MB" in str(exc.value)
+
+
+# ── Image shrink on upload ──────────────────────────────────────────
+
+def test_an_oversized_image_is_shrunk_before_it_is_stored(app, db, admin,
+                                                          vehicle):
+    """The actual database-growth control: a configured
+    ATTACHMENT_IMAGE_MAX_DIMENSION_PX caps every image's pixel
+    dimensions before the bytes reach file_data, regardless of what
+    the picture is of."""
+    from app.core.attachments.attachment_service import AttachmentService
+    from app.modules.system_admin.models import SystemParameter
+    db.session.add(SystemParameter(
+        code="ATTACHMENT_IMAGE_MAX_DIMENSION_PX", value="200",
+        data_type="INTEGER", group_name="ATTACHMENTS"))
+    db.session.commit()
+
+    big = _png(2000, 1500)
+
+    class _Img:
+        filename = "truck.png"
+        content_type = "image/png"
+        def read(self): return big
+        def seek(self, *a, **k): pass
+        def save(self, *a, **k): pass
+
+    att = AttachmentService().upload(_Img(), "vehicles", vehicle.id)
+
+    from PIL import Image
+    with Image.open(io.BytesIO(att.file_data)) as im:
+        assert max(im.size) <= 200
+    assert att.file_size == len(att.file_data)
+    assert att.file_size < len(big)
+
+
+def test_an_image_already_within_the_limit_is_stored_unchanged(app, db, admin,
+                                                                vehicle):
+    from app.core.attachments.attachment_service import AttachmentService
+    from app.modules.system_admin.models import SystemParameter
+    db.session.add(SystemParameter(
+        code="ATTACHMENT_IMAGE_MAX_DIMENSION_PX", value="1600",
+        data_type="INTEGER", group_name="ATTACHMENTS"))
+    db.session.commit()
+
+    small = _png(300, 200)
+
+    class _Img:
+        filename = "small.png"
+        content_type = "image/png"
+        def read(self): return small
+        def seek(self, *a, **k): pass
+        def save(self, *a, **k): pass
+
+    att = AttachmentService().upload(_Img(), "vehicles", vehicle.id)
+    assert att.file_data == small
+
+
+def test_a_non_image_document_is_never_touched_by_the_resize_step(app, db,
+                                                                   admin,
+                                                                   vehicle):
+    from app.core.attachments.attachment_service import AttachmentService
+    from app.modules.system_admin.models import SystemParameter
+    db.session.add(SystemParameter(
+        code="ATTACHMENT_IMAGE_MAX_DIMENSION_PX", value="50",
+        data_type="INTEGER", group_name="ATTACHMENTS"))
+    db.session.commit()
+
+    pdf_bytes = b"%PDF-1.4 fake pdf content, unaffected by image resize"
+
+    class _Doc:
+        filename = "or.pdf"
+        content_type = "application/pdf"
+        def read(self): return pdf_bytes
+        def seek(self, *a, **k): pass
+        def save(self, *a, **k): pass
+
+    att = AttachmentService().upload(_Doc(), "vehicles", vehicle.id)
+    assert att.file_data == pdf_bytes
+
+
+def test_resize_uses_the_default_dimension_when_unconfigured(app, db, admin,
+                                                              vehicle):
+    """No ATTACHMENT_IMAGE_MAX_DIMENSION_PX row at all (a fresh database
+    before `flask seed all` has run, or an existing one upgraded before
+    the row is seeded) must still shrink egregiously large images rather
+    than silently storing them at full size."""
+    from app.core.attachments.attachment_service import AttachmentService
+    big = _png(5000, 4000)
+
+    class _Img:
+        filename = "huge.png"
+        content_type = "image/png"
+        def read(self): return big
+        def seek(self, *a, **k): pass
+        def save(self, *a, **k): pass
+
+    att = AttachmentService().upload(_Img(), "vehicles", vehicle.id)
+    assert att.file_size < len(big)
 
 
 # ── Scan quality ────────────────────────────────────────────────────

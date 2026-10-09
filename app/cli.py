@@ -36,6 +36,7 @@ def seed_all(admin_password):
     _seed_field_roles()
     _seed_checklist_templates()
     _seed_system_parameters()
+    _retire_dead_system_parameters()
     _seed_dashboard_widgets()
     _seed_lookups()
     _seed_transaction_types()
@@ -437,11 +438,6 @@ def _seed_system_parameters() -> None:
          "'you're about to be logged out' warning. Must be less than "
          "SESSION_TIMEOUT_MINUTES; an invalid value falls back "
          "automatically."),
-        ("SESSION_REMEMBER_POLICY", "ALWAYS_TIMEOUT", "STRING", "SECURITY",
-         "ALWAYS_TIMEOUT = sign in again after SESSION_TIMEOUT_MINUTES of "
-         "inactivity, even if the browser was closed ('Remember me' only "
-         "remembers the username). REMEMBER_EXTENDS = 'Remember me' keeps "
-         "the user signed in for up to 14 days."),
         ("MAX_FAILED_LOGIN_ATTEMPTS", "5", "INTEGER", "SECURITY",
          "Max failed login attempts before lockout"),
 
@@ -457,17 +453,36 @@ def _seed_system_parameters() -> None:
         ("PASSWORD_MAX_LENGTH", "20", "INTEGER", "PASSWORD_POLICY",
          "Maximum password length"),
 
-        # ── Image size limits, px (VEMS: Vehicle Picture/Person Setup) ─
-        ("IMG_VEHICLE_FRONT_BACK_PX", "400", "INTEGER", "IMAGE_LIMITS",
-         "Vehicle picture size in pixels (Front, Back)"),
-        ("IMG_CR_PX", "600", "INTEGER", "IMAGE_LIMITS",
-         "CR picture size in pixels"),
-        ("IMG_PERSON_ATD_PX", "320", "INTEGER", "IMAGE_LIMITS",
-         "Person/Assignee/ATD picture size in pixels"),
-        ("IMG_LTO_ENGINE_PX", "600", "INTEGER", "IMAGE_LIMITS",
-         "LTO/Engine picture size in pixels"),
-        ("IMG_ENGINE_CR_PX", "800", "INTEGER", "IMAGE_LIMITS",
-         "Engine picture size in pixels (CR)"),
+        # ── Attachments / images ────────────────────────────────────────
+        # Replaces the old VEMS-era IMG_VEHICLE_FRONT_BACK_PX / IMG_CR_PX /
+        # IMG_PERSON_ATD_PX / IMG_LTO_ENGINE_PX / IMG_ENGINE_CR_PX -- one
+        # hardcoded limit per picture CATEGORY. Document types are
+        # admin-configurable via Lookup Maintenance, not a fixed set of
+        # categories, so those five never had a matching upload path to
+        # apply to; they were seeded and completely inert. One generic
+        # limit, read by AttachmentService and applied to every image
+        # regardless of what it's a picture of, actually limits database
+        # growth from stored attachments.
+        ("ATTACHMENT_IMAGE_MAX_DIMENSION_PX", "1600", "INTEGER",
+         "ATTACHMENTS",
+         "Maximum width/height, in pixels, an uploaded image is shrunk "
+         "to before it is stored. Applies to every image attachment "
+         "everywhere (vehicles, drivers, maintenance orders, trip "
+         "tickets, ...). Does not affect non-image files."),
+        # These two were READ by AttachmentService from the day it
+        # shipped but never seeded -- the same invisible-parameter
+        # pattern as AUTO_PR_FROM_MO/PMS below: the code already works
+        # whether or not a row exists, which is exactly why their
+        # absence went unnoticed, but System Administration lists ROWS,
+        # so an unseeded parameter never appears and can't be changed.
+        ("ATTACHMENT_ALLOWED_EXTENSIONS",
+         "pdf,doc,docx,xls,xlsx,jpg,jpeg,png,gif", "STRING", "ATTACHMENTS",
+         "Comma-separated file extensions accepted for any attachment "
+         "upload, anywhere in the system."),
+        ("ATTACHMENT_MAX_SIZE_MB", "10", "INTEGER", "ATTACHMENTS",
+         "Maximum size, in MB, of a single attachment upload (checked "
+         "after any image shrink above, so a large photo that shrinks "
+         "under this cap still succeeds)."),
 
         # ── Car plan budget over 5 years (VEMS) ───────────────────────
         ("CAR_PLAN_BUDGET_Y1", "3000", "DECIMAL", "CAR_PLAN_BUDGET",
@@ -506,12 +521,9 @@ def _seed_system_parameters() -> None:
         # ── UI list preferences (VEMS: Other Setting) ─────────────────
         ("LIST_PAGES", "75", "INTEGER", "UI_PREFERENCES",
          "Default number of rows per list page"),
-        ("VEHICLE_LIST_COLUMNS", "38", "INTEGER", "UI_PREFERENCES",
-         "Vehicle list column count"),
-        ("WO_NORMAL_LIST_COLUMNS", "15", "INTEGER", "UI_PREFERENCES",
-         "Work Order (Normal) list column count"),
-        ("WO_PM_LIST_COLUMNS", "15", "INTEGER", "UI_PREFERENCES",
-         "Work Order (PM) list column count"),
+        # VEHICLE_LIST_COLUMNS / WO_NORMAL_LIST_COLUMNS /
+        # WO_PM_LIST_COLUMNS removed (see _retire_dead_system_parameters):
+        # no list view anywhere reads a configurable column count.
 
         # ── Backup / restore ───────────────────────────────────────────
         ("MYSQLDUMP_PATH", "", "STRING", "BACKUP",
@@ -521,7 +533,10 @@ def _seed_system_parameters() -> None:
         # ── Trip ticket / general (FMS) ───────────────────────────────
         ("REQUIRE_DRIVER_FROM_MASTER", "YES", "STRING", "TRIP_TICKET",
          "YES = driver must come from Driver Master; NO = manual entry"),
-        ("COMPANY_NAME", "My Company", "STRING", "GENERAL", "Company name"),
+        # COMPANY_NAME removed (see _retire_dead_system_parameters):
+        # superseded by CompanyProfile / company_service.py. The
+        # {COMPANY_NAME} token in print templates is substituted from
+        # that, never from this row.
 
         # ── Maintenance / Auto Purchase Request ───────────────────────
         # These two were READ by auto_pr.py from the day that feature
@@ -577,6 +592,42 @@ def _seed_system_parameters() -> None:
             db.session.add(SystemParameter(
                 code=code, value=value, data_type=data_type,
                 group_name=group, description=desc))
+    db.session.flush()
+
+
+#: Parameters found seeded but never read by any code during the
+#: 2026-10 attachment/image audit. No replacement for the first four;
+#: the five IMG_*_PX rows are superseded by the single generic
+#: ATTACHMENT_IMAGE_MAX_DIMENSION_PX seeded above.
+DEAD_SYSTEM_PARAMETER_CODES = [
+    "COMPANY_NAME",
+    "VEHICLE_LIST_COLUMNS",
+    "WO_NORMAL_LIST_COLUMNS",
+    "WO_PM_LIST_COLUMNS",
+    "IMG_VEHICLE_FRONT_BACK_PX",
+    "IMG_CR_PX",
+    "IMG_PERSON_ATD_PX",
+    "IMG_LTO_ENGINE_PX",
+    "IMG_ENGINE_CR_PX",
+]
+
+
+def _retire_dead_system_parameters() -> None:
+    """Remove the dead rows above from a database that already has them
+    (seeded by an older version of this code, before this cleanup
+    existed). Hard delete, not deactivate: these are configuration
+    DEFINITIONS, not transactional or audit data, so there is nothing
+    worth keeping a soft-deleted row for, and System Administration's
+    parameter list has no is_active filter -- a deactivated row would
+    still show up, just inert, which is not what "remove" means here.
+
+    Safe to re-run every `flask seed all`, no migration marker needed:
+    there is no "add parameter" screen, only edit, so nothing can ever
+    recreate one of these codes for this to clobber."""
+    from app.modules.system_admin.models import SystemParameter
+    (SystemParameter.query
+        .filter(SystemParameter.code.in_(DEAD_SYSTEM_PARAMETER_CODES))
+        .delete(synchronize_session=False))
     db.session.flush()
 
 
@@ -680,13 +731,8 @@ def _seed_email_templates() -> None:
       {{ event_code }}, {{ event_label }}
       {{ comment_body }}, {{ author_name }} - populated only for the
                               DOCUMENT_COMMENT event; empty otherwise
-      {{ scope_items }}     - Scope of Work lines, a list of
-                              {code, description}; [] for documents
-                              without one (only Maintenance Orders today)
     """
     from app.modules.system_admin.models import EmailTemplate
-    from app.modules.system_admin.tasks import (
-        SCOPE_BLOCK_HTML, SCOPE_BLOCK_TEXT)
 
     def _tmpl(intro, include_comment=False):
         view_link = (
@@ -703,7 +749,6 @@ def _seed_email_templates() -> None:
                 f"<p>{intro}</p>"
                 f"{comment_block}"
                 f"<p><strong>{{{{ document_number }}}}</strong></p>"
-                + SCOPE_BLOCK_HTML +
                 f'{view_link}')
         comment_text = (
             "{% if comment_body %}\n\"{{ author_name }} wrote: "
@@ -711,7 +756,6 @@ def _seed_email_templates() -> None:
         text = (f"Hello {{{{ recipient_name }}}},\n\n{intro}\n\n"
                 f"{comment_text}"
                 f"{{{{ document_number }}}}\n\n"
-                + SCOPE_BLOCK_TEXT +
                 f"{{% if view_url %}}Open this document: {{{{ view_url }}}}"
                 f"{{% endif %}}")
         return html, text
@@ -1367,59 +1411,6 @@ def attachments_backfill_from_disk(dry_run):
         click.echo("\nRe-run WITHOUT --dry-run to actually write the data.")
 
 
-notifications_cli = AppGroup("notifications",
-                             help="In-app notification maintenance commands.")
-
-
-@notifications_cli.command("backfill-document-numbers")
-@with_appcontext
-def notifications_backfill_document_numbers():
-    """Replace raw reference-id messages with real document numbers.
-
-    In-app notification rows created before the engine fix contain
-    messages like "MO #51 - submitted", where "#51" is the raw database
-    id. This command updates them to use the real document number
-    (MO-2026-000051) that was already stored on the document at that
-    time, so the notification history is readable.
-
-    The pattern matched is "<table_code> #<id>" anywhere in the message.
-    Rows whose message already contains the real document number, or
-    where get_document_number() cannot resolve the number (very old
-    drafts, deleted records), are left unchanged.
-
-    Safe to run more than once: rows already updated are skipped.
-    Print a summary to stdout.
-    """
-    import re
-    from app.extensions import db
-    from app.modules.system_admin.models import InAppNotification
-    from app.core.reference_resolver import get_document_number
-
-    pattern = re.compile(r'(\S+) #(\d+)')
-    rows = (InAppNotification.query
-            .filter(InAppNotification.reference_id.isnot(None))
-            .filter(InAppNotification.reference_table.isnot(None))
-            .all())
-    updated = skipped = 0
-    for row in rows:
-        m = pattern.search(row.message)
-        if not m:
-            skipped += 1
-            continue
-        token = f"#{row.reference_id}"
-        if token not in row.message:
-            skipped += 1
-            continue
-        real = get_document_number(row.reference_table, row.reference_id)
-        if not real or real.startswith(row.reference_table):
-            skipped += 1
-            continue
-        row.message = row.message.replace(token, real, 1)
-        updated += 1
-    db.session.commit()
-    print(f"Notifications backfill: {updated} updated, {skipped} skipped.")
-
-
 def register_cli(app):
     app.cli.add_command(ocr_check_command)
     app.cli.add_command(attachments_cli)
@@ -1429,7 +1420,6 @@ def register_cli(app):
     app.cli.add_command(pm_cli)
     app.cli.add_command(registration_cli)
     app.cli.add_command(report_cli)
-    app.cli.add_command(notifications_cli)
     from app.modules.master_data.vehicle.backfill_cli import (
         register_vehicle_backfill_cli)
     register_vehicle_backfill_cli(app)
