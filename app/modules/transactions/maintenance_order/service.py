@@ -31,6 +31,18 @@ class InvalidOrderCategoryError(Exception):
     pass
 
 
+class OrderFieldError(InvalidOrderCategoryError):
+    """A field value the order cannot take (destination = origin, a
+    transaction type from another group). Carries the field name so the
+    API can return a field-named 400 the form can show beside the
+    control. Subclasses InvalidOrderCategoryError so existing callers
+    that catch that keep working."""
+
+    def __init__(self, message, field="_"):
+        super().__init__(message)
+        self.field = field
+
+
 class OrderEditForbiddenError(Exception):
     """The user may not edit this order: they are neither its initiator
     nor a holder of maintenanceorder.update. Deliberately NOT an
@@ -286,19 +298,7 @@ class MaintenanceOrderService(BaseTransactionService):
         # exactly this reason, but the MANUAL create path had no such
         # guard, so the same vehicle could be queued twice by hand.
         if order_category == "MAINTENANCE" and maintenance_type_id:
-            existing_open = (MaintenanceOrder.query
-                            .filter_by(vehicle_id=vehicle_id,
-                                      maintenance_type_id=maintenance_type_id)
-                            .filter(MaintenanceOrder.status.notin_(
-                                ["COMPLETED", "CANCELLED"]))
-                            .first())
-            if existing_open:
-                raise InvalidOrderStateError(
-                    f"This vehicle already has an open "
-                    f"{existing_open.maintenance_type.name if existing_open.maintenance_type else 'maintenance'} "
-                    f"order ({existing_open.document_number or 'draft'}, "
-                    f"status {existing_open.status}). Complete or cancel it "
-                    f"before creating another one.")
+            self._check_no_open_duplicate(vehicle_id, maintenance_type_id)
         # Snapshot the vehicle's CURRENT branch as the "From" for the
         # Asset Transfer Report -- must be captured now, at creation,
         # since completion will update Vehicle.branch_id to the
@@ -306,6 +306,7 @@ class MaintenanceOrderService(BaseTransactionService):
         # already be the new one, not the "From" branch being reported.
         origin_branch_id = (vehicle.branch_id if destination_branch_id
                            and vehicle else None)
+        self._check_destination(destination_branch_id, origin_branch_id)
         # Assignment / transfer / disposal often have no money line.
         # Approval routing uses estimated_cost; leave it NULL and the
         # matrix looks for "no amount" only. Default operational drafts
@@ -566,6 +567,65 @@ class MaintenanceOrderService(BaseTransactionService):
             return True
         return user.has_permission("maintenanceorder.update")
 
+    def _check_no_open_duplicate(self, vehicle_id, maintenance_type_id,
+                                 exclude_order_id=None):
+        """A vehicle must not have two open orders of the same
+        maintenance type: it would double-book the workshop and
+        double-count the service against the PM schedule. Applies on
+        create and when an edit moves an order to another vehicle or
+        maintenance type."""
+        if not maintenance_type_id:
+            return
+        q = (MaintenanceOrder.query
+             .filter_by(vehicle_id=vehicle_id,
+                        maintenance_type_id=maintenance_type_id)
+             .filter(MaintenanceOrder.status.notin_(
+                 ["COMPLETED", "CANCELLED"])))
+        if exclude_order_id is not None:
+            q = q.filter(MaintenanceOrder.id != exclude_order_id)
+        existing_open = q.first()
+        if existing_open:
+            raise InvalidOrderStateError(
+                f"This vehicle already has an open "
+                f"{existing_open.maintenance_type.name if existing_open.maintenance_type else 'maintenance'} "
+                f"order ({existing_open.document_number or 'draft'}, "
+                f"status {existing_open.status}). Complete or cancel it "
+                f"before creating another one.")
+
+    @staticmethod
+    def _check_destination(destination_branch_id, origin_branch_id):
+        """A transfer to the branch the vehicle is already at moves
+        nothing and would still issue an ATR number."""
+        if destination_branch_id and destination_branch_id == origin_branch_id:
+            raise OrderFieldError(
+                "Destination branch must be different from the vehicle's "
+                "current branch (the origin).", "destination_branch_id")
+
+    @staticmethod
+    def _check_type_change(order, fields):
+        """The transaction type may move only within its own group
+        (Transfer <-> Relocation, Scrappage -> Sold ...). Another group
+        means a different field set, approval matrix and ATR/ADR series
+        -- that is a new order, not a correction."""
+        new_id = fields.get("transaction_type_id")
+        if not new_id or new_id == order.transaction_type_id:
+            return
+        new = db.session.get(TransactionType, new_id)
+        if new is None:
+            raise OrderFieldError("That transaction type does not exist.",
+                                  "transaction_type_id")
+        old = order.transaction_type
+        same_category = new.order_category == order.order_category
+        same_group = old is None or (
+            (new.group or "").upper() == (old.group or "").upper())
+        if not (same_category and same_group):
+            group = (old.group if old else order.order_category) or ""
+            raise OrderFieldError(
+                f"The transaction type can only be changed to another "
+                f"type in the same group ({group.title()}). To change "
+                f"what kind of order this is, cancel it and raise a new "
+                f"one.", "transaction_type_id")
+
     def update(self, order_id: int, *, user=None, **fields):
         """Update an order within whatever scope its state allows.
 
@@ -598,8 +658,34 @@ class MaintenanceOrderService(BaseTransactionService):
             "maintenance_type_id", "transaction_type_id",
             "scope_template_id", "pm_schedule_id", "driver_id",
             "destination_branch_id", "assignment_classification",
-            "disposal_value", "disposal_recipient",
+            "disposal_value", "disposal_recipient", "vehicle_id",
         }
+        fields = {k: v for k, v in fields.items() if k in editable}
+
+        # Everything is validated against the values the order WILL have,
+        # before any attribute is set: a refused edit must not leave a
+        # half-changed order dirty in the session.
+        self._check_type_change(order, fields)
+        from app.modules.master_data.vehicle.models import Vehicle
+        target_vehicle_id = fields.get("vehicle_id", order.vehicle_id)
+        target_vehicle = db.session.get(Vehicle, target_vehicle_id)
+        if target_vehicle is None:
+            raise OrderFieldError("That vehicle does not exist.",
+                                  "vehicle_id")
+        target_mtype_id = fields.get("maintenance_type_id",
+                                     order.maintenance_type_id)
+        if (("vehicle_id" in fields or "maintenance_type_id" in fields)
+                and order.order_category == "MAINTENANCE"):
+            self._check_no_open_duplicate(target_vehicle_id,
+                                          target_mtype_id,
+                                          exclude_order_id=order.id)
+        target_dest = fields.get("destination_branch_id",
+                                 order.destination_branch_id)
+        # Origin is the vehicle's branch NOW, not when the order was
+        # raised: MO-2026-000046 showed Origin Muntinlupa for a vehicle
+        # that had since moved to Manila Hub.
+        target_origin = target_vehicle.branch_id if target_dest else None
+        self._check_destination(target_dest, target_origin)
         # Changing the template on an editable order re-seeds its Scope
         # of Work from the new template. Before this, update() set
         # scope_template_id and left the OLD template's lines in place,
@@ -624,8 +710,12 @@ class MaintenanceOrderService(BaseTransactionService):
                         "order's Maintenance Type.")
 
         for key, value in fields.items():
-            if key in editable:
-                setattr(order, key, value)
+            setattr(order, key, value)
+        order.origin_branch_id = target_origin
+        if "maintenance_type_id" in fields:
+            mtype = (db.session.get(MaintenanceType, target_mtype_id)
+                     if target_mtype_id else None)
+            order.category = mtype.category if mtype else None
         if reseed_template is not None:
             for item in list(order.checklist_items):
                 order.checklist_items.remove(item)
@@ -836,6 +926,12 @@ class MaintenanceOrderService(BaseTransactionService):
         if order.destination_branch_id:
             from app.modules.master_data.vehicle.assignment_hooks import (
                 transfer_vehicle_branch)
+            # The true "From" is where the vehicle is at the moment it
+            # moves. Only on the first completion (no ATR yet): a re-save
+            # after the move would otherwise record the destination as
+            # the origin.
+            if not order.transfer_reference_number and order.vehicle:
+                order.origin_branch_id = order.vehicle.branch_id
             transfer_vehicle_branch(order.vehicle_id, order.destination_branch_id)
             if not order.transfer_reference_number:
                 from app.core.numbering.numbering_service import (
@@ -935,10 +1031,7 @@ class MaintenanceOrderService(BaseTransactionService):
         order = db.session.get(MaintenanceOrder, order_id)
         if order is None:
             raise InvalidOrderStateError("Maintenance Order not found.")
-        if self.editable_scope(order) != "FULL":
-            raise InvalidOrderStateError(
-                "This order is awaiting approval and cannot be edited. "
-                "Ask the approver to return it if parts need to change.")
+        self._require_parts_editable(order)
         if not str(part_description or "").strip():
             raise InvalidOrderStateError("Part description is required.")
 
@@ -962,6 +1055,21 @@ class MaintenanceOrderService(BaseTransactionService):
         db.session.commit()
         return part
 
+    def _require_parts_editable(self, order):
+        """Parts follow the order's edit scope, with one exception: once
+        a Purchase Request has been raised from them, the PR is the
+        procurement record and the two must not drift apart."""
+        if self.editable_scope(order) != "FULL":
+            raise InvalidOrderStateError(
+                f"A {order.status} order can no longer be edited.")
+        if order.purchase_request_id:
+            pr = order.purchase_request
+            number = getattr(pr, "document_number", None) or "the PR"
+            raise InvalidOrderStateError(
+                f"A Purchase Request ({number}) has already been raised "
+                f"from these parts. Change the items on the Purchase "
+                f"Request instead.")
+
     def remove_part(self, part_id):
         from app.modules.transactions.maintenance_order.models import (
             MaintenanceOrderPart)
@@ -969,10 +1077,7 @@ class MaintenanceOrderService(BaseTransactionService):
         if part is None:
             return None
         order = part.order
-        if self.editable_scope(order) != "FULL":
-            raise InvalidOrderStateError(
-                "This order is awaiting approval and cannot be edited. "
-                "Ask the approver to return it if parts need to change.")
+        self._require_parts_editable(order)
         # Remove via the relationship, not db.session.delete(part): the
         # delete-orphan cascade still removes the row, but this also
         # keeps the parent's already-loaded parts collection correct.

@@ -144,15 +144,30 @@ def test_an_order_with_no_parts_generates_nothing(app, db, order):
     assert order.purchase_request_id is None
 
 
-def test_parts_cannot_be_added_once_the_order_leaves_draft(app, db, order):
-    """The parts list is what the approver approved and what the PR was
-    built from -- it must not change afterwards."""
+def test_parts_cannot_be_added_once_a_purchase_request_exists(app, db, order):
+    """The parts list is what the PR was built from -- once the PR
+    exists the two must not drift apart. (Before the 2026-10-12 edit
+    policy this keyed off the order leaving DRAFT; an open order without
+    a PR may now still gain parts, e.g. found mid-job.)"""
     from app.modules.transactions.maintenance_order.service import (
         InvalidOrderStateError)
+    from app.modules.transactions.maintenance_order.auto_pr import (
+        _generate_for_order)
+    _svc().add_part(order.id, part_description="Engine Oil", quantity=4,
+                    estimated_unit_cost=280)
+    assert _generate_for_order(order.id) is not None
     order.status = "IN_PROGRESS"
     db.session.commit()
     with pytest.raises(InvalidOrderStateError):
         _svc().add_part(order.id, part_description="Late Part", quantity=1)
+
+
+def test_parts_can_be_added_to_an_open_order_without_a_pr(app, db, order):
+    order.status = "IN_PROGRESS"
+    db.session.commit()
+    part = _svc().add_part(order.id, part_description="Seized caliper",
+                           quantity=1)
+    assert part.id is not None
 
 
 def test_approval_event_triggers_generation(app, db, order):
@@ -247,9 +262,9 @@ def test_remove_part_via_the_route(app, db, order):
     assert r.get_json()["parts_total"] == "0.00"
 
 
-def test_add_part_route_rejects_a_non_draft_order(app, db, order):
+def test_add_part_route_rejects_a_closed_order(app, db, order):
     client = _logged_in(app)
-    order.status = "IN_PROGRESS"
+    order.status = "COMPLETED"
     db.session.commit()
     r = client.post(f"/transactions/maintenance-orders/{order.id}/parts",
                     data={"part_description": "Late", "quantity": "1",

@@ -33,6 +33,75 @@ def _forbidden(message):
     return jsonify({"error": "forbidden", "message": message}), 403
 
 
+# ── edit payload ────────────────────────────────────────────────────
+
+class _FieldError(ValueError):
+    def __init__(self, message, field):
+        super().__init__(message)
+        self.field = field
+
+
+#: Every field an order is created with may be corrected afterwards
+#: (2026-10-12 edit policy). Kept equal to the service's own allow-list
+#: in MaintenanceOrderService.update -- a key accepted there but missing
+#: here is silently dropped, which is exactly how destination_branch_id,
+#: driver_id and the disposal fields used to vanish on save.
+_EDIT_IDS = ("vehicle_id", "transaction_type_id", "maintenance_type_id",
+             "scope_template_id", "vendor_id", "driver_id",
+             "destination_branch_id")
+_EDIT_INTS = ("odometer_at_service",)
+_EDIT_MONEY = {"estimated_cost": "Estimated Cost",
+               "disposal_value": "Disposal Value"}
+_EDIT_TEXT = ("description", "assigned_mechanic",
+              "assignment_classification", "disposal_recipient")
+
+
+def _edit_fields(p):
+    """Coerce a PATCH body into typed service fields.
+
+    Only keys present in the body are returned, so a partial PATCH
+    leaves every other field alone; an explicit null or "" clears the
+    field. Bad values raise _FieldError naming the field."""
+    fields = {}
+    for k in _EDIT_IDS + _EDIT_INTS:
+        if k not in p:
+            continue
+        v = p[k]
+        if v in (None, ""):
+            fields[k] = None
+            continue
+        try:
+            n = int(str(v).strip().replace(",", ""))
+        except (TypeError, ValueError):
+            raise _FieldError(f"{k} must be a whole number.", k)
+        if n < 0:
+            raise _FieldError(f"{k} cannot be negative.", k)
+        fields[k] = n
+    for k, label in _EDIT_MONEY.items():
+        if k not in p:
+            continue
+        v = p[k]
+        if v in (None, ""):
+            fields[k] = None
+            continue
+        try:
+            fields[k] = Decimal(str(v).strip().replace(",", ""))
+        except (InvalidOperation, ValueError, TypeError):
+            raise _FieldError(f"{label} must be a valid amount.", k)
+    for k in _EDIT_TEXT:
+        if k in p:
+            v = p[k]
+            fields[k] = (str(v).strip() or None) if v is not None else None
+    if "scheduled_date" in p:
+        v = p["scheduled_date"]
+        try:
+            fields["scheduled_date"] = date.fromisoformat(str(v)[:10])
+        except (TypeError, ValueError):
+            raise _FieldError("scheduled_date must be YYYY-MM-DD.",
+                              "scheduled_date")
+    return fields
+
+
 def _edit_gate(api_user, oid):
     """Shared gate for every endpoint that edits an order's contents
     (scope lines, parts). Returns an error response, or None to proceed.
@@ -691,42 +760,24 @@ def create_maintenance_order(api_user):
 def update_maintenance_order(api_user, oid):
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService, InvalidOrderStateError,
-        OrderEditForbiddenError)
+        InvalidOrderCategoryError, OrderEditForbiddenError, OrderFieldError)
     if MaintenanceOrderService().get_visible(oid, api_user) is None:
         return _not_found()
     p = request.get_json(silent=True) or {}
-    fields = {}
-    for k in (
-        "scheduled_date", "odometer_at_service",
-        "maintenance_type_id", "transaction_type_id",
-        "assignment_classification", "assigned_mechanic", "description",
-        "vendor_id",
-    ):
-        if k in p:
-            fields[k] = p[k]
-
-    # estimated_cost is a monetary value. Normalize formatted input such
-    # as "15,000" before it reaches the SQLAlchemy Numeric column.
-    if "estimated_cost" in p:
-        value = p.get("estimated_cost")
-        if value in (None, ""):
-            fields["estimated_cost"] = None
-        else:
-            try:
-                fields["estimated_cost"] = Decimal(
-                    str(value).strip().replace(",", "")
-                )
-            except (InvalidOperation, ValueError, TypeError):
-                return _validation(
-                    "Estimated Cost must be a valid amount.",
-                    "estimated_cost",
-                )
+    try:
+        fields = _edit_fields(p)
+    except _FieldError as e:
+        return _validation(str(e), e.field)
 
     svc = MaintenanceOrderService()
     try:
         order = svc.update(oid, user=api_user, **fields)
     except OrderEditForbiddenError as e:
         return _forbidden(str(e))
+    except OrderFieldError as e:
+        return _validation(str(e), e.field)
+    except InvalidOrderCategoryError as e:
+        return _validation(str(e))
     except InvalidOrderStateError as e:
         return _conflict(str(e))
     if order is None:
