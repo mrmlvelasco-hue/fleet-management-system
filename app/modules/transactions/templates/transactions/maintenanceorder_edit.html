@@ -90,6 +90,22 @@
     <input name="assigned_mechanic" class="form-control"
            value="{{ item.assigned_mechanic or '' }}">
   </div>
+
+  {# Vendor was pickable when the order was first raised but had no way
+     to be CORRECTED here -- the exact gap reported against a Returned
+     order sent back specifically because the wrong vendor was picked.
+     Same AJAX-select + current-value-preselected pattern used by
+     battery_form.html / maintenanceorder_form.html. #}
+  <div class="col-md-6">
+    <label class="form-label">Vendor</label>
+    <select name="vendor_id" id="moEditVendorSelect" class="form-select">
+      {% if item.vendor %}
+      <option value="{{ item.vendor.id }}" selected>{{ item.vendor.code }} — {{ item.vendor.name }}</option>
+      {% else %}
+      <option value="">— Type vendor code or name —</option>
+      {% endif %}
+    </select>
+  </div>
   {% endif %}
 
   <div class="col-12">
@@ -110,4 +126,17 @@
        href="{{ url_for('transactions.maintenanceorder_detail', oid=item.id) }}">Cancel</a>
   </div>
 </form>
+{% endblock %}
+
+{% block scripts %}
+{% if scope == 'FULL' %}
+<script>
+  if (window.jQuery) {
+    jQuery(function () {
+      initAjaxSelect("#moEditVendorSelect", "{{ url_for('api_search.search_vendors') }}",
+        { placeholder: "Type vendor code or name...", allowClear: true });
+    });
+  }
+</script>
+{% endif %}
 {% endblock %}
