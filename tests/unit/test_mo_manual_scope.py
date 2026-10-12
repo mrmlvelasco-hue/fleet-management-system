@@ -199,9 +199,22 @@ def test_replace_scope_allowed_when_returned(db, env):
 
 @pytest.mark.parametrize("approval,status", [
     ("PENDING", "DRAFT"), ("APPROVED", "IN_PROGRESS"),
-    ("APPROVED", "COMPLETED"),
 ])
-def test_replace_scope_locked_after_submission(db, env, approval, status):
+def test_replace_scope_allowed_while_order_is_open(db, env, approval, status):
+    """2026-10-12 edit policy: Pending and In Progress orders are fully
+    editable (approvers are notified instead of the order being locked)."""
+    order = _attach_approval(db, _create(env), approval)
+    order.status = status
+    db.session.commit()
+    MaintenanceOrderService().replace_scope(
+        order.id, [{"activity_description": "late change"}])
+    assert len(order.checklist_items) == 1
+
+
+@pytest.mark.parametrize("approval,status", [
+    ("APPROVED", "COMPLETED"), ("REJECTED", "DRAFT"),
+])
+def test_replace_scope_locked_once_closed(db, env, approval, status):
     order = _attach_approval(db, _create(env), approval)
     order.status = status
     db.session.commit()
@@ -316,8 +329,10 @@ def test_api_put_scope_replaces_lines(client, db, env, editor):
             for i in r.get_json()["checklist_items"]] == ["Line A", "Line B"]
 
 
-def test_api_put_scope_conflict_when_pending(client, db, env, editor):
-    order = _attach_approval(db, _create(env), "PENDING")
+def test_api_put_scope_conflict_when_completed(client, db, env, editor):
+    order = _attach_approval(db, _create(env), "APPROVED")
+    order.status = "COMPLETED"
+    db.session.commit()
     r = client.put(f"/api/v1/maintenance-orders/{order.id}/scope",
                    headers=_hdr(client, editor),
                    json={"items": [{"activity_description": "x"}]})

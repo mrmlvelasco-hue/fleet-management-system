@@ -61,15 +61,16 @@ def test_description_can_be_updated_on_a_draft(db, order):
     assert order.description == "corrected remarks"
 
 
-def test_order_awaiting_approval_cannot_be_edited(db, order):
-    """An approver is reviewing it -- changing the particulars underneath
-    them would mean they approve something they never saw."""
+def test_order_awaiting_approval_is_editable(db, order):
+    """2026-10-12 edit policy (Michael): the initiator may correct a
+    Pending order. Approval keeps its place; approvers are notified and
+    shown what changed -- see test_mo_edit_policy.py and
+    test_mo_edit_notifications.py."""
     fresh = _attach_approval(db, order, "PENDING")
     svc = MaintenanceOrderService()
-    assert svc.editable_scope(fresh) == "NONE"
-    with pytest.raises(InvalidOrderStateError) as exc:
-        svc.update(fresh.id, description="sneaky change")
-    assert "awaiting approval" in str(exc.value)
+    assert svc.editable_scope(fresh) == "FULL"
+    svc.update(fresh.id, description="corrected while pending")
+    assert fresh.description == "corrected while pending"
 
 
 def test_returned_order_is_editable_again(db, order):
@@ -81,27 +82,18 @@ def test_returned_order_is_editable_again(db, order):
     assert fresh.description == "addressed the feedback"
 
 
-def test_in_progress_allows_remarks_only(db, order):
+def test_in_progress_order_is_fully_editable(db, order):
+    """Replaces the old REMARKS_ONLY rule: work has started, but a wrong
+    vendor or cost can still be corrected; approvers are notified."""
     fresh = _attach_approval(db, order, "APPROVED")
     fresh.status = "IN_PROGRESS"
     db.session.commit()
 
     svc = MaintenanceOrderService()
-    assert svc.editable_scope(fresh) == "REMARKS_ONLY"
-    svc.update(fresh.id, description="found a seized caliper")
-    assert fresh.description == "found a seized caliper"
-
-
-def test_in_progress_rejects_changes_to_approved_particulars(db, order):
-    """Work is underway against what was approved; cost/type/scope must
-    not move underneath it."""
-    fresh = _attach_approval(db, order, "APPROVED")
-    fresh.status = "IN_PROGRESS"
-    db.session.commit()
-
-    with pytest.raises(InvalidOrderStateError) as exc:
-        MaintenanceOrderService().update(fresh.id, estimated_cost=99999)
-    assert "only the description" in str(exc.value).lower()
+    assert svc.editable_scope(fresh) == "FULL"
+    svc.update(fresh.id, estimated_cost=99999,
+               description="found a seized caliper")
+    assert float(fresh.estimated_cost) == 99999
 
 
 def test_completed_order_cannot_be_edited(db, order):

@@ -31,6 +31,14 @@ class InvalidOrderCategoryError(Exception):
     pass
 
 
+class OrderEditForbiddenError(Exception):
+    """The user may not edit this order: they are neither its initiator
+    nor a holder of maintenanceorder.update. Deliberately NOT an
+    InvalidOrderStateError -- the order is fine, the caller is not
+    allowed -- so the API can answer 403 rather than 409."""
+    pass
+
+
 class ScopeValidationError(ValueError):
     """A Scope of Work line failed validation (blank description, or a
     field longer than its column). Raised BEFORE anything is written, so
@@ -501,51 +509,62 @@ class MaintenanceOrderService(BaseTransactionService):
     def editable_scope(self, order) -> str:
         """How much of this order may be edited right now.
 
-        Returns "FULL", "REMARKS_ONLY", or "NONE".
+        Returns "FULL" or "NONE". ("REMARKS_ONLY" was retired by the
+        2026-10-12 edit policy; callers still tolerate it.)
 
-        "DRAFT" alone is not enough to decide: in this system an order
-        stays DRAFT while its approval is PENDING, so DRAFT covers three
-        genuinely different situations.
+        Spec: docs/superpowers/specs/2026-10-12-document-edit-policy-design.md
 
-          * DRAFT, never submitted        -> FULL. Nobody has seen it.
-          * DRAFT, approval RETURNED      -> FULL. Being able to correct
-            it is the entire point of a return.
-          * DRAFT, approval PENDING       -> NONE. An approver is looking
-            at it right now; silently changing the particulars underneath
-            them would mean they approve something other than what they
-            reviewed.
-          * IN_PROGRESS                   -> REMARKS_ONLY. The order is
-            approved and work has started, so the approved particulars
-            (vehicle, type, scope, cost) must not move -- but adding
-            notes about the work as it happens is exactly what was asked
-            for, and is safe.
-          * COMPLETED / CANCELLED         -> NONE. Closed records stay
-            as they were; they feed cost reports and the audit trail.
+          * DRAFT -- never submitted, approval PENDING, RETURNED or
+            APPROVED-awaiting-start                         -> FULL
+          * IN_PROGRESS                                     -> FULL
+          * approval REJECTED                               -> NONE
+          * COMPLETED / CANCELLED / anything else           -> NONE
+
+        Editing while approval is PENDING or after it is APPROVED was
+        locked before; the initiator then had no way to fix a wrong
+        vendor or destination branch short of asking for a return.
+        Approval is deliberately NOT restarted by an edit (Michael's
+        decision). What protects the approver instead is that every
+        post-submission change is notified (edited_after_submission)
+        and listed on the order (changes_since_submission).
         """
         if order is None:
             return "NONE"
-        if order.status == "IN_PROGRESS":
-            return "REMARKS_ONLY"
-        if order.status != "DRAFT":
+        if order.status not in ("DRAFT", "IN_PROGRESS"):
             return "NONE"
+        instance = self._latest_instance(order)
+        if instance is not None and instance.status == "REJECTED":
+            return "NONE"
+        return "FULL"
+
+    def _latest_instance(self, order):
+        """The order's approval instance. Submit stores
+        approval_instance_id, but a stale session or an instance created
+        only on the approval table must still count, so fall back to the
+        latest instance by reference."""
         instance = order.approval_instance
         if instance is None:
-            # Submit stores approval_instance_id, but a stale session or
-            # an instance created only on the approval table must still
-            # lock the order. Look up the latest instance by reference.
             from app.core.approval.models import ApprovalInstance
             instance = (ApprovalInstance.query
                         .filter_by(reference_table="maintenance_orders",
                                    reference_id=order.id)
                         .order_by(ApprovalInstance.id.desc())
                         .first())
-        if instance is None or instance.status in ("RETURNED", "CANCELLED"):
-            return "FULL"
-        # PENDING / APPROVED (awaiting Start work) — particulars stay frozen
-        # until an approver Returns the request.
-        if instance.status == "PENDING":
-            return "NONE"
-        return "NONE"
+        return instance
+
+    def can_edit(self, order, user) -> bool:
+        """May THIS user edit THIS order now?
+
+        The order must be open (editable_scope FULL), and the user must
+        be its initiator or hold maintenanceorder.update. The initiator
+        rule is what lets a requester correct their own request without
+        being granted edit rights over everyone else's orders.
+        """
+        if user is None or self.editable_scope(order) != "FULL":
+            return False
+        if order.requested_by is not None and order.requested_by == user.id:
+            return True
+        return user.has_permission("maintenanceorder.update")
 
     def update(self, order_id: int, *, user=None, **fields):
         """Update an order within whatever scope its state allows.
@@ -559,24 +578,19 @@ class MaintenanceOrderService(BaseTransactionService):
 
         scope = self.editable_scope(order)
         if scope == "NONE":
-            instance = order.approval_instance
-            if order.status == "DRAFT" and instance is not None:
+            instance = self._latest_instance(order)
+            if instance is not None and instance.status == "REJECTED":
                 raise InvalidOrderStateError(
-                    "This order is awaiting approval and cannot be edited. "
-                    "Ask the approver to return it if it needs changes.")
+                    "This order was rejected and can no longer be edited.")
             raise InvalidOrderStateError(
                 f"A {order.status} order can no longer be edited.")
-
-        if scope == "REMARKS_ONLY":
-            allowed = {"description"}
-            rejected = sorted(k for k in fields
-                             if k not in allowed and fields[k] is not None)
-            if rejected:
-                raise InvalidOrderStateError(
-                    "Work has already started on this order, so only the "
-                    "description/remarks can be changed. Cannot change: "
-                    + ", ".join(rejected) + ".")
-            fields = {k: v for k, v in fields.items() if k in allowed}
+        # State first, then permission: a closed order is closed for
+        # everybody (409), whereas the permission answer (403) only
+        # means something while the order is still open.
+        if user is not None and not self.can_edit(order, user):
+            raise OrderEditForbiddenError(
+                "Only the person who raised this order, or a user with the "
+                "Maintenance Order Update permission, can edit it.")
 
         editable = {
             "description", "scheduled_date", "odometer_at_service",

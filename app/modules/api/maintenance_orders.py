@@ -29,6 +29,33 @@ def _conflict(message):
     return jsonify({"error": "conflict", "message": message}), 409
 
 
+def _forbidden(message):
+    return jsonify({"error": "forbidden", "message": message}), 403
+
+
+def _edit_gate(api_user, oid):
+    """Shared gate for every endpoint that edits an order's contents
+    (scope lines, parts). Returns an error response, or None to proceed.
+
+    These endpoints are decorated with maintenanceorder.view, not
+    .update, so the initiator can edit their own order; can_edit() is
+    the real check. A closed order is left for the service to refuse
+    with its own 409 message -- the permission answer only means
+    something while the order is open."""
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+    svc = MaintenanceOrderService()
+    order = svc.get_visible(oid, api_user)
+    if order is None:
+        return _not_found()
+    if svc.editable_scope(order) == "FULL" and not svc.can_edit(
+            order, api_user):
+        return _forbidden(
+            "Only the person who raised this order, or a user with the "
+            "Maintenance Order Update permission, can edit it.")
+    return None
+
+
 def _iso(d):
     if d is None:
         return None
@@ -563,6 +590,7 @@ def get_maintenance_order(api_user, oid):
     from app.modules.api.company_letterhead import company_letterhead
     data["company"] = company_letterhead()
     data["editable"] = MaintenanceOrderService().editable_scope(o)
+    data["can_edit"] = MaintenanceOrderService().can_edit(o, api_user)
     data["approval_audit"] = _approval_audit(o)
     data["oath_body"] = _oath_body_for(o)
     _attach_approval_chain(data, o, api_user)
@@ -655,10 +683,17 @@ def create_maintenance_order(api_user):
 
 
 @bp.route("/maintenance-orders/<int:oid>", methods=["PUT", "PATCH"])
-@api_auth_required("maintenanceorder.update")
+# view, not update: the initiator may edit their OWN order without
+# holding maintenanceorder.update. The real gate is
+# MaintenanceOrderService.can_edit(), enforced inside update() --
+# initiator, or update permission, and only while the order is open.
+@api_auth_required("maintenanceorder.view")
 def update_maintenance_order(api_user, oid):
     from app.modules.transactions.maintenance_order.service import (
-        MaintenanceOrderService, InvalidOrderStateError)
+        MaintenanceOrderService, InvalidOrderStateError,
+        OrderEditForbiddenError)
+    if MaintenanceOrderService().get_visible(oid, api_user) is None:
+        return _not_found()
     p = request.get_json(silent=True) or {}
     fields = {}
     for k in (
@@ -687,13 +722,19 @@ def update_maintenance_order(api_user, oid):
                     "estimated_cost",
                 )
 
+    svc = MaintenanceOrderService()
     try:
-        order = MaintenanceOrderService().update(oid, user=api_user, **fields)
+        order = svc.update(oid, user=api_user, **fields)
+    except OrderEditForbiddenError as e:
+        return _forbidden(str(e))
     except InvalidOrderStateError as e:
         return _conflict(str(e))
     if order is None:
         return _not_found()
-    return jsonify(_order_json(order, detail=True))
+    data = _order_json(order, detail=True)
+    data["editable"] = svc.editable_scope(order)
+    data["can_edit"] = svc.can_edit(order, api_user)
+    return jsonify(data)
 
 
 @bp.route("/maintenance-orders/<int:oid>/save-as-template", methods=["POST"])
@@ -727,20 +768,22 @@ def save_mo_scope_as_template(api_user, oid):
 
 
 @bp.route("/maintenance-orders/<int:oid>/scope", methods=["PUT"])
-@api_auth_required("maintenanceorder.update")
+@api_auth_required("maintenanceorder.view")  # real gate: _edit_gate
 def replace_maintenance_order_scope(api_user, oid):
     """Replace the order's Scope of Work lines.
 
     Body: {"items": [{"id"?: int, "activity_code"?: str,
                       "activity_description": str}, ...]} -- the full,
     ordered list; lines left out are removed. Allowed only while the
-    order is editable in full (Draft never submitted, or Returned): 409
-    otherwise. Permission is maintenanceorder.update -- editing scope is
-    editing the order, so no new permission code is introduced.
+    order is open (editable_scope FULL): 409 otherwise. Who: the
+    order's initiator or a maintenanceorder.update holder (_edit_gate).
     """
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService, InvalidOrderStateError,
         ScopeValidationError)
+    denied = _edit_gate(api_user, oid)
+    if denied:
+        return denied
     p = request.get_json(silent=True) or {}
     items = p.get("items")
     if items is None:
@@ -854,10 +897,13 @@ def mark_all_checklist(api_user, oid):
 
 
 @bp.route("/maintenance-orders/<int:oid>/parts", methods=["POST"])
-@api_auth_required("maintenanceorder.update")
+@api_auth_required("maintenanceorder.view")  # real gate: _edit_gate
 def add_mo_part(api_user, oid):
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService, InvalidOrderStateError)
+    denied = _edit_gate(api_user, oid)
+    if denied:
+        return denied
     p = request.get_json(silent=True) or {}
     desc = (p.get("part_description") or "").strip()
     if not desc:
@@ -890,10 +936,22 @@ def add_mo_part(api_user, oid):
 
 
 @bp.route("/maintenance-orders/<int:oid>/parts/<int:part_id>", methods=["DELETE"])
-@api_auth_required("maintenanceorder.update")
+@api_auth_required("maintenanceorder.view")  # real gate: _edit_gate
 def remove_mo_part(api_user, oid, part_id):
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService, InvalidOrderStateError)
+    from app.extensions import db
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrderPart)
+    denied = _edit_gate(api_user, oid)
+    if denied:
+        return denied
+    # The gate was checked against the order in the URL, so the part
+    # must belong to THAT order; otherwise edit rights on one order
+    # would reach the parts of any other.
+    part = db.session.get(MaintenanceOrderPart, part_id)
+    if part is None or part.order_id != oid:
+        return _not_found("Part")
     try:
         MaintenanceOrderService().remove_part(part_id)
     except InvalidOrderStateError as e:
