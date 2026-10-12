@@ -138,15 +138,48 @@ pending notice; payload contents; changed-after-submission panel.
 
 Mutation-check the permission gate and the scope rule.
 
-## 4. Phase 2 — other request documents (separate plan)
+## 4. Phase 2 — other request documents (2026-10-13)
 
-Lift the policy into `BaseTransactionService` (`editable_scope`,
-`can_edit`, `changes_since_submission`, `edited_after_submission`
-emission) and apply it to Purchase Request, Trip Ticket, Vehicle
-Registration, Vehicle Movement, Tire and Battery transactions and ATD:
-add the missing update endpoints and edit screens, move ATD and
-Tire/Battery onto the shared `ApprovalWorkflow` + decision panel, and
-add Return/Resubmit to Tire/Battery transactions (absent today).
+**Shared policy in `BaseTransactionService`** (MO moves onto it too):
+`EDITABLE_STATUSES` (default `("DRAFT",)`; MO `("DRAFT","IN_PROGRESS")`),
+`update_permission`, `EDIT_FIELDS` (field → label, kind), and generic
+`editable_scope`, `can_edit`, `update` (validate hook → value-compared
+change detection → setattr → after-edit hook → notify),
+`changes_since_submission`. One API helper coerces payloads by kind and
+maps errors (403 forbidden / 400 field / 409 state).
+
+**Open vs locked, per document.** A document is editable while its
+physical status is `DRAFT` — unsubmitted, Pending, Returned, or
+Approved but not yet actioned — and not Rejected. It locks once it
+leaves Draft (Trip Ticket RELEASED, ATD ACTIVE, Vehicle Movement
+IN_TRANSIT, PR ORDERED/RECEIVED, COMPLETED, CANCELLED): by then other
+records have changed (vehicle driver, tire mount, branch). The MO's
+In-Progress exception stays as agreed in Phase 1. Per-document
+`EDITABLE_STATUSES` keeps this adjustable.
+
+**Editable fields** (the create-time fields):
+
+| Document | Fields |
+|---|---|
+| Purchase Request | department, vendor, description, justification, needed-by date; lines (add/edit/remove) |
+| Trip Ticket | vehicle, driver (or manual name), destination, purpose, departure, odometer out, passengers |
+| Vehicle Registration | registration date, validity years (expiry recomputed), OR/CR cost, odometer |
+| Vehicle Movement | vehicle, movement type, from, to, date, start, driver, employee responsible, purpose, remarks |
+| Tire Transaction | tire, action, vehicle, date, odometer, remarks |
+| Battery Transaction | battery, action, vehicle, date, remarks |
+| ATD | vehicle, driver, purpose, valid from/to, odometer out, linked MO |
+
+Vehicle Registration's vehicle and NEW/RENEWAL type stay fixed: both
+drive the duplicate/prior-registration rules at creation, and a wrong
+one is a new registration, not a correction.
+
+Validation re-uses each `create()` rule: Trip Ticket driver-from-master
+parameter, movement type lookup, tire/battery action list.
+
+**Approval UI alignment.** ATD and Tire/Battery move onto the shared
+`ApprovalWorkflow` + decision panel; Tire/Battery gain Return/Resubmit
+endpoints (the service already inherits them). Every detail page shows
+the Edit control by `can_edit` and the `ChangedAfterSubmission` list.
 
 ## 5. Out of scope
 
