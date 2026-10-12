@@ -333,17 +333,83 @@ def reference_departments(api_user):
 @bp.route("/reference/vendors", methods=["GET"])
 @api_auth_required()
 def reference_vendors(api_user):
-    """Vendor dropdown for tire/battery forms.
+    """Vendor list for tire/battery forms -- and, given `q`, the vendor
+    PICKER for the MO, PR and Invoice forms.
 
     Gated only on auth: the form needs the list to enrol stock; requiring
     vendor.view would empty the dropdown for storekeepers who can create
-    tires but not maintain the vendor master.
+    tires but not maintain the vendor master. The MO form used /vendors
+    (vendor.view) and had exactly that bug for initiators -- B23.
+
+    Without `q`: unchanged legacy shape, every active vendor, so the
+    tire/battery/PR callers keep working untouched.
+
+    With `q` (even empty): searched like /reference/vehicles -- code or
+    name, case-insensitive (Flask's VendorSearchService fields), first
+    _PICKER_LIMIT matches by name, `has_more`/`total` so a cap on DISPLAY
+    is never silent, and the vendor master's branch visibility, so the
+    picker never offers a vendor the caller could not open. No branch
+    FILTER beyond that: Flask does not filter by the vehicle's branch
+    either; the summary flags a mismatch instead (agreed in B23).
     """
     from app.modules.master_data.vendor.service import VendorService
-    rows = VendorService().list(include_inactive=False)
-    return jsonify({"items": [
-        {"id": v.id, "code": getattr(v, "code", None), "name": v.name}
-        for v in rows]})
+
+    if "q" not in request.args:
+        rows = VendorService().list(include_inactive=False)
+        return jsonify({"items": [
+            {"id": v.id, "code": getattr(v, "code", None), "name": v.name}
+            for v in rows]})
+
+    from sqlalchemy import func, or_
+    from app.modules.master_data.vendor.models import Vendor
+
+    q = (request.args.get("q") or "").strip()
+    query = Vendor.query.filter_by(is_active=True)
+    if q:
+        like = f"%{q.lower()}%"
+        query = query.filter(or_(func.lower(Vendor.code).like(like),
+                                 func.lower(Vendor.name).like(like)))
+    svc = VendorService()
+    # Visibility is per-row (branch/BU scope), so it is applied after
+    # the SQL text filter -- the text filter is what keeps this small.
+    rows = [v for v in query.order_by(Vendor.name, Vendor.code).all()
+            if v.created_by == getattr(api_user, "id", None)
+            or svc._is_visible(v, api_user)]
+    shown = rows[:_PICKER_LIMIT]
+    return jsonify({
+        "items": [{"id": v.id, "code": v.code, "name": v.name,
+                   "label": f"{v.code} — {v.name}",
+                   "vendor_type": v.vendor_type, "city": v.city}
+                  for v in shown],
+        "has_more": len(rows) > len(shown),
+        "total": len(rows),
+    })
+
+
+@bp.route("/reference/vendors/<int:vendor_id>/summary", methods=["GET"])
+@api_auth_required()
+def reference_vendor_summary(api_user, vendor_id):
+    """Vendor Information Summary for the New MO form (B23).
+
+    Sign-in only, same reasoning as the picker above. Visibility follows
+    the vendor master (get_visible), so this cannot reveal a vendor the
+    picker would not have offered. `vehicle_id` adds whether the vendor
+    is assigned to that vehicle's branch -- information, never a block.
+    """
+    from app.modules.master_data.vendor.service import VendorService
+    from app.modules.master_data.vendor.summary import vendor_summary
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    vendor = VendorService().get_visible(vendor_id, api_user)
+    if vendor is None:
+        return jsonify({"error": "not_found",
+                        "message": "Vendor not found or not visible to "
+                                   "this account."}), 404
+    vehicle = None
+    vehicle_id = request.args.get("vehicle_id", type=int)
+    if vehicle_id:
+        vehicle = VehicleService().get(vehicle_id)
+    return jsonify(vendor_summary(vendor, vehicle))
 
 
 # ── Searchable pickers ──────────────────────────────────────────────────────

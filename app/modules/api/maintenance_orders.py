@@ -1,4 +1,5 @@
 """Maintenance Order API for React — list, detail, create, lifecycle, checklist, parts."""
+from app.modules.master_data.vendor.summary import vendor_summary
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -324,6 +325,14 @@ def _order_json(o, *, detail=False):
     if detail:
         data.update({
             "scope_template_id": o.scope_template_id,
+            # Vendor Information Summary (B23). Embedded rather than
+            # fetched: approvers open the MO, not the vendor master, and
+            # most lack vendor.view. A since-deactivated vendor still
+            # shows (is_active False) -- the order's history must say
+            # who did the work. Same builder as the New MO form's
+            # /reference/vendors/<id>/summary, so both screens agree.
+            "vendor_summary": vendor_summary(
+                getattr(o, "vendor", None), o.vehicle),
             "pm_schedule_id": o.pm_schedule_id,
             "driver_id": o.driver_id,
             "driver": (

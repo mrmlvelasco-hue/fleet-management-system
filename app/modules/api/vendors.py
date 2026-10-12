@@ -160,6 +160,56 @@ def vendors_export(api_user):
                  ".spreadsheetml.sheet")
 
 
+@bp.route("/vendors/import/template", methods=["GET"])
+@api_auth_required("vendor.create")
+def vendor_import_template_api(api_user):
+    """Fill-in Excel template for the vendor bulk import (B24), with this
+    install's own Branch codes on its Reference sheet. Same pattern and
+    permission rule as /vehicles/import/template: importing is creating."""
+    from io import BytesIO
+    from flask import send_file
+    from app.modules.master_data.vendor.import_service import build_template
+    return send_file(
+        BytesIO(build_template()), as_attachment=True,
+        download_name="Vendor_Import_Template.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument"
+                 ".spreadsheetml.sheet")
+
+
+@bp.route("/vendors/import", methods=["POST"])
+@api_auth_required("vendor.create")
+def vendor_import_api(api_user):
+    """Validate (and, only with commit=1, save) a filled-in template.
+
+    Multipart: `file` (.xlsx), `commit` ("1" to save). A preview is the
+    default, as for vehicles -- uploading the wrong file saves nothing.
+    Existing codes are skipped and reported, never overwritten.
+
+    Returns {dry_run, total_rows, created, skipped,
+             errors: [{row, identifier, problems: [...]}]}.
+    An unreadable file, or one missing required columns, is a 400.
+
+    Registered BEFORE /vendors/<int:vendor_id>: "import" is not an int,
+    so the order is not load-bearing today, but keeping the literal
+    routes first means a future <vendor_code> route cannot capture it.
+    """
+    from app.modules.master_data.vendor.import_service import import_vendors
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        return jsonify({"error": "validation",
+                        "message": "Choose a filled-in template file to "
+                                   "upload."}), 400
+    dry_run = request.form.get("commit") != "1"
+    try:
+        stats = import_vendors(uploaded.stream, dry_run=dry_run)
+    except ValueError as exc:          # e.g. missing required columns
+        return jsonify({"error": "validation", "message": str(exc)}), 400
+    except Exception as exc:           # not an .xlsx, corrupt file, ...
+        return jsonify({"error": "validation",
+                        "message": f"Could not read the file: {exc}"}), 400
+    return jsonify({"dry_run": dry_run, **stats})
+
+
 @bp.route("/vendors/<int:vendor_id>", methods=["GET"])
 @api_auth_required("vendor.view")
 def vendor_detail(api_user, vendor_id):
