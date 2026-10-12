@@ -21,6 +21,17 @@ class BatteryTransactionService(BaseTransactionService):
     model = BatteryTransaction
     document_type_code = "BAT"
     reference_table = "battery_transactions"
+    # Edit policy (BaseTransactionService).
+    # battery.* like the rest of the React-facing battery transaction API
+    # (Flask screens and the menu use batterytxn.* -- flagged, not changed).
+    update_permission = "battery.update"
+    EDIT_FIELDS = {
+        "battery_id": ("Battery", "id"),
+        "action": ("Action", "text"),
+        "vehicle_id": ("Vehicle", "id"),
+        "transaction_date": ("Transaction date", "date"),
+        "remarks": ("Remarks", "text"),
+    }
     date_fields = (("transaction_date", "Transaction Date"),
                    ("created_at", "Created Date"))
 
@@ -38,6 +49,16 @@ class BatteryTransactionService(BaseTransactionService):
         elif txn.action == "DISPOSE":
             battery.status = "DISPOSED"
             battery.is_active = False
+
+    def _validate_edit(self, record, fields):
+        """Same action list as create()."""
+        if "action" in fields and fields["action"] not in VALID_ACTIONS:
+            from app.modules.transactions.base_service import (
+                DocumentFieldError)
+            raise DocumentFieldError(
+                f"'{fields['action']}' is not a valid battery action. "
+                f"Must be one of: {', '.join(sorted(VALID_ACTIONS))}.",
+                "action")
 
     def create(self, *, battery_id, action, transaction_date, user,
                vehicle_id=None, remarks=None):

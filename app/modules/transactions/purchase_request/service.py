@@ -22,6 +22,20 @@ class PurchaseRequestService(BaseTransactionService):
     model = PurchaseRequest
     document_type_code = "PR"
     reference_table = "purchase_requests"
+    # Edit policy (BaseTransactionService). Lines are edited through
+    # add_line / update_line / remove_line under the same open rule.
+    update_permission = "purchaserequest.update"
+    #: Listed in changes-since-submission but never set by an edit: the
+    #: total is derived from the lines, and it is what the approval
+    #: band is based on, so a line change while Pending must show here.
+    TRACKED_FIELDS = {"amount": ("Total amount", "money")}
+    EDIT_FIELDS = {
+        "department_id": ("Department", "id"),
+        "vendor_id": ("Vendor", "id"),
+        "description": ("Description", "text"),
+        "justification": ("Justification", "text"),
+        "needed_by_date": ("Needed by", "date"),
+    }
     date_fields = (("created_at", "Created Date"),
                    ("needed_by_date", "Needed By"))
 
@@ -52,10 +66,13 @@ class PurchaseRequestService(BaseTransactionService):
         return pr
 
     def _require_draft(self, pr: PurchaseRequest):
-        if pr.approval_instance_id is not None or pr.status != "DRAFT":
+        """Lines follow the document edit policy: open while Draft
+        (unsubmitted, Pending, Returned) and not Rejected. Before this a
+        Returned PR could not be corrected at all."""
+        if self.editable_scope(pr) != "FULL":
             raise LineManagementError(
-                "Line items can only be modified while the request is DRAFT "
-                "and has not yet been submitted.")
+                "Line items can no longer be changed: this request is "
+                f"{pr.status} or was rejected.")
 
     def add_line(self, pr_id: int, *, item_description, quantity, unit_cost):
         pr = db.session.get(PurchaseRequest, pr_id)
@@ -65,6 +82,7 @@ class PurchaseRequestService(BaseTransactionService):
             unit_cost=unit_cost, line_total=quantity * unit_cost))
         _recompute_amount(pr)
         db.session.commit()
+        self._notify_edit_after_submission(pr)
         return pr
 
     def update_line(self, line_id: int, *, quantity=None, unit_cost=None,
@@ -80,6 +98,7 @@ class PurchaseRequestService(BaseTransactionService):
         line.line_total = line.quantity * line.unit_cost
         _recompute_amount(line.request)
         db.session.commit()
+        self._notify_edit_after_submission(line.request)
         return line
 
     def remove_line(self, line_id: int):
@@ -90,6 +109,7 @@ class PurchaseRequestService(BaseTransactionService):
         db.session.delete(line)
         _recompute_amount(pr)
         db.session.commit()
+        self._notify_edit_after_submission(pr)
 
     def mark_ordered(self, pr_id: int):
         pr = db.session.get(PurchaseRequest, pr_id)

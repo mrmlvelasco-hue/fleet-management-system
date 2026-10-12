@@ -68,14 +68,18 @@ def test_add_line_recomputes_amount(db, env):
     assert refreshed.amount == 200  # 100 + 2*50
 
 
-def test_cannot_modify_lines_after_submit(db, env):
+def test_lines_stay_editable_after_submit(db, env):
+    """2026-10-12 edit policy: a submitted (Pending) PR may still be
+    corrected -- before, a Returned PR could not be fixed at all. Lines
+    lock once the request leaves Draft (ORDERED / RECEIVED); see
+    test_document_edit_policy.py."""
     small_approver, large_approver, requester = env
     svc = PurchaseRequestService()
     pr = svc.create(description="Test", user=requester, lines=[
         {"item_description": "Item A", "quantity": 1, "unit_cost": 100}])
     svc.submit(pr.id, user=requester)
-    with pytest.raises(LineManagementError):
-        svc.add_line(pr.id, item_description="Item B", quantity=1, unit_cost=1)
+    svc.add_line(pr.id, item_description="Item B", quantity=1, unit_cost=1)
+    assert len(db.session.get(PurchaseRequest, pr.id).lines) == 2
 
 
 def test_small_amount_routes_to_small_approver(db, env):

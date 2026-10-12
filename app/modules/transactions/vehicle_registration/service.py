@@ -52,6 +52,17 @@ class VehicleRegistrationService(BaseTransactionService):
     model = VehicleRegistration
     document_type_code = "VR"
     reference_table = "vehicle_registrations"
+    # Edit policy (BaseTransactionService). The vehicle and NEW/RENEWAL
+    # type are deliberately absent: both drive the duplicate and
+    # prior-registration rules in create(), so a wrong one is a new
+    # registration, not a correction.
+    update_permission = "vehicleregistration.update"
+    EDIT_FIELDS = {
+        "registration_date": ("Registration date", "date"),
+        "validity_years": ("Validity (years)", "int"),
+        "or_cr_cost": ("OR/CR cost", "money"),
+        "odometer_at_registration": ("Odometer", "int"),
+    }
     date_fields = (("registration_date", "Registration Date"),
                    ("expiry_date", "Expiry Date"),
                    ("created_at", "Created Date"))
@@ -82,6 +93,16 @@ class VehicleRegistrationService(BaseTransactionService):
         rate = self.get_finance_params()["vat_rate"]
         vat = (Decimal(str(base_amount)) * Decimal(str(rate)) / Decimal("100"))
         return vat.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    def _after_edit(self, record, fields):
+        """The expiry is derived, exactly as create() derives it."""
+        if "registration_date" in fields or "validity_years" in fields:
+            if not record.validity_years:
+                record.validity_years = DEFAULT_VALIDITY_YEARS.get(
+                    record.registration_type, 1)
+            if record.registration_date:
+                record.expiry_date = record.registration_date + relativedelta(
+                    years=record.validity_years)
 
     def create(self, *, vehicle_id, registration_type, registration_date,
                user, validity_years=None, or_cr_cost=None,

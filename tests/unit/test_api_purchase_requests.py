@@ -259,27 +259,19 @@ def test_add_line_recomputes_the_amount(db, client, pr_env):
     assert float(fresh["amount"]) == 700.0
 
 
-def test_lines_cannot_be_added_after_submit(db, client, pr_env):
-    """Matches LineManagementError's own rule: modifying a submitted
-    request would change what the approver is deciding on without
-    their knowledge.
-
-    approval_instance_id is set DIRECTLY rather than via the /submit
-    endpoint: with no ApprovalPath configured for the PR document type
-    (this fixture's state, and a fresh install's -- the same finding
-    recorded for Maintenance Orders), submit() auto-approves, and an
-    auto-approved request may legitimately still accept lines under
-    some future business rule this test has no opinion on. The rule
-    under test here is specifically "once an approval instance exists",
-    which is what LineManagementError actually checks.
-    """
+def test_lines_cannot_be_added_once_ordered(db, client, pr_env):
+    """2026-10-12 edit policy: lines stay editable while the request is
+    Draft (including Pending -- the approver is notified and sees the
+    new total), and lock once procurement has acted (ORDERED). The old
+    rule locked them at submission, which left a Returned PR
+    uncorrectable."""
     from app.modules.transactions.purchase_request.models import (
         PurchaseRequest)
 
     _status, pr_body = _post(client, "/api/v1/purchase-requests",
                              _token(client), _pr_payload(pr_env))
     pr = PurchaseRequest.query.filter_by(id=pr_body["id"]).first()
-    pr.approval_instance_id = -1  # any non-null id; FK not enforced in SQLite
+    pr.status = "ORDERED"
     db.session.commit()
 
     status, body = _post(

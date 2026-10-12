@@ -28,6 +28,18 @@ class TireTransactionService(BaseTransactionService):
     model = TireTransaction
     document_type_code = "TIR"
     reference_table = "tire_transactions"
+    # Edit policy (BaseTransactionService).
+    # tire.* like the rest of the React-facing tire transaction API
+    # (Flask screens and the menu use tiretxn.* -- flagged, not changed).
+    update_permission = "tire.update"
+    EDIT_FIELDS = {
+        "tire_id": ("Tire", "id"),
+        "action": ("Action", "text"),
+        "vehicle_id": ("Vehicle", "id"),
+        "transaction_date": ("Transaction date", "date"),
+        "odometer_at_service": ("Odometer", "int"),
+        "remarks": ("Remarks", "text"),
+    }
     date_fields = (("transaction_date", "Transaction Date"),
                    ("created_at", "Created Date"))
 
@@ -47,6 +59,16 @@ class TireTransactionService(BaseTransactionService):
         elif txn.action == "DISPOSE":
             tire.status = "DISPOSED"
             tire.is_active = False
+
+    def _validate_edit(self, record, fields):
+        """Same action list as create()."""
+        if "action" in fields and fields["action"] not in VALID_ACTIONS:
+            from app.modules.transactions.base_service import (
+                DocumentFieldError)
+            raise DocumentFieldError(
+                f"'{fields['action']}' is not a valid tire action. "
+                f"Must be one of: {', '.join(sorted(VALID_ACTIONS))}.",
+                "action")
 
     def create(self, *, tire_id, action, transaction_date, user,
                vehicle_id=None, odometer_at_service=None, remarks=None):

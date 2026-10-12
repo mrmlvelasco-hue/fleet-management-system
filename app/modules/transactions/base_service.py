@@ -38,6 +38,87 @@ class NotVisibleError(Exception):
     pass
 
 
+def naive_utc(dt):
+    """Audit and approval timestamps are written timezone-aware (UTC)
+    but SQLite hands them back naive; compare them all as naive UTC."""
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        from datetime import timezone
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+#: id field -> (module, model, how to show a row). Used to turn the ids
+#: recorded in the Audit Trail back into names a person recognises.
+_ID_DISPLAY = {
+    "vehicle_id": ("app.modules.master_data.vehicle.models", "Vehicle",
+                   lambda r: r.plate_number or r.conduction_number),
+    "driver_id": ("app.modules.master_data.driver.models", "Driver",
+                  lambda r: f"{r.first_name} {r.last_name}".strip()),
+    "vendor_id": ("app.modules.master_data.vendor.models", "Vendor",
+                  lambda r: r.name),
+    "department_id": ("app.modules.master_data.org.models", "Department",
+                      lambda r: r.name),
+    "destination_branch_id": ("app.modules.master_data.org.models",
+                              "Branch", lambda r: r.name),
+    "tire_id": ("app.modules.master_data.tire.models", "Tire",
+                lambda r: r.serial_number),
+    "battery_id": ("app.modules.master_data.battery.models", "Battery",
+                   lambda r: r.serial_number),
+    "transaction_type_id": (
+        "app.modules.transactions.maintenance_order.models",
+        "TransactionType", lambda r: r.name),
+    "maintenance_type_id": ("app.modules.master_data.reference.models",
+                            "MaintenanceType", lambda r: r.name),
+    "scope_template_id": ("app.modules.maintenance_config.models",
+                          "PMScopeTemplate", lambda r: r.name),
+    "maintenance_order_id": (
+        "app.modules.transactions.maintenance_order.models",
+        "MaintenanceOrder", lambda r: r.document_number or f"MO #{r.id}"),
+}
+
+
+def change_display(field, kind, value):
+    """An audit value as a person reads it: names instead of ids, money
+    with separators. Never raises -- a record deleted since the change
+    still shows its id rather than breaking the list."""
+    if value in (None, ""):
+        return "—"
+    try:
+        if kind == "money":
+            from decimal import Decimal
+            return f"{Decimal(str(value)):,.2f}"
+        if field in _ID_DISPLAY:
+            import importlib
+            module, cls, show = _ID_DISPLAY[field]
+            model = getattr(importlib.import_module(module), cls)
+            row = db.session.get(model, int(value))
+            return show(row) if row else f"#{value}"
+    except Exception:
+        pass
+    return str(value)
+
+
+class DocumentStateError(Exception):
+    """The document is closed for editing (left Draft, completed,
+    cancelled or rejected). API: 409."""
+
+
+class DocumentEditForbiddenError(Exception):
+    """The user may not edit this document: neither its initiator nor a
+    holder of <document>.update. API: 403."""
+
+
+class DocumentFieldError(ValueError):
+    """A value the document cannot take; carries the field name so the
+    API can return a field-named 400."""
+
+    def __init__(self, message, field="_"):
+        super().__init__(message)
+        self.field = field
+
+
 class BaseTransactionService:
     model = None              # subclass sets: the SQLAlchemy model
     document_type_code = None  # subclass sets: e.g. "TT", "ATD", "VM"
@@ -168,6 +249,163 @@ class BaseTransactionService:
         record.status = "CANCELLED"
         db.session.commit()
         return record
+
+    # ── Edit policy (2026-10-12; spec document-edit-policy-design) ───
+    #
+    # One rule for every request document: open while its physical
+    # status is in EDITABLE_STATUSES (Draft -- unsubmitted, Pending,
+    # Returned or Approved-not-yet-actioned) and its approval is not
+    # Rejected; editable by the initiator or a holder of
+    # update_permission. Approval is NOT restarted by an edit; the
+    # people it concerns are notified and the change is listed.
+
+    #: Physical statuses in which the document may still be edited.
+    EDITABLE_STATUSES = ("DRAFT",)
+    #: e.g. "tripticket.update" -- the non-initiator edit permission.
+    update_permission = None
+    #: field -> (label, kind). kind: id | int | money | date | datetime |
+    #: text. The edit allow-list AND the changed-after-submission labels.
+    EDIT_FIELDS: dict = {}
+    #: field -> (label, kind) shown in changes_since_submission but NOT
+    #: editable -- derived values a person still needs to see move
+    #: (e.g. a Purchase Request total recomputed from its lines).
+    TRACKED_FIELDS: dict = {}
+
+    def _latest_instance(self, record):
+        """The record's approval instance; falls back to the latest
+        instance by reference so a stale session still sees it."""
+        instance = getattr(record, "approval_instance", None)
+        if instance is None:
+            from app.core.approval.models import ApprovalInstance
+            instance = (ApprovalInstance.query
+                        .filter_by(reference_table=self.reference_table,
+                                   reference_id=record.id)
+                        .order_by(ApprovalInstance.id.desc()).first())
+        return instance
+
+    def editable_scope(self, record) -> str:
+        """"FULL" while open, "NONE" once closed."""
+        if record is None or record.status not in self.EDITABLE_STATUSES:
+            return "NONE"
+        instance = self._latest_instance(record)
+        if instance is not None and instance.status == "REJECTED":
+            return "NONE"
+        return "FULL"
+
+    def can_edit(self, record, user) -> bool:
+        """May THIS user edit THIS record now? Open, and the user is the
+        initiator or holds update_permission."""
+        if user is None or self.editable_scope(record) != "FULL":
+            return False
+        if getattr(record, "requested_by", None) == user.id:
+            return True
+        return bool(self.update_permission
+                    and user.has_permission(self.update_permission))
+
+    def _validate_edit(self, record, fields) -> None:
+        """Hook: raise DocumentFieldError for a value this document's
+        create() would also have refused. Runs before anything is set."""
+
+    def _after_edit(self, record, fields) -> None:
+        """Hook: keep derived values in step (e.g. an expiry date)."""
+
+    def update(self, record_id: int, *, user=None, **fields):
+        """Edit an open document within EDIT_FIELDS.
+
+        State is checked before permission: a closed document is closed
+        for everybody (409); the permission answer (403) only means
+        something while it is open. Unknown keys are ignored, so status,
+        requested_by and the like can never be set through an edit."""
+        record = db.session.get(self.model, record_id)
+        if record is None:
+            raise DocumentStateError("Document not found.")
+        if self.editable_scope(record) != "FULL":
+            instance = self._latest_instance(record)
+            if instance is not None and instance.status == "REJECTED":
+                raise DocumentStateError(
+                    "This document was rejected and can no longer be edited.")
+            raise DocumentStateError(
+                f"A {record.status} document can no longer be edited.")
+        if user is not None and not self.can_edit(record, user):
+            raise DocumentEditForbiddenError(
+                "Only the person who raised this document, or a user with "
+                "permission to update it, can edit it.")
+        fields = {k: v for k, v in fields.items() if k in self.EDIT_FIELDS}
+        self._validate_edit(record, fields)
+        # By value: the edit form re-posts every field, and
+        # Decimal("1500.00") == 1500 is not a change.
+        changed = [k for k, v in fields.items() if getattr(record, k) != v]
+        for key, value in fields.items():
+            setattr(record, key, value)
+        self._after_edit(record, fields)
+        if user is not None and hasattr(record, "updated_by"):
+            record.updated_by = user.id
+        db.session.commit()
+        if changed:
+            self._notify_edit_after_submission(record)
+        return record
+
+    def _notify_edit_after_submission(self, record) -> None:
+        """Tell the approvers through the Notification Engine's
+        configurable rules (seeded: current approver + prior approvers)
+        -- once someone other than the initiator is relying on the
+        document: approval PENDING or APPROVED, or work IN_PROGRESS.
+        A Returned document is being fixed at the approver's request."""
+        instance = self._latest_instance(record)
+        if instance is None:
+            return
+        if not (instance.status in ("PENDING", "APPROVED")
+                or record.status == "IN_PROGRESS"):
+            return
+        from app.core.approval.engine import publish
+        publish("edited_after_submission", instance)
+
+    def changes_since_submission(self, record) -> list:
+        """Edits made after the document was first submitted, newest
+        first: [{field, label, old, new, changed_by, changed_at}]. Read
+        from the Audit Trail (every field change is already logged with
+        who and when); only EDIT_FIELDS count, so status moves and
+        bookkeeping columns never show as edits."""
+        from app.core.approval.models import ApprovalAction, ApprovalInstance
+        from app.core.models.audit_log import AuditLog
+        from app.modules.user_management.models import User
+        instance_ids = [i.id for i in ApprovalInstance.query.filter_by(
+            reference_table=self.reference_table, reference_id=record.id)]
+        if not instance_ids:
+            return []
+        first = (ApprovalAction.query
+                 .filter(ApprovalAction.instance_id.in_(instance_ids),
+                         ApprovalAction.action == "SUBMIT")
+                 .order_by(ApprovalAction.acted_at.asc()).first())
+        if first is None:
+            return []
+        since = naive_utc(first.acted_at)
+        rows = (AuditLog.query
+                .filter_by(table_name=self.reference_table,
+                           record_id=record.id, action="UPDATE")
+                .order_by(AuditLog.id.desc()).all())
+        users, out = {}, []
+        for row in rows:
+            if naive_utc(row.timestamp) < since:
+                continue
+            old, new = row.old_values or {}, row.new_values or {}
+            for field, (label, kind) in {**self.EDIT_FIELDS,
+                                         **self.TRACKED_FIELDS}.items():
+                # The audit listener records only attributes whose value
+                # actually changed, so presence is enough.
+                if field not in new:
+                    continue
+                if row.user_id and row.user_id not in users:
+                    u = db.session.get(User, row.user_id)
+                    users[row.user_id] = u.full_name if u else None
+                out.append({
+                    "field": field, "label": label,
+                    "old": change_display(field, kind, old.get(field)),
+                    "new": change_display(field, kind, new.get(field)),
+                    "changed_by": users.get(row.user_id),
+                    "changed_at": naive_utc(row.timestamp).isoformat(),
+                })
+        return out
 
     def _visible_to(self, record, user) -> bool:
         """Does `user` have visibility into this record?

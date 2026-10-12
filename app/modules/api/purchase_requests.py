@@ -219,13 +219,45 @@ def purchase_request_detail(api_user, pid):
     pr = PurchaseRequest.query.filter_by(id=pid).first()
     if pr is None:
         return _not_found()
-    data = _pr_json(pr, detail=True)
-    _attach_approval_chain(data, pr, api_user)
+    data = _pr_detail(pr, api_user)
     # Letterhead for the print view -- from System Administration's
     # Company Profile, matching Flask's purchaserequest_print.html.
     from app.modules.api.company_letterhead import company_letterhead
     data["company"] = company_letterhead()
     return jsonify(data)
+
+
+def _pr_detail(pr, api_user):
+    """The detail every PR response returns: fields, approval chain, and
+    the edit policy for THIS viewer (can_edit, changes since
+    submission), so the screen is right after any action without a
+    reload."""
+    from app.modules.api.document_edit import edit_info
+    from app.modules.transactions.purchase_request.service import (
+        PurchaseRequestService)
+    data = _pr_json(pr, detail=True)
+    _attach_approval_chain(data, pr, api_user)
+    data.update(edit_info(PurchaseRequestService(), pr, api_user))
+    return data
+
+
+@bp.route("/purchase-requests/<int:pid>", methods=["PUT", "PATCH"])
+# view, not update: the initiator may edit their own request; the real
+# gate is PurchaseRequestService.can_edit (initiator or
+# purchaserequest.update, while the request is open).
+@api_auth_required("purchaserequest.view")
+def update_purchase_request(api_user, pid):
+    from app.modules.api.document_edit import edit_document
+    from app.modules.transactions.purchase_request.service import (
+        PurchaseRequestService)
+    svc = PurchaseRequestService()
+
+    def serialize(pr):
+        data = _pr_json(pr, detail=True)
+        _attach_approval_chain(data, pr, api_user)
+        return data
+
+    return edit_document(svc, pid, api_user, serialize, _not_found)
 
 
 def _attach_approval_chain(data, pr, api_user):
@@ -279,10 +311,14 @@ def _attach_approval_chain(data, pr, api_user):
 
 
 @bp.route("/purchase-requests/<int:pid>/lines", methods=["POST"])
-@api_auth_required("purchaserequest.update")
+@api_auth_required("purchaserequest.view")  # real gate: edit_gate
 def add_purchase_request_line(api_user, pid):
+    from app.modules.api.document_edit import edit_gate
     from app.modules.transactions.purchase_request.service import (
         LineManagementError, PurchaseRequestService)
+    denied = edit_gate(PurchaseRequestService(), pid, api_user, _not_found)
+    if denied:
+        return denied
 
     payload = request.get_json(silent=True) or {}
     if not payload.get("item_description"):
@@ -303,17 +339,21 @@ def add_purchase_request_line(api_user, pid):
         return _conflict(str(exc))
     if pr is None:
         return _not_found()
-    return jsonify(_pr_json(pr, detail=True)), 201
+    return jsonify(_pr_detail(pr, api_user)), 201
 
 
 @bp.route("/purchase-requests/<int:pid>/lines/<int:line_id>",
          methods=["DELETE"])
-@api_auth_required("purchaserequest.update")
+@api_auth_required("purchaserequest.view")  # real gate: edit_gate
 def remove_purchase_request_line(api_user, pid, line_id):
+    from app.modules.api.document_edit import edit_gate
     from app.modules.transactions.purchase_request.models import (
         PurchaseRequest, PurchaseRequestLine)
     from app.modules.transactions.purchase_request.service import (
         LineManagementError, PurchaseRequestService)
+    denied = edit_gate(PurchaseRequestService(), pid, api_user, _not_found)
+    if denied:
+        return denied
 
     # The service's remove_line takes only a line id, same shape as
     # invoices' remove_line, and the same ownership gap applies: the
@@ -328,7 +368,7 @@ def remove_purchase_request_line(api_user, pid, line_id):
         return _conflict(str(exc))
 
     pr = PurchaseRequest.query.filter_by(id=pid).first()
-    return jsonify(_pr_json(pr, detail=True))
+    return jsonify(_pr_detail(pr, api_user))
 
 
 def _lifecycle_action(api_user, pid, method_name):
@@ -368,7 +408,7 @@ def _lifecycle_action(api_user, pid, method_name):
         return _conflict(str(exc))
 
     pr = PurchaseRequest.query.filter_by(id=pid).first()
-    return jsonify(_pr_json(pr, detail=True))
+    return jsonify(_pr_detail(pr, api_user))
 
 
 @bp.route("/purchase-requests/<int:pid>/submit", methods=["POST"])

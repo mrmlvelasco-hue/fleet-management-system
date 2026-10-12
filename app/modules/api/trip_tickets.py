@@ -134,6 +134,12 @@ def _trip_json(t, *, detail=False, api_user=None):
         data["has_approval_instance"] = inst is not None
         data["is_requester"] = bool(
             api_user is not None and t.requested_by == getattr(api_user, "id", None))
+    if detail and api_user is not None:
+        # Edit policy for THIS viewer, on every detail response (view,
+        # lifecycle actions, PATCH) so the screen never goes stale.
+        from app.modules.api.document_edit import edit_info
+        from app.modules.transactions.trip_ticket.service import TripTicketService
+        data.update(edit_info(TripTicketService(), t, api_user))
     return data
 
 
@@ -227,6 +233,18 @@ def trip_ticket_form_options(api_user):
         "require_driver_from_master":
             str(raw).upper() in ("YES", "TRUE", "1"),
     })
+
+
+@bp.route("/trip-tickets/<int:tid>", methods=["PUT", "PATCH"])
+# view, not update: the initiator may edit their own document; the real
+# gate is TripTicketService.can_edit (initiator or tripticket.update, while open).
+@api_auth_required("tripticket.view")
+def update_trip_ticket(api_user, tid):
+    from app.modules.api.document_edit import edit_document
+    from app.modules.transactions.trip_ticket.service import TripTicketService
+    return edit_document(
+        TripTicketService(), tid, api_user,
+        lambda rec: _trip_json(rec, detail=True, api_user=api_user), _not_found)
 
 
 @bp.route("/trip-tickets/<int:tid>", methods=["GET"])

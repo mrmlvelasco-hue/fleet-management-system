@@ -21,9 +21,36 @@ class TripTicketService(BaseTransactionService):
     model = TripTicket
     document_type_code = "TT"
     reference_table = "trip_tickets"
+    # Edit policy (BaseTransactionService).
+    update_permission = "tripticket.update"
+    EDIT_FIELDS = {
+        "vehicle_id": ("Vehicle", "id"),
+        "driver_id": ("Driver", "id"),
+        "driver_name_manual": ("Driver (not in master)", "text"),
+        "destination": ("Destination", "text"),
+        "purpose": ("Purpose", "text"),
+        "departure_datetime": ("Departure", "datetime"),
+        "odometer_out": ("Odometer out", "int"),
+        "passengers": ("Passengers", "text"),
+    }
     date_fields = (("departure_datetime", "Departure Date"),
                    ("return_datetime", "Return Date"),
                    ("created_at", "Created Date"))
+
+    def _validate_edit(self, record, fields):
+        """Same driver rule as create(): with REQUIRE_DRIVER_FROM_MASTER
+        on, an edit may not leave the trip without a master driver."""
+        if "driver_id" not in fields:
+            return
+        require_master = str(SystemParameterService().get(
+            "REQUIRE_DRIVER_FROM_MASTER", default="YES")).upper() in (
+            "YES", "TRUE", "1")
+        if require_master and not fields["driver_id"]:
+            from app.modules.transactions.base_service import (
+                DocumentFieldError)
+            raise DocumentFieldError(
+                "Driver must be selected from Driver Master "
+                "(REQUIRE_DRIVER_FROM_MASTER=YES).", "driver_id")
 
     def create(self, *, vehicle_id, destination, purpose, departure_datetime,
                odometer_out, user, driver_id=None, driver_name_manual=None,

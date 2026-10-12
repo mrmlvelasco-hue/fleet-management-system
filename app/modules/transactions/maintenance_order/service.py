@@ -12,7 +12,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.core.numbering.numbering_service import AutoNumberingService
-from app.modules.transactions.base_service import BaseTransactionService
+from app.modules.transactions.base_service import (
+    BaseTransactionService, DocumentEditForbiddenError)
 from app.modules.transactions.maintenance_order.models import (
     MaintenanceOrder, MaintenanceChecklistItem, TransactionType)
 from app.modules.master_data.reference.models import MaintenanceType
@@ -43,62 +44,12 @@ class OrderFieldError(InvalidOrderCategoryError):
         self.field = field
 
 
-class OrderEditForbiddenError(Exception):
+class OrderEditForbiddenError(DocumentEditForbiddenError):
     """The user may not edit this order: they are neither its initiator
     nor a holder of maintenanceorder.update. Deliberately NOT an
     InvalidOrderStateError -- the order is fine, the caller is not
     allowed -- so the API can answer 403 rather than 409."""
     pass
-
-
-def _naive_utc(dt):
-    """Audit and approval timestamps are written timezone-aware (UTC)
-    but SQLite hands them back naive; compare them all as naive UTC."""
-    if dt is None:
-        return None
-    if dt.tzinfo is not None:
-        from datetime import timezone
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return dt
-
-
-def _change_display(field, value):
-    """An audit value as a person would read it: names instead of ids,
-    money with separators. Never raises -- a record deleted since the
-    change still shows its id rather than breaking the list."""
-    if value in (None, ""):
-        return "—"
-    try:
-        if field in ("estimated_cost", "disposal_value"):
-            return f"{Decimal(str(value)):,.2f}"
-        lookup = {
-            "vehicle_id": ("app.modules.master_data.vehicle.models",
-                           "Vehicle",
-                           lambda r: r.plate_number or r.conduction_number),
-            "transaction_type_id": (
-                "app.modules.transactions.maintenance_order.models",
-                "TransactionType", lambda r: r.name),
-            "maintenance_type_id": (
-                "app.modules.master_data.reference.models",
-                "MaintenanceType", lambda r: r.name),
-            "scope_template_id": ("app.modules.maintenance_config.models",
-                                  "PMScopeTemplate", lambda r: r.name),
-            "vendor_id": ("app.modules.master_data.vendor.models", "Vendor",
-                          lambda r: r.name),
-            "driver_id": ("app.modules.master_data.driver.models", "Driver",
-                          lambda r: f"{r.first_name} {r.last_name}".strip()),
-            "destination_branch_id": ("app.modules.master_data.org.models",
-                                      "Branch", lambda r: r.name),
-        }.get(field)
-        if lookup:
-            import importlib
-            module, cls, show = lookup
-            model = getattr(importlib.import_module(module), cls)
-            row = db.session.get(model, int(value))
-            return show(row) if row else f"#{value}"
-    except Exception:
-        pass
-    return str(value)
 
 
 class ScopeValidationError(ValueError):
@@ -307,6 +258,26 @@ class MaintenanceOrderService(BaseTransactionService):
     model = MaintenanceOrder
     document_type_code = "MO"
     reference_table = "maintenance_orders"
+    EDITABLE_STATUSES = ("DRAFT", "IN_PROGRESS")
+    update_permission = "maintenanceorder.update"
+    #: In form order; drives the changed-after-submission list.
+    EDIT_FIELDS = {
+        "vehicle_id": ("Vehicle", "id"),
+        "transaction_type_id": ("Transaction type", "id"),
+        "maintenance_type_id": ("Maintenance type", "id"),
+        "scope_template_id": ("PM scope template", "id"),
+        "scheduled_date": ("Scheduled date", "date"),
+        "odometer_at_service": ("Odometer", "int"),
+        "vendor_id": ("Vendor", "id"),
+        "assigned_mechanic": ("Assigned mechanic", "text"),
+        "estimated_cost": ("Estimated cost", "money"),
+        "driver_id": ("Driver", "id"),
+        "assignment_classification": ("Assignment classification", "text"),
+        "destination_branch_id": ("Destination branch", "id"),
+        "disposal_value": ("Disposal value", "money"),
+        "disposal_recipient": ("Disposal recipient", "text"),
+        "description": ("Description / remarks", "text"),
+    }
     date_fields = (("scheduled_date", "Scheduled Date"),
                    ("completed_date", "Completed Date"),
                    ("created_at", "Created Date"))
@@ -557,65 +528,11 @@ class MaintenanceOrderService(BaseTransactionService):
         db.session.expire(order)
         return order
 
-    def editable_scope(self, order) -> str:
-        """How much of this order may be edited right now.
-
-        Returns "FULL" or "NONE". ("REMARKS_ONLY" was retired by the
-        2026-10-12 edit policy; callers still tolerate it.)
-
-        Spec: docs/superpowers/specs/2026-10-12-document-edit-policy-design.md
-
-          * DRAFT -- never submitted, approval PENDING, RETURNED or
-            APPROVED-awaiting-start                         -> FULL
-          * IN_PROGRESS                                     -> FULL
-          * approval REJECTED                               -> NONE
-          * COMPLETED / CANCELLED / anything else           -> NONE
-
-        Editing while approval is PENDING or after it is APPROVED was
-        locked before; the initiator then had no way to fix a wrong
-        vendor or destination branch short of asking for a return.
-        Approval is deliberately NOT restarted by an edit (Michael's
-        decision). What protects the approver instead is that every
-        post-submission change is notified (edited_after_submission)
-        and listed on the order (changes_since_submission).
-        """
-        if order is None:
-            return "NONE"
-        if order.status not in ("DRAFT", "IN_PROGRESS"):
-            return "NONE"
-        instance = self._latest_instance(order)
-        if instance is not None and instance.status == "REJECTED":
-            return "NONE"
-        return "FULL"
-
-    def _latest_instance(self, order):
-        """The order's approval instance. Submit stores
-        approval_instance_id, but a stale session or an instance created
-        only on the approval table must still count, so fall back to the
-        latest instance by reference."""
-        instance = order.approval_instance
-        if instance is None:
-            from app.core.approval.models import ApprovalInstance
-            instance = (ApprovalInstance.query
-                        .filter_by(reference_table="maintenance_orders",
-                                   reference_id=order.id)
-                        .order_by(ApprovalInstance.id.desc())
-                        .first())
-        return instance
-
-    def can_edit(self, order, user) -> bool:
-        """May THIS user edit THIS order now?
-
-        The order must be open (editable_scope FULL), and the user must
-        be its initiator or hold maintenanceorder.update. The initiator
-        rule is what lets a requester correct their own request without
-        being granted edit rights over everyone else's orders.
-        """
-        if user is None or self.editable_scope(order) != "FULL":
-            return False
-        if order.requested_by is not None and order.requested_by == user.id:
-            return True
-        return user.has_permission("maintenanceorder.update")
+    # Edit policy: BaseTransactionService (editable_scope, can_edit,
+    # changes_since_submission, edited_after_submission). The MO keeps
+    # In Progress open -- Michael's Phase 1 decision -- and its own
+    # update(), which adds the MO-specific validation (type group,
+    # origin/destination, open-order duplicates, template re-seed).
 
     def _check_no_open_duplicate(self, vehicle_id, maintenance_type_id,
                                  exclude_order_id=None):
@@ -780,95 +697,6 @@ class MaintenanceOrderService(BaseTransactionService):
         if changed:
             self._notify_edit_after_submission(order)
         return order
-
-    def _notify_edit_after_submission(self, order):
-        """Approval is not restarted by an edit (Michael's decision), so
-        the people it concerns are told instead -- through the
-        Notification Engine's configurable rules (seeded: the current
-        approver and everyone who already approved).
-
-        Only once someone other than the initiator is relying on the
-        order: approval PENDING or APPROVED, or work IN_PROGRESS. A
-        Returned order is being fixed at the approver's request; they
-        see it again on resubmit."""
-        instance = self._latest_instance(order)
-        if instance is None:
-            return
-        if not (instance.status in ("PENDING", "APPROVED")
-                or order.status == "IN_PROGRESS"):
-            return
-        from app.core.approval.engine import publish
-        publish("edited_after_submission", instance)
-
-    #: Fields shown in the changed-after-submission list, in form order.
-    #: The editable business fields only: status moves, the origin
-    #: re-snapshot and bookkeeping columns are not edits.
-    _CHANGE_LABELS = {
-        "vehicle_id": "Vehicle",
-        "transaction_type_id": "Transaction type",
-        "maintenance_type_id": "Maintenance type",
-        "scope_template_id": "PM scope template",
-        "scheduled_date": "Scheduled date",
-        "odometer_at_service": "Odometer",
-        "vendor_id": "Vendor",
-        "assigned_mechanic": "Assigned mechanic",
-        "estimated_cost": "Estimated cost",
-        "driver_id": "Driver",
-        "assignment_classification": "Assignment classification",
-        "destination_branch_id": "Destination branch",
-        "disposal_value": "Disposal value",
-        "disposal_recipient": "Disposal recipient",
-        "description": "Description / remarks",
-    }
-
-    def changes_since_submission(self, order) -> list:
-        """Every edit made to the order after it was first submitted,
-        newest first: [{field, label, old, new, changed_by, changed_at}].
-
-        Read from the existing Audit Trail rather than a new table --
-        every field change is already logged there with who and when.
-        Edits made while Returned are included too: they are part of
-        what changed since the approver first looked."""
-        from app.core.approval.models import ApprovalAction, ApprovalInstance
-        from app.core.models.audit_log import AuditLog
-        from app.modules.user_management.models import User
-        instance_ids = [i.id for i in ApprovalInstance.query.filter_by(
-            reference_table="maintenance_orders", reference_id=order.id)]
-        if not instance_ids:
-            return []
-        first = (ApprovalAction.query
-                 .filter(ApprovalAction.instance_id.in_(instance_ids),
-                         ApprovalAction.action == "SUBMIT")
-                 .order_by(ApprovalAction.acted_at.asc()).first())
-        if first is None:
-            return []
-        since = _naive_utc(first.acted_at)
-        rows = (AuditLog.query
-                .filter_by(table_name="maintenance_orders",
-                           record_id=order.id, action="UPDATE")
-                .order_by(AuditLog.id.desc()).all())
-        users = {}
-        out = []
-        for row in rows:
-            if _naive_utc(row.timestamp) < since:
-                continue
-            old, new = row.old_values or {}, row.new_values or {}
-            for field, label in self._CHANGE_LABELS.items():
-                # The audit listener only records attributes whose value
-                # actually changed, so presence in new_values is enough.
-                if field not in new:
-                    continue
-                if row.user_id and row.user_id not in users:
-                    u = db.session.get(User, row.user_id)
-                    users[row.user_id] = u.full_name if u else None
-                out.append({
-                    "field": field, "label": label,
-                    "old": _change_display(field, old.get(field)),
-                    "new": _change_display(field, new.get(field)),
-                    "changed_by": users.get(row.user_id),
-                    "changed_at": _naive_utc(row.timestamp).isoformat(),
-                })
-        return out
 
     def start_work(self, order_id: int):
         """Move an approved order into IN_PROGRESS.

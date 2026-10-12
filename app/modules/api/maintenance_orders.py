@@ -33,75 +33,6 @@ def _forbidden(message):
     return jsonify({"error": "forbidden", "message": message}), 403
 
 
-# ── edit payload ────────────────────────────────────────────────────
-
-class _FieldError(ValueError):
-    def __init__(self, message, field):
-        super().__init__(message)
-        self.field = field
-
-
-#: Every field an order is created with may be corrected afterwards
-#: (2026-10-12 edit policy). Kept equal to the service's own allow-list
-#: in MaintenanceOrderService.update -- a key accepted there but missing
-#: here is silently dropped, which is exactly how destination_branch_id,
-#: driver_id and the disposal fields used to vanish on save.
-_EDIT_IDS = ("vehicle_id", "transaction_type_id", "maintenance_type_id",
-             "scope_template_id", "vendor_id", "driver_id",
-             "destination_branch_id")
-_EDIT_INTS = ("odometer_at_service",)
-_EDIT_MONEY = {"estimated_cost": "Estimated Cost",
-               "disposal_value": "Disposal Value"}
-_EDIT_TEXT = ("description", "assigned_mechanic",
-              "assignment_classification", "disposal_recipient")
-
-
-def _edit_fields(p):
-    """Coerce a PATCH body into typed service fields.
-
-    Only keys present in the body are returned, so a partial PATCH
-    leaves every other field alone; an explicit null or "" clears the
-    field. Bad values raise _FieldError naming the field."""
-    fields = {}
-    for k in _EDIT_IDS + _EDIT_INTS:
-        if k not in p:
-            continue
-        v = p[k]
-        if v in (None, ""):
-            fields[k] = None
-            continue
-        try:
-            n = int(str(v).strip().replace(",", ""))
-        except (TypeError, ValueError):
-            raise _FieldError(f"{k} must be a whole number.", k)
-        if n < 0:
-            raise _FieldError(f"{k} cannot be negative.", k)
-        fields[k] = n
-    for k, label in _EDIT_MONEY.items():
-        if k not in p:
-            continue
-        v = p[k]
-        if v in (None, ""):
-            fields[k] = None
-            continue
-        try:
-            fields[k] = Decimal(str(v).strip().replace(",", ""))
-        except (InvalidOperation, ValueError, TypeError):
-            raise _FieldError(f"{label} must be a valid amount.", k)
-    for k in _EDIT_TEXT:
-        if k in p:
-            v = p[k]
-            fields[k] = (str(v).strip() or None) if v is not None else None
-    if "scheduled_date" in p:
-        v = p["scheduled_date"]
-        try:
-            fields["scheduled_date"] = date.fromisoformat(str(v)[:10])
-        except (TypeError, ValueError):
-            raise _FieldError("scheduled_date must be YYYY-MM-DD.",
-                              "scheduled_date")
-    return fields
-
-
 def _edit_gate(api_user, oid):
     """Shared gate for every endpoint that edits an order's contents
     (scope lines, parts). Returns an error response, or None to proceed.
@@ -765,10 +696,15 @@ def update_maintenance_order(api_user, oid):
         InvalidOrderCategoryError, OrderEditForbiddenError, OrderFieldError)
     if MaintenanceOrderService().get_visible(oid, api_user) is None:
         return _not_found()
-    p = request.get_json(silent=True) or {}
+    # Coerced by the shared edit-policy helper from the service's own
+    # EDIT_FIELDS, so the API list can never drift from what update()
+    # accepts -- the drift that silently dropped destination_branch_id.
+    from app.modules.api.document_edit import (
+        EditPayloadError, coerce_edit_fields)
     try:
-        fields = _edit_fields(p)
-    except _FieldError as e:
+        fields = coerce_edit_fields(request.get_json(silent=True) or {},
+                                    MaintenanceOrderService.EDIT_FIELDS)
+    except EditPayloadError as e:
         return _validation(str(e), e.field)
 
     svc = MaintenanceOrderService()

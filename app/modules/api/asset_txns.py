@@ -114,7 +114,33 @@ def _txn_json(txn, *, asset_attr, serial_key, detail=False,
             api_user and txn.requested_by == getattr(api_user, "id", None))
         data["can_act"] = can_act_on(inst, api_user, data.get("status"))
         data["approval_chain"] = _approval_chain(inst)
+        if api_user is not None:
+            # Edit policy for THIS viewer on every detail response.
+            from app.modules.api.document_edit import edit_info
+            data.update(edit_info(_service_for(asset_attr)(), txn, api_user))
     return data
+
+
+def _service_for(asset_attr):
+    if asset_attr == "tire":
+        from app.modules.transactions.tire_txn.service import (
+            TireTransactionService)
+        return TireTransactionService
+    from app.modules.transactions.battery_txn.service import (
+        BatteryTransactionService)
+    return BatteryTransactionService
+
+
+def _edit(api_user, tid, json_kw, label):
+    """PATCH for either module. Decorated with <asset>.view: the
+    initiator may edit their own transaction; the real gate is the
+    service's can_edit (initiator or <asset>.update, while Draft)."""
+    from app.modules.api.document_edit import edit_document
+    return edit_document(
+        _service_for(json_kw["asset_attr"])(), tid, api_user,
+        lambda rec: _txn_json(rec, detail=True, api_user=api_user,
+                              **json_kw),
+        lambda: _not_found(label))
 
 
 def _approval_chain(inst):
@@ -283,6 +309,28 @@ def cancel_tire_txn(api_user, tid):
     return _tire_lifecycle(api_user, tid, "cancel")
 
 
+# Return / Resubmit: every other request document already had these;
+# a wrong tire or action could only be rejected, never sent back to be
+# corrected. The service inherits both from BaseTransactionService; the
+# approver's eligibility is the ApprovalEngine's, as for approve.
+@bp.route("/tire-transactions/<int:tid>/return", methods=["POST"])
+@api_auth_required("tire.view")
+def return_tire_txn(api_user, tid):
+    return _tire_lifecycle(api_user, tid, "return_document")
+
+
+@bp.route("/tire-transactions/<int:tid>/resubmit", methods=["POST"])
+@api_auth_required("tire.update")
+def resubmit_tire_txn(api_user, tid):
+    return _tire_lifecycle(api_user, tid, "resubmit")
+
+
+@bp.route("/tire-transactions/<int:tid>", methods=["PUT", "PATCH"])
+@api_auth_required("tire.view")
+def update_tire_txn(api_user, tid):
+    return _edit(api_user, tid, _TIRE_JSON, "Tire Transaction")
+
+
 # ── Battery transactions ────────────────────────────────────────────────────
 
 _BATT_JSON = {"asset_attr": "battery", "serial_key": "battery_serial"}
@@ -388,3 +436,21 @@ def reject_battery_txn(api_user, tid):
 @api_auth_required("battery.update")
 def cancel_battery_txn(api_user, tid):
     return _batt_lifecycle(api_user, tid, "cancel")
+
+
+@bp.route("/battery-transactions/<int:tid>/return", methods=["POST"])
+@api_auth_required("battery.view")
+def return_battery_txn(api_user, tid):
+    return _batt_lifecycle(api_user, tid, "return_document")
+
+
+@bp.route("/battery-transactions/<int:tid>/resubmit", methods=["POST"])
+@api_auth_required("battery.update")
+def resubmit_battery_txn(api_user, tid):
+    return _batt_lifecycle(api_user, tid, "resubmit")
+
+
+@bp.route("/battery-transactions/<int:tid>", methods=["PUT", "PATCH"])
+@api_auth_required("battery.view")
+def update_battery_txn(api_user, tid):
+    return _edit(api_user, tid, _BATT_JSON, "Battery Transaction")

@@ -24,6 +24,20 @@ class VehicleMovementService(BaseTransactionService):
     model = VehicleMovement
     document_type_code = "VM"
     reference_table = "vehicle_movements"
+    # Edit policy (BaseTransactionService).
+    update_permission = "vehiclemovement.update"
+    EDIT_FIELDS = {
+        "vehicle_id": ("Vehicle", "id"),
+        "movement_type": ("Movement type", "text"),
+        "from_location": ("From", "text"),
+        "to_location": ("To", "text"),
+        "movement_date": ("Movement date", "date"),
+        "movement_start_datetime": ("Start", "datetime"),
+        "driver_id": ("Driver", "id"),
+        "employee_responsible": ("Employee responsible", "text"),
+        "purpose": ("Purpose", "text"),
+        "remarks": ("Remarks", "text"),
+    }
     date_fields = (("movement_date", "Movement Date"),
                    ("created_at", "Created Date"))
 
@@ -47,10 +61,8 @@ class VehicleMovementService(BaseTransactionService):
             code=self.document_type_code).first()
         return bool(dt and dt.requires_approval)
 
-    def create(self, *, vehicle_id, movement_type, from_location,
-               to_location, movement_date, user, remarks=None,
-               driver_id=None, employee_responsible=None, purpose=None,
-               movement_start_datetime=None):
+    @staticmethod
+    def _valid_movement_types():
         from app.modules.system_admin.services.lookup_service import (
             LookupService, registry as lookup_registry)
         valid_types = {i.code for i in
@@ -60,6 +72,25 @@ class VehicleMovementService(BaseTransactionService):
             # code-registered defaults so this doesn't hard-depend on seeding.
             valid_types = {d.code for d in lookup_registry.definitions
                           if d.lookup_type == "MOVEMENT_TYPE"}
+        return valid_types
+
+    def _validate_edit(self, record, fields):
+        """Same movement-type list as create()."""
+        if "movement_type" in fields:
+            valid = self._valid_movement_types()
+            if fields["movement_type"] not in valid:
+                from app.modules.transactions.base_service import (
+                    DocumentFieldError)
+                raise DocumentFieldError(
+                    f"'{fields['movement_type']}' is not a valid movement "
+                    f"type. Must be one of: {', '.join(sorted(valid))}.",
+                    "movement_type")
+
+    def create(self, *, vehicle_id, movement_type, from_location,
+               to_location, movement_date, user, remarks=None,
+               driver_id=None, employee_responsible=None, purpose=None,
+               movement_start_datetime=None):
+        valid_types = self._valid_movement_types()
         if movement_type not in valid_types:
             raise InvalidMovementTypeError(
                 f"'{movement_type}' is not a valid movement type. "

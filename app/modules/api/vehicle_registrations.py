@@ -120,6 +120,12 @@ def _reg_json(r, *, detail=False, api_user=None):
         data["has_approval_instance"] = inst is not None
         data["is_requester"] = bool(
             api_user is not None and r.requested_by == getattr(api_user, "id", None))
+    if detail and api_user is not None:
+        # Edit policy for THIS viewer, on every detail response (view,
+        # lifecycle actions, PATCH) so the screen never goes stale.
+        from app.modules.api.document_edit import edit_info
+        from app.modules.transactions.vehicle_registration.service import VehicleRegistrationService
+        data.update(edit_info(VehicleRegistrationService(), r, api_user))
     return data
 
 
@@ -262,6 +268,18 @@ def create_vehicle_registration(api_user):
     except Exception as exc:
         return _conflict(str(exc))
     return jsonify(_reg_json(reg, detail=True, api_user=api_user)), 201
+
+
+@bp.route("/vehicle-registrations/<int:rid>", methods=["PUT", "PATCH"])
+# view, not update: the initiator may edit their own document; the real
+# gate is VehicleRegistrationService.can_edit (initiator or vehicleregistration.update, while open).
+@api_auth_required("vehicleregistration.view")
+def update_vehicle_registration(api_user, rid):
+    from app.modules.api.document_edit import edit_document
+    from app.modules.transactions.vehicle_registration.service import VehicleRegistrationService
+    return edit_document(
+        VehicleRegistrationService(), rid, api_user,
+        lambda rec: _reg_json(rec, detail=True, api_user=api_user), _not_found)
 
 
 @bp.route("/vehicle-registrations/<int:rid>", methods=["GET"])

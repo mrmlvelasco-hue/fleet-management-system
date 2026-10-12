@@ -14,6 +14,18 @@ class ATDService(BaseTransactionService):
     model = AuthorityToDrive
     document_type_code = "ATD"
     reference_table = "authority_to_drives"
+    # Edit policy (BaseTransactionService) -- replaces ATD's own
+    # Draft/Returned-only update().
+    update_permission = "atd.update"
+    EDIT_FIELDS = {
+        "vehicle_id": ("Vehicle", "id"),
+        "driver_id": ("Driver", "id"),
+        "purpose": ("Purpose", "text"),
+        "valid_from": ("Valid from", "date"),
+        "valid_to": ("Valid to", "date"),
+        "odometer_out": ("Odometer out", "int"),
+        "maintenance_order_id": ("Linked maintenance order", "id"),
+    }
     date_fields = (("valid_from", "Valid From"),
                    ("valid_to", "Valid To"),
                    ("created_at", "Created Date"))
@@ -36,45 +48,17 @@ class ATDService(BaseTransactionService):
         db.session.commit()
         return atd
 
-    def update(self, atd_id: int, *, user=None, **fields):
-        """Update an ATD draft or a document returned by an approver.
-
-        Once an ATD is pending approval or already approved/active, its
-        particulars are frozen. A RETURNED ATD is intentionally editable so
-        the requester can correct the same document and resubmit it to the
-        approval level that returned it.
-        """
-        atd = db.session.get(AuthorityToDrive, atd_id)
-        if atd is None:
-            raise InvalidATDStateError("Authority To Drive not found.")
-
-        if user is not None and not self._visible_to(atd, user):
-            raise InvalidATDStateError("You do not have access to this record.")
-
-        if atd.status != "DRAFT":
-            raise InvalidATDStateError(
-                f"A {atd.status} Authority To Drive can no longer be edited.")
-
-        approval_status = (
-            atd.approval_instance.status
-            if atd.approval_instance is not None else None
-        )
-        if approval_status not in (None, "RETURNED"):
-            raise InvalidATDStateError(
-                "This Authority To Drive is awaiting or has completed approval "
-                "and cannot be edited. Ask the approver to return it if changes "
-                "are needed.")
-
-        editable = {
-            "vehicle_id", "driver_id", "purpose", "valid_from", "valid_to",
-            "odometer_out", "maintenance_order_id",
-        }
-        for key, value in fields.items():
-            if key in editable:
-                setattr(atd, key, value)
-
-        db.session.commit()
-        return atd
+    def _validate_edit(self, record, fields):
+        """The checks ATD's own PATCH endpoint used to make, here so they
+        hold for every caller."""
+        from app.modules.transactions.base_service import DocumentFieldError
+        if "purpose" in fields and not (fields["purpose"] or "").strip():
+            raise DocumentFieldError("purpose is required.", "purpose")
+        start = fields.get("valid_from", record.valid_from)
+        end = fields.get("valid_to", record.valid_to)
+        if start and end and end < start:
+            raise DocumentFieldError(
+                "valid_to must be on or after valid_from.", "valid_to")
 
     def record_odometer_in(self, atd_id: int, odometer_in: int):
         """The gate guard's return checkpoint — recorded separately from
