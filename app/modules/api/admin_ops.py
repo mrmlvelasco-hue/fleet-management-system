@@ -72,6 +72,7 @@ EVENTS = [
     "submitted", "approved_level", "approved_final", "rejected",
     "returned", "resubmitted", "cancelled", "pm_due_soon", "pm_overdue",
     "registration_due_soon", "registration_overdue", "DOCUMENT_COMMENT",
+    "edited_after_submission",
 ]
 
 

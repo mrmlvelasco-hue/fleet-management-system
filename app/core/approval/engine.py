@@ -27,6 +27,16 @@ class InvalidStateError(Exception):
 _subscribers: list = []
 
 
+def publish(name: str, instance) -> None:
+    """Send an approval-lifecycle event to every subscriber (the
+    Notification Engine among them). Public so a document service can
+    raise an event about its own approval instance -- e.g.
+    edited_after_submission -- through the same configurable
+    notification rules, instead of hard-coding recipients."""
+    for cb in _subscribers:
+        cb(name, instance)
+
+
 class ApprovalEngine:
     """Events emitted: submitted, approved_level, approved_final, rejected,
     returned, resubmitted, cancelled."""
@@ -42,8 +52,7 @@ class ApprovalEngine:
         _subscribers.append(callback)
 
     def _emit(self, name: str, instance: ApprovalInstance) -> None:
-        for cb in _subscribers:
-            cb(name, instance)
+        publish(name, instance)
 
     # ---------- helpers ----------
 

@@ -660,6 +660,8 @@ def get_maintenance_order(api_user, oid):
     data["company"] = company_letterhead()
     data["editable"] = MaintenanceOrderService().editable_scope(o)
     data["can_edit"] = MaintenanceOrderService().can_edit(o, api_user)
+    data["changes_since_submission"] = (
+        MaintenanceOrderService().changes_since_submission(o))
     data["approval_audit"] = _approval_audit(o)
     data["oath_body"] = _oath_body_for(o)
     _attach_approval_chain(data, o, api_user)

@@ -849,6 +849,14 @@ def _seed_notification_rules() -> None:
         ("returned", "BOTH", "SUBMITTER", None),
         ("cancelled", "IN_APP", "SUBMITTER", None),
 
+        # Edits after submission (2026-10-12 edit policy): approval is
+        # not restarted, so whoever must still act, and whoever already
+        # signed off, is told the document changed. IN_APP by default --
+        # small corrections should not flood mail; admins may switch to
+        # BOTH. The engine de-duplicates a user matched by both rules.
+        ("edited_after_submission", "IN_APP", "CURRENT_APPROVER", None),
+        ("edited_after_submission", "IN_APP", "PRIOR_APPROVERS", None),
+
         # Scheduled Preventive Maintenance alerts. These are delivered
         # in-app to active users assigned to the Fleet Officer role.
         # The PMS due-check task dispatches these exact event codes.

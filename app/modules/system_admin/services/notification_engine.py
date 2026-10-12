@@ -15,12 +15,20 @@ class NotificationEngine:
         """Fan out to all NotificationRule rows matching event_code."""
         rules = NotificationRule.query.filter_by(
             event_code=event_name, is_active=True).all()
+        # One message per user per channel per event, however many rules
+        # match them: the last-level approver of an approved order is both
+        # CURRENT_APPROVER and one of the PRIOR_APPROVERS.
+        sent = set()
         for rule in rules:
             recipients = self._resolve_recipients(rule, instance)
             for user in recipients:
-                if rule.channel in ("IN_APP", "BOTH"):
+                if (rule.channel in ("IN_APP", "BOTH")
+                        and (user.id, "IN_APP") not in sent):
+                    sent.add((user.id, "IN_APP"))
                     self._send_in_app(user, event_name, instance)
-                if rule.channel in ("EMAIL", "BOTH"):
+                if (rule.channel in ("EMAIL", "BOTH")
+                        and (user.id, "EMAIL") not in sent):
+                    sent.add((user.id, "EMAIL"))
                     self._queue_email(user, event_name, instance)
 
     def _resolve_recipients(self, rule: NotificationRule,
@@ -43,6 +51,17 @@ class NotificationEngine:
                             if u:
                                 users = [u]
             return users
+
+        if rule.recipient_type == "PRIOR_APPROVERS":
+            # Everyone who has already approved this instance, at any
+            # level -- they signed off on what is now being changed.
+            from app.core.approval.models import ApprovalAction
+            ids = {a.acted_by for a in ApprovalAction.query.filter_by(
+                instance_id=instance.id, action="APPROVE")}
+            if not ids:
+                return []
+            return User.query.filter(User.id.in_(ids),
+                                     User.is_active.is_(True)).all()
 
         if rule.recipient_type == "ROLE" and rule.role_id:
             return User.query.filter(

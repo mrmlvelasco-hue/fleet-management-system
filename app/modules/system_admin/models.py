@@ -123,7 +123,7 @@ class NotificationRule(db.Model, BaseModel):
     event_code = db.Column(db.String(80), nullable=False, index=True)
     # IN_APP | EMAIL | BOTH
     channel = db.Column(db.String(10), nullable=False, default="IN_APP")
-    # SUBMITTER | CURRENT_APPROVER | ROLE | SPECIFIC_USER
+    # SUBMITTER | CURRENT_APPROVER | PRIOR_APPROVERS | ROLE | SPECIFIC_USER
     recipient_type = db.Column(db.String(20), nullable=False)
     role_id = db.Column(db.Integer, db.ForeignKey("roles.id"), nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)

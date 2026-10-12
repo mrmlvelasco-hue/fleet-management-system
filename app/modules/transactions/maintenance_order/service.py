@@ -51,6 +51,56 @@ class OrderEditForbiddenError(Exception):
     pass
 
 
+def _naive_utc(dt):
+    """Audit and approval timestamps are written timezone-aware (UTC)
+    but SQLite hands them back naive; compare them all as naive UTC."""
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        from datetime import timezone
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def _change_display(field, value):
+    """An audit value as a person would read it: names instead of ids,
+    money with separators. Never raises -- a record deleted since the
+    change still shows its id rather than breaking the list."""
+    if value in (None, ""):
+        return "—"
+    try:
+        if field in ("estimated_cost", "disposal_value"):
+            return f"{Decimal(str(value)):,.2f}"
+        lookup = {
+            "vehicle_id": ("app.modules.master_data.vehicle.models",
+                           "Vehicle",
+                           lambda r: r.plate_number or r.conduction_number),
+            "transaction_type_id": (
+                "app.modules.transactions.maintenance_order.models",
+                "TransactionType", lambda r: r.name),
+            "maintenance_type_id": (
+                "app.modules.master_data.reference.models",
+                "MaintenanceType", lambda r: r.name),
+            "scope_template_id": ("app.modules.maintenance_config.models",
+                                  "PMScopeTemplate", lambda r: r.name),
+            "vendor_id": ("app.modules.master_data.vendor.models", "Vendor",
+                          lambda r: r.name),
+            "driver_id": ("app.modules.master_data.driver.models", "Driver",
+                          lambda r: f"{r.first_name} {r.last_name}".strip()),
+            "destination_branch_id": ("app.modules.master_data.org.models",
+                                      "Branch", lambda r: r.name),
+        }.get(field)
+        if lookup:
+            import importlib
+            module, cls, show = lookup
+            model = getattr(importlib.import_module(module), cls)
+            row = db.session.get(model, int(value))
+            return show(row) if row else f"#{value}"
+    except Exception:
+        pass
+    return str(value)
+
+
 class ScopeValidationError(ValueError):
     """A Scope of Work line failed validation (blank description, or a
     field longer than its column). Raised BEFORE anything is written, so
@@ -709,6 +759,9 @@ class MaintenanceOrderService(BaseTransactionService):
                         "That PM Scope Template does not match this "
                         "order's Maintenance Type.")
 
+        # Compared by value: the edit form re-posts every field, and
+        # Decimal("15000.00") == 15000 must not count as a change.
+        changed = [k for k, v in fields.items() if getattr(order, k) != v]
         for key, value in fields.items():
             setattr(order, key, value)
         order.origin_branch_id = target_origin
@@ -724,7 +777,98 @@ class MaintenanceOrderService(BaseTransactionService):
         db.session.commit()
         if reseed_template is not None:
             db.session.expire(order)
+        if changed:
+            self._notify_edit_after_submission(order)
         return order
+
+    def _notify_edit_after_submission(self, order):
+        """Approval is not restarted by an edit (Michael's decision), so
+        the people it concerns are told instead -- through the
+        Notification Engine's configurable rules (seeded: the current
+        approver and everyone who already approved).
+
+        Only once someone other than the initiator is relying on the
+        order: approval PENDING or APPROVED, or work IN_PROGRESS. A
+        Returned order is being fixed at the approver's request; they
+        see it again on resubmit."""
+        instance = self._latest_instance(order)
+        if instance is None:
+            return
+        if not (instance.status in ("PENDING", "APPROVED")
+                or order.status == "IN_PROGRESS"):
+            return
+        from app.core.approval.engine import publish
+        publish("edited_after_submission", instance)
+
+    #: Fields shown in the changed-after-submission list, in form order.
+    #: The editable business fields only: status moves, the origin
+    #: re-snapshot and bookkeeping columns are not edits.
+    _CHANGE_LABELS = {
+        "vehicle_id": "Vehicle",
+        "transaction_type_id": "Transaction type",
+        "maintenance_type_id": "Maintenance type",
+        "scope_template_id": "PM scope template",
+        "scheduled_date": "Scheduled date",
+        "odometer_at_service": "Odometer",
+        "vendor_id": "Vendor",
+        "assigned_mechanic": "Assigned mechanic",
+        "estimated_cost": "Estimated cost",
+        "driver_id": "Driver",
+        "assignment_classification": "Assignment classification",
+        "destination_branch_id": "Destination branch",
+        "disposal_value": "Disposal value",
+        "disposal_recipient": "Disposal recipient",
+        "description": "Description / remarks",
+    }
+
+    def changes_since_submission(self, order) -> list:
+        """Every edit made to the order after it was first submitted,
+        newest first: [{field, label, old, new, changed_by, changed_at}].
+
+        Read from the existing Audit Trail rather than a new table --
+        every field change is already logged there with who and when.
+        Edits made while Returned are included too: they are part of
+        what changed since the approver first looked."""
+        from app.core.approval.models import ApprovalAction, ApprovalInstance
+        from app.core.models.audit_log import AuditLog
+        from app.modules.user_management.models import User
+        instance_ids = [i.id for i in ApprovalInstance.query.filter_by(
+            reference_table="maintenance_orders", reference_id=order.id)]
+        if not instance_ids:
+            return []
+        first = (ApprovalAction.query
+                 .filter(ApprovalAction.instance_id.in_(instance_ids),
+                         ApprovalAction.action == "SUBMIT")
+                 .order_by(ApprovalAction.acted_at.asc()).first())
+        if first is None:
+            return []
+        since = _naive_utc(first.acted_at)
+        rows = (AuditLog.query
+                .filter_by(table_name="maintenance_orders",
+                           record_id=order.id, action="UPDATE")
+                .order_by(AuditLog.id.desc()).all())
+        users = {}
+        out = []
+        for row in rows:
+            if _naive_utc(row.timestamp) < since:
+                continue
+            old, new = row.old_values or {}, row.new_values or {}
+            for field, label in self._CHANGE_LABELS.items():
+                # The audit listener only records attributes whose value
+                # actually changed, so presence in new_values is enough.
+                if field not in new:
+                    continue
+                if row.user_id and row.user_id not in users:
+                    u = db.session.get(User, row.user_id)
+                    users[row.user_id] = u.full_name if u else None
+                out.append({
+                    "field": field, "label": label,
+                    "old": _change_display(field, old.get(field)),
+                    "new": _change_display(field, new.get(field)),
+                    "changed_by": users.get(row.user_id),
+                    "changed_at": _naive_utc(row.timestamp).isoformat(),
+                })
+        return out
 
     def start_work(self, order_id: int):
         """Move an approved order into IN_PROGRESS.
