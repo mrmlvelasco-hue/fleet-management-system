@@ -116,7 +116,18 @@ class VehicleActivityHistoryService:
                 "date": tx.transaction_date, "activity_type": "Battery Replacement",
                 "outlet": vehicle.branch.name if vehicle.branch else "—",
                 "assigned_to": None, "description": tx.remarks or "Battery mounted",
-                "cost": None, "odometer": tx.odometer_at_service,
+                # Unlike TireTransaction, BatteryTransaction has no
+                # odometer_at_service column -- batteries aren't tracked
+                # by mileage the way tires are, and no caller anywhere
+                # (form, service, API) ever populates one. Reading it
+                # unconditionally raised AttributeError for every vehicle
+                # with a completed battery mount, which two different
+                # callers then hid two different ways: one swallowed it
+                # into an empty-looking history, the other let it crash
+                # outright (KI-05). getattr(..., None) makes "no reading
+                # recorded" the correct, honest value here, same as it
+                # would be for any other row type missing one.
+                "cost": None, "odometer": getattr(tx, "odometer_at_service", None),
             })
 
         rows = [r for r in rows if r["date"] is not None]

@@ -12,10 +12,14 @@ from app.core.vehicle_activity_history_service import (
 from app.modules.transactions.maintenance_order.service import (
     MaintenanceOrderService)
 from app.modules.transactions.maintenance_order.models import TransactionType
+from app.modules.transactions.battery_txn.service import (
+    BatteryTransactionService)
 from app.modules.master_data.vehicle.service import VehicleService
 from app.modules.master_data.reference.service import (
     VehicleTypeService, MaintenanceTypeService)
 from app.modules.master_data.org.service import BranchService
+from app.modules.master_data.battery.service import BatteryService
+from app.modules.master_data.vendor.service import VendorService
 from app.cli import _seed_transaction_types, _seed_atr_numbering
 
 
@@ -151,6 +155,50 @@ def test_outlet_history_reflects_a_real_branch_change(
     history = VehicleActivityHistoryService().get_outlet_history(vehicle)
     outlets = [seg["outlet"] for seg in history]
     assert "New Home Branch" in outlets
+
+
+# ── KI-05: a completed battery MOUNT must not break the timeline ───────────
+#
+# BatteryTransaction has no odometer_at_service column (batteries, unlike
+# tires, aren't tracked by mileage) -- but the row-building code read
+# tx.odometer_at_service unconditionally, raising AttributeError for any
+# vehicle with a completed battery mount. Two different callers hid this
+# two different ways: the single-vehicle endpoint swallowed it into an
+# empty-looking history, the standalone report let it surface as a crash.
+# Both are downstream of this one service method.
+
+def test_completed_battery_mount_shows_as_activity_without_crashing(db, vehicle):
+    vendor = VendorService().create(code="VEN-ACTHIST", name="Battery Shop")
+    battery = BatteryService().create(serial_number="BATT-ACTHIST",
+                                      brand="Motolite", vendor_id=vendor.id)
+    BatteryTransactionService().create(
+        battery_id=battery.id, vehicle_id=vehicle.id, action="MOUNT",
+        transaction_date=date(2021, 6, 1), user=None)
+
+    rows = VehicleActivityHistoryService().get_activity_rows(vehicle)
+
+    battery_rows = [r for r in rows if r["activity_type"] == "Battery Replacement"]
+    assert len(battery_rows) == 1
+    assert battery_rows[0]["date"] == date(2021, 6, 1)
+    # No odometer field exists on a battery transaction -- this must read
+    # as None, not raise.
+    assert battery_rows[0]["odometer"] is None
+
+
+def test_battery_mount_does_not_blank_out_the_rest_of_the_timeline(db, vehicle):
+    """Before the fix, the AttributeError propagated out of
+    get_activity_rows entirely, so a caller that catches it (the
+    single-vehicle endpoint) lost ALL rows -- acquisition included --
+    not just the battery one."""
+    vendor = VendorService().create(code="VEN-ACTHIST2", name="Battery Shop 2")
+    battery = BatteryService().create(serial_number="BATT-ACTHIST2",
+                                      brand="Motolite", vendor_id=vendor.id)
+    BatteryTransactionService().create(
+        battery_id=battery.id, vehicle_id=vehicle.id, action="MOUNT",
+        transaction_date=date(2021, 7, 1), user=None)
+
+    rows = VehicleActivityHistoryService().get_activity_rows(vehicle)
+    assert any(r["activity_type"] == "Acquisition" for r in rows)
 
 
 # ── Report route ────────────────────────────────────────────────────────────

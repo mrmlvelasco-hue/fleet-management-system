@@ -93,6 +93,19 @@ def api_auth_required(permission: str = None):
                     "error": "forbidden",
                     "message": f"This account lacks the '{permission}' "
                                f"permission."}), 403
+            # Make the resolved user visible to code that cannot see
+            # `api_user` directly -- chiefly the cross-cutting audit
+            # listener (app/core/audit/audit_service.py), which runs on
+            # SQLAlchemy's before_flush and has no route kwargs to read.
+            # It only ever checked flask_login.current_user, which is the
+            # Anonymous user for every JWT-authenticated request, since
+            # this path never calls login_user(). That left
+            # created_by/updated_by and AuditLog.user_id NULL for every
+            # change made through the React app (KI-21). Stored on
+            # flask.g rather than passed around, the same pattern
+            # UserOrgScopeService already uses for request-scoped state.
+            from flask import g
+            g.fms_api_user = user
             return fn(*args, api_user=user, **kwargs)
         return wrapper
     return decorator

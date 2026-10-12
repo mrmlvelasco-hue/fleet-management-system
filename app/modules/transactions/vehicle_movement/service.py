@@ -27,6 +27,26 @@ class VehicleMovementService(BaseTransactionService):
     date_fields = (("movement_date", "Movement Date"),
                    ("created_at", "Created Date"))
 
+    def _requires_approval(self) -> bool:
+        """Whether the "VM" document type needs approval.
+
+        Must check the SAME code create()/submit() use (self.
+        document_type_code, "VM") -- not a different, never-configured
+        code. start_transit()/complete() previously checked
+        "VEHICLEMOVEMENT", which nothing in the real system ever
+        creates (System Administration -> Document Type Maintenance
+        configures this module under "VM", because that's the code
+        every other part of it uses: numbering, the approval submit
+        call, the worklist). So this always resolved False regardless
+        of how "VM" was actually configured, and a movement could be
+        started and completed with zero approval even when one was
+        required and never even submitted (KI-04).
+        """
+        from app.modules.document_config.models import DocumentType
+        dt = DocumentType.query.filter_by(
+            code=self.document_type_code).first()
+        return bool(dt and dt.requires_approval)
+
     def create(self, *, vehicle_id, movement_type, from_location,
                to_location, movement_date, user, remarks=None,
                driver_id=None, employee_responsible=None, purpose=None,
@@ -96,9 +116,7 @@ class VehicleMovementService(BaseTransactionService):
         # is configured and submit was simply skipped. Recorded in the
         # apply guide as a recommended alignment for those two, rather
         # than changed here mid-testing.
-        from app.modules.document_config.models import DocumentType
-        dt = DocumentType.query.filter_by(code="VEHICLEMOVEMENT").first()
-        requires_approval = bool(dt and dt.requires_approval)
+        requires_approval = self._requires_approval()
         inst = mv.approval_instance
         if requires_approval and (inst is None or inst.status != "APPROVED"):
             raise InvalidMovementStateError(
@@ -128,15 +146,13 @@ class VehicleMovementService(BaseTransactionService):
         vehicle registration. Terminal states are refused so a completed
         or cancelled movement cannot be reopened.
         """
-        from app.modules.document_config.models import DocumentType
         mv = db.session.get(VehicleMovement, movement_id)
         if mv is None:
             raise InvalidMovementStateError("That movement does not exist.")
         if mv.status in ("COMPLETED", "CANCELLED"):
             raise InvalidMovementStateError(
                 f"This movement is already {mv.status.lower()}.")
-        dt = DocumentType.query.filter_by(code="VEHICLEMOVEMENT").first()
-        requires_approval = bool(dt and dt.requires_approval)
+        requires_approval = self._requires_approval()
         inst = mv.approval_instance
         if requires_approval and (inst is None or inst.status != "APPROVED"):
             raise InvalidMovementStateError(

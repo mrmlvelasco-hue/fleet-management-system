@@ -409,6 +409,12 @@ def create_app(config_name: str | None = None) -> Flask:
         from flask import g
         if hasattr(g, "_fms_org_scopes"):
             del g._fms_org_scopes
+        # Same reasoning for the JWT-authenticated actor the audit
+        # listener reads (app/core/audit/audit_service.py): a long-lived
+        # app context must not let one request's user leak into the
+        # next's audit rows.
+        if hasattr(g, "fms_api_user"):
+            del g.fms_api_user
         # Same reasoning for the LIST_PAGES memo.
         if hasattr(g, "_fms_list_pages"):
             del g._fms_list_pages

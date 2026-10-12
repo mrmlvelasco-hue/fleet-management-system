@@ -1,8 +1,9 @@
 """Automatic audit trail via SQLAlchemy session events.
 
-register_audit_listeners() hooks before_flush and after_flush; every
-insert/update/delete on models inheriting BaseModel is logged without any
-per-module code. Values are serialised to JSON-safe primitives.
+register_audit_listeners() hooks before_flush and after_flush_postexec;
+every insert/update/delete on models inheriting BaseModel is logged
+without any per-module code. Values are serialised to JSON-safe
+primitives.
 """
 from datetime import datetime, date, time
 from decimal import Decimal
@@ -19,6 +20,22 @@ _registered = False
 
 
 def _current_user_id():
+    # The React app authenticates via a JWT bearer token
+    # (app/modules/api/auth.py: api_auth_required), never through
+    # Flask-Login's session login_user() -- so flask_login.current_user
+    # is always the Anonymous user on that path. api_auth_required
+    # stashes the resolved user on flask.g for exactly this reason;
+    # check it first so every write made through the web app (not just
+    # the Jinja/session screens) gets a real actor on created_by/
+    # updated_by and on the AuditLog row itself (KI-21).
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            api_user = getattr(g, "fms_api_user", None)
+            if api_user is not None:
+                return api_user.id
+    except Exception:
+        pass
     try:
         from flask_login import current_user
         if current_user and current_user.is_authenticated:
@@ -119,8 +136,41 @@ def register_audit_listeners():
                                     user_id=uid, ip_address=ip))
         session.add_all(entries)
 
-    @event.listens_for(db.session.__class__, "after_flush")
-    def _after_flush(session, flush_context):
+    @event.listens_for(db.session.__class__, "after_flush_postexec")
+    def _after_flush_postexec(session, flush_context):
         # Backfill record_id for CREATE logs now that ids are assigned.
-        for log, obj in session.info.pop("_audit_pending_new", []):
+        #
+        # This MUST be a direct Core UPDATE via session.connection(), not
+        # a plain `log.record_id = obj.id` attribute assignment. SQLAlchemy
+        # does not persist attribute changes made inside after_flush (or
+        # after_flush_postexec) to the database -- they're silently lost
+        # once this flush's unit of work has already completed, and would
+        # only reach the DB on some later flush that happens to touch the
+        # same object (which, for a row nothing else modifies, is never).
+        # The previous version of this code made exactly that mistake:
+        # every single CREATE audit row had record_id = NULL, system-wide
+        # -- found while fixing KI-21, not itself one of the 28 catalogued
+        # issues. Confirmed with a minimal SQLAlchemy repro outside this
+        # codebase before changing this.
+        #
+        # Issuing the UPDATE here, inside after_flush_postexec, still
+        # lands in the SAME database transaction as the rest of this
+        # flush/commit -- it's a normal statement on the active
+        # connection, just issued by hand instead of through the ORM's
+        # unit of work.
+        pending = session.info.pop("_audit_pending_new", [])
+        if not pending:
+            return
+        table = AuditLog.__table__
+        connection = session.connection()
+        for log, obj in pending:
+            connection.execute(
+                table.update().where(table.c.id == log.id)
+                             .values(record_id=obj.id))
+            # Keep the in-memory object consistent with what's now in the
+            # database, for any code in this same request/session that
+            # reads log.record_id before the session is reloaded. This
+            # does NOT go through the ORM's dirty-tracking (we bypassed
+            # it on purpose above), so it does not trigger a redundant
+            # second UPDATE on the next flush.
             log.record_id = obj.id

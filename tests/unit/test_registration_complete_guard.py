@@ -170,6 +170,19 @@ def test_completing_twice_is_refused(app, env):
 
 
 # ── the same bypass in Vehicle Movement ──────────────────────────────
+#
+# KI-04 correction (2026-10-12): these three tests originally configured
+# a DocumentType with code "VEHICLEMOVEMENT". That matched what
+# start_transit()/complete() checked at the time -- but nothing in the
+# real system ever creates a document type under that code. Every other
+# part of this module (numbering, the ApprovalEngine.submit() call, the
+# worklist) uses "VM", which is what System Administration -> Document
+# Type Maintenance actually configures. So these tests passed while the
+# real bypass (checking "VEHICLEMOVEMENT" instead of "VM") went
+# uncaught: a movement could be started and completed with zero
+# approval, configured or not, because the lookup never found the
+# document type an admin had actually set up. Corrected to "VM" so
+# these exercise the path that is live in production.
 
 def test_vehicle_movement_cannot_start_transit_before_approval(app, env):
     """Found by checking the other modules after the registration bug.
@@ -187,9 +200,9 @@ def test_vehicle_movement_cannot_start_transit_before_approval(app, env):
     from datetime import date
     v, u = env
     # Configured as requiring approval, which is the case that matters.
-    dt = DocumentType.query.filter_by(code="VEHICLEMOVEMENT").first()
+    dt = DocumentType.query.filter_by(code="VM").first()
     if dt is None:
-        dt = DocumentType(code="VEHICLEMOVEMENT", name="Vehicle Movement",
+        dt = DocumentType(code="VM", name="Vehicle Movement",
                           requires_approval=True)
         db.session.add(dt)
     else:
@@ -211,9 +224,9 @@ def test_vehicle_movement_cannot_complete_without_approval(app, env):
     from app.modules.document_config.models import DocumentType
     from datetime import date
     v, u = env
-    dt = DocumentType.query.filter_by(code="VEHICLEMOVEMENT").first()
+    dt = DocumentType.query.filter_by(code="VM").first()
     if dt is None:
-        dt = DocumentType(code="VEHICLEMOVEMENT", name="Vehicle Movement",
+        dt = DocumentType(code="VM", name="Vehicle Movement",
                           requires_approval=True)
         db.session.add(dt)
     else:
@@ -239,9 +252,9 @@ def test_vehicle_movement_completes_when_approval_is_not_configured(app, env):
     from app.modules.document_config.models import DocumentType
     from datetime import date
     v, u = env
-    dt = DocumentType.query.filter_by(code="VEHICLEMOVEMENT").first()
+    dt = DocumentType.query.filter_by(code="VM").first()
     if dt is None:
-        dt = DocumentType(code="VEHICLEMOVEMENT", name="Vehicle Movement",
+        dt = DocumentType(code="VM", name="Vehicle Movement",
                           requires_approval=False)
         db.session.add(dt)
     else:
