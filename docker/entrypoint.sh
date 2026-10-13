@@ -77,15 +77,36 @@ case "${1:-web}" in
 
       today="$(date +%F)"
       if [ "${last_daily_run}" != "${today}" ]; then
+        daily_ok=1
+
+        # Preventive Maintenance: due/overdue scan -- fires the
+        # due_soon/overdue notifications and creates Maintenance Orders
+        # for AUTO_MO-policy templates. Without this nothing ever
+        # noticed a vehicle coming due; the command existed and was
+        # expected to be run by hand.
+        flask pm run-due-check || { daily_ok=0
+          echo "pm run-due-check failed; will retry on the next tick."; }
+
+        # Vehicle Registration: the same scan for LTO renewals --
+        # notifications, plus DRAFT renewals for AUTO_REGISTRATION
+        # templates.
+        flask registration run-due-check || { daily_ok=0
+          echo "registration run-due-check failed; will retry on the next tick."; }
+
         # Authority To Drive: stamp permits whose Valid To has passed as
         # EXPIRED, so a lapsed permit stops reading "APPROVED & ACTIVE"
         # in the lists (KI-10). Editing a lapsed permit is already
         # refused by its DATE whether or not this has run, so a failure
         # here is a stale label, never an open door.
-        if flask atd run-expiry-check; then
+        flask atd run-expiry-check || { daily_ok=0
+          echo "atd run-expiry-check failed; will retry on the next tick."; }
+
+        # The marker only advances when the whole day's work succeeded,
+        # so a transient database blip retries on the next tick rather
+        # than skipping a day. Every one of these is idempotent, so the
+        # ones that already succeeded cost nothing on the retry.
+        if [ "${daily_ok}" = "1" ]; then
           last_daily_run="${today}"
-        else
-          echo "atd run-expiry-check failed; will retry on the next tick."
         fi
       fi
 
