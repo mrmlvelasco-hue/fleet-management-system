@@ -55,13 +55,40 @@ case "${1:-web}" in
 
   scheduler)
     wait_for_db
-    echo "Starting scheduler loop (email outbox drain)..."
+    echo "Starting scheduler loop (email outbox drain + daily scans)..."
     # A plain loop rather than Celery beat: the recurring work here is a
-    # single idempotent command that returns immediately when there is
-    # nothing to do, so a broker, a worker and a beat process would be
+    # handful of idempotent commands that return immediately when there
+    # is nothing to do, so a broker, a worker and a beat process would be
     # three more moving parts for no benefit.
+    #
+    # Two cadences in one loop. The outbox drains every tick, because a
+    # queued mail waiting a minute is already the longest anyone should
+    # wait. The daily scans run once per calendar day: they only move
+    # records across a date boundary, so a second run the same day finds
+    # nothing and is pure load.
+    #
+    # The marker is a plain variable, so a container restart runs the
+    # daily work once on start. That is deliberate -- the commands are
+    # idempotent, and a scheduler that has been down over midnight
+    # should catch up immediately rather than wait for the next one.
+    last_daily_run=""
     while true; do
       flask email send-pending || echo "email send-pending failed; will retry."
+
+      today="$(date +%F)"
+      if [ "${last_daily_run}" != "${today}" ]; then
+        # Authority To Drive: stamp permits whose Valid To has passed as
+        # EXPIRED, so a lapsed permit stops reading "APPROVED & ACTIVE"
+        # in the lists (KI-10). Editing a lapsed permit is already
+        # refused by its DATE whether or not this has run, so a failure
+        # here is a stale label, never an open door.
+        if flask atd run-expiry-check; then
+          last_daily_run="${today}"
+        else
+          echo "atd run-expiry-check failed; will retry on the next tick."
+        fi
+      fi
+
       sleep "${SCHEDULER_INTERVAL_SECONDS:-60}"
     done
     ;;
