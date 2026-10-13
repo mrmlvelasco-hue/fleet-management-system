@@ -252,11 +252,14 @@ class BaseTransactionService:
 
     # ── Edit policy (2026-10-12; spec document-edit-policy-design) ───
     #
-    # One rule for every request document: open while its physical
-    # status is in EDITABLE_STATUSES (Draft -- unsubmitted, Pending,
-    # Returned or Approved-not-yet-actioned) and its approval is not
-    # Rejected; editable by the initiator or a holder of
-    # update_permission. Approval is NOT restarted by an edit; the
+    # One rule for every request document -- the Maintenance Order rule
+    # (2026-10-13: "same approval path, standard process"): open while
+    # its physical status is in EDITABLE_STATUSES (Draft -- unsubmitted,
+    # Pending, Returned or Approved -- plus the document's ongoing work
+    # status: MO In Progress, PR Ordered, Trip Ticket Released, ATD
+    # Active, Movement In Transit) and its approval is not Rejected;
+    # locked once closed (Completed, Received, Cancelled, Expired...);
+    # editable by the initiator or a holder of update_permission. Approval is NOT restarted by an edit; the
     # people it concerns are notified and the change is listed.
 
     #: Physical statuses in which the document may still be edited.
@@ -349,13 +352,14 @@ class BaseTransactionService:
         """Tell the approvers through the Notification Engine's
         configurable rules (seeded: current approver + prior approvers)
         -- once someone other than the initiator is relying on the
-        document: approval PENDING or APPROVED, or work IN_PROGRESS.
+        document: approval PENDING or APPROVED, or work under way (any
+        status past DRAFT: In Progress, Ordered, Released, Active...).
         A Returned document is being fixed at the approver's request."""
         instance = self._latest_instance(record)
         if instance is None:
             return
         if not (instance.status in ("PENDING", "APPROVED")
-                or record.status == "IN_PROGRESS"):
+                or record.status != "DRAFT"):
             return
         from app.core.approval.engine import publish
         publish("edited_after_submission", instance)

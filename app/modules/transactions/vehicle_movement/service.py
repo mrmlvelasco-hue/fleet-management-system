@@ -26,6 +26,8 @@ class VehicleMovementService(BaseTransactionService):
     reference_table = "vehicle_movements"
     # Edit policy (BaseTransactionService).
     update_permission = "vehiclemovement.update"
+    #: In transit: the move is under way -- still open, like an In-Progress MO.
+    EDITABLE_STATUSES = ("DRAFT", "IN_TRANSIT")
     EDIT_FIELDS = {
         "vehicle_id": ("Vehicle", "id"),
         "movement_type": ("Movement type", "text"),

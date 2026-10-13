@@ -17,6 +17,8 @@ class ATDService(BaseTransactionService):
     # Edit policy (BaseTransactionService) -- replaces ATD's own
     # Draft/Returned-only update().
     update_permission = "atd.update"
+    #: Active: the authority is in use -- still open, like an In-Progress MO.
+    EDITABLE_STATUSES = ("DRAFT", "ACTIVE")
     EDIT_FIELDS = {
         "vehicle_id": ("Vehicle", "id"),
         "driver_id": ("Driver", "id"),

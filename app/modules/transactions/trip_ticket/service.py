@@ -23,6 +23,8 @@ class TripTicketService(BaseTransactionService):
     reference_table = "trip_tickets"
     # Edit policy (BaseTransactionService).
     update_permission = "tripticket.update"
+    #: Released: the trip is under way -- still open, like an In-Progress MO.
+    EDITABLE_STATUSES = ("DRAFT", "RELEASED")
     EDIT_FIELDS = {
         "vehicle_id": ("Vehicle", "id"),
         "driver_id": ("Driver", "id"),

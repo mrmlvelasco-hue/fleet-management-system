@@ -25,6 +25,8 @@ class PurchaseRequestService(BaseTransactionService):
     # Edit policy (BaseTransactionService). Lines are edited through
     # add_line / update_line / remove_line under the same open rule.
     update_permission = "purchaserequest.update"
+    #: Ordered: goods on order -- still open, like an In-Progress MO.
+    EDITABLE_STATUSES = ("DRAFT", "ORDERED")
     #: Listed in changes-since-submission but never set by an edit: the
     #: total is derived from the lines, and it is what the approval
     #: band is based on, so a line change while Pending must show here.

@@ -134,7 +134,7 @@ DOCS = {
                     "unit_cost": 500}]),
         edit=("description", "Brake pads and rotors", "Description",
               "Brake pads and rotors"),
-        locked="ORDERED"),
+        locked="RECEIVED", ongoing="ORDERED"),
     "trip_ticket": dict(
         svc=TripTicketService, api="trip-tickets",
         make=lambda e, u: TripTicketService().create(
@@ -142,7 +142,7 @@ DOCS = {
             purpose="Delivery", departure_datetime=datetime(2026, 10, 14, 8),
             odometer_out=1000, user=u, driver_id=e["driver"].id),
         edit=("destination", "Cebu", "Destination", "Cebu"),
-        locked="RELEASED"),
+        locked="COMPLETED", ongoing="RELEASED"),
     "vehicle_registration": dict(
         svc=VehicleRegistrationService, api="vehicle-registrations",
         make=lambda e, u: VehicleRegistrationService().create(
@@ -157,7 +157,7 @@ DOCS = {
             from_location="Manila Hub", to_location="Muntinlupa",
             movement_date=date(2026, 10, 14), user=u),
         edit=("to_location", "Cebu Branch", "To", "Cebu Branch"),
-        locked="IN_TRANSIT"),
+        locked="COMPLETED", ongoing="IN_TRANSIT"),
     "tire_transaction": dict(
         svc=TireTransactionService, api="tire-transactions",
         make=lambda e, u: TireTransactionService().create(
@@ -181,12 +181,12 @@ DOCS = {
             purpose="Field visit", valid_from=date(2026, 10, 14),
             valid_to=date(2026, 10, 20), user=u),
         edit=("purpose", "Client visit", "Purpose", "Client visit"),
-        locked="ACTIVE"),
+        locked="CANCELLED", ongoing="ACTIVE"),
 }
 NAMES = list(DOCS)
 
 
-def _submit(db, env, record, svc, status="PENDING"):
+def _submit(db, env, record, svc, status="PENDING", approved_by=None):
     dt = DocumentType.query.filter_by(code=svc.document_type_code).first()
     inst = ApprovalInstance(
         document_type_id=dt.id, approval_path_id=env["path"].id,
@@ -201,6 +201,10 @@ def _submit(db, env, record, svc, status="PENDING"):
         # Now, not back-dated: the record's own creation-time writes (a
         # PR total computed from its lines) happen before submission.
         acted_at=datetime.now(timezone.utc)))
+    if approved_by is not None:
+        db.session.add(ApprovalAction(
+            instance_id=inst.id, level_number=1, action="APPROVE",
+            acted_by=approved_by.id, acted_at=datetime.now(timezone.utc)))
     record.approval_instance_id = inst.id
     db.session.commit()
     InAppNotification.query.delete()
@@ -250,8 +254,32 @@ def test_other_user_cannot_edit(db, env, name):
                           **{d["edit"][0]: d["edit"][1]})
 
 
+ONGOING = [n for n in NAMES if DOCS[n].get("ongoing")]
+
+
+@pytest.mark.parametrize("name", ONGOING)
+def test_ongoing_document_is_editable_like_an_in_progress_mo(db, env, name):
+    """Same standard process as the Maintenance Order (Michael,
+    2026-10-13): after approval, while the work is ongoing -- PR ordered,
+    trip released, ATD active, movement in transit -- the document can
+    still be corrected, and the approvers who signed off are told."""
+    d = DOCS[name]
+    rec = _new(env, name)
+    _submit(db, env, rec, d["svc"], status="APPROVED",
+            approved_by=env["approver"])
+    rec.status = d["ongoing"]
+    db.session.commit()
+    svc = d["svc"]()
+    assert svc.editable_scope(rec) == "FULL"
+    field, value = d["edit"][0], d["edit"][1]
+    svc.update(rec.id, user=env["initiator"], **{field: value})
+    assert InAppNotification.query.filter_by(
+        user_id=env["approver"].id,
+        event_code="edited_after_submission").count() == 1
+
+
 @pytest.mark.parametrize("name", NAMES)
-def test_locked_once_it_leaves_draft(db, env, name):
+def test_locked_once_closed(db, env, name):
     d = DOCS[name]
     rec = _new(env, name)
     rec.status = d["locked"]
@@ -335,7 +363,7 @@ def test_api_stranger_is_refused(client, db, env, name):
 
 
 @pytest.mark.parametrize("name", NAMES)
-def test_api_locked_document_is_a_conflict(client, db, env, name):
+def test_api_closed_document_is_a_conflict(client, db, env, name):
     d = DOCS[name]
     rec = _new(env, name)
     rec.status = d["locked"]
@@ -394,12 +422,52 @@ def test_registration_expiry_follows_date_and_validity(db, env):
     assert rec.expiry_date == date(2027, 11, 1)
 
 
-def test_registration_vehicle_and_type_are_not_editable(db, env):
+def _second_vehicle(env):
+    from app.modules.master_data.vehicle.models import Vehicle
+    v = env["vehicle"]
+    return VehicleService().create(
+        vehicle_type_id=v.vehicle_type_id, brand="Isuzu", model="D-Max",
+        year=2019, branch_id=v.branch_id, conduction_number="NAB-4471")
+
+
+def test_registration_vehicle_can_be_corrected(db, env):
+    """Like the MO's vehicle: editable, with the creation rules re-run."""
     rec = _new(env, "vehicle_registration")
+    other = _second_vehicle(env)
     VehicleRegistrationService().update(rec.id, user=env["initiator"],
-                                        registration_type="RENEWAL")
+                                        vehicle_id=other.id)
     assert db.session.get(VehicleRegistrationService.model,
-                          rec.id).registration_type == "NEW"
+                          rec.id).vehicle_id == other.id
+
+
+def test_registration_vehicle_change_rechecks_duplicates(db, env):
+    other = _second_vehicle(env)
+    VehicleRegistrationService().create(
+        vehicle_id=other.id, registration_type="NEW",
+        registration_date=date(2026, 10, 1), user=env["initiator"])
+    rec = _new(env, "vehicle_registration")
+    with pytest.raises(DocumentFieldError) as exc:
+        VehicleRegistrationService().update(rec.id, user=env["initiator"],
+                                            vehicle_id=other.id)
+    assert exc.value.field == "vehicle_id"
+
+
+def test_registration_resave_is_not_a_duplicate_of_itself(db, env):
+    rec = _new(env, "vehicle_registration")
+    VehicleRegistrationService().update(
+        rec.id, user=env["initiator"], vehicle_id=env["vehicle"].id,
+        registration_type="NEW", or_cr_cost=100)
+    assert float(db.session.get(VehicleRegistrationService.model,
+                                rec.id).or_cr_cost) == 100
+
+
+def test_registration_type_change_rechecks_prior_registration(db, env):
+    """RENEWAL needs a prior registration, exactly as at creation."""
+    rec = _new(env, "vehicle_registration")
+    with pytest.raises(DocumentFieldError) as exc:
+        VehicleRegistrationService().update(rec.id, user=env["initiator"],
+                                            registration_type="RENEWAL")
+    assert exc.value.field == "registration_type"
 
 
 def test_purchase_request_lines_editable_while_pending(db, env):
@@ -436,11 +504,21 @@ def test_pr_amount_is_listed_but_not_editable_directly(db, env):
                                 rec.id).amount) == 1000.0
 
 
-def test_purchase_request_lines_locked_once_ordered(db, env):
+def test_purchase_request_lines_editable_once_ordered(db, env):
+    """Ordered = work ongoing, open like an In-Progress MO."""
+    rec = _new(env, "purchase_request")
+    rec.status = "ORDERED"
+    db.session.commit()
+    PurchaseRequestService().add_line(rec.id, item_description="Rotor",
+                                      quantity=1, unit_cost=2000)
+    assert len(db.session.get(PurchaseRequestService.model, rec.id).lines) == 2
+
+
+def test_purchase_request_lines_locked_once_received(db, env):
     from app.modules.transactions.purchase_request.service import (
         LineManagementError)
     rec = _new(env, "purchase_request")
-    rec.status = "ORDERED"
+    rec.status = "RECEIVED"
     db.session.commit()
     with pytest.raises(LineManagementError):
         PurchaseRequestService().add_line(rec.id, item_description="Rotor",
@@ -485,3 +563,20 @@ def test_asset_transaction_can_be_returned_and_resubmitted(
                     headers=_hdr(client, "de_editor"))
     assert r.status_code == 200, r.get_data(as_text=True)
     assert r.get_json()["approval_instance_status"] == "PENDING"
+
+
+def test_api_pr_locked_flag_follows_the_edit_policy(client, db, env):
+    """The detail's `locked` flag is the same decision the service makes:
+    open while Pending/Ordered, locked once Received."""
+    rec = _new(env, "purchase_request")
+    _submit(db, env, rec, PurchaseRequestService)
+    hdr = _hdr(client, "de_initiator")
+    url = f"/api/v1/purchase-requests/{rec.id}"
+    assert client.get(url, headers=hdr).get_json()["locked"] is False
+    rec = db.session.get(PurchaseRequestService.model, rec.id)
+    rec.status = "ORDERED"
+    db.session.commit()
+    assert client.get(url, headers=hdr).get_json()["locked"] is False
+    rec.status = "RECEIVED"
+    db.session.commit()
+    assert client.get(url, headers=hdr).get_json()["locked"] is True

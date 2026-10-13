@@ -148,14 +148,30 @@ change detection → setattr → after-edit hook → notify),
 `changes_since_submission`. One API helper coerces payloads by kind and
 maps errors (403 forbidden / 400 field / 409 state).
 
-**Open vs locked, per document.** A document is editable while its
-physical status is `DRAFT` — unsubmitted, Pending, Returned, or
-Approved but not yet actioned — and not Rejected. It locks once it
-leaves Draft (Trip Ticket RELEASED, ATD ACTIVE, Vehicle Movement
-IN_TRANSIT, PR ORDERED/RECEIVED, COMPLETED, CANCELLED): by then other
-records have changed (vehicle driver, tire mount, branch). The MO's
-In-Progress exception stays as agreed in Phase 1. Per-document
-`EDITABLE_STATUSES` keeps this adjustable.
+**Open vs locked, per document — the MO rule for every document
+(revised 2026-10-13).** Every request document follows the same
+standard approval process as the Maintenance Order, so it follows the
+same edit rule. A document is editable while it is Draft — unsubmitted,
+Pending, Returned, or Approved but not yet actioned — **and while its
+work is ongoing** (the document's equivalent of MO In Progress), and
+not Rejected. It locks only once closed. Edits after submission never
+restart approval; the current approver (Pending) or the approvers who
+signed off (Approved / ongoing) are notified with the change list.
+
+| Document | Editable statuses | Locked |
+|---|---|---|
+| Maintenance Order | DRAFT, IN_PROGRESS | COMPLETED, CANCELLED |
+| Purchase Request (header and lines) | DRAFT, ORDERED | RECEIVED, CANCELLED |
+| Trip Ticket | DRAFT, RELEASED | COMPLETED, CANCELLED |
+| ATD | DRAFT, ACTIVE | EXPIRED, CANCELLED |
+| Vehicle Movement | DRAFT, IN_TRANSIT | COMPLETED, CANCELLED |
+| Vehicle Registration | DRAFT (no ongoing stage) | COMPLETED, CANCELLED |
+| Tire / Battery Transaction | DRAFT (applied on approval) | COMPLETED, CANCELLED |
+
+The first draft of Phase 2 locked documents once they left Draft; the
+client corrected this the same day ("same approval path as standard
+process, apply to all transactions"). Per-document `EDITABLE_STATUSES`
+keeps it configurable.
 
 **Editable fields** (the create-time fields):
 
@@ -163,15 +179,18 @@ In-Progress exception stays as agreed in Phase 1. Per-document
 |---|---|
 | Purchase Request | department, vendor, description, justification, needed-by date; lines (add/edit/remove) |
 | Trip Ticket | vehicle, driver (or manual name), destination, purpose, departure, odometer out, passengers |
-| Vehicle Registration | registration date, validity years (expiry recomputed), OR/CR cost, odometer |
+| Vehicle Registration | vehicle, NEW/RENEWAL type, registration date, validity years (expiry recomputed), OR/CR cost, odometer |
 | Vehicle Movement | vehicle, movement type, from, to, date, start, driver, employee responsible, purpose, remarks |
 | Tire Transaction | tire, action, vehicle, date, odometer, remarks |
 | Battery Transaction | battery, action, vehicle, date, remarks |
 | ATD | vehicle, driver, purpose, valid from/to, odometer out, linked MO |
 
-Vehicle Registration's vehicle and NEW/RENEWAL type stay fixed: both
-drive the duplicate/prior-registration rules at creation, and a wrong
-one is a new registration, not a correction.
+Vehicle Registration's vehicle and NEW/RENEWAL type are editable like
+the MO's vehicle: a change (or a new registration date) re-runs the
+creation rules — a NEW is refused while the vehicle has another active
+registration; a RENEWAL needs a prior registration or a migrated
+last-known expiry — against the vehicle's *other* registrations, and
+the error is shown on the field that moved.
 
 Validation re-uses each `create()` rule: Trip Ticket driver-from-master
 parameter, movement type lookup, tire/battery action list.

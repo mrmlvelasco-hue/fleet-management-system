@@ -21,6 +21,12 @@ from app.modules.api.auth import api_auth_required
 from app.modules.api.coercion import Coercer, FieldValueError
 from app.modules.api.routes import bp
 
+
+def _pr_service():
+    from app.modules.transactions.purchase_request.service import (
+        PurchaseRequestService)
+    return PurchaseRequestService()
+
 _HEADER_COERCER = Coercer(
     ints={"department_id": "Department", "vendor_id": "Preferred Supplier"},
     dates={"needed_by_date": "Needed By Date"},
@@ -89,10 +95,11 @@ def _pr_json(pr, *, detail=False):
         "amount": _money(pr.amount),
         "status": pr.status,
         "requested_by": pr.requester.username if pr.requester else None,
-        # Locked once submitted, matching LineManagementError's own
-        # rule. Sent as a decision so the client disables entry rather
-        # than letting someone type a line that will be refused.
-        "locked": pr.approval_instance_id is not None or pr.status != "DRAFT",
+        # Lines lock once the PR is closed (RECEIVED/CANCELLED) or
+        # rejected -- the edit policy's own rule (editable_scope), so
+        # the flag can never disagree with what LineManagementError
+        # enforces. Sent as a decision so the client disables entry.
+        "locked": _pr_service().editable_scope(pr) != "FULL",
     }
     if detail:
         data["lines"] = [_line_json(l) for l in pr.lines]
