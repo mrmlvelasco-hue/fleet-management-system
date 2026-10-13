@@ -256,6 +256,127 @@ def my_vehicle_document_download(api_user, vid, aid):
         mimetype=att.mime_type or "application/octet-stream")
 
 
+@bp.route("/my/vehicles/<int:vid>/ongoing", methods=["GET"])
+@api_auth_required("vehicle.view")
+def my_vehicle_ongoing(api_user, vid):
+    """Ongoing transactions on a vehicle the caller currently holds.
+
+    What the client asked for on 2026-10-14: a driver opens the app and
+    sees "what is in flight on my vehicle right now" -- any Maintenance
+    Order, Trip Ticket, Movement or Authority To Drive that hasn't
+    closed yet. One tap away from the vehicle page, so the driver's
+    first screen answers "is anything happening to my unit".
+
+    SCOPE: the usual /my/* rule -- 404 when the vehicle is not yours.
+    No field here would leak less than the detail endpoint does, but
+    the enumeration-oracle reasoning in the module docstring applies to
+    every endpoint uniformly, not case by case.
+
+    "Ongoing" follows the shared edit policy's open-document test: a
+    document is listed while it is editable -- Draft, Pending,
+    Returned, Approved, or in its own working status (MO In Progress,
+    Trip Ticket Released, Vehicle Movement In Transit, ATD Active).
+    Closed documents (Completed, Received, Cancelled, Expired) never
+    appear. ATD specifically: a permit past its Valid To is finished
+    whether or not the daily scan has stamped the status (KI-10), so
+    the date is the real test.
+    """
+    from datetime import date as _date
+
+    if _assigned_vehicle(vid, api_user) is None:
+        return _not_found()
+
+    items = []
+
+    # Maintenance Orders -- the one every driver cares about: what is
+    # being done to my unit?
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    for mo in (MaintenanceOrder.query
+               .filter(MaintenanceOrder.vehicle_id == vid,
+                       MaintenanceOrder.status.in_(("DRAFT", "IN_PROGRESS")))
+               .order_by(MaintenanceOrder.id.desc()).all()):
+        items.append({
+            "id": mo.id,
+            "document_type": "Maintenance Order",
+            "document_number": mo.document_number,
+            "status": mo.status,
+            # The description is what someone typed when they raised the
+            # order -- "Brake pads", "PMS 10,000km" -- which is exactly
+            # what a driver looking at this list wants to see.
+            "summary": mo.description or (mo.transaction_type.name
+                if getattr(mo, "transaction_type", None) else None),
+            "date": (mo.scheduled_date.isoformat()
+                     if mo.scheduled_date else None),
+            "sort_date": mo.scheduled_date or _date.min,
+        })
+
+    from app.modules.transactions.trip_ticket.models import TripTicket
+    for tt in (TripTicket.query
+               .filter(TripTicket.vehicle_id == vid,
+                       TripTicket.status.in_(("DRAFT", "RELEASED")))
+               .order_by(TripTicket.id.desc()).all()):
+        items.append({
+            "id": tt.id,
+            "document_type": "Trip Ticket",
+            "document_number": tt.document_number,
+            "status": tt.status,
+            "summary": tt.destination or tt.purpose,
+            "date": (tt.departure_datetime.date().isoformat()
+                     if tt.departure_datetime else None),
+            "sort_date": (tt.departure_datetime.date()
+                          if tt.departure_datetime else _date.min),
+        })
+
+    from app.modules.transactions.vehicle_movement.models import VehicleMovement
+    for mv in (VehicleMovement.query
+               .filter(VehicleMovement.vehicle_id == vid,
+                       VehicleMovement.status.in_(("DRAFT", "IN_TRANSIT")))
+               .order_by(VehicleMovement.id.desc()).all()):
+        items.append({
+            "id": mv.id,
+            "document_type": "Vehicle Movement",
+            "document_number": mv.document_number,
+            "status": mv.status,
+            "summary": " -> ".join(filter(None, [mv.from_location,
+                                                 mv.to_location])) or None,
+            "date": (mv.movement_date.isoformat()
+                     if mv.movement_date else None),
+            "sort_date": mv.movement_date or _date.min,
+        })
+
+    from app.modules.transactions.atd.models import AuthorityToDrive
+    from app.modules.transactions.atd.service import ATDService
+    today = _date.today()
+    for atd in (AuthorityToDrive.query
+                .filter(AuthorityToDrive.vehicle_id == vid,
+                        AuthorityToDrive.status.in_(("DRAFT", "ACTIVE")))
+                .order_by(AuthorityToDrive.id.desc()).all()):
+        # A permit past its Valid To is finished even if the stored
+        # status still says ACTIVE (KI-10): the daily scan may be late,
+        # and listing a lapsed authority to a driver would make the app
+        # disagree with what the gate guard holds.
+        if ATDService.is_expired(atd):
+            continue
+        items.append({
+            "id": atd.id,
+            "document_type": "Authority To Drive",
+            "document_number": atd.document_number,
+            "status": atd.status,
+            "summary": atd.purpose,
+            "date": atd.valid_from.isoformat() if atd.valid_from else None,
+            "sort_date": atd.valid_from or _date.min,
+        })
+
+    # Newest first, by the document's own date -- the date on the row,
+    # so a driver reading top-down starts with what is happening TODAY,
+    # not with what was raised most recently in the system.
+    items.sort(key=lambda i: i["sort_date"], reverse=True)
+    for i in items:
+        del i["sort_date"]
+    return jsonify({"items": items, "total": len(items)})
+
+
 @bp.route("/my/atds", methods=["GET"])
 @api_auth_required("atd.view")
 def my_atds(api_user):
