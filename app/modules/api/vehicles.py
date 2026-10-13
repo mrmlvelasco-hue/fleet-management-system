@@ -604,6 +604,9 @@ def vehicle_maintenance_history(api_user, vehicle_id):
         # not a 500.
         return jsonify({"items": []})
 
+    from app.core.vehicle_activity_history_service import (
+        VehicleActivityHistoryService)
+    history = VehicleActivityHistoryService()
     rows = (MaintenanceOrder.query
             .filter_by(vehicle_id=vehicle_id, status="COMPLETED")
             .order_by(MaintenanceOrder.completed_date.desc())
@@ -622,6 +625,30 @@ def vehicle_maintenance_history(api_user, vehicle_id):
         "total_cost": _money(getattr(m, "actual_cost", None)),
         "odometer": m.odometer_at_service,
         "status": m.status,
+        # What KIND of event this was, from the SAME derivation the
+        # Activity timeline and the print report use -- PMS / Repair
+        # (ATR) / Transfer / Disposal. Without it an operational order
+        # showed here with an empty Category and no PM type, so the
+        # retirement of the asset read as a blank line and nobody could
+        # tell which order had disposed of the vehicle (Michael,
+        # 2026-10-13).
+        "activity_type": history.activity_type(m),
+        "transaction_type": (m.transaction_type.name
+                             if getattr(m, "transaction_type", None) else None),
+        "transaction_group": (m.transaction_type.group
+                              if getattr(m, "transaction_type", None) else None),
+        # ADR No. for a disposal, ATR No. for a transfer -- the number
+        # the paperwork is filed under, labelled as the filing clerk
+        # knows it.
+        "reference_label": history.reference_label(m),
+        "reference_number": history.reference_number(m),
+        "disposal_value": _money(getattr(m, "disposal_value", None)),
+        "disposal_recipient": getattr(m, "disposal_recipient", None),
+        "origin_branch": (m.origin_branch.name
+                          if getattr(m, "origin_branch", None) else None),
+        "destination_branch": (m.destination_branch.name
+                               if getattr(m, "destination_branch", None)
+                               else None),
     } for m in rows]})
 
 

@@ -48,6 +48,14 @@ def _bad(message, field=None):
                     "fields": {field or "_": message}}), 400
 
 
+def _submit_gate(api_user, tid):
+    """Submit / Resubmit: the initiator's own ticket, or tripticket.update
+    (shared rule -- see document_edit.submit_gate)."""
+    from app.modules.api.document_edit import submit_gate
+    from app.modules.transactions.trip_ticket.service import TripTicketService
+    return submit_gate(TripTicketService(), tid, api_user, _not_found)
+
+
 def _not_found(label="Trip Ticket"):
     return jsonify({"error": "not_found",
                     "message": f"{label} not found."}), 404
@@ -288,9 +296,10 @@ def _lifecycle(api_user, tid, method_name):
 
 
 @bp.route("/trip-tickets/<int:tid>/submit", methods=["POST"])
-@api_auth_required("tripticket.update")
+@api_auth_required("tripticket.view")  # real gate: submit_gate (own, or .update)
 def submit_trip_ticket(api_user, tid):
-    return _lifecycle(api_user, tid, "submit")
+    gate = _submit_gate(api_user, tid)
+    return gate or _lifecycle(api_user, tid, "submit")
 
 
 @bp.route("/trip-tickets/<int:tid>/approve", methods=["POST"])
@@ -328,14 +337,15 @@ def cancel_trip_ticket(api_user, tid):
 
 
 @bp.route("/trip-tickets/<int:tid>/resubmit", methods=["POST"])
-@api_auth_required("tripticket.update")
+@api_auth_required("tripticket.view")  # real gate: submit_gate (own, or .update)
 def resubmit_trip_ticket(api_user, tid):
     """RETURNED trip tickets go back for approval after correction --
     resubmit() is on BaseTransactionService, same as Maintenance
     Orders and Purchase Requests. The route was simply never added;
     resubmit() takes (record_id, user, remarks=None), so it needs no
     special-casing in _lifecycle's dispatcher the way submit() does."""
-    return _lifecycle(api_user, tid, "resubmit")
+    gate = _submit_gate(api_user, tid)
+    return gate or _lifecycle(api_user, tid, "resubmit")
 
 
 @bp.route("/trip-tickets/<int:tid>/release", methods=["POST"])

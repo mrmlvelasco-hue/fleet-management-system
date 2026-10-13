@@ -1161,6 +1161,23 @@ def registration_run_due_check():
     click.echo(f"Due/overdue scan complete. Registrations created: {created}")
 
 
+atd_cli = AppGroup("atd", help="Authority To Drive lifecycle commands.")
+
+
+@atd_cli.command("run-expiry-check")
+def atd_run_expiry_check():
+    """Stamp every ACTIVE Authority To Drive whose Valid To has passed as
+    EXPIRED — the same daily scan Celery beat would run, in the shape of
+    `flask pm run-due-check`. Nothing used to move an ATD out of ACTIVE
+    (KI-10), so old permits still read "APPROVED & ACTIVE". Safe to run
+    repeatedly; idempotent. The edit policy does not depend on this —
+    a lapsed permit is closed to editing by its date whether or not this
+    has run."""
+    from app.modules.transactions.atd.tasks import expire_overdue_atds
+    changed = expire_overdue_atds()
+    click.echo(f"ATD expiry scan complete. Permits expired: {changed}")
+
+
 report_cli = AppGroup("report", help="Scheduled report delivery commands.")
 
 
@@ -1492,6 +1509,7 @@ def register_cli(app):
     app.cli.add_command(reset_cli)
     app.cli.add_command(pm_cli)
     app.cli.add_command(registration_cli)
+    app.cli.add_command(atd_cli)
     app.cli.add_command(report_cli)
     app.cli.add_command(notifications_cli)
     from app.modules.master_data.vehicle.backfill_cli import (

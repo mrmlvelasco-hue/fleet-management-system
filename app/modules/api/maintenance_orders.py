@@ -16,6 +16,15 @@ def _bad(message, code=400):
     return jsonify({"error": "bad_request", "message": message}), code
 
 
+def _submit_gate(api_user, oid):
+    """Submit / Resubmit: the initiator's own order, or
+    maintenanceorder.update (see document_edit.submit_gate)."""
+    from app.modules.api.document_edit import submit_gate
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+    return submit_gate(MaintenanceOrderService(), oid, api_user, _not_found)
+
+
 def _not_found(label="Maintenance Order"):
     return jsonify({"error": "not_found", "message": f"{label} not found."}), 404
 
@@ -797,10 +806,13 @@ def replace_maintenance_order_scope(api_user, oid):
 # (routes.py registers view/create/update/delete/print only),
 # so the invented code could not be granted by ANY seed and
 # the endpoint was permanently unusable for every user.
-@api_auth_required("maintenanceorder.update")
+@api_auth_required("maintenanceorder.view")  # real gate: submit_gate (own, or .update)
 def submit_maintenance_order(api_user, oid):
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService)
+    gate = _submit_gate(api_user, oid)
+    if gate:
+        return gate
     try:
         MaintenanceOrderService().submit(oid, api_user)
     except Exception as e:
@@ -1239,12 +1251,13 @@ def return_maintenance_order(api_user, oid):
 
 
 @bp.route("/maintenance-orders/<int:oid>/resubmit", methods=["POST"])
-@api_auth_required("maintenanceorder.update")
+@api_auth_required("maintenanceorder.view")  # real gate: submit_gate (own, or .update)
 def resubmit_maintenance_order(api_user, oid):
     """RETURNED orders go back for approval after correction. Without
     this a returned order is a dead end in React: the requester can see
     why it came back and has no way to send it on again."""
-    return _approval_action(api_user, oid, "resubmit")
+    gate = _submit_gate(api_user, oid)
+    return gate or _approval_action(api_user, oid, "resubmit")
 
 
 @bp.route("/maintenance-orders/<int:oid>/generate-pr", methods=["POST"])

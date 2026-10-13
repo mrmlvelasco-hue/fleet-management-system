@@ -12,6 +12,14 @@ def _bad(message, code=400):
     return jsonify({"error": "bad_request", "message": message}), code
 
 
+def _submit_gate(api_user, aid):
+    """Submit / Resubmit: the initiator's own permit, or atd.update
+    (see document_edit.submit_gate)."""
+    from app.modules.api.document_edit import submit_gate
+    from app.modules.transactions.atd.service import ATDService
+    return submit_gate(ATDService(), aid, api_user, _not_found)
+
+
 def _not_found(label="ATD"):
     return jsonify({"error": "not_found", "message": f"{label} not found."}), 404
 
@@ -34,6 +42,7 @@ def _iso(d):
 
 
 def _atd_json(a, *, detail=False):
+    from app.modules.transactions.atd.service import ATDService
     plate = None
     vehicle_label = None
     if a.vehicle:
@@ -59,6 +68,11 @@ def _atd_json(a, *, detail=False):
         "odometer_in": a.odometer_in,
         "maintenance_order_id": a.maintenance_order_id,
         "created_at": _iso(getattr(a, "created_at", None)),
+        # Lapsed by date even while the stored status still says ACTIVE
+        # (nothing flips it in real time -- KI-10). Sent so a list or a
+        # pill can say EXPIRED, and so the screen's Edit control agrees
+        # with what the server will accept.
+        "is_expired": ATDService.is_expired(a),
     }
     if detail:
         mo = a.maintenance_order
@@ -235,9 +249,12 @@ def update_atd(api_user, aid):
 
 
 @bp.route("/atd/<int:aid>/submit", methods=["POST"])
-@api_auth_required("atd.update")
+@api_auth_required("atd.view")  # real gate: submit_gate (own, or .update)
 def submit_atd(api_user, aid):
     from app.modules.transactions.atd.service import ATDService
+    gate = _submit_gate(api_user, aid)
+    if gate:
+        return gate
     try:
         ATDService().submit(aid, api_user)
     except Exception as e:
@@ -246,9 +263,12 @@ def submit_atd(api_user, aid):
 
 
 @bp.route("/atd/<int:aid>/resubmit", methods=["POST"])
-@api_auth_required("atd.update")
+@api_auth_required("atd.view")  # real gate: submit_gate (own, or .update)
 def resubmit_atd(api_user, aid):
     from app.modules.transactions.atd.service import ATDService
+    gate = _submit_gate(api_user, aid)
+    if gate:
+        return gate
     p = request.get_json(silent=True) or {}
     try:
         atd = ATDService().resubmit(aid, api_user, remarks=p.get("remarks"))

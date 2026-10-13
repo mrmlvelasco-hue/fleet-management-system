@@ -44,6 +44,13 @@ def _bad(message, field=None):
                     "fields": {field or "_": message}}), 400
 
 
+def _submit_gate(api_user, pid):
+    """Submit / Resubmit: the initiator's own request, or
+    purchaserequest.update (see document_edit.submit_gate)."""
+    from app.modules.api.document_edit import submit_gate
+    return submit_gate(_pr_service(), pid, api_user, _not_found)
+
+
 def _not_found(label="Purchase Request"):
     return jsonify({"error": "not_found",
                     "message": f"{label} not found."}), 404
@@ -419,9 +426,10 @@ def _lifecycle_action(api_user, pid, method_name):
 
 
 @bp.route("/purchase-requests/<int:pid>/submit", methods=["POST"])
-@api_auth_required("purchaserequest.update")
+@api_auth_required("purchaserequest.view")  # real gate: submit_gate (own, or .update)
 def submit_purchase_request(api_user, pid):
-    return _lifecycle_action(api_user, pid, "submit")
+    gate = _submit_gate(api_user, pid)
+    return gate or _lifecycle_action(api_user, pid, "submit")
 
 
 @bp.route("/purchase-requests/<int:pid>/approve", methods=["POST"])
@@ -449,11 +457,12 @@ def cancel_purchase_request(api_user, pid):
 
 
 @bp.route("/purchase-requests/<int:pid>/resubmit", methods=["POST"])
-@api_auth_required("purchaserequest.update")
+@api_auth_required("purchaserequest.view")  # real gate: submit_gate (own, or .update)
 def resubmit_purchase_request(api_user, pid):
     """RETURNED requests go back for approval after correction --
     resubmit is on BaseTransactionService, same as Maintenance Orders."""
-    return _lifecycle_action(api_user, pid, "resubmit")
+    gate = _submit_gate(api_user, pid)
+    return gate or _lifecycle_action(api_user, pid, "resubmit")
 
 
 @bp.route("/purchase-requests/<int:pid>/mark-ordered", methods=["POST"])

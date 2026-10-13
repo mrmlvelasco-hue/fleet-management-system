@@ -35,6 +35,13 @@ class VehicleActivityHistoryService:
                 "assigned_to": None,
                 "description": "Vehicle acquired and registered",
                 "cost": vehicle.acquisition_cost, "odometer": 0,
+                # No source document: the acquisition is the vehicle
+                # record itself. Still carries the keys, so a caller can
+                # read every row the same way.
+                "document_type": "Vehicle", "document_id": vehicle.id,
+                "document_number": (vehicle.plate_number
+                                    or vehicle.conduction_number),
+                "reference_label": None, "reference_number": None,
             })
 
         from app.modules.transactions.maintenance_order.models import (
@@ -43,16 +50,24 @@ class VehicleActivityHistoryService:
                   .filter_by(vehicle_id=vehicle.id, status="COMPLETED").all()):
             rows.append({
                 "date": mo.completed_date or mo.scheduled_date,
-                "activity_type": self._mo_activity_type(mo),
+                "activity_type": self.activity_type(mo),
                 "outlet": (mo.destination_branch.name if mo.destination_branch
                           else (vehicle.branch.name if vehicle.branch else "—")),
                 "assigned_to": (mo.driver.full_name if mo.driver
                               else (vehicle.assigned_driver.full_name
                                    if vehicle.assigned_driver else None)),
-                "description": mo.description or (
-                    mo.transaction_type.name if mo.transaction_type
-                    else (mo.maintenance_type.name if mo.maintenance_type else "—")),
+                "description": self._mo_description(mo),
                 "cost": mo.actual_cost, "odometer": mo.odometer_at_service,
+                # Which record is this? A retirement or a branch move is
+                # the end of the asset's story here, so the order that
+                # caused it has to be nameable from the timeline itself
+                # (Michael, 2026-10-13) rather than hunted for in the
+                # Maintenance module.
+                "document_type": "Maintenance Order",
+                "document_id": mo.id,
+                "document_number": mo.document_number,
+                "reference_label": self.reference_label(mo),
+                "reference_number": self.reference_number(mo),
             })
 
         # Purchase Requests raised off this vehicle's orders.
@@ -95,6 +110,9 @@ class VehicleActivityHistoryService:
                     f"(from {mo.document_number or 'Maintenance Order'})"),
                 "cost": pr.amount,
                 "odometer": mo.odometer_at_service,
+                "document_type": "Purchase Request", "document_id": pr.id,
+                "document_number": pr.document_number,
+                "reference_label": None, "reference_number": None,
             })
 
         from app.modules.transactions.tire_txn.models import TireTransaction
@@ -106,6 +124,9 @@ class VehicleActivityHistoryService:
                 "outlet": vehicle.branch.name if vehicle.branch else "—",
                 "assigned_to": None, "description": tx.remarks or "Tire mounted",
                 "cost": None, "odometer": tx.odometer_at_service,
+                "document_type": "Tire Transaction", "document_id": tx.id,
+                "document_number": getattr(tx, "document_number", None),
+                "reference_label": None, "reference_number": None,
             })
 
         from app.modules.transactions.battery_txn.models import BatteryTransaction
@@ -128,22 +149,99 @@ class VehicleActivityHistoryService:
                 # recorded" the correct, honest value here, same as it
                 # would be for any other row type missing one.
                 "cost": None, "odometer": getattr(tx, "odometer_at_service", None),
+                "document_type": "Battery Transaction", "document_id": tx.id,
+                "document_number": getattr(tx, "document_number", None),
+                "reference_label": None, "reference_number": None,
             })
 
         rows = [r for r in rows if r["date"] is not None]
         rows.sort(key=lambda r: r["date"])
         return rows
 
-    def _mo_activity_type(self, mo) -> str:
+    @staticmethod
+    def reference_label(mo):
+        """"ADR No." for a disposal, "ATR No." for a transfer, else None.
+
+        Both numbers are generated on completion (Asset Disposal Report /
+        Asset Transfer Report) and are what the paperwork is filed under,
+        so the history row shows the number under the name the filing
+        clerk knows it by.
+        """
+        if getattr(mo, "disposal_reference_number", None):
+            return "ADR No."
+        if getattr(mo, "transfer_reference_number", None):
+            return "ATR No."
+        return None
+
+    @staticmethod
+    def reference_number(mo):
+        return (getattr(mo, "disposal_reference_number", None)
+                or getattr(mo, "transfer_reference_number", None))
+
+    def _mo_description(self, mo) -> str:
+        """What happened, in one line.
+
+        A disposal or a transfer is not self-explanatory from the order's
+        own description -- "Unit sold at auction" does not say what it
+        was sold for, to whom, or under which ADR -- so the row states
+        it. An ordinary maintenance order keeps exactly the description
+        it always had.
+        """
+        base = mo.description or (
+            mo.transaction_type.name if mo.transaction_type
+            else (mo.maintenance_type.name if mo.maintenance_type else "—"))
+        parts = []
+        reference = self.reference_number(mo)
+        if reference:
+            parts.append(f"{self.reference_label(mo)} {reference}")
+        if self._is_disposal(mo):
+            if mo.transaction_type is not None:
+                parts.append(f"Method: {mo.transaction_type.name}")
+            if getattr(mo, "disposal_recipient", None):
+                parts.append(f"To: {mo.disposal_recipient}")
+            if getattr(mo, "disposal_value", None) is not None:
+                parts.append(f"Value: {mo.disposal_value:,.2f}")
+        elif self._is_transfer(mo):
+            origin = (mo.origin_branch.name if getattr(mo, "origin_branch", None)
+                      else None)
+            destination = (mo.destination_branch.name
+                           if getattr(mo, "destination_branch", None) else None)
+            if origin or destination:
+                parts.append(f"{origin or '—'} → {destination or '—'}")
+        return " · ".join([base] + parts) if parts else base
+
+    @staticmethod
+    def _is_disposal(mo) -> bool:
+        """The transaction type's GROUP, which is what complete() itself
+        checks before retiring the vehicle -- not the code prefix, so an
+        admin-added disposal type counts too."""
+        tt = mo.transaction_type
+        return bool(tt is not None and (
+            tt.group == "DISPOSAL" or (tt.code or "").startswith("DIS-")))
+
+    @staticmethod
+    def _is_transfer(mo) -> bool:
+        tt = mo.transaction_type
+        return bool(tt is not None and (tt.code in _TRANSFER_CODES
+                                        or mo.destination_branch_id))
+
+    def activity_type(self, mo) -> str:
+        """PMS / Repair (ATR) / Transfer / Disposal / <type name> for one
+        Maintenance Order. Public because the Vehicle detail's
+        Maintenance History list labels its rows with the same
+        derivation -- two different answers for the same order on the
+        same page would be worse than none."""
         if mo.order_category == "MAINTENANCE":
             return "PMS" if (mo.category or "") in ("PM", "PREVENTIVE") else "Repair (ATR)"
         tt = mo.transaction_type
         if tt is None:
             return "Operational"
-        if tt.code in _TRANSFER_CODES:
-            return "Transfer"
-        if tt.code.startswith("DIS-"):
+        # Disposal first: a disposal order with a destination branch set
+        # is still a disposal.
+        if self._is_disposal(mo):
             return "Disposal"
+        if self._is_transfer(mo):
+            return "Transfer"
         return tt.name
 
     def get_utilization_summary(self, vehicle, activity_rows) -> dict:

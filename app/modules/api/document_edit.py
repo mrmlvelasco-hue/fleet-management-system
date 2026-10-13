@@ -104,6 +104,32 @@ def edit_document(svc, record_id, api_user, serialize, not_found):
     return jsonify(data)
 
 
+def submit_gate(svc, record_id, api_user, not_found):
+    """For Submit / Resubmit: an error response, or None to proceed.
+
+    The same answer as can_edit, minus the state test: whoever may
+    correct a document may also send it for approval. The edit policy
+    let an initiator fix their own request without <doc>.update, but
+    Submit and Resubmit still demanded it -- so a returned document
+    could be corrected and then not sent back (KI-30). Someone ELSE's
+    document still needs <doc>.update, which is why this is not simply
+    dropped to the view permission.
+
+    State stays with the service (resubmit on a document that is not
+    RETURNED is its conflict to report, not a permission answer).
+    """
+    record = svc.get_visible(record_id, api_user)
+    if record is None:
+        return not_found()
+    if getattr(record, "requested_by", None) == api_user.id:
+        return None
+    perm = svc.update_permission
+    if perm and api_user.has_permission(perm):
+        return None
+    return jsonify({"error": "forbidden", "message":
+                    f"This account lacks the '{perm}' permission."}), 403
+
+
 def edit_gate(svc, record_id, api_user, not_found):
     """For endpoints that edit part of a document (e.g. PR lines):
     an error response, or None to proceed. A closed document is left

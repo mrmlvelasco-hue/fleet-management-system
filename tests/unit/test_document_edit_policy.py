@@ -28,7 +28,8 @@ from app.cli import _seed_notification_rules
 from app.core.approval.models import ApprovalAction, ApprovalInstance
 from app.core.security.password import hash_password
 from app.core.security.registry import sync_permissions
-from app.modules.approval_config.models import ApprovalLevel, ApprovalPath
+from app.modules.approval_config.models import (
+    ApprovalLevel, ApprovalMatrix, ApprovalPath)
 from app.modules.document_config.models import DocumentType
 from app.modules.document_config.service import DocumentTypeService
 from app.modules.master_data.battery.service import BatteryService
@@ -114,6 +115,12 @@ def env(db):
     db.session.flush()
     db.session.add(ApprovalLevel(path_id=path.id, level_number=1,
                                  approver_type="ROLE", role_id=appr.id))
+    # Amount-independent matrix per document type, so a real submit
+    # through the Approval Engine routes instead of 409-ing on
+    # configuration -- the submit/resubmit tests go through the API.
+    for dt in DocumentType.query.all():
+        db.session.add(ApprovalMatrix(document_type_id=dt.id,
+                                      approval_path_id=path.id))
     db.session.commit()
     _seed_notification_rules()
     db.session.commit()
@@ -580,3 +587,48 @@ def test_api_pr_locked_flag_follows_the_edit_policy(client, db, env):
     rec.status = "RECEIVED"
     db.session.commit()
     assert client.get(url, headers=hdr).get_json()["locked"] is True
+
+
+# ── submit / resubmit by the initiator (2026-10-13) ─────────────────
+#
+# The edit policy let the initiator correct their own document without
+# <doc>.update, but Submit and Resubmit still demanded it -- so a
+# returned document could be fixed and then not sent back (KI-30).
+# Michael: "the initiator supposed to be has also has a update
+# permission in order to resubmit the request."
+
+@pytest.mark.parametrize("name", NAMES)
+def test_initiator_can_submit_their_own_document(client, db, env, name):
+    d = DOCS[name]
+    rec = _new(env, name)
+    r = client.post(f"/api/v1/{d['api']}/{rec.id}/submit",
+                    headers=_hdr(client, "de_initiator"))
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert db.session.get(d["svc"].model, rec.id).approval_instance_id
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_initiator_can_resubmit_their_returned_document(client, db, env, name):
+    d = DOCS[name]
+    svc = d["svc"]()
+    rec = _new(env, name)
+    svc.submit(rec.id, env["initiator"])
+    svc.return_document(rec.id, env["approver"], remarks="Fix the vendor")
+    r = client.post(f"/api/v1/{d['api']}/{rec.id}/resubmit",
+                    json={"remarks": "Corrected"},
+                    headers=_hdr(client, "de_initiator"))
+    assert r.status_code == 200, r.get_data(as_text=True)
+    inst = svc._latest_instance(db.session.get(d["svc"].model, rec.id))
+    assert inst.status == "PENDING"
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_someone_elses_document_still_needs_update_permission(client, db, env,
+                                                              name):
+    """Being able to submit YOUR OWN document is not permission to push
+    somebody else's through approval."""
+    d = DOCS[name]
+    rec = _new(env, name)
+    r = client.post(f"/api/v1/{d['api']}/{rec.id}/submit",
+                    headers=_hdr(client, "de_stranger"))
+    assert r.status_code == 403, r.get_data(as_text=True)

@@ -34,6 +34,16 @@ def _bad(message, field=None):
                     "fields": {field or "_": message}}), 400
 
 
+def _submit_gate(api_user, rid):
+    """Submit / Resubmit: the initiator's own registration, or
+    vehicleregistration.update (see document_edit.submit_gate)."""
+    from app.modules.api.document_edit import submit_gate
+    from app.modules.transactions.vehicle_registration.service import (
+        VehicleRegistrationService)
+    return submit_gate(VehicleRegistrationService(), rid, api_user,
+                       _not_found)
+
+
 def _not_found(label="Vehicle Registration"):
     return jsonify({"error": "not_found",
                     "message": f"{label} not found."}), 404
@@ -354,9 +364,10 @@ def _lifecycle(api_user, rid, method_name):
 
 
 @bp.route("/vehicle-registrations/<int:rid>/submit", methods=["POST"])
-@api_auth_required("vehicleregistration.update")
+@api_auth_required("vehicleregistration.view")  # real gate: submit_gate (own, or .update)
 def submit_vehicle_registration(api_user, rid):
-    return _lifecycle(api_user, rid, "submit")
+    gate = _submit_gate(api_user, rid)
+    return gate or _lifecycle(api_user, rid, "submit")
 
 
 @bp.route("/vehicle-registrations/<int:rid>/approve", methods=["POST"])
@@ -381,11 +392,12 @@ def return_vehicle_registration(api_user, rid):
 
 
 @bp.route("/vehicle-registrations/<int:rid>/resubmit", methods=["POST"])
-@api_auth_required("vehicleregistration.update")
+@api_auth_required("vehicleregistration.view")  # real gate: submit_gate (own, or .update)
 def resubmit_vehicle_registration(api_user, rid):
     """resubmit() is on BaseTransactionService, same as every other
     module. Also entirely missing before this fix."""
-    return _lifecycle(api_user, rid, "resubmit")
+    gate = _submit_gate(api_user, rid)
+    return gate or _lifecycle(api_user, rid, "resubmit")
 
 
 @bp.route("/vehicle-registrations/<int:rid>/cancel", methods=["POST"])

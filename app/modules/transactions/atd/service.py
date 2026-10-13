@@ -18,6 +18,8 @@ class ATDService(BaseTransactionService):
     # Draft/Returned-only update().
     update_permission = "atd.update"
     #: Active: the authority is in use -- still open, like an In-Progress MO.
+    #: An ACTIVE permit closes on its own once Valid To passes; see
+    #: editable_scope below.
     EDITABLE_STATUSES = ("DRAFT", "ACTIVE")
     EDIT_FIELDS = {
         "vehicle_id": ("Vehicle", "id"),
@@ -49,6 +51,72 @@ class ATDService(BaseTransactionService):
         db.session.add(atd)
         db.session.commit()
         return atd
+
+    @staticmethod
+    def is_expired(record) -> bool:
+        """Has this authority lapsed?
+
+        Either because the daily scan has already stamped it EXPIRED, or
+        because its Valid To is in the past and nothing has run since
+        (KI-10: no job flips the status in real time, so the date is the
+        authority, not the stored word). Valid To is INCLUSIVE -- a
+        permit valid "to the 14th" is live for the whole of the 14th.
+
+        A DRAFT is excluded on purpose: it never authorised anything, so
+        past dates on it are precisely what someone is editing to fix.
+        """
+        from datetime import date as _date
+        if record is None:
+            return False
+        if record.status == "EXPIRED":
+            return True
+        return bool(record.status == "ACTIVE" and record.valid_to
+                    and record.valid_to < _date.today())
+
+    def editable_scope(self, record) -> str:
+        """The shared rule, plus: a lapsed permit is finished.
+
+        Extending Valid To on an expired slip would back-date authority
+        for days nobody approved, and the printed copy the gate guard
+        holds would no longer match the record. New dates need a new
+        ATD (Michael, 2026-10-13).
+        """
+        if self.is_expired(record):
+            return "NONE"
+        return super().editable_scope(record)
+
+    def update(self, record_id: int, *, user=None, **fields):
+        """Same as the base, with the expired case explained rather than
+        reported as a bare status conflict -- the person needs to know
+        the way forward is a new request."""
+        record = db.session.get(self.model, record_id)
+        if self.is_expired(record):
+            from app.modules.transactions.base_service import (
+                DocumentStateError)
+            raise DocumentStateError(
+                "This Authority To Drive has expired and can no longer be "
+                "edited. Raise a new ATD for the dates you need.")
+        return super().update(record_id, user=user, **fields)
+
+    def expire_overdue(self) -> int:
+        """Stamp every lapsed ACTIVE permit EXPIRED; returns how many.
+
+        The physical-lifecycle counterpart of the PM and registration
+        due scans (`flask atd run-expiry-check`, or the Celery task).
+        Idempotent -- a second run finds nothing, because only ACTIVE
+        rows are considered.
+        """
+        from datetime import date as _date
+        lapsed = (AuthorityToDrive.query
+                  .filter(AuthorityToDrive.status == "ACTIVE",
+                          AuthorityToDrive.valid_to.isnot(None),
+                          AuthorityToDrive.valid_to < _date.today())
+                  .all())
+        for atd in lapsed:
+            atd.status = "EXPIRED"
+        if lapsed:
+            db.session.commit()
+        return len(lapsed)
 
     def _validate_edit(self, record, fields):
         """The checks ATD's own PATCH endpoint used to make, here so they

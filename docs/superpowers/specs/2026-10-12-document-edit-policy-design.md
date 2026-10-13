@@ -163,7 +163,7 @@ signed off (Approved / ongoing) are notified with the change list.
 | Maintenance Order | DRAFT, IN_PROGRESS | COMPLETED, CANCELLED |
 | Purchase Request (header and lines) | DRAFT, ORDERED | RECEIVED, CANCELLED |
 | Trip Ticket | DRAFT, RELEASED | COMPLETED, CANCELLED |
-| ATD | DRAFT, ACTIVE | EXPIRED, CANCELLED |
+| ATD | DRAFT, ACTIVE (until Valid To passes) | EXPIRED, CANCELLED |
 | Vehicle Movement | DRAFT, IN_TRANSIT | COMPLETED, CANCELLED |
 | Vehicle Registration | DRAFT (no ongoing stage) | COMPLETED, CANCELLED |
 | Tire / Battery Transaction | DRAFT (applied on approval) | COMPLETED, CANCELLED |
@@ -194,6 +194,28 @@ the error is shown on the field that moved.
 
 Validation re-uses each `create()` rule: Trip Ticket driver-from-master
 parameter, movement type lookup, tire/battery action list.
+
+**An expired ATD is finished (2026-10-13).** An ACTIVE permit is
+ongoing only until its Valid To; after that the authority has lapsed, so
+extending the dates on the old slip would back-date authority nobody
+approved and leave the gate guard's printed copy disagreeing with the
+record. `ATDService.editable_scope` closes it by DATE (Valid To is
+inclusive), whatever the stored status, and `update()` says so: "raise a
+new ATD for the dates you need". A DRAFT with past dates stays editable
+— it authorised nothing, and those dates are what is being fixed.
+`expire_overdue()` stamps lapsed ACTIVE permits EXPIRED for the label
+(`flask atd run-expiry-check`, or the Celery task `atd.expire_overdue`);
+the rule does not depend on it having run, and the detail carries
+`is_expired` so the pill and the Edit control agree with the server.
+
+**Submit and Resubmit follow the edit policy (2026-10-13).** Whoever may
+correct a document may send it for approval: `document_edit.submit_gate`
+answers like `can_edit` minus the state test — the initiator's own
+document, or a holder of `<doc>.update` for anybody else's. Before this,
+an initiator without `<doc>.update` could fix a returned document and
+not resubmit it (KI-30). The routes now carry `<doc>.view` with the gate
+inside, so someone else's document still needs the update permission.
+React offers Submit and Resubmit on `can_edit`, not on the permission.
 
 **Approval UI alignment.** ATD and Tire/Battery move onto the shared
 `ApprovalWorkflow` + decision panel; Tire/Battery gain Return/Resubmit

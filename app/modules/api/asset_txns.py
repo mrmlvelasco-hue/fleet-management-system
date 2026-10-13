@@ -36,6 +36,24 @@ def _bad(message, field=None):
                     "fields": {field or "_": message}}), 400
 
 
+def _tire_submit_gate(api_user, tid):
+    """Submit / Resubmit: the initiator's own transaction, or tire.update
+    (see document_edit.submit_gate)."""
+    from app.modules.api.document_edit import submit_gate
+    from app.modules.transactions.tire_txn.service import (
+        TireTransactionService)
+    return submit_gate(TireTransactionService(), tid, api_user,
+                       lambda: _not_found("Tire Transaction"))
+
+
+def _batt_submit_gate(api_user, tid):
+    from app.modules.api.document_edit import submit_gate
+    from app.modules.transactions.battery_txn.service import (
+        BatteryTransactionService)
+    return submit_gate(BatteryTransactionService(), tid, api_user,
+                       lambda: _not_found("Battery Transaction"))
+
+
 def _not_found(label):
     return jsonify({"error": "not_found",
                     "message": f"{label} not found."}), 404
@@ -284,9 +302,10 @@ def _tire_lifecycle(api_user, tid, method_name):
 
 
 @bp.route("/tire-transactions/<int:tid>/submit", methods=["POST"])
-@api_auth_required("tire.update")
+@api_auth_required("tire.view")  # real gate: submit_gate (own, or .update)
 def submit_tire_txn(api_user, tid):
-    return _tire_lifecycle(api_user, tid, "submit")
+    gate = _tire_submit_gate(api_user, tid)
+    return gate or _tire_lifecycle(api_user, tid, "submit")
 
 
 @bp.route("/tire-transactions/<int:tid>/approve", methods=["POST"])
@@ -320,9 +339,10 @@ def return_tire_txn(api_user, tid):
 
 
 @bp.route("/tire-transactions/<int:tid>/resubmit", methods=["POST"])
-@api_auth_required("tire.update")
+@api_auth_required("tire.view")  # real gate: submit_gate (own, or .update)
 def resubmit_tire_txn(api_user, tid):
-    return _tire_lifecycle(api_user, tid, "resubmit")
+    gate = _tire_submit_gate(api_user, tid)
+    return gate or _tire_lifecycle(api_user, tid, "resubmit")
 
 
 @bp.route("/tire-transactions/<int:tid>", methods=["PUT", "PATCH"])
@@ -415,9 +435,10 @@ def _batt_lifecycle(api_user, tid, method_name):
 
 
 @bp.route("/battery-transactions/<int:tid>/submit", methods=["POST"])
-@api_auth_required("battery.update")
+@api_auth_required("battery.view")  # real gate: submit_gate (own, or .update)
 def submit_battery_txn(api_user, tid):
-    return _batt_lifecycle(api_user, tid, "submit")
+    gate = _batt_submit_gate(api_user, tid)
+    return gate or _batt_lifecycle(api_user, tid, "submit")
 
 
 @bp.route("/battery-transactions/<int:tid>/approve", methods=["POST"])
@@ -445,9 +466,10 @@ def return_battery_txn(api_user, tid):
 
 
 @bp.route("/battery-transactions/<int:tid>/resubmit", methods=["POST"])
-@api_auth_required("battery.update")
+@api_auth_required("battery.view")  # real gate: submit_gate (own, or .update)
 def resubmit_battery_txn(api_user, tid):
-    return _batt_lifecycle(api_user, tid, "resubmit")
+    gate = _batt_submit_gate(api_user, tid)
+    return gate or _batt_lifecycle(api_user, tid, "resubmit")
 
 
 @bp.route("/battery-transactions/<int:tid>", methods=["PUT", "PATCH"])
