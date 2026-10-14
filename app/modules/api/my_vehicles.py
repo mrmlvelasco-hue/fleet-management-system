@@ -256,125 +256,149 @@ def my_vehicle_document_download(api_user, vid, aid):
         mimetype=att.mime_type or "application/octet-stream")
 
 
-@bp.route("/my/vehicles/<int:vid>/ongoing", methods=["GET"])
-@api_auth_required("vehicle.view")
-def my_vehicle_ongoing(api_user, vid):
-    """Ongoing transactions on a vehicle the caller currently holds.
+def _mo_pending_with(mo):
+    """Role or user label for whoever the approval is currently with.
 
-    What the client asked for on 2026-10-14: a driver opens the app and
-    sees "what is in flight on my vehicle right now" -- any Maintenance
-    Order, Trip Ticket, Movement or Authority To Drive that hasn't
-    closed yet. One tap away from the vehicle page, so the driver's
-    first screen answers "is anything happening to my unit".
+    Reads the SAME approval chain the desktop detail renders in its
+    workflow panel (ApprovalEngine.get_approval_chain), so the mobile
+    says "Pending: Branch Manager" with the same wording the approver
+    sees on their own screen -- no second source of truth for the
+    label. None when the instance is not PENDING (nothing to pend)."""
+    inst = getattr(mo, "approval_instance", None)
+    if inst is None or inst.status != "PENDING":
+        return None
+    try:
+        from app.core.approval.engine import ApprovalEngine
+        for entry in ApprovalEngine().get_approval_chain(inst):
+            if entry.get("status") == "CURRENT":
+                # The chain's own labels prefix "Role: " / "User: " for
+                # the desktop sidebar's two-line layout. The mobile card
+                # is short and already says "Pending:" alongside, so the
+                # prefix would read as "Pending: Role: Branch Manager".
+                label = entry.get("approver_label") or ""
+                for prefix in ("Role: ", "User: "):
+                    if label.startswith(prefix):
+                        return label[len(prefix):]
+                return label or None
+    except Exception:
+        # The chain is a nicety here, not the authority to act. Never
+        # fail the whole response because the engine stumbled on one
+        # row -- the status still comes back, just without a name.
+        pass
+    return None
+
+
+def _mo_type_label(mo):
+    """What this is -- "Preventive Maintenance", "Corrective — Brake
+    System", a transaction-type name, or the raw description. Picks the
+    richest value available; the UI shows this as the row's title."""
+    base = (mo.maintenance_type.name
+            if getattr(mo, "maintenance_type", None) else None)
+    if base is None and getattr(mo, "transaction_type", None):
+        base = mo.transaction_type.name
+    # The description adds a specific like "40,000 km" or "Brake System".
+    description = (mo.description or "").strip()
+    if base and description and description != base:
+        return f"{base} — {description}"
+    return base or description or None
+
+
+def _pr_display_status(pr):
+    """Mirrors the Purchase Request list labels -- Draft / Pending /
+    Approved / Rejected / Ordered / Received / Cancelled."""
+    phys = (pr.status or "").upper()
+    labels = {"DRAFT": "Draft", "PENDING": "Pending", "APPROVED": "Approved",
+              "REJECTED": "Rejected", "ORDERED": "Ordered",
+              "RECEIVED": "Received", "CANCELLED": "Cancelled"}
+    return labels.get(phys, phys.title() if phys else "Draft")
+
+
+_CLOSED_MO_STATUSES = ("COMPLETED", "CANCELLED")
+
+
+@bp.route("/my/vehicles/<int:vid>/maintenance-orders", methods=["GET"])
+@api_auth_required("vehicle.view")
+def my_vehicle_maintenance_orders(api_user, vid):
+    """Maintenance Orders on a vehicle the caller currently holds.
+
+    Backs the My Vehicle screen's "Maintenance Orders" card (Michael's
+    mockup, 2026-10-14): one row per MO on this unit, carrying the SAME
+    `status` / `display_status` / `approval_status` triplet the desktop
+    MO list serializes (_display_status in maintenance_orders.py), plus
+    `pending_with` (current approver's role or user label) and any
+    linked Purchase Request nested underneath. A specific endpoint, not
+    a slice of a generic one -- reusing the display rule is the whole
+    point, so two surfaces can never disagree about what "For Approval"
+    means on the same order.
 
     SCOPE: the usual /my/* rule -- 404 when the vehicle is not yours.
-    No field here would leak less than the detail endpoint does, but
-    the enumeration-oracle reasoning in the module docstring applies to
-    every endpoint uniformly, not case by case.
 
-    "Ongoing" follows the shared edit policy's open-document test: a
-    document is listed while it is editable -- Draft, Pending,
-    Returned, Approved, or in its own working status (MO In Progress,
-    Trip Ticket Released, Vehicle Movement In Transit, ATD Active).
-    Closed documents (Completed, Received, Cancelled, Expired) never
-    appear. ATD specifically: a permit past its Valid To is finished
-    whether or not the daily scan has stamped the status (KI-10), so
-    the date is the real test.
+    All MOs on this vehicle come back, including closed ones (Completed,
+    Cancelled). The panel decides how many to show (the mockup folds
+    them under "View all maintenance history"); the endpoint hands over
+    what's there. In-flight rows come first, so the top of the card is
+    the two or three orders a driver actually needs to see today.
     """
     from datetime import date as _date
 
     if _assigned_vehicle(vid, api_user) is None:
         return _not_found()
 
-    items = []
-
-    # Maintenance Orders -- the one every driver cares about: what is
-    # being done to my unit?
     from app.modules.transactions.maintenance_order.models import (
         MaintenanceOrder)
-    for mo in (MaintenanceOrder.query
-               .filter(MaintenanceOrder.vehicle_id == vid,
-                       MaintenanceOrder.status.in_(("DRAFT", "IN_PROGRESS")))
-               .order_by(MaintenanceOrder.id.desc()).all()):
+    # The display-status helper is on the desktop MO module; importing
+    # here keeps that module from becoming an import-time dependency of
+    # /my/* and avoids a cycle through blueprints.
+    from app.modules.api.maintenance_orders import _display_status
+
+    orders = (MaintenanceOrder.query
+              .filter(MaintenanceOrder.vehicle_id == vid)
+              .order_by(MaintenanceOrder.id.desc()).all())
+
+    items = []
+    for mo in orders:
+        inst = getattr(mo, "approval_instance", None)
+        pr = getattr(mo, "purchase_request", None)
         items.append({
             "id": mo.id,
-            "document_type": "Maintenance Order",
             "document_number": mo.document_number,
             "status": mo.status,
-            # The description is what someone typed when they raised the
-            # order -- "Brake pads", "PMS 10,000km" -- which is exactly
-            # what a driver looking at this list wants to see.
-            "summary": mo.description or (mo.transaction_type.name
-                if getattr(mo, "transaction_type", None) else None),
-            "date": (mo.scheduled_date.isoformat()
-                     if mo.scheduled_date else None),
-            "sort_date": mo.scheduled_date or _date.min,
+            # The user-facing label the desktop list uses -- "Draft",
+            # "Awaiting Approval", "Approved", "In Progress",
+            # "Completed", "Cancelled", "Returned for Revision",
+            # "Rejected". Single source of truth, _display_status.
+            "display_status": _display_status(mo),
+            "approval_status": inst.status if inst is not None else None,
+            # Who is holding this up right now, when it is in approval.
+            "pending_with": _mo_pending_with(mo),
+            "type_label": _mo_type_label(mo),
+            "category": getattr(mo, "order_category", None),
+            "scheduled_date": (mo.scheduled_date.isoformat()
+                               if mo.scheduled_date else None),
+            "completed_date": (mo.completed_date.isoformat()
+                               if mo.completed_date else None),
+            "vendor": mo.vendor.name if getattr(mo, "vendor", None) else None,
+            "purchase_request": ({
+                "id": pr.id,
+                "document_number": pr.document_number,
+                "status": pr.status,
+                "display_status": _pr_display_status(pr),
+            } if pr is not None else None),
+            # Sort key, stripped before responding.
+            "_closed": (mo.status or "").upper() in _CLOSED_MO_STATUSES,
+            "_sort": mo.scheduled_date or mo.completed_date or _date.min,
         })
 
-    from app.modules.transactions.trip_ticket.models import TripTicket
-    for tt in (TripTicket.query
-               .filter(TripTicket.vehicle_id == vid,
-                       TripTicket.status.in_(("DRAFT", "RELEASED")))
-               .order_by(TripTicket.id.desc()).all()):
-        items.append({
-            "id": tt.id,
-            "document_type": "Trip Ticket",
-            "document_number": tt.document_number,
-            "status": tt.status,
-            "summary": tt.destination or tt.purpose,
-            "date": (tt.departure_datetime.date().isoformat()
-                     if tt.departure_datetime else None),
-            "sort_date": (tt.departure_datetime.date()
-                          if tt.departure_datetime else _date.min),
-        })
-
-    from app.modules.transactions.vehicle_movement.models import VehicleMovement
-    for mv in (VehicleMovement.query
-               .filter(VehicleMovement.vehicle_id == vid,
-                       VehicleMovement.status.in_(("DRAFT", "IN_TRANSIT")))
-               .order_by(VehicleMovement.id.desc()).all()):
-        items.append({
-            "id": mv.id,
-            "document_type": "Vehicle Movement",
-            "document_number": mv.document_number,
-            "status": mv.status,
-            "summary": " -> ".join(filter(None, [mv.from_location,
-                                                 mv.to_location])) or None,
-            "date": (mv.movement_date.isoformat()
-                     if mv.movement_date else None),
-            "sort_date": mv.movement_date or _date.min,
-        })
-
-    from app.modules.transactions.atd.models import AuthorityToDrive
-    from app.modules.transactions.atd.service import ATDService
-    today = _date.today()
-    for atd in (AuthorityToDrive.query
-                .filter(AuthorityToDrive.vehicle_id == vid,
-                        AuthorityToDrive.status.in_(("DRAFT", "ACTIVE")))
-                .order_by(AuthorityToDrive.id.desc()).all()):
-        # A permit past its Valid To is finished even if the stored
-        # status still says ACTIVE (KI-10): the daily scan may be late,
-        # and listing a lapsed authority to a driver would make the app
-        # disagree with what the gate guard holds.
-        if ATDService.is_expired(atd):
-            continue
-        items.append({
-            "id": atd.id,
-            "document_type": "Authority To Drive",
-            "document_number": atd.document_number,
-            "status": atd.status,
-            "summary": atd.purpose,
-            "date": atd.valid_from.isoformat() if atd.valid_from else None,
-            "sort_date": atd.valid_from or _date.min,
-        })
-
-    # Newest first, by the document's own date -- the date on the row,
-    # so a driver reading top-down starts with what is happening TODAY,
-    # not with what was raised most recently in the system.
-    items.sort(key=lambda i: i["sort_date"], reverse=True)
+    # In-flight first (so the mockup's "2 active" sit at the top), then
+    # closed. Within each bucket, newest by date first.
+    items.sort(key=lambda i: (i["_closed"], -i["_sort"].toordinal()
+                              if i["_sort"] != _date.min else 0))
+    active_count = sum(1 for i in items if not i["_closed"])
     for i in items:
-        del i["sort_date"]
-    return jsonify({"items": items, "total": len(items)})
+        del i["_closed"]
+        del i["_sort"]
+    return jsonify({"items": items, "total": len(items),
+                    "active_count": active_count})
 
 
 @bp.route("/my/atds", methods=["GET"])
