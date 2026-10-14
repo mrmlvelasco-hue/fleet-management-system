@@ -291,3 +291,21 @@ def test_an_order_on_a_bystanders_vehicle_is_not_mine(client, env):
         f"/api/v1/my/vehicles/{env['mine'].id}/maintenance-orders",
         headers=_hdr(client)))
     assert body["items"] == []
+
+
+def test_a_pending_mo_says_when_it_was_submitted(client, env):
+    """The Maintenance tab reads "With Branch Manager · 8 days" -- the
+    wait is the useful number, so the submission time comes back."""
+    _mo(env, status="DRAFT", number="MO-SUB", with_pending_approval=True)
+    item = _body(client.get(
+        f"/api/v1/my/vehicles/{env['mine'].id}/maintenance-orders",
+        headers=_hdr(client)))["items"][0]
+    assert item["submitted_at"] is not None
+
+
+def test_an_unsubmitted_mo_has_no_submission_time(client, env):
+    _mo(env, status="DRAFT", number="MO-NOSUB")
+    item = _body(client.get(
+        f"/api/v1/my/vehicles/{env['mine'].id}/maintenance-orders",
+        headers=_hdr(client)))["items"][0]
+    assert item["submitted_at"] is None

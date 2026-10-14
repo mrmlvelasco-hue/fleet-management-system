@@ -256,6 +256,218 @@ def my_vehicle_document_download(api_user, vid, aid):
         mimetype=att.mime_type or "application/octet-stream")
 
 
+# ── readiness: "Before you drive" ────────────────────────────────────
+
+def _fmt_date(d):
+    """'Nov 1' this year, 'Nov 1, 2027' otherwise -- the phone card is
+    narrow, and the year only adds information when it differs."""
+    from datetime import date as _date
+    if d is None:
+        return None
+    label = f"{d.strftime('%b')} {d.day}"
+    return label if d.year == _date.today().year else f"{label}, {d.year}"
+
+
+def _days_phrase(days):
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "1 day left"
+    return f"{days} days left"
+
+
+def _readiness_registration(vehicle):
+    from app.modules.registration_config.service import (
+        RegistrationDueCalculationService)
+    try:
+        s = RegistrationDueCalculationService().get_due_status(vehicle)
+    except Exception:
+        s = {}
+    due = s.get("next_due_date")
+    days = s.get("days_remaining")
+    status = s.get("status")
+    if due is None or days is None:
+        return {"key": "registration", "label": "Registration",
+                "state": "unknown", "date": None, "days_left": None,
+                "detail": "No registration date on file"}
+    if days < 0:
+        state, detail = "alert", f"Expired {_fmt_date(due)}"
+    elif status == "DUE_SOON":
+        state, detail = "warn", f"Expires {_fmt_date(due)} — {_days_phrase(days)}"
+    else:
+        state, detail = "ok", f"Valid until {_fmt_date(due)}"
+    return {"key": "registration", "label": "Registration", "state": state,
+            "date": due.isoformat(), "days_left": days, "detail": detail}
+
+
+# Covers a driver can be asked about, in the order they are named. The
+# earliest to lapse decides the row: one lapsed cover is uninsured.
+_INSURANCE_COVERS = (("CTPL", "ctpl_to_date"),
+                     ("Comprehensive", "od_theft_aon_to_date"))
+_INSURANCE_WARN_DAYS = 30
+
+
+def _readiness_insurance(vehicle):
+    from datetime import date as _date
+    dated = [(name, getattr(vehicle, attr, None))
+             for name, attr in _INSURANCE_COVERS]
+    dated = [(n, d) for n, d in dated if d is not None]
+    if not dated:
+        return {"key": "insurance", "label": "Insurance", "state": "unknown",
+                "date": None, "days_left": None,
+                "detail": "No insurance dates on file"}
+    name, end = min(dated, key=lambda nd: nd[1])
+    days = (end - _date.today()).days
+    if days < 0:
+        state, detail = "alert", f"{name} lapsed {_fmt_date(end)}"
+    elif days <= _INSURANCE_WARN_DAYS:
+        state, detail = "warn", f"{name} ends {_fmt_date(end)} — {_days_phrase(days)}"
+    else:
+        names = " and ".join(n for n, _ in dated)
+        state, detail = "ok", f"{names} valid until {_fmt_date(end)}"
+    return {"key": "insurance", "label": "Insurance", "state": state,
+            "date": end.isoformat(), "days_left": days, "detail": detail}
+
+
+def _readiness_pms(vehicle):
+    from app.core.maintenance.due_calculation_service import (
+        PMDueCalculationService)
+    try:
+        s = PMDueCalculationService().get_due_status(vehicle)
+    except Exception:
+        s = {}
+    if not s or s.get("schedule") is None:
+        return {"key": "pms", "label": "PMS", "state": "unknown",
+                "detail": "No PMS schedule set for this vehicle"}
+    status = s.get("status")
+    due_km = s.get("next_due_km")
+    due_date = s.get("next_due_date")
+    odo = vehicle.current_odometer or 0
+    if due_km is not None:
+        gap = due_km - odo
+        where = f"Due at {due_km:,} km"
+        tail = (f"{gap:,} km to go" if gap >= 0
+                else f"{abs(gap):,} km over")
+        text = f"{where} — {tail}"
+    elif due_date is not None:
+        text = f"Due {_fmt_date(due_date)}"
+    else:
+        text = "Scheduled"
+    state = {"OVERDUE": "alert", "DUE_SOON": "warn"}.get(status, "ok")
+    if state == "ok" and due_km is not None:
+        text = f"Next at {due_km:,} km — {due_km - odo:,} km to go"
+    return {"key": "pms", "label": "PMS", "state": state, "detail": text,
+            "due_km": due_km,
+            "due_date": due_date.isoformat() if due_date else None}
+
+
+def _readiness_work(vehicle_id):
+    """Open Maintenance Orders, phrased as what they mean to the driver:
+    in the workshop (the unit is not available) beats waiting for
+    approval beats nothing at all."""
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    open_orders = (MaintenanceOrder.query
+                   .filter(MaintenanceOrder.vehicle_id == vehicle_id,
+                           MaintenanceOrder.status.in_(("DRAFT", "IN_PROGRESS")))
+                   .all())
+    in_shop = [m for m in open_orders if m.status == "IN_PROGRESS"]
+    if in_shop:
+        m = in_shop[0]
+        what = _mo_type_label(m) or m.document_number or "Maintenance"
+        where = (f" at {m.vendor.name}" if getattr(m, "vendor", None) else "")
+        return {"key": "work", "label": "Open work", "state": "alert",
+                "detail": f"In the workshop{where} — {what}"}
+    pending = [m for m in open_orders
+               if getattr(m, "approval_instance", None) is not None
+               and m.approval_instance.status in ("PENDING", "APPROVED",
+                                                  "RETURNED")]
+    if pending:
+        n = len(pending)
+        return {"key": "work", "label": "Open work", "state": "warn",
+                "detail": (f"{n} order awaiting approval or scheduling"
+                           if n == 1 else
+                           f"{n} orders awaiting approval or scheduling")}
+    return {"key": "work", "label": "Open work", "state": "ok",
+            "detail": "Nothing in the shop"}
+
+
+def _readiness_atd(vehicle_id, api_user):
+    """The caller's own live ATD on this unit, or None. Not a required
+    document for an assigned vehicle, so its absence is no row at all
+    rather than a warning."""
+    from app.modules.transactions.atd.models import AuthorityToDrive
+    from app.modules.transactions.atd.service import ATDService
+    assignee = AssigneeScopeService().assignee_for(api_user)
+    if assignee is None:
+        return None
+    for atd in (AuthorityToDrive.query
+                .filter_by(vehicle_id=vehicle_id, driver_id=assignee.id,
+                           status="ACTIVE")
+                .order_by(AuthorityToDrive.valid_to.desc()).all()):
+        if not ATDService.is_expired(atd):
+            return {"key": "atd", "label": "Authority To Drive",
+                    "state": "ok",
+                    "detail": (f"{atd.document_number or 'ATD'} active until "
+                               f"{_fmt_date(atd.valid_to)}")}
+    return None
+
+
+def _assignment_summary(vehicle, api_user):
+    from app.modules.master_data.vehicle.assignment_models import (
+        VehicleAssignment)
+    assignee = AssigneeScopeService().assignee_for(api_user)
+    row = None
+    if assignee is not None:
+        row = (VehicleAssignment.query
+               .filter_by(vehicle_id=vehicle.id, driver_id=assignee.id,
+                          assigned_to=None)
+               .order_by(VehicleAssignment.id.desc()).first())
+    since = getattr(row, "assigned_from", None) if row else None
+    if since is None and row is not None and getattr(row, "created_at", None):
+        since = row.created_at.date()
+    return {
+        "since": since.isoformat() if since else None,
+        "branch": vehicle.branch.name if vehicle.branch else None,
+        "source": getattr(row, "source", None) if row else None,
+    }
+
+
+@bp.route("/my/vehicles/<int:vid>/readiness", methods=["GET"])
+@api_auth_required("vehicle.view")
+def my_vehicle_readiness(api_user, vid):
+    """"Before you drive" -- the checklist that opens My Vehicle.
+
+    Direction C of the My Vehicle mockups (Michael, 2026-10-14): one card
+    that answers "can I drive this today?" -- Registration, Insurance,
+    PMS and open work, plus the driver's own live ATD when they hold one.
+
+    Each fact comes from the service the desktop already uses for it
+    (RegistrationDueCalculationService, PMDueCalculationService, the
+    vehicle's insurance cover dates, the open Maintenance Orders,
+    ATDService.is_expired), so the phone can never disagree with the
+    Fleet Office about whether a unit is due.
+
+    state: ok | warn | alert | unknown. `attention_count` counts warn
+    and alert only: "unknown" means master data is missing, which the
+    driver can neither see the cause of nor fix, so it is shown but
+    never makes the headline say there is something to check.
+
+    SCOPE: the usual /my/* rule -- 404 when the vehicle is not yours.
+    """
+    v = _assigned_vehicle(vid, api_user)
+    if v is None:
+        return _not_found()
+    checks = [_readiness_registration(v), _readiness_insurance(v),
+              _readiness_pms(v), _readiness_work(v.id)]
+    atd = _readiness_atd(v.id, api_user)
+    if atd is not None:
+        checks.append(atd)
+    attention = sum(1 for c in checks if c["state"] in ("warn", "alert"))
+    return jsonify({"checks": checks, "attention_count": attention,
+                    "assignment": _assignment_summary(v, api_user)})
+
+
 def _mo_pending_with(mo):
     """Role or user label for whoever the approval is currently with.
 
@@ -369,6 +581,12 @@ def my_vehicle_maintenance_orders(api_user, vid):
             # "Rejected". Single source of truth, _display_status.
             "display_status": _display_status(mo),
             "approval_status": inst.status if inst is not None else None,
+            # When it went in for approval -- the Maintenance tab shows
+            # how long it has been waiting, which is the number a driver
+            # chasing an approval actually wants.
+            "submitted_at": (inst.created_at.isoformat()
+                             if inst is not None
+                             and getattr(inst, "created_at", None) else None),
             # Who is holding this up right now, when it is in approval.
             "pending_with": _mo_pending_with(mo),
             "type_label": _mo_type_label(mo),
