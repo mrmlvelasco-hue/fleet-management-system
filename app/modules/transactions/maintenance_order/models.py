@@ -366,3 +366,72 @@ class MaintenanceOrderPart(db.Model, BaseModel):
     @property
     def estimated_total(self):
         return (self.quantity or 0) * (self.estimated_unit_cost or 0)
+
+
+class MaintenanceOrderEquipmentLine(db.Model, BaseModel):
+    """One tire position or the battery on a Maintenance Order's
+    "Tire & Battery Work" (client decisions 2026-10-15).
+
+    PLANNED when the order is raised (what is on the vehicle now, what is
+    to be done); DONE once the mechanic records what was actually fitted
+    and read. Completing the order turns every DONE line into Tire /
+    Battery transactions (posted_at marks that, so it happens once).
+
+    No cost here on purpose: tires and batteries are bought through the
+    order's Parts -> PR -> Invoice, so the MO stays the single cost.
+    """
+    __tablename__ = "maintenance_order_equipment_lines"
+
+    order_id = db.Column(db.Integer, db.ForeignKey("maintenance_orders.id"),
+                         nullable=False, index=True)
+    kind = db.Column(db.String(10), nullable=False)        # TIRE | BATTERY
+    # WHEEL_POSITION lookup code; NULL for a battery.
+    position = db.Column(db.String(20), nullable=True)
+    # TIRE: REPLACE | ROTATE | INSPECT | REPAIR   BATTERY: REPLACE | TEST
+    action = db.Column(db.String(10), nullable=False)
+    rotate_to_position = db.Column(db.String(20), nullable=True)
+
+    # What is on the vehicle now. NULL id + a description = "not
+    # registered" (never enrolled); a record is created for it on posting.
+    current_tire_id = db.Column(db.Integer, db.ForeignKey("tires.id"),
+                                nullable=True)
+    current_battery_id = db.Column(db.Integer,
+                                   db.ForeignKey("batteries.id"),
+                                   nullable=True)
+    current_description = db.Column(db.String(150), nullable=True)
+
+    # What goes on (REPLACE). VENDOR = supplied by the MO's vendor and
+    # registered on posting from the new_* fields; STOCK = an IN_STOCK
+    # record picked by id.
+    install_source = db.Column(db.String(10), nullable=True)
+    installed_tire_id = db.Column(db.Integer, db.ForeignKey("tires.id"),
+                                  nullable=True)
+    installed_battery_id = db.Column(db.Integer,
+                                     db.ForeignKey("batteries.id"),
+                                     nullable=True)
+    new_serial = db.Column(db.String(60), nullable=True)
+    new_brand = db.Column(db.String(80), nullable=True)
+    new_model = db.Column(db.String(80), nullable=True)
+    new_size = db.Column(db.String(30), nullable=True)
+    new_warranty_months = db.Column(db.Integer, nullable=True)
+
+    # Readings: tread / pressure (tire), voltage / result (battery).
+    tread_depth_mm = db.Column(db.Numeric(5, 2), nullable=True)
+    pressure_psi = db.Column(db.Integer, nullable=True)
+    voltage = db.Column(db.Numeric(5, 2), nullable=True)
+    test_result = db.Column(db.String(10), nullable=True)
+
+    status = db.Column(db.String(10), nullable=False, default="PLANNED")
+    posted_at = db.Column(db.DateTime, nullable=True)
+    remarks = db.Column(db.String(255), nullable=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+
+    order = db.relationship("MaintenanceOrder", backref=db.backref(
+        "equipment_lines", order_by="MaintenanceOrderEquipmentLine.sort_order",
+        cascade="all, delete-orphan"))
+    current_tire = db.relationship("Tire", foreign_keys=[current_tire_id])
+    current_battery = db.relationship("Battery",
+                                      foreign_keys=[current_battery_id])
+    installed_tire = db.relationship("Tire", foreign_keys=[installed_tire_id])
+    installed_battery = db.relationship("Battery",
+                                        foreign_keys=[installed_battery_id])

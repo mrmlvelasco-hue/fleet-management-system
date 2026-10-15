@@ -24,6 +24,11 @@ class IncompleteChecklistError(Exception):
     pass
 
 
+class IncompleteEquipmentWorkError(Exception):
+    """A Tire & Battery Work line is still PLANNED (2026-10-15): the
+    mechanic has not recorded what was actually fitted / read."""
+
+
 class InvalidOrderStateError(Exception):
     pass
 
@@ -294,8 +299,13 @@ class MaintenanceOrderService(BaseTransactionService):
                assigned_mechanic=None, vendor_id=None, estimated_cost=None,
                driver_id=None, destination_branch_id=None,
                disposal_value=None, disposal_recipient=None,
-               assignment_classification=None, scope_items=None):
+               assignment_classification=None, scope_items=None,
+               equipment_lines=None):
         """Create a DRAFT order.
+
+        equipment_lines -- optional "Tire & Battery Work" rows (see
+        equipment.EquipmentWorkService). Validated before anything is
+        written, saved as the order's lines.
 
         scope_items -- optional list of Scope of Work lines (see
         normalize_scope_rows). When supplied (even as an empty list) it
@@ -310,6 +320,16 @@ class MaintenanceOrderService(BaseTransactionService):
         # a numbered, half-built order behind.
         manual_rows = (normalize_scope_rows(scope_items)
                        if scope_items is not None else None)
+        if equipment_lines:
+            from app.modules.transactions.maintenance_order.equipment import (
+                EquipmentWorkError, EquipmentWorkService)
+            if order_category == "OPERATIONAL":
+                raise EquipmentWorkError(
+                    "Operational orders have no tire & battery work.",
+                    "kind")
+            _eq = EquipmentWorkService()
+            for _i, _row in enumerate(equipment_lines):
+                _eq._normalize(None, _row, _i)
         vehicle = db.session.get(Vehicle, vehicle_id)
         # A vehicle must not have two PM orders open at once: if a PMS is
         # already DRAFT / awaiting approval / IN_PROGRESS, a second one
@@ -452,6 +472,12 @@ class MaintenanceOrderService(BaseTransactionService):
                     activity_code=row["activity_code"],
                     activity_description=row["activity_description"],
                     sort_order=pos, origin=origin))
+
+        if equipment_lines:
+            from app.modules.transactions.maintenance_order.equipment import (
+                EquipmentWorkService)
+            EquipmentWorkService().replace_lines(order.id, equipment_lines,
+                                                 commit=False)
 
         db.session.commit()
         return order
@@ -827,8 +853,21 @@ class MaintenanceOrderService(BaseTransactionService):
         db.session.commit()
         return order.checklist_items
 
-    def complete(self, order_id: int, actual_cost, completed_date):
+    def complete(self, order_id: int, actual_cost, completed_date,
+                 user=None):
         order = db.session.get(MaintenanceOrder, order_id)
+        # Tire & Battery Work (2026-10-15): every line must say what was
+        # actually done before the order can close -- completing posts
+        # the tire / battery transactions from these lines.
+        from app.modules.transactions.maintenance_order.equipment import (
+            EquipmentWorkService)
+        _equipment = EquipmentWorkService()
+        _unfinished = _equipment.unfinished(order)
+        if _unfinished:
+            raise IncompleteEquipmentWorkError(
+                f"{len(_unfinished)} tire / battery line(s) are still "
+                "Planned. Record what was fitted (or remove the line) "
+                "before completing the order.")
         # "PM" is the current code for Preventive Maintenance (Category
         # Lookup, admin-configurable) — "PREVENTIVE" is kept here too for
         # any row that predates the category-code migration and wasn't
@@ -870,6 +909,10 @@ class MaintenanceOrderService(BaseTransactionService):
         order.status = "COMPLETED"
         for inv in invoices:
             inv.status = "COMPLETED"
+        # Same transaction as the status change: the order is complete
+        # AND its tires / battery moved, or neither. Lines already posted
+        # (a re-save of a completed order) are skipped.
+        _equipment.post(order, completed_date, user)
         if order.odometer_at_service and (
                 order.vehicle.current_odometer is None or
                 order.odometer_at_service > order.vehicle.current_odometer):

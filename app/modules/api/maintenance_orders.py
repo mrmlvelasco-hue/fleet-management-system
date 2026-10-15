@@ -65,6 +65,27 @@ def _edit_gate(api_user, oid):
     return None
 
 
+def _equipment_json(o):
+    from app.modules.transactions.maintenance_order.equipment import (
+        EquipmentWorkService)
+    svc = EquipmentWorkService()
+    return {
+        "equipment_kind": svc.kind_for_type(o.maintenance_type)
+        if o.order_category != "OPERATIONAL" else None,
+        "equipment_lines": [svc.line_json(l)
+                            for l in (o.equipment_lines or [])],
+    }
+
+
+def _equipment_error(e):
+    """400 naming the field AND the line, so the form can put the message
+    under the exact input."""
+    body = {"error": "validation", "message": str(e),
+            "fields": {"equipment_lines": str(e)},
+            "field": e.field, "line": e.line}
+    return jsonify(body), 400
+
+
 def _iso(d):
     if d is None:
         return None
@@ -462,6 +483,9 @@ def _order_json(o, *, detail=False):
                 }
                 for p in (getattr(o, "parts", None) or [])
             ],
+            # Tire & Battery Work (2026-10-15). equipment_kind says
+            # whether the form shows the section (TIRE / BATTERY / None).
+            **_equipment_json(o),
             "editable": None,  # filled by caller with service
         })
     return data
@@ -614,6 +638,8 @@ def create_maintenance_order(api_user):
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService, InvalidOrderCategoryError,
         InvalidOrderStateError, ScopeValidationError)
+    from app.modules.transactions.maintenance_order.equipment import (
+        EquipmentWorkError)
 
     p = request.get_json(silent=True) or {}
     try:
@@ -680,7 +706,10 @@ def create_maintenance_order(api_user):
             # copied as before; present (even []) -> these lines ARE the
             # order's scope. Any order category.
             scope_items=p.get("scope_items") if "scope_items" in p else None,
+            equipment_lines=p.get("equipment_lines") or None,
         )
+    except EquipmentWorkError as e:
+        return _equipment_error(e)
     except ScopeValidationError as e:
         return _validation(str(e), "scope_items")
     except InvalidOrderCategoryError as e:
@@ -846,7 +875,8 @@ def complete_maintenance_order(api_user, oid):
         return _validation("completed_date must be YYYY-MM-DD.", "completed_date")
     actual_cost = p.get("actual_cost")
     try:
-        MaintenanceOrderService().complete(oid, actual_cost, cd)
+        MaintenanceOrderService().complete(oid, actual_cost, cd,
+                                           user=api_user)
     except IncompleteChecklistError as e:
         return _conflict(str(e))
     except InvalidOrderStateError as e:
@@ -958,6 +988,73 @@ def remove_mo_part(api_user, oid, part_id):
     except InvalidOrderStateError as e:
         return _conflict(str(e))
     return jsonify({"ok": True})
+
+
+@bp.route("/maintenance-orders/equipment-prefill", methods=["GET"])
+@api_auth_required("maintenanceorder.view")
+def maintenance_order_equipment_prefill(api_user):
+    """Suggested Tire & Battery Work lines for the New MO form: what is
+    on the vehicle now, per position, with condition from the System
+    Parameters. Empty lines when the maintenance type is not a tire or
+    battery type."""
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.transactions.maintenance_order.equipment import (
+        EquipmentWorkService)
+    vehicle_id = request.args.get("vehicle_id", type=int)
+    if not vehicle_id:
+        return _validation("vehicle_id is required.", "vehicle_id")
+    if VehicleService().get_visible(vehicle_id, api_user) is None:
+        return _not_found("Vehicle")
+    svc = EquipmentWorkService()
+    out = svc.prefill(vehicle_id,
+                      request.args.get("maintenance_type_id", type=int))
+    out["installed"] = svc.installed(vehicle_id)
+    return jsonify(out)
+
+
+@bp.route("/maintenance-orders/<int:oid>/equipment-lines", methods=["PUT"])
+@api_auth_required("maintenanceorder.view")  # real gate below
+def replace_maintenance_order_equipment(api_user, oid):
+    """Replace the order's Tire & Battery Work lines.
+
+    Body: {"lines": [...]} -- the full list (same contract as /scope).
+    Allowed while the order is open (draft, awaiting approval, approved,
+    in progress) for the initiator while they may edit, or any holder of
+    maintenanceorder.update -- the mechanic recording actuals on an
+    approved order is the normal case. 409 once completed / cancelled.
+    """
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService)
+    from app.modules.transactions.maintenance_order.equipment import (
+        EquipmentWorkError, EquipmentWorkService, CLOSED_ORDER_STATUSES)
+    svc = MaintenanceOrderService()
+    order = svc.get_visible(oid, api_user)
+    if order is None:
+        return _not_found()
+    if order.status in CLOSED_ORDER_STATUSES:
+        return _conflict("This order is closed; its tire & battery work "
+                         "can no longer change.")
+    if not (api_user.has_permission("maintenanceorder.update")
+            or svc.can_edit(order, api_user)):
+        return _forbidden(
+            "Only the person who raised this order, or a user with the "
+            "Maintenance Order Update permission, can record tire & "
+            "battery work.")
+    p = request.get_json(silent=True) or {}
+    if not isinstance(p.get("lines"), list):
+        return _validation("lines is required.", "equipment_lines")
+    try:
+        EquipmentWorkService().replace_lines(oid, p["lines"])
+    except EquipmentWorkError as e:
+        return _equipment_error(e)
+    from app.extensions import db
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    fresh = db.session.get(MaintenanceOrder, oid)
+    data = _order_json(fresh, detail=True)
+    data["editable"] = svc.editable_scope(fresh)
+    data["can_edit"] = svc.can_edit(fresh, api_user)
+    return jsonify(data)
 
 
 @bp.route("/mo-transaction-types", methods=["GET"])

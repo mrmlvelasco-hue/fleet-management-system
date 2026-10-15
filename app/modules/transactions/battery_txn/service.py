@@ -10,11 +10,15 @@ from app.modules.transactions.base_service import BaseTransactionService
 from app.modules.transactions.battery_txn.models import BatteryTransaction
 from app.modules.master_data.battery.models import Battery
 
-VALID_ACTIONS = {"MOUNT", "DISMOUNT", "DISPOSE"}
+VALID_ACTIONS = {"MOUNT", "DISMOUNT", "DISPOSE", "TEST"}
+VALID_TEST_RESULTS = {"GOOD", "WEAK", "REPLACE"}
 
 
 class InvalidBatteryActionError(Exception):
     pass
+
+
+from app.modules.transactions.tire_txn.service import _dec, _int  # noqa: E402
 
 
 class BatteryTransactionService(BaseTransactionService):
@@ -30,6 +34,10 @@ class BatteryTransactionService(BaseTransactionService):
         "action": ("Action", "text"),
         "vehicle_id": ("Vehicle", "id"),
         "transaction_date": ("Transaction date", "date"),
+        "odometer_at_service": ("Odometer", "int"),
+        "voltage": ("Voltage", "text"),
+        "test_result": ("Test result", "text"),
+        "cost": ("Cost", "money"),
         "remarks": ("Remarks", "text"),
     }
     date_fields = (("transaction_date", "Transaction Date"),
@@ -41,14 +49,26 @@ class BatteryTransactionService(BaseTransactionService):
         return bool(dt and dt.requires_approval)
 
     def _apply_physical_effect(self, txn) -> None:
+        """MOUNT puts the battery ON the vehicle; DISMOUNT / DISPOSE take
+        it off; TEST only records the reading. (Before 2026-10-15 a
+        MOUNT changed the status alone.)"""
         battery = db.session.get(Battery, txn.battery_id)
         if txn.action == "MOUNT":
             battery.status = "MOUNTED"
-        elif txn.action == "DISMOUNT":
-            battery.status = "IN_STOCK"
-        elif txn.action == "DISPOSE":
-            battery.status = "DISPOSED"
-            battery.is_active = False
+            battery.vehicle_id = txn.vehicle_id
+            battery.mounted_date = txn.transaction_date
+            battery.mounted_odometer = txn.odometer_at_service
+        elif txn.action in ("DISMOUNT", "DISPOSE"):
+            battery.status = ("IN_STOCK" if txn.action == "DISMOUNT"
+                              else "DISPOSED")
+            battery.vehicle_id = None
+            battery.mounted_date = None
+            battery.mounted_odometer = None
+            if txn.action == "DISPOSE":
+                battery.is_active = False
+        if txn.voltage is not None:
+            battery.last_voltage = txn.voltage
+            battery.last_test_date = txn.transaction_date
 
     def _validate_edit(self, record, fields):
         """Same action list as create()."""
@@ -61,11 +81,19 @@ class BatteryTransactionService(BaseTransactionService):
                 "action")
 
     def create(self, *, battery_id, action, transaction_date, user,
-               vehicle_id=None, remarks=None):
+               vehicle_id=None, remarks=None, odometer_at_service=None,
+               voltage=None, test_result=None, cost=None, source="MANUAL",
+               maintenance_order_id=None, force_completed=False,
+               commit=True):
+        """force_completed: see TireTransactionService.create."""
         if action not in VALID_ACTIONS:
             raise InvalidBatteryActionError(
                 f"'{action}' is not a valid battery action. "
                 f"Must be one of: {', '.join(sorted(VALID_ACTIONS))}.")
+        if test_result and test_result not in VALID_TEST_RESULTS:
+            raise InvalidBatteryActionError(
+                f"'{test_result}' is not a valid test result. Must be one "
+                f"of: {', '.join(sorted(VALID_TEST_RESULTS))}.")
 
         numbering = AutoNumberingService()
         try:
@@ -73,12 +101,17 @@ class BatteryTransactionService(BaseTransactionService):
         except Exception:
             doc_number = None
 
-        requires_approval = self._document_requires_approval()
+        requires_approval = (not force_completed
+                             and self._document_requires_approval())
 
         txn = BatteryTransaction(
             document_number=doc_number, battery_id=battery_id,
             vehicle_id=vehicle_id, action=action,
             transaction_date=transaction_date, remarks=remarks,
+            odometer_at_service=_int(odometer_at_service),
+            voltage=_dec(voltage), test_result=test_result or None,
+            cost=_dec(cost), source=source or "MANUAL",
+            maintenance_order_id=maintenance_order_id,
             status="DRAFT" if requires_approval else "COMPLETED",
             requested_by=user.id if user else None)
         db.session.add(txn)
@@ -87,7 +120,8 @@ class BatteryTransactionService(BaseTransactionService):
         if not requires_approval:
             self._apply_physical_effect(txn)
 
-        db.session.commit()
+        if commit:
+            db.session.commit()
         return txn
 
     def approve(self, record_id: int, user, remarks=None):

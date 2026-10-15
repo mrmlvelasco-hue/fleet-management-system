@@ -28,3 +28,8 @@ class MaintenanceType(db.Model, BaseModel):
     interval_km = db.Column(db.Integer, nullable=True)
     interval_days = db.Column(db.Integer, nullable=True)
     description = db.Column(db.String(255))
+    # TIRE | BATTERY | NULL. Which equipment a Maintenance Order of this
+    # type works on: decides whether the MO shows "Tire & Battery Work"
+    # and what it pre-fills. Data, not code, so a new type (e.g. a truck
+    # tire package) is switched on from the Maintenance Type screen.
+    equipment_kind = db.Column(db.String(10), nullable=True)

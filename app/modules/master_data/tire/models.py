@@ -20,6 +20,15 @@ class Tire(db.Model, BaseModel):
     vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"),
                            nullable=True)  # set when mounted
     wheel_position = db.Column(db.String(20), nullable=True)
+    # 2026-10-15: product model (e.g. "Ecopia EP150") alongside the brand,
+    # and the condition the vehicle monitor colours by. mounted_* are set
+    # by a MOUNT transaction and cleared when the tire comes off, so
+    # "km on this tire" is current odometer - mounted_odometer.
+    model = db.Column(db.String(80), nullable=True)
+    current_tread_mm = db.Column(db.Numeric(5, 2), nullable=True)
+    last_inspection_date = db.Column(db.Date, nullable=True)
+    mounted_date = db.Column(db.Date, nullable=True)
+    mounted_odometer = db.Column(db.Integer, nullable=True)
     # Which branch's warehouse/stock this tire belongs to — independent of
     # vehicle_id, since a tire spends most of its life IN_STOCK (unmounted)
     # and still needs an organizational home for scope-based visibility.

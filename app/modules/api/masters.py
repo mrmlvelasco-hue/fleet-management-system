@@ -594,6 +594,8 @@ def _mtype_json(t, pm_template_count=0):
         "name": t.name,
         "category": t.category,
         "description": t.description,
+        # TIRE | BATTERY | None -- shows the MO's Tire & Battery Work.
+        "equipment_kind": getattr(t, "equipment_kind", None),
         "pm_template_count": int(pm_template_count or 0),
         "is_active": bool(t.is_active),
     }
@@ -646,9 +648,14 @@ def create_maintenance_type(api_user):
     if not category:
         return _validation("category is required.", "category")
     try:
+        kind = (p.get("equipment_kind") or "").strip().upper() or None
+        if kind not in (None, "TIRE", "BATTERY"):
+            return _validation("equipment_kind must be TIRE, BATTERY or "
+                               "empty.", "equipment_kind")
         t = MaintenanceTypeService().create(
             code=code, name=name, category=category,
-            description=(p.get("description") or None))
+            description=(p.get("description") or None),
+            equipment_kind=kind)
     except DuplicateCodeError as e:
         return _validation(str(e), "code")
     return jsonify(_mtype_json(t)), 201
@@ -663,6 +670,12 @@ def update_maintenance_type(api_user, type_id):
     for k in ("name", "category", "description"):
         if k in p:
             fields[k] = (p[k].strip() if isinstance(p[k], str) else p[k]) or None
+    if "equipment_kind" in p:
+        kind = (p.get("equipment_kind") or "").strip().upper() or None
+        if kind not in (None, "TIRE", "BATTERY"):
+            return _validation("equipment_kind must be TIRE, BATTERY or "
+                               "empty.", "equipment_kind")
+        fields["equipment_kind"] = kind
     t = MaintenanceTypeService().update(type_id, **fields)
     if t is None:
         return _not_found("Maintenance type")

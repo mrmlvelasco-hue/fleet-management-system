@@ -67,6 +67,10 @@ def _iso(v):
     return v.isoformat() if v else None
 
 
+def _num(v):
+    return float(v) if v is not None else None
+
+
 def _vehicle_bits(txn):
     v = getattr(txn, "vehicle", None)
     return {
@@ -103,6 +107,19 @@ def _txn_json(txn, *, asset_attr, serial_key, detail=False,
         "remarks": txn.remarks,
         "status": txn.status,
         "requested_by": txn.requester.username if txn.requester else None,
+        # 2026-10-15: where it came from (MANUAL | MO | CHECKLIST), the
+        # order that generated it, the wheel, and the readings.
+        "source": getattr(txn, "source", None) or "MANUAL",
+        "maintenance_order_id": getattr(txn, "maintenance_order_id", None),
+        "maintenance_order_number": (
+            txn.maintenance_order.document_number
+            if getattr(txn, "maintenance_order", None) else None),
+        "wheel_position": getattr(txn, "wheel_position", None),
+        "tread_depth_mm": _num(getattr(txn, "tread_depth_mm", None)),
+        "pressure_psi": getattr(txn, "pressure_psi", None),
+        "voltage": _num(getattr(txn, "voltage", None)),
+        "test_result": getattr(txn, "test_result", None),
+        "cost": _num(getattr(txn, "cost", None)),
     }
     data.update(_vehicle_bits(txn))
     if detail:

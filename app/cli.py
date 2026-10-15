@@ -586,6 +586,24 @@ def _seed_system_parameters() -> None:
          "Receiving Checklist. Switch OFF while migrating legacy "
          "records, then ON again."),
 
+        # ── Tire & battery condition (2026-10-15) ─────────────────────
+        # Read by EquipmentConditionService, which colours every tire and
+        # battery the same way on the MO, the vehicle monitor and the
+        # driver's phone. Client decision: thresholds are configurable,
+        # not hardcoded. Intervals (rotation, replacement) stay in the PM
+        # Templates by brand / model.
+        ("TIRE_TREAD_WATCH_MM", "4.0", "DECIMAL", "TIRE_BATTERY",
+         "Tread depth (mm) at or below which a tire shows as 'Watch'."),
+        ("TIRE_TREAD_REPLACE_MM", "3.0", "DECIMAL", "TIRE_BATTERY",
+         "Tread depth (mm) at or below which a tire shows as 'Replace'."),
+        ("TIRE_MAX_AGE_MONTHS", "60", "INTEGER", "TIRE_BATTERY",
+         "A tire mounted longer than this many months shows as 'Replace' "
+         "even if the tread is fine."),
+        ("BATTERY_LOW_VOLTAGE", "12.4", "DECIMAL", "TIRE_BATTERY",
+         "Last test voltage at or below which a battery shows as 'Weak'."),
+        ("BATTERY_WARRANTY_WARN_DAYS", "30", "INTEGER", "TIRE_BATTERY",
+         "Warn this many days before a battery's warranty ends."),
+
         # ── Appearance ────────────────────────────────────────────────
         ("SIDEBAR_SKIN_DEFAULT", "classic", "STRING", "APPEARANCE",
          "House style for the sidebar, used for anyone who hasn't "

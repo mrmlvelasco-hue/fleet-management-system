@@ -17,11 +17,39 @@ from app.modules.transactions.base_service import BaseTransactionService
 from app.modules.transactions.tire_txn.models import TireTransaction
 from app.modules.master_data.tire.models import Tire
 
-VALID_ACTIONS = {"MOUNT", "DISMOUNT", "RETREAD", "DISPOSE"}
+VALID_ACTIONS = {"MOUNT", "DISMOUNT", "RETREAD", "DISPOSE",
+                 "ROTATE", "INSPECT", "REPAIR"}
+# Actions that leave the tire where it is and only record a reading.
+READING_ACTIONS = {"INSPECT", "REPAIR"}
+# Actions that need to know which vehicle the tire is on. MOUNT is NOT
+# here: the existing tire screen and API have always accepted a mount with
+# no vehicle chosen, and rejecting it now would break them (backward
+# compatibility). The MO flow always supplies the vehicle.
+VEHICLE_ACTIONS = {"ROTATE"}
 
 
 class InvalidTireActionError(Exception):
     pass
+
+
+def _dec(v):
+    """Decimal or None; blanks and junk become None rather than 0."""
+    from decimal import Decimal, InvalidOperation
+    if v is None or v == "":
+        return None
+    try:
+        return Decimal(str(v))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _int(v):
+    if v is None or v == "":
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
 
 
 class TireTransactionService(BaseTransactionService):
@@ -38,6 +66,10 @@ class TireTransactionService(BaseTransactionService):
         "vehicle_id": ("Vehicle", "id"),
         "transaction_date": ("Transaction date", "date"),
         "odometer_at_service": ("Odometer", "int"),
+        "wheel_position": ("Wheel position", "text"),
+        "tread_depth_mm": ("Tread depth (mm)", "text"),
+        "pressure_psi": ("Pressure (psi)", "int"),
+        "cost": ("Cost", "money"),
         "remarks": ("Remarks", "text"),
     }
     date_fields = (("transaction_date", "Transaction Date"),
@@ -49,16 +81,35 @@ class TireTransactionService(BaseTransactionService):
         return bool(dt and dt.requires_approval)
 
     def _apply_physical_effect(self, txn) -> None:
+        """Bring the Tire master in line with what physically happened.
+
+        MOUNT puts the tire ON the vehicle (vehicle + wheel); DISMOUNT,
+        RETREAD and DISPOSE take it off. ROTATE moves it to another
+        wheel. INSPECT / REPAIR only record the reading. Before
+        2026-10-15 a MOUNT changed the status alone, so the master never
+        said which vehicle or wheel the tire was on.
+        """
         tire = db.session.get(Tire, txn.tire_id)
         if txn.action == "MOUNT":
             tire.status = "MOUNTED"
-        elif txn.action == "DISMOUNT":
-            tire.status = "IN_STOCK"
-        elif txn.action == "RETREAD":
-            tire.status = "RETREADED"
-        elif txn.action == "DISPOSE":
-            tire.status = "DISPOSED"
-            tire.is_active = False
+            tire.vehicle_id = txn.vehicle_id
+            tire.wheel_position = txn.wheel_position
+            tire.mounted_date = txn.transaction_date
+            tire.mounted_odometer = txn.odometer_at_service
+        elif txn.action in ("DISMOUNT", "RETREAD", "DISPOSE"):
+            tire.status = {"DISMOUNT": "IN_STOCK", "RETREAD": "RETREADED",
+                           "DISPOSE": "DISPOSED"}[txn.action]
+            tire.vehicle_id = None
+            tire.wheel_position = None
+            tire.mounted_date = None
+            tire.mounted_odometer = None
+            if txn.action == "DISPOSE":
+                tire.is_active = False
+        elif txn.action == "ROTATE":
+            tire.wheel_position = txn.wheel_position
+        if txn.tread_depth_mm is not None:
+            tire.current_tread_mm = txn.tread_depth_mm
+            tire.last_inspection_date = txn.transaction_date
 
     def _validate_edit(self, record, fields):
         """Same action list as create()."""
@@ -71,11 +122,21 @@ class TireTransactionService(BaseTransactionService):
                 "action")
 
     def create(self, *, tire_id, action, transaction_date, user,
-               vehicle_id=None, odometer_at_service=None, remarks=None):
+               vehicle_id=None, odometer_at_service=None, remarks=None,
+               wheel_position=None, tread_depth_mm=None, pressure_psi=None,
+               cost=None, source="MANUAL", maintenance_order_id=None,
+               force_completed=False, commit=True):
+        """force_completed: post as COMPLETED regardless of the TIR
+        document type's approval setting. Used only for transactions an
+        approved Maintenance Order generates on completion -- the MO's
+        approval already covers the work (client decision 2026-10-15)."""
         if action not in VALID_ACTIONS:
             raise InvalidTireActionError(
                 f"'{action}' is not a valid tire action. "
                 f"Must be one of: {', '.join(sorted(VALID_ACTIONS))}.")
+        if action in VEHICLE_ACTIONS and not vehicle_id:
+            raise InvalidTireActionError(
+                f"A {action.lower()} needs the vehicle the tire is on.")
 
         numbering = AutoNumberingService()
         try:
@@ -83,13 +144,19 @@ class TireTransactionService(BaseTransactionService):
         except Exception:
             doc_number = None
 
-        requires_approval = self._document_requires_approval()
+        requires_approval = (not force_completed
+                             and self._document_requires_approval())
 
         txn = TireTransaction(
             document_number=doc_number, tire_id=tire_id,
             vehicle_id=vehicle_id, action=action,
             transaction_date=transaction_date,
             odometer_at_service=odometer_at_service, remarks=remarks,
+            wheel_position=wheel_position,
+            tread_depth_mm=_dec(tread_depth_mm),
+            pressure_psi=_int(pressure_psi), cost=_dec(cost),
+            source=source or "MANUAL",
+            maintenance_order_id=maintenance_order_id,
             status="DRAFT" if requires_approval else "COMPLETED",
             requested_by=user.id if user else None)
         db.session.add(txn)
@@ -98,7 +165,8 @@ class TireTransactionService(BaseTransactionService):
         if not requires_approval:
             self._apply_physical_effect(txn)
 
-        db.session.commit()
+        if commit:
+            db.session.commit()
         return txn
 
     def approve(self, record_id: int, user, remarks=None):

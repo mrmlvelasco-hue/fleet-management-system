@@ -156,6 +156,53 @@ for _code, _desc, _order in [
 ]:
     lookup_registry.register("TIRE_TYPE", _code, _desc, _order)
 
+# Tire & battery reference lists (2026-10-15). Admin-maintained in
+# Configuration > Lookups like every other code table: these are only the
+# starting values. The MO Tire & Battery Work section and the tire/battery
+# forms read their dropdowns from here, so "Bridgestone" and "BRIDGESTONE"
+# can never become two brands in a report.
+for _order, (_code, _desc) in enumerate([
+    ("BRIDGESTONE", "Bridgestone"), ("GOODYEAR", "Goodyear"),
+    ("MICHELIN", "Michelin"), ("YOKOHAMA", "Yokohama"),
+    ("DUNLOP", "Dunlop"), ("TOYO", "Toyo"), ("CONTINENTAL", "Continental"),
+    ("HANKOOK", "Hankook"), ("GT_RADIAL", "GT Radial"),
+    ("MAXXIS", "Maxxis"), ("FIRESTONE", "Firestone"), ("OTHER", "Other"),
+], start=1):
+    lookup_registry.register("TIRE_BRAND", _code, _desc, _order)
+
+for _order, _size in enumerate([
+    "175/65 R14", "185/60 R15", "185/65 R15", "195/65 R15", "205/65 R15",
+    "205/55 R16", "215/65 R16", "215/70 R16", "225/70 R17", "265/65 R17",
+    "265/60 R18", "195 R15C", "7.00-15", "7.50-16",
+], start=1):
+    lookup_registry.register("TIRE_SIZE", _size, _size, _order)
+
+for _order, (_code, _desc) in enumerate([
+    ("MOTOLITE", "Motolite"), ("AMARON", "Amaron"), ("OUTLAST", "Outlast"),
+    ("GS_YUASA", "GS Yuasa"), ("ENEROC", "Eneroc"), ("PANASONIC", "Panasonic"),
+    ("OTHER", "Other"),
+], start=1):
+    lookup_registry.register("BATTERY_BRAND", _code, _desc, _order)
+
+for _order, (_code, _desc) in enumerate([
+    ("NS40ZL", "NS40ZL · 12 V 35 Ah"), ("NS60", "NS60 · 12 V 45 Ah"),
+    ("2SM", "2SM · 12 V 65 Ah"), ("3SM", "3SM · 12 V 80 Ah"),
+    ("DIN55", "DIN55 · 12 V 55 Ah"), ("DIN66", "DIN66 · 12 V 66 Ah"),
+    ("N70", "N70 · 12 V 70 Ah"), ("N100", "N100 · 12 V 100 Ah"),
+], start=1):
+    lookup_registry.register("BATTERY_MODEL", _code, _desc, _order)
+
+# Wheel positions, front to back, spare last. Configurable so trucks with
+# dual rear wheels (RLO/RLI/RRO/RRI) or extra axles can be added.
+for _order, (_code, _desc) in enumerate([
+    ("FL", "Front left"), ("FR", "Front right"),
+    ("RL", "Rear left"), ("RR", "Rear right"),
+    ("RLO", "Rear left outer"), ("RLI", "Rear left inner"),
+    ("RRI", "Rear right inner"), ("RRO", "Rear right outer"),
+    ("SPARE", "Spare"),
+], start=1):
+    lookup_registry.register("WHEEL_POSITION", _code, _desc, _order)
+
 for _code, _desc, _order in [
     ("TRANSFER", "Transfer", 1), ("DISPATCH", "Dispatch", 2),
     ("RETURN", "Return", 3), ("OTHER", "Other", 4),
