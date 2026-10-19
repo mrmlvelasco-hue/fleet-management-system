@@ -111,15 +111,24 @@ def _check(body, key):
 @pytest.fixture()
 def pms(monkeypatch):
     """Control the PMS answer without building a whole PM schedule --
-    the mapping from the service's status to the checklist is what is
-    under test, and the service has its own suite."""
-    holder = {"status": {"schedule": None, "status": "GOOD",
-                         "next_due_km": None, "next_due_date": None}}
+    the mapping from the service's per-type items to the checklist is
+    what is under test, and the service has its own suite
+    (test_pm_vehicle_due_items)."""
+    holder = {"items": []}
     from app.core.maintenance.due_calculation_service import (
         PMDueCalculationService)
-    monkeypatch.setattr(PMDueCalculationService, "get_due_status",
-                        lambda self, vehicle, *a, **k: holder["status"])
+    monkeypatch.setattr(PMDueCalculationService, "vehicle_due_items",
+                        lambda self, vehicle, *a, **k: holder["items"])
     return holder
+
+
+def _item(name, status, due_km=None, due_date=None, type_id=1,
+          open_order=None):
+    return {"maintenance_type_id": type_id, "maintenance_type": name,
+            "code": None, "equipment_kind": None, "status": status,
+            "next_due_km": due_km, "next_due_date": due_date,
+            "interval_km": None, "interval_days": None, "last_km": None,
+            "last_date": None, "open_order": open_order}
 
 
 # ── scope ────────────────────────────────────────────────────────────
@@ -199,8 +208,8 @@ def test_no_pms_schedule_is_unknown(client, env, pms):
 def test_pms_due_soon_names_the_km_to_go(client, env, pms):
     env["mine"].current_odometer = 38750
     db.session.commit()
-    pms["status"] = {"schedule": object(), "status": "DUE_SOON",
-                     "next_due_km": 40000, "next_due_date": None}
+    pms["items"] = [_item("Preventive Maintenance Service", "DUE_SOON",
+                          due_km=40000)]
     item = _check(_get(client, env)[1], "pms")
     assert item["state"] == "warn"
     assert "40,000 km" in item["detail"]
@@ -210,8 +219,8 @@ def test_pms_due_soon_names_the_km_to_go(client, env, pms):
 def test_pms_overdue_is_an_alert(client, env, pms):
     env["mine"].current_odometer = 41000
     db.session.commit()
-    pms["status"] = {"schedule": object(), "status": "OVERDUE",
-                     "next_due_km": 40000, "next_due_date": None}
+    pms["items"] = [_item("Preventive Maintenance Service", "OVERDUE",
+                          due_km=40000)]
     item = _check(_get(client, env)[1], "pms")
     assert item["state"] == "alert"
     assert "1,000 km over" in item["detail"]
@@ -220,9 +229,45 @@ def test_pms_overdue_is_an_alert(client, env, pms):
 def test_pms_good_is_ok(client, env, pms):
     env["mine"].current_odometer = 36000
     db.session.commit()
-    pms["status"] = {"schedule": object(), "status": "GOOD",
-                     "next_due_km": 40000, "next_due_date": None}
+    pms["items"] = [_item("Preventive Maintenance Service", "GOOD",
+                          due_km=40000)]
     assert _check(_get(client, env)[1], "pms")["state"] == "ok"
+
+
+def test_pms_row_names_which_maintenance_is_due(client, env, pms):
+    """Reported 2026-10-19: "PMS -- Due at 45,000 km" did not say whether
+    it was aircon servicing, preventive maintenance or something else."""
+    env["mine"].current_odometer = 45100
+    db.session.commit()
+    pms["items"] = [_item("Aircon Servicing", "OVERDUE", due_km=45000)]
+    item = _check(_get(client, env)[1], "pms")
+    assert item["label"] == "Aircon Servicing"
+
+
+def test_a_second_due_type_gets_its_own_row(client, env, pms):
+    env["mine"].current_odometer = 45100
+    db.session.commit()
+    pms["items"] = [
+        _item("Preventive Maintenance Service", "OVERDUE", due_km=45000,
+              type_id=1),
+        _item("Aircon Servicing", "DUE_SOON", due_km=45300, type_id=4),
+        _item("Tire Rotation", "GOOD", due_km=50000, type_id=2)]
+    _, body = _get(client, env)
+    assert _check(body, "pms")["label"] == "Preventive Maintenance Service"
+    assert _check(body, "pms-4")["label"] == "Aircon Servicing"
+    assert _check(body, "pms-4")["state"] == "warn"
+    # Not due: no row of its own -- the card is "before you drive".
+    assert _check(body, "pms-2") is None
+
+
+def test_pms_row_mentions_an_order_already_raised(client, env, pms):
+    env["mine"].current_odometer = 45100
+    db.session.commit()
+    pms["items"] = [_item("Preventive Maintenance Service", "OVERDUE",
+                          due_km=45000, open_order={
+                              "id": 9, "document_number": "MO-2026-000033",
+                              "status": "DRAFT"})]
+    assert "MO-2026-000033" in _check(_get(client, env)[1], "pms")["detail"]
 
 
 # ── open work ────────────────────────────────────────────────────────

@@ -577,6 +577,95 @@ class PMDueCalculationService:
         return {"schedule": schedule, "status": status,
                "next_due_km": next_due_km, "next_due_date": next_due_date}
 
+    _STATUS_RANK = {"OVERDUE": 0, "DUE_SOON": 1, "GOOD": 2}
+
+    def vehicle_due_items(self, vehicle, as_of_date=None) -> list:
+        """Every maintenance type scheduled for ONE vehicle, each evaluated
+        on its own and named -- most urgent first.
+
+        get_due_status(vehicle) answers for the first applicable type
+        only, so the field app could neither say WHICH PMS was due nor
+        show a second one: an Aircon Servicing schedule disappeared
+        whenever a Preventive Maintenance schedule also applied
+        (reported 2026-10-19). This applies the same per-type rule as
+        get_all_due_vehicles() -- same prefetch, same precedence -- but
+        keeps GOOD entries, because a driver's "coming up" list is about
+        what is next, not only what is late.
+
+        Each item: maintenance_type_id, maintenance_type (name), code,
+        equipment_kind, status, next_due_km, next_due_date, interval_km,
+        interval_days, last_km, last_date, open_order ({id,
+        document_number, status} of an order already raised for this
+        type, or None).
+        """
+        from app.modules.transactions.maintenance_order.models import (
+            MaintenanceOrder)
+        as_of_date = as_of_date or date.today()
+        prefetch = _Prefetch()
+        type_ids = {s.maintenance_type_id for s in prefetch.active_schedules
+                    if s.maintenance_type_id is not None}
+        assigned = prefetch.schedules_by_id.get(vehicle.pm_schedule_id)
+        if assigned and assigned.maintenance_type_id is not None:
+            type_ids.add(assigned.maintenance_type_id)
+
+        open_by_type = {}
+        for o in (MaintenanceOrder.query
+                  .filter(MaintenanceOrder.vehicle_id == vehicle.id)
+                  .filter(MaintenanceOrder.maintenance_type_id.isnot(None))
+                  .filter(MaintenanceOrder.status.notin_(
+                      ["COMPLETED", "CANCELLED", "REJECTED"]))
+                  .order_by(MaintenanceOrder.id.desc()).all()):
+            open_by_type.setdefault(o.maintenance_type_id, o)
+
+        odo = vehicle.current_odometer or 0
+        items = []
+        for type_id in type_ids:
+            schedules = prefetch.applicable_schedules(vehicle, type_id)
+            if not schedules:
+                continue
+            s = self.get_due_status(vehicle, maintenance_type_id=type_id,
+                                    as_of_date=as_of_date,
+                                    _prefetch=prefetch)
+            sched = s["schedule"]
+            last_km, last_date = prefetch.last_service_for(
+                vehicle, sched.maintenance_type_id)
+            mtype = prefetch.types_by_id.get(sched.maintenance_type_id)
+            order = open_by_type.get(sched.maintenance_type_id)
+            items.append({
+                "maintenance_type_id": sched.maintenance_type_id,
+                "maintenance_type": mtype.name if mtype else None,
+                "code": mtype.code if mtype else None,
+                "equipment_kind": (getattr(mtype, "equipment_kind", None)
+                                   if mtype else None),
+                "status": s["status"],
+                "next_due_km": s["next_due_km"],
+                "next_due_date": s["next_due_date"],
+                "interval_km": sched.interval_km,
+                "interval_days": sched.interval_days,
+                # 0 / None is "no service on record", not a reading.
+                "last_km": last_km or None,
+                "last_date": last_date,
+                "open_order": ({"id": order.id,
+                                "document_number": order.document_number,
+                                "status": order.status}
+                               if order is not None else None),
+            })
+
+        def urgency(i):
+            km = (i["next_due_km"] - odo
+                  if i["next_due_km"] is not None else None)
+            days = ((i["next_due_date"] - as_of_date).days
+                    if i["next_due_date"] is not None else None)
+            # Compare km and days on one rough scale (~50 km a day) so a
+            # calendar-only schedule still sorts against a km one.
+            gaps = [g for g in (km, days * 50 if days is not None else None)
+                    if g is not None]
+            return (self._STATUS_RANK.get(i["status"], 3),
+                    min(gaps) if gaps else float("inf"),
+                    i["maintenance_type"] or "")
+        items.sort(key=urgency)
+        return items
+
     @request_cached("pm_all_due_vehicles")
     def get_all_due_vehicles(self, as_of_date=None,
                              exclude_with_open_order=True) -> list:

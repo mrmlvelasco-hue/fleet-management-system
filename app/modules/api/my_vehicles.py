@@ -329,20 +329,22 @@ def _readiness_insurance(vehicle):
             "date": end.isoformat(), "days_left": days, "detail": detail}
 
 
-def _readiness_pms(vehicle):
+def _due_items(vehicle):
+    """Every maintenance schedule on the unit, by name, most urgent first
+    (PMDueCalculationService.vehicle_due_items). A failure there must not
+    take the whole card down -- it degrades to "no schedule on file"."""
     from app.core.maintenance.due_calculation_service import (
         PMDueCalculationService)
     try:
-        s = PMDueCalculationService().get_due_status(vehicle)
+        return PMDueCalculationService().vehicle_due_items(vehicle) or []
     except Exception:
-        s = {}
-    if not s or s.get("schedule") is None:
-        return {"key": "pms", "label": "PMS", "state": "unknown",
-                "detail": "No PMS schedule set for this vehicle"}
-    status = s.get("status")
-    due_km = s.get("next_due_km")
-    due_date = s.get("next_due_date")
-    odo = vehicle.current_odometer or 0
+        return []
+
+
+def _pms_row(item, odo, key):
+    status = item.get("status")
+    due_km = item.get("next_due_km")
+    due_date = item.get("next_due_date")
     if due_km is not None:
         gap = due_km - odo
         where = f"Due at {due_km:,} km"
@@ -356,9 +358,34 @@ def _readiness_pms(vehicle):
     state = {"OVERDUE": "alert", "DUE_SOON": "warn"}.get(status, "ok")
     if state == "ok" and due_km is not None:
         text = f"Next at {due_km:,} km — {due_km - odo:,} km to go"
-    return {"key": "pms", "label": "PMS", "state": state, "detail": text,
-            "due_km": due_km,
+    order = item.get("open_order")
+    if order and order.get("document_number"):
+        text = f"{text} · {order['document_number']} raised"
+    return {"key": key,
+            # WHICH maintenance (reported 2026-10-19: the row said only
+            # "PMS", so a driver could not tell aircon servicing from a
+            # preventive maintenance service).
+            "label": item.get("maintenance_type") or "PMS",
+            "state": state, "detail": text, "due_km": due_km,
             "due_date": due_date.isoformat() if due_date else None}
+
+
+def _readiness_pms(vehicle):
+    """The most urgent schedule as the "pms" row, named; any OTHER
+    schedule that is also due soon or overdue gets a row of its own
+    ("pms-<type id>"). Schedules that are fine stay off this card -- it
+    answers "can I drive this today?"; the Home screen lists them all."""
+    items = _due_items(vehicle)
+    if not items:
+        return [{"key": "pms", "label": "PMS", "state": "unknown",
+                 "detail": "No PMS schedule set for this vehicle"}]
+    odo = vehicle.current_odometer or 0
+    rows = [_pms_row(items[0], odo, "pms")]
+    for item in items[1:]:
+        if item.get("status") in ("OVERDUE", "DUE_SOON"):
+            rows.append(_pms_row(
+                item, odo, f"pms-{item.get('maintenance_type_id')}"))
+    return rows
 
 
 def _readiness_work(vehicle_id):
@@ -459,7 +486,7 @@ def my_vehicle_readiness(api_user, vid):
     if v is None:
         return _not_found()
     checks = [_readiness_registration(v), _readiness_insurance(v),
-              _readiness_pms(v), _readiness_work(v.id)]
+              *_readiness_pms(v), _readiness_work(v.id)]
     atd = _readiness_atd(v.id, api_user)
     if atd is not None:
         checks.append(atd)
@@ -770,3 +797,271 @@ def my_vehicle_odometer_history(api_user, vid):
         "recorded_at": e.recorded_at.isoformat() if e.recorded_at else None,
         "recorded_by": e.user.full_name if e.user else None,
     } for e in rows], "total": total})
+
+
+# ── Home: "Coming up for <plate>" (mockup 2, 2026-10-15) ─────────────
+
+_COMING_UP_RANK = {"overdue": 0, "in_shop": 1, "awaiting": 2,
+                   "due_soon": 3, "ok": 4}
+
+
+def _interval_phrase(km, days):
+    bits = []
+    if km:
+        bits.append(f"{km:,} km")
+    if days:
+        if days >= 60 and days % 30 == 0:
+            months = days // 30
+            bits.append(f"{months} months")
+        else:
+            bits.append(f"{days} days")
+    return f"Every {' or '.join(bits)}" if bits else None
+
+
+def _gap_phrase(item, odo, today):
+    """("in 680 km" | "100 km over" | "in 41 days" | "3 days over", over?)"""
+    km, d = item.get("next_due_km"), item.get("next_due_date")
+    if km is not None:
+        gap = km - odo
+        return (f"in {gap:,} km", False) if gap >= 0 else (
+            f"{abs(gap):,} km over", True)
+    if d is not None:
+        days = (d - today).days
+        if days == 0:
+            return "today", False
+        if days > 0:
+            return (f"in {days} day" if days == 1
+                    else f"in {days} days"), False
+        return (f"{abs(days)} day over" if days == -1
+                else f"{abs(days)} days over"), True
+    return None, False
+
+
+def _waited(inst):
+    from datetime import datetime as _dt
+    created = getattr(inst, "created_at", None) if inst else None
+    if created is None:
+        return None
+    days = (_dt.utcnow().date() - created.date()).days
+    return "today" if days <= 0 else ("1 day" if days == 1
+                                       else f"{days} days")
+
+
+def _pms_coming_up(item, odo, today):
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    title = item.get("maintenance_type") or "PMS"
+    key = f"pms-{item.get('maintenance_type_id')}"
+    order_ref = item.get("open_order")
+    mo = (db.session.get(MaintenanceOrder, order_ref["id"])
+          if order_ref and order_ref.get("id") else None)
+    if mo is not None:
+        number = mo.document_number or f"MO #{mo.id}"
+        if mo.status == "IN_PROGRESS":
+            where = (f" at {mo.vendor.name}"
+                     if getattr(mo, "vendor", None) else "")
+            return {"key": key, "kind": "pms", "title": title,
+                    "detail": f"{number} · In the workshop{where}",
+                    "state": "in_shop", "badge": "In the workshop",
+                    "order_id": mo.id}
+        inst = getattr(mo, "approval_instance", None)
+        bits = [number]
+        with_whom = _mo_pending_with(mo)
+        if with_whom:
+            bits.append(f"With {with_whom}")
+        elif mo.status == "DRAFT" and inst is None:
+            bits.append("Draft — not yet submitted")
+        waited = _waited(inst)
+        if waited and with_whom:
+            bits.append(waited)
+        return {"key": key, "kind": "pms", "title": title,
+                "detail": " · ".join(bits), "state": "awaiting",
+                "badge": "Awaiting", "order_id": mo.id}
+
+    gap, _over = _gap_phrase(item, odo, today)
+    status = item.get("status")
+    state = {"OVERDUE": "overdue", "DUE_SOON": "due_soon"}.get(status, "ok")
+    last_km, last_date = item.get("last_km"), item.get("last_date")
+    if last_km:
+        last = f"last at {last_km:,} km"
+    elif last_date:
+        last = f"last {_fmt_date(last_date)}"
+    else:
+        last = "no service on record yet"
+    detail = " · ".join(x for x in (
+        _interval_phrase(item.get("interval_km"),
+                         item.get("interval_days")), last) if x)
+    return {"key": key, "kind": "pms", "title": title, "detail": detail,
+            "state": state,
+            "badge": "Overdue" if state == "overdue" else (gap or "Scheduled"),
+            "order_id": None}
+
+
+def _registration_coming_up(vehicle, today):
+    from app.modules.registration_config.service import (
+        RegistrationDueCalculationService)
+    try:
+        s = RegistrationDueCalculationService().get_due_status(vehicle)
+    except Exception:
+        s = {}
+    due, days = s.get("next_due_date"), s.get("days_remaining")
+    if due is None or days is None:
+        return None
+    plate = (vehicle.plate_number or "").strip()
+    digits = [c for c in plate if c.isdigit()]
+    detail = (f"LTO · plate ending {digits[-1]}" if digits else "LTO")
+    if days < 0:
+        state, badge = "overdue", "Expired"
+    elif s.get("status") == "DUE_SOON":
+        state, badge = "due_soon", (f"in {days} day" if days == 1
+                                    else f"in {days} days")
+    else:
+        state, badge = "ok", f"{due.strftime('%b')} {due.year}"
+    return {"key": "registration", "kind": "registration",
+            "title": "Registration renewal", "detail": detail,
+            "state": state, "badge": badge, "order_id": None}
+
+
+@bp.route("/my/vehicles/<int:vid>/coming-up", methods=["GET"])
+@api_auth_required("vehicle.view")
+def my_vehicle_coming_up(api_user, vid):
+    """The Home screen's "Coming up for <plate>" list (mockup 2).
+
+    One row per maintenance schedule on the unit, NAMED -- Preventive
+    Maintenance Service, Aircon Servicing, Tire Rotation -- from the same
+    per-type due calculation the dashboard uses, so the phone and the
+    Fleet Office never disagree about what is due. A schedule that
+    already has an order raised shows as that order (number, who it is
+    with, how long), because that is what the driver is waiting on.
+    Then the registration renewal.
+
+    `next_pms` is the most urgent schedule, for the vehicle card.
+
+    SCOPE: the usual /my/* rule -- 404 when the vehicle is not yours.
+    """
+    from datetime import date as _date
+    v = _assigned_vehicle(vid, api_user)
+    if v is None:
+        return _not_found()
+    today = _date.today()
+    odo = v.current_odometer or 0
+    due = _due_items(v)
+    items = [_pms_coming_up(i, odo, today) for i in due]
+    reg = _registration_coming_up(v, today)
+    if reg is not None:
+        items.append(reg)
+    items.sort(key=lambda i: _COMING_UP_RANK.get(i["state"], 9))
+
+    next_pms = None
+    if due:
+        first = due[0]
+        text, over = _gap_phrase(first, odo, today)
+        next_pms = {"title": first.get("maintenance_type") or "PMS",
+                    "text": text, "over": over,
+                    "status": first.get("status")}
+    return jsonify({"items": items, "next_pms": next_pms})
+
+
+# ── Tires & battery of my vehicle (mockup 3, 2026-10-15) ─────────────
+
+# Unmeasured (often the spare) after the measured ones: the list leads
+# with what needs looking at.
+_CONDITION_RANK = {"REPLACE": 0, "WATCH": 1, "WEAK": 1, "GOOD": 3, None: 4}
+
+
+def _add_months(d, months):
+    import calendar
+    m = d.month - 1 + months
+    y, m = d.year + m // 12, m % 12 + 1
+    return d.replace(year=y, month=m,
+                     day=min(d.day, calendar.monthrange(y, m)[1]))
+
+
+@bp.route("/my/vehicles/<int:vid>/equipment", methods=["GET"])
+@api_auth_required("vehicle.view")
+def my_vehicle_equipment(api_user, vid):
+    """The tires on each wheel and the battery, for the assignee.
+
+    Read-only: something wrong goes to the fleet supervisor, who raises
+    the transaction so it goes through approval (client decision 3,
+    2026-10-15). Conditions use the same System Parameter thresholds as
+    the Maintenance Order's Tire & Battery Work, which are sent along so
+    the legend on the phone states the real numbers.
+
+    vehicle.view rather than tire.view: a driver holds no master-data
+    permission, and the /my/* scope already limits this to their unit.
+    """
+    from app.modules.master_data.battery.models import Battery
+    from app.modules.master_data.tire.models import Tire
+    from app.modules.transactions.maintenance_order.equipment import (
+        EquipmentConditionService, EquipmentWorkService)
+    from app.modules.transactions.tire_txn.models import TireTransaction
+
+    v = _assigned_vehicle(vid, api_user)
+    if v is None:
+        return _not_found()
+    cond = EquipmentConditionService()
+    order = EquipmentWorkService()._position_order()
+    odo = v.current_odometer
+
+    tires = []
+    for t in Tire.query.filter_by(vehicle_id=vid, status="MOUNTED").all():
+        km_on = (odo - t.mounted_odometer
+                 if odo is not None and t.mounted_odometer is not None
+                 and odo >= t.mounted_odometer else None)
+        tires.append({
+            "id": t.id, "position": t.wheel_position,
+            "serial_number": t.serial_number, "brand": t.brand,
+            "model": t.model, "size": t.size,
+            "label": " ".join(x for x in (t.brand, t.model) if x),
+            "tread_mm": (float(t.current_tread_mm)
+                         if t.current_tread_mm is not None else None),
+            "condition": cond.tire(t), "km_on_it": km_on,
+            "mounted_date": (t.mounted_date.isoformat()
+                             if t.mounted_date else None),
+        })
+    tires.sort(key=lambda t: (_CONDITION_RANK.get(t["condition"], 2),
+                              order.get(t["position"] or "", 999)))
+
+    battery = None
+    b = (Battery.query.filter_by(vehicle_id=vid, status="MOUNTED")
+         .order_by(Battery.id.desc()).first())
+    if b is not None:
+        spec = " · ".join(x for x in (
+            f"{b.voltage} V" if b.voltage else None,
+            f"{b.capacity_ah} Ah" if b.capacity_ah else None) if x)
+        name = " ".join(x for x in (b.brand, b.model) if x)
+        battery = {
+            "id": b.id, "serial_number": b.serial_number,
+            "label": " · ".join(x for x in (name, spec) if x),
+            "installed": (b.mounted_date.isoformat()
+                          if b.mounted_date else None),
+            "last_voltage": (float(b.last_voltage)
+                             if b.last_voltage is not None else None),
+            "last_test_date": (b.last_test_date.isoformat()
+                               if b.last_test_date else None),
+            "warranty_to": (_add_months(b.mounted_date,
+                                        b.warranty_months).isoformat()
+                            if b.mounted_date and b.warranty_months
+                            else None),
+            "condition": cond.battery(b),
+        }
+
+    last = (TireTransaction.query
+            .filter(TireTransaction.vehicle_id == vid,
+                    TireTransaction.status == "COMPLETED",
+                    TireTransaction.tread_depth_mm.isnot(None))
+            .order_by(TireTransaction.transaction_date.desc(),
+                      TireTransaction.id.desc()).first())
+    last_inspection = None
+    if last is not None:
+        mo = getattr(last, "maintenance_order", None)
+        last_inspection = {
+            "date": (last.transaction_date.isoformat()
+                     if last.transaction_date else None),
+            "document": (mo.document_number if mo is not None
+                         else last.document_number)}
+
+    return jsonify({"tires": tires, "battery": battery,
+                    "last_inspection": last_inspection,
+                    "thresholds": cond.thresholds()})
