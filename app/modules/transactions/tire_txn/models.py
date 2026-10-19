@@ -9,7 +9,10 @@ class TireTransaction(db.Model, BaseModel):
 
     document_number = db.Column(db.String(40), unique=True, nullable=True,
                                 index=True)
-    tire_id = db.Column(db.Integer, db.ForeignKey("tires.id"), nullable=False)
+    # The tire acted on -- for a REPLACE, the one that goes ON. NULL only
+    # while a REPLACE with a vendor-supplied new tire is awaiting
+    # approval: the tire is registered when the document completes.
+    tire_id = db.Column(db.Integer, db.ForeignKey("tires.id"), nullable=True)
     vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"),
                            nullable=True)  # NULL when dismounted to stock
     # MOUNT | DISMOUNT | RETREAD | DISPOSE | ROTATE | INSPECT | REPAIR
@@ -33,6 +36,26 @@ class TireTransaction(db.Model, BaseModel):
         db.Integer, db.ForeignKey("maintenance_orders.id"), nullable=True,
         index=True)
 
+    # ── REPLACE as one document (2026-10-19) ─────────────────────────
+    # The tire that came off, why, and where it went.
+    removed_tire_id = db.Column(db.Integer, db.ForeignKey("tires.id"),
+                                nullable=True)
+    removal_reason = db.Column(db.String(40), nullable=True)
+    # FOR_DISPOSAL | REPAIRABLE (both go back to stock as IN_STOCK).
+    removed_to = db.Column(db.String(15), nullable=True)
+    # Where the new one came from: VENDOR (registered from new_* when the
+    # document completes) | STOCK (tire_id, IN_STOCK).
+    install_source = db.Column(db.String(10), nullable=True)
+    new_serial = db.Column(db.String(60), nullable=True)
+    new_brand = db.Column(db.String(80), nullable=True)
+    new_model = db.Column(db.String(80), nullable=True)
+    new_size = db.Column(db.String(30), nullable=True)
+    # Who did the work, and the labour on top of `cost` (the tire).
+    vendor_id = db.Column(db.Integer, db.ForeignKey("vendors.id"),
+                          nullable=True)
+    technician = db.Column(db.String(120), nullable=True)
+    labor_cost = db.Column(db.Numeric(18, 2), nullable=True)
+
     # DRAFT | COMPLETED | CANCELLED
     status = db.Column(db.String(12), default="DRAFT", nullable=False)
 
@@ -41,8 +64,26 @@ class TireTransaction(db.Model, BaseModel):
     approval_instance_id = db.Column(
         db.Integer, db.ForeignKey("approval_instances.id"), nullable=True)
 
-    tire = db.relationship("Tire")
+    tire = db.relationship("Tire", foreign_keys=[tire_id])
+    removed_tire = db.relationship("Tire", foreign_keys=[removed_tire_id])
+    vendor = db.relationship("Vendor")
+    scope_items = db.relationship(
+        "TireTransactionScopeItem", order_by="TireTransactionScopeItem.sort_order",
+        cascade="all, delete-orphan")
     vehicle = db.relationship("Vehicle")
     requester = db.relationship("User", foreign_keys=[requested_by])
     approval_instance = db.relationship("ApprovalInstance")
     maintenance_order = db.relationship("MaintenanceOrder")
+
+
+class TireTransactionScopeItem(db.Model, BaseModel):
+    """Scope of Work on a standalone tire transaction -- the same
+    activity checklist the MO uses, pre-filled from a tire PM Scope
+    Template and editable per document."""
+    __tablename__ = "tire_transaction_scope_items"
+    transaction_id = db.Column(db.Integer,
+                               db.ForeignKey("tire_transactions.id"),
+                               nullable=False, index=True)
+    activity_description = db.Column(db.String(255), nullable=False)
+    is_done = db.Column(db.Boolean, nullable=False, default=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)

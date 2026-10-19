@@ -26,7 +26,13 @@ from app.modules.api.routes import bp
 _COERCER = Coercer(
     ints={"tire_id": "Tire", "battery_id": "Battery",
           "vehicle_id": "Vehicle",
-          "odometer_at_service": "Odometer at Service"},
+          "odometer_at_service": "Odometer at Service",
+          "removed_tire_id": "Removed tire",
+          "removed_battery_id": "Removed battery",
+          "vendor_id": "Workshop / vendor",
+          "maintenance_order_id": "Linked MO",
+          "pressure_psi": "Pressure",
+          "new_warranty_months": "Warranty"},
     dates={"transaction_date": "Transaction Date"},
 )
 
@@ -67,6 +73,78 @@ def _iso(v):
     return v.isoformat() if v else None
 
 
+def _money(v):
+    if v is None:
+        return None
+    text = str(v).replace(",", "").strip()
+    return text or None
+
+
+def _work_kwargs(payload, fields):
+    """The REPLACE / work-document fields shared by both modules."""
+    return dict(
+        removal_reason=payload.get("removal_reason") or None,
+        removed_to=payload.get("removed_to") or None,
+        install_source=payload.get("install_source") or None,
+        new_serial=payload.get("new_serial") or None,
+        new_brand=payload.get("new_brand") or None,
+        new_model=payload.get("new_model") or None,
+        vendor_id=fields.get("vendor_id"),
+        technician=payload.get("technician") or None,
+        cost=_money(payload.get("cost")),
+        labor_cost=_money(payload.get("labor_cost")),
+        maintenance_order_id=fields.get("maintenance_order_id"),
+        scope_items=payload.get("scope_items") or None,
+    )
+
+
+def _form_context(kind):
+    """What the work form needs once a vehicle is chosen: what is on it
+    now, its open MOs, and the scope templates for this equipment."""
+    from app.extensions import db
+    from app.modules.maintenance_config.models import PMScopeTemplate
+    from app.modules.master_data.reference.models import MaintenanceType
+    from app.modules.transactions.maintenance_order.equipment import (
+        EquipmentWorkService, LEGACY_TYPE_KINDS)
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    vehicle_id = request.args.get("vehicle_id", type=int)
+    out = {"installed": {"tires": [], "batteries": []}, "open_orders": [],
+           "scope_templates": []}
+    if vehicle_id:
+        out["installed"] = EquipmentWorkService().installed(vehicle_id)
+        orders = (MaintenanceOrder.query
+                  .filter(MaintenanceOrder.vehicle_id == vehicle_id)
+                  .filter(~MaintenanceOrder.status.in_(
+                      ("COMPLETED", "CANCELLED", "REJECTED")))
+                  .order_by(MaintenanceOrder.id.desc()).all())
+        out["open_orders"] = [{
+            "id": o.id, "document_number": o.document_number,
+            "status": o.status,
+            "label": " · ".join(x for x in (
+                o.document_number or f"MO #{o.id}",
+                o.maintenance_type.name if o.maintenance_type else None,
+                o.status.replace("_", " ").title() if o.status else None)
+                if x),
+        } for o in orders]
+    legacy = [c for c, k in LEGACY_TYPE_KINDS.items() if k == kind]
+    types = MaintenanceType.query.filter(db.or_(
+        MaintenanceType.equipment_kind == kind,
+        db.and_(MaintenanceType.equipment_kind.is_(None),
+                db.func.upper(MaintenanceType.code).in_(legacy)))).all()
+    if types:
+        tmpls = (PMScopeTemplate.query
+                 .filter(PMScopeTemplate.maintenance_type_id.in_(
+                     [t.id for t in types]))
+                 .filter(PMScopeTemplate.is_active.is_(True))
+                 .order_by(PMScopeTemplate.name).all())
+        out["scope_templates"] = [
+            {"id": t.id, "name": t.name,
+             "items": [i.activity_description for i in t.items]}
+            for t in tmpls]
+    return out
+
+
 def _num(v):
     return float(v) if v is not None else None
 
@@ -95,12 +173,17 @@ def _txn_json(txn, *, asset_attr, serial_key, detail=False,
     is what identifies the item to a storeman -- an id alone would send
     them back to Master Data to look it up."""
     asset = getattr(txn, asset_attr, None)
+    removed = getattr(txn, f"removed_{asset_attr}", None)
     data = {
         "id": txn.id,
         "document_number": txn.document_number,
         f"{asset_attr}_id": getattr(txn, f"{asset_attr}_id"),
-        serial_key: asset.serial_number if asset else None,
-        f"{asset_attr}_brand": asset.brand if asset else None,
+        # A REPLACE awaiting approval with a workshop-supplied item has no
+        # master yet: show the serial it will be registered under.
+        serial_key: (asset.serial_number if asset
+                     else getattr(txn, "new_serial", None)),
+        f"{asset_attr}_brand": (asset.brand if asset
+                                else getattr(txn, "new_brand", None)),
         "action": txn.action,
         "transaction_date": _iso(txn.transaction_date),
         "odometer_at_service": getattr(txn, "odometer_at_service", None),
@@ -120,6 +203,30 @@ def _txn_json(txn, *, asset_attr, serial_key, detail=False,
         "voltage": _num(getattr(txn, "voltage", None)),
         "test_result": getattr(txn, "test_result", None),
         "cost": _num(getattr(txn, "cost", None)),
+        # One-document REPLACE / work details (2026-10-19).
+        f"removed_{asset_attr}_id": getattr(txn, f"removed_{asset_attr}_id",
+                                            None),
+        "removed_serial": removed.serial_number if removed else None,
+        "removed_label": (" · ".join(x for x in (
+            removed.serial_number, removed.brand,
+            getattr(removed, "size", None)) if x) if removed else None),
+        "removal_reason": getattr(txn, "removal_reason", None),
+        "removed_to": getattr(txn, "removed_to", None),
+        "install_source": getattr(txn, "install_source", None),
+        "new_serial": getattr(txn, "new_serial", None),
+        "new_brand": getattr(txn, "new_brand", None),
+        "new_model": getattr(txn, "new_model", None),
+        "new_size": getattr(txn, "new_size", None),
+        "new_warranty_months": getattr(txn, "new_warranty_months", None),
+        "vendor_id": getattr(txn, "vendor_id", None),
+        "vendor_name": (txn.vendor.name
+                        if getattr(txn, "vendor", None) else None),
+        "technician": getattr(txn, "technician", None),
+        "labor_cost": _num(getattr(txn, "labor_cost", None)),
+        "scope_items": [
+            {"activity_description": i.activity_description,
+             "is_done": bool(i.is_done)}
+            for i in (getattr(txn, "scope_items", None) or [])],
     }
     data.update(_vehicle_bits(txn))
     if detail:
@@ -253,6 +360,15 @@ def tire_txn_form_options(api_user):
     return jsonify({"actions": sorted(VALID_ACTIONS)})
 
 
+@bp.route("/tire-transactions/form-context", methods=["GET"])
+@api_auth_required("tire.view")
+def tire_txn_form_context(api_user):
+    from app.modules.transactions.tire_txn.service import VALID_ACTIONS
+    out = _form_context("TIRE")
+    out["actions"] = sorted(VALID_ACTIONS)
+    return jsonify(out)
+
+
 @bp.route("/tire-transactions", methods=["GET"])
 @api_auth_required("tire.view")
 def list_tire_txns(api_user):
@@ -271,11 +387,12 @@ def create_tire_txn(api_user):
     try:
         fields = _COERCER.fields(payload, [
             "tire_id", "vehicle_id", "odometer_at_service",
-            "transaction_date"])
+            "transaction_date", "removed_tire_id", "vendor_id",
+            "maintenance_order_id", "pressure_psi"])
     except FieldValueError as exc:
         return _bad(str(exc), exc.field)
 
-    if not fields.get("tire_id"):
+    if not fields.get("tire_id") and payload.get("action") != "REPLACE":
         return _bad("Tire is required.", "tire_id")
     if not fields.get("transaction_date"):
         return _bad("Transaction Date is required.", "transaction_date")
@@ -284,13 +401,19 @@ def create_tire_txn(api_user):
 
     try:
         txn = TireTransactionService().create(
-            tire_id=fields["tire_id"], action=payload["action"],
+            tire_id=fields.get("tire_id"), action=payload["action"],
             transaction_date=fields["transaction_date"], user=api_user,
             vehicle_id=fields.get("vehicle_id"),
             odometer_at_service=fields.get("odometer_at_service"),
-            remarks=payload.get("remarks") or None)
+            remarks=payload.get("remarks") or None,
+            wheel_position=payload.get("wheel_position") or None,
+            tread_depth_mm=payload.get("tread_depth_mm"),
+            pressure_psi=fields.get("pressure_psi"),
+            removed_tire_id=fields.get("removed_tire_id"),
+            new_size=payload.get("new_size") or None,
+            **_work_kwargs(payload, fields))
     except InvalidTireActionError as exc:
-        return _bad(str(exc), "action")
+        return _bad(str(exc), getattr(exc, "field", "action"))
     except Exception as exc:
         return _conflict(str(exc))
     return jsonify(_txn_json(txn, detail=True, api_user=api_user,
@@ -380,6 +503,15 @@ def battery_txn_form_options(api_user):
     return jsonify({"actions": sorted(VALID_ACTIONS)})
 
 
+@bp.route("/battery-transactions/form-context", methods=["GET"])
+@api_auth_required("battery.view")
+def battery_txn_form_context(api_user):
+    from app.modules.transactions.battery_txn.service import VALID_ACTIONS
+    out = _form_context("BATTERY")
+    out["actions"] = sorted(VALID_ACTIONS)
+    return jsonify(out)
+
+
 @bp.route("/battery-transactions", methods=["GET"])
 @api_auth_required("battery.view")
 def list_battery_txns(api_user):
@@ -398,11 +530,12 @@ def create_battery_txn(api_user):
     try:
         fields = _COERCER.fields(payload, [
             "battery_id", "vehicle_id", "odometer_at_service",
-            "transaction_date"])
+            "transaction_date", "removed_battery_id", "vendor_id",
+            "maintenance_order_id", "new_warranty_months"])
     except FieldValueError as exc:
         return _bad(str(exc), exc.field)
 
-    if not fields.get("battery_id"):
+    if not fields.get("battery_id") and payload.get("action") != "REPLACE":
         return _bad("Battery is required.", "battery_id")
     if not fields.get("transaction_date"):
         return _bad("Transaction Date is required.", "transaction_date")
@@ -410,18 +543,21 @@ def create_battery_txn(api_user):
         return _bad("Action is required.", "action")
 
     try:
-        # No odometer_at_service: BatteryTransaction genuinely has no
-        # such column, unlike TireTransaction. A real difference
-        # between two otherwise-identical modules -- accepting the
-        # field here and silently dropping it would be worse than
-        # refusing it, since the caller would believe it was recorded.
+        # odometer_at_service: BatteryTransaction has had the column since
+        # 2026-10-15 (d7a3e9c1b5f2), so it is accepted now.
         txn = BatteryTransactionService().create(
-            battery_id=fields["battery_id"], action=payload["action"],
+            battery_id=fields.get("battery_id"), action=payload["action"],
             transaction_date=fields["transaction_date"], user=api_user,
             vehicle_id=fields.get("vehicle_id"),
-            remarks=payload.get("remarks") or None)
+            remarks=payload.get("remarks") or None,
+            odometer_at_service=fields.get("odometer_at_service"),
+            voltage=payload.get("voltage"),
+            test_result=payload.get("test_result") or None,
+            removed_battery_id=fields.get("removed_battery_id"),
+            new_warranty_months=fields.get("new_warranty_months"),
+            **_work_kwargs(payload, fields))
     except InvalidBatteryActionError as exc:
-        return _bad(str(exc), "action")
+        return _bad(str(exc), getattr(exc, "field", "action"))
     except Exception as exc:
         return _conflict(str(exc))
     return jsonify(_txn_json(txn, detail=True, api_user=api_user,

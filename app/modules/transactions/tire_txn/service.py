@@ -14,11 +14,13 @@ taken effect until sign-off.
 from app.extensions import db
 from app.core.numbering.numbering_service import AutoNumberingService
 from app.modules.transactions.base_service import BaseTransactionService
-from app.modules.transactions.tire_txn.models import TireTransaction
+from app.modules.transactions.tire_txn.models import (
+    TireTransaction, TireTransactionScopeItem)
+from app.modules.transactions import equipment_replace as rep
 from app.modules.master_data.tire.models import Tire
 
 VALID_ACTIONS = {"MOUNT", "DISMOUNT", "RETREAD", "DISPOSE",
-                 "ROTATE", "INSPECT", "REPAIR"}
+                 "ROTATE", "INSPECT", "REPAIR", "REPLACE"}
 # Actions that leave the tire where it is and only record a reading.
 READING_ACTIONS = {"INSPECT", "REPAIR"}
 # Actions that need to know which vehicle the tire is on. MOUNT is NOT
@@ -29,7 +31,9 @@ VEHICLE_ACTIONS = {"ROTATE"}
 
 
 class InvalidTireActionError(Exception):
-    pass
+    def __init__(self, message, field="action"):
+        super().__init__(message)
+        self.field = field
 
 
 def _dec(v):
@@ -89,6 +93,9 @@ class TireTransactionService(BaseTransactionService):
         2026-10-15 a MOUNT changed the status alone, so the master never
         said which vehicle or wheel the tire was on.
         """
+        if txn.action == "REPLACE":
+            self._apply_replace(txn)
+            return
         tire = db.session.get(Tire, txn.tire_id)
         if txn.action == "MOUNT":
             tire.status = "MOUNTED"
@@ -111,6 +118,42 @@ class TireTransactionService(BaseTransactionService):
             tire.current_tread_mm = txn.tread_depth_mm
             tire.last_inspection_date = txn.transaction_date
 
+    def _apply_replace(self, txn):
+        """Both sides of the swap, at completion: the old tire back to
+        stock, the new one (registered now if the workshop supplied it)
+        mounted on that wheel."""
+        if txn.removed_tire_id:
+            old = db.session.get(Tire, txn.removed_tire_id)
+            old.status = "IN_STOCK"
+            old.vehicle_id = None
+            old.wheel_position = None
+            old.mounted_date = None
+            old.mounted_odometer = None
+        if txn.tire_id is None:
+            vehicle = txn.vehicle
+            new = Tire(serial_number=txn.new_serial
+                       or rep.auto_serial("TIR", txn),
+                       brand=txn.new_brand, model=txn.new_model,
+                       size=txn.new_size, tire_type="RADIAL",
+                       vendor_id=txn.vendor_id,
+                       branch_id=vehicle.branch_id if vehicle else None,
+                       purchase_date=txn.transaction_date,
+                       purchase_cost=txn.cost,
+                       tread_depth_initial=txn.tread_depth_mm,
+                       status="IN_STOCK")
+            db.session.add(new)
+            db.session.flush()
+            txn.tire_id = new.id
+        new = db.session.get(Tire, txn.tire_id)
+        new.status = "MOUNTED"
+        new.vehicle_id = txn.vehicle_id
+        new.wheel_position = txn.wheel_position
+        new.mounted_date = txn.transaction_date
+        new.mounted_odometer = txn.odometer_at_service
+        if txn.tread_depth_mm is not None:
+            new.current_tread_mm = txn.tread_depth_mm
+            new.last_inspection_date = txn.transaction_date
+
     def _validate_edit(self, record, fields):
         """Same action list as create()."""
         if "action" in fields and fields["action"] not in VALID_ACTIONS:
@@ -121,22 +164,52 @@ class TireTransactionService(BaseTransactionService):
                 f"Must be one of: {', '.join(sorted(VALID_ACTIONS))}.",
                 "action")
 
-    def create(self, *, tire_id, action, transaction_date, user,
+    def create(self, *, action, transaction_date, user, tire_id=None,
                vehicle_id=None, odometer_at_service=None, remarks=None,
                wheel_position=None, tread_depth_mm=None, pressure_psi=None,
                cost=None, source="MANUAL", maintenance_order_id=None,
-               force_completed=False, commit=True):
+               force_completed=False, commit=True, removed_tire_id=None,
+               removal_reason=None, removed_to=None, install_source=None,
+               new_serial=None, new_brand=None, new_model=None,
+               new_size=None, vendor_id=None, technician=None,
+               labor_cost=None, scope_items=None):
         """force_completed: post as COMPLETED regardless of the TIR
         document type's approval setting. Used only for transactions an
         approved Maintenance Order generates on completion -- the MO's
-        approval already covers the work (client decision 2026-10-15)."""
+        approval already covers the work (client decision 2026-10-15).
+
+        REPLACE (2026-10-19) is one document for both sides of a swap;
+        see equipment_replace."""
+        Err = InvalidTireActionError
         if action not in VALID_ACTIONS:
-            raise InvalidTireActionError(
+            raise Err(
                 f"'{action}' is not a valid tire action. "
                 f"Must be one of: {', '.join(sorted(VALID_ACTIONS))}.")
         if action in VEHICLE_ACTIONS and not vehicle_id:
-            raise InvalidTireActionError(
-                f"A {action.lower()} needs the vehicle the tire is on.")
+            raise Err(f"A {action.lower()} needs the vehicle the tire is on.",
+                      "vehicle_id")
+        install_source = (rep.clean(install_source) or "").upper() or None
+        removed_to = (rep.clean(removed_to) or "").upper() or None
+        new_serial = rep.clean(new_serial, 60)
+        if action == "REPLACE":
+            rep.check_replace(
+                kind="TIRE", vehicle_id=vehicle_id,
+                wheel_position=wheel_position, install_source=install_source,
+                item_id=tire_id, new_serial=new_serial,
+                new_brand=rep.clean(new_brand),
+                new_size=rep.clean(new_size), removed_to=removed_to,
+                model=Tire, err=Err)
+            if install_source == "VENDOR":
+                tire_id = None
+            if not removed_tire_id:
+                on_wheel = Tire.query.filter_by(
+                    vehicle_id=vehicle_id, wheel_position=wheel_position,
+                    status="MOUNTED").first()
+                removed_tire_id = on_wheel.id if on_wheel else None
+        elif not tire_id:
+            raise Err("Choose the tire.", "tire_id")
+        if source == "MANUAL":
+            rep.check_linked_mo(maintenance_order_id, vehicle_id, Err)
 
         numbering = AutoNumberingService()
         try:
@@ -157,9 +230,19 @@ class TireTransactionService(BaseTransactionService):
             pressure_psi=_int(pressure_psi), cost=_dec(cost),
             source=source or "MANUAL",
             maintenance_order_id=maintenance_order_id,
+            removed_tire_id=removed_tire_id,
+            removal_reason=rep.clean(removal_reason, 40),
+            removed_to=removed_to, install_source=install_source,
+            new_serial=new_serial, new_brand=rep.clean(new_brand, 80),
+            new_model=rep.clean(new_model, 80),
+            new_size=rep.clean(new_size, 30), vendor_id=vendor_id,
+            technician=rep.clean(technician, 120),
+            labor_cost=_dec(labor_cost),
             status="DRAFT" if requires_approval else "COMPLETED",
             requested_by=user.id if user else None)
         db.session.add(txn)
+        for row in rep.scope_rows(scope_items):
+            txn.scope_items.append(TireTransactionScopeItem(**row))
         db.session.flush()
 
         if not requires_approval:
