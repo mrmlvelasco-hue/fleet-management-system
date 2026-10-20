@@ -260,3 +260,25 @@ def test_complete_succeeds_with_valid_unique_data(db, draft_registration):
         draft_registration.id, or_number="OR-VALID", cr_number="CR-VALID")
     assert result.status == "COMPLETED"
     assert result.or_number == "OR-VALID"
+
+
+def test_complete_syncs_the_vehicles_own_cr_number_and_known_expiry(
+        db, vehicle, draft_registration):
+    """Reported from UAT 2026-10-20: OR/CR entered and the registration
+    completed, but 'the vehicle info are not updated' -- confirmed in
+    code: complete() set these fields on the REGISTRATION row only.
+    Vehicle.cr_number is read elsewhere (e.g. the MO print's
+    vehicle_cr_number), and Vehicle.last_known_registration_expiry is
+    read directly by the Vehicle Detail screen's Identification &
+    Compliance panel, so both going stale the moment a registration is
+    completed is a real, user-visible gap, not just an unused column.
+    """
+    db.session.add(draft_registration)
+    db.session.commit()
+
+    VehicleRegistrationService().complete(
+        draft_registration.id, or_number="OR-SYNC", cr_number="CR-SYNC")
+
+    db.session.refresh(vehicle)
+    assert vehicle.cr_number == "CR-SYNC"
+    assert vehicle.last_known_registration_expiry == draft_registration.expiry_date

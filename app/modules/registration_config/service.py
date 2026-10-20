@@ -62,12 +62,45 @@ class RegistrationTemplateService:
             tmpl.is_active = False
             db.session.commit()
 
+    def _resolve_vehicle_brand_model_ids(self, vehicle):
+        """Resolve a Vehicle's free-text brand/model strings to the real
+        VehicleBrand/VehicleModel master ids. Vehicle.brand/Vehicle.model
+        stay plain strings for backward compatibility (see
+        vehicle_brand/models.py); RegistrationTemplate is keyed by the
+        normalized FKs, same as PMSchedule. Mirrors
+        PMDueCalculationService._resolve_vehicle_brand_model_ids() —
+        same gap, same fix, kept in sync rather than duplicated
+        differently."""
+        from app.modules.master_data.vehicle_brand.models import (
+            VehicleBrand, VehicleModel)
+        brand = VehicleBrand.query.filter(
+            db.func.lower(VehicleBrand.name)
+            == (vehicle.brand or "").strip().lower()).first()
+        if not brand:
+            return None, None
+        model = VehicleModel.query.filter(
+            VehicleModel.brand_id == brand.id,
+            db.func.lower(VehicleModel.name)
+            == (vehicle.model or "").strip().lower()).first()
+        return brand.id, (model.id if model else None)
+
     def find_applicable(self, vehicle, templates=None) -> "RegistrationTemplate | None":
-        """Most-specific-match-first: Brand+Model, then Vehicle Type,
-        then a global (all-vehicles) template — same precedence spirit
-        as PM Template matching, just without the free-text fallback
-        tier (Registration Templates are newer, so there's no legacy
-        free-text data to support)."""
+        """Most-specific-match-first: Brand+Model, then Brand only, then
+        Vehicle Type, then a global (all-vehicles) template — same
+        precedence spirit as PM Template matching, just without the
+        legacy free-text fallback tier (Registration Templates are
+        newer, so there's no legacy free-text data to support).
+
+        KI-19: this used to compare against
+        `vehicle.vehicle_brand_id`/`vehicle.vehicle_model_id`, columns
+        that don't exist on Vehicle at all -- so brand_model_matches
+        was always empty, for every vehicle. Fixed by resolving the
+        vehicle's `brand`/`model` strings to the real master ids first,
+        the same way PM Template matching already does. A Brand-only
+        template (brand set, model left blank on the admin screen) is
+        also now its own, separate tier -- previously it required BOTH
+        fields and so could never match either.
+        """
         # `templates` may be supplied by a caller iterating the fleet.
         #
         # Templates are configuration -- a handful of rows -- but this
@@ -78,15 +111,24 @@ class RegistrationTemplateService:
         if templates is None:
             templates = RegistrationTemplate.query.filter_by(
                 is_active=True).all()
-        brand_model_matches = [
-            t for t in templates
-            if t.vehicle_brand_id and t.vehicle_model_id
-            and t.vehicle_brand_id == getattr(vehicle, "vehicle_brand_id", None)
-            and t.vehicle_model_id == getattr(vehicle, "vehicle_model_id", None)]
-        if brand_model_matches:
-            return brand_model_matches[0]
+        brand_id, model_id = self._resolve_vehicle_brand_model_ids(vehicle)
+
+        if brand_id and model_id:
+            brand_model_matches = [
+                t for t in templates
+                if t.vehicle_brand_id == brand_id
+                and t.vehicle_model_id == model_id]
+            if brand_model_matches:
+                return brand_model_matches[0]
+        if brand_id:
+            brand_only_matches = [
+                t for t in templates
+                if t.vehicle_brand_id == brand_id and not t.vehicle_model_id]
+            if brand_only_matches:
+                return brand_only_matches[0]
         type_matches = [t for t in templates
-                       if t.vehicle_type_id == vehicle.vehicle_type_id]
+                       if t.vehicle_type_id == vehicle.vehicle_type_id
+                       and not t.vehicle_brand_id]
         if type_matches:
             return type_matches[0]
         global_matches = [t for t in templates
@@ -137,6 +179,24 @@ class RegistrationDueCalculationService:
             template.notify_before_days if template and template.notify_before_days
             else self.default_notify_before_days)
 
+        # Both of these are read by app/modules/api/vehicles.py to build
+        # the React Vehicle Detail screen's Registration Status panel
+        # ("Plate Schedule" / "Latest OR / CR No."). Pre-formatted here,
+        # once, rather than in the API layer, so the Jinja detail
+        # screen -- the working spec this payload exists to match --
+        # and the API response can never disagree about what they mean.
+        plate_schedule_label = (
+            f"Month {lto_month}, Week {lto_week}"
+            if lto_month and lto_week else None)
+
+        def _or_cr_label(registration):
+            if registration is None:
+                return None
+            if not registration.or_number and not registration.cr_number:
+                return None
+            return (f"{registration.or_number or '—'} / "
+                    f"{registration.cr_number or '—'}")
+
         def _status_from_expiry(expiry_date):
             days_remaining = (expiry_date - as_of_date).days
             if days_remaining < 0:
@@ -184,6 +244,8 @@ class RegistrationDueCalculationService:
                 "lto_week": lto_week, "calculated_due_date": calculated,
                 "stored_expiry_date": last_reg.expiry_date,
                 "days_remaining": days_remaining, "warning": warning,
+                "plate_schedule": plate_schedule_label,
+                "or_cr_number": _or_cr_label(last_reg),
             }
 
         if vehicle.last_known_registration_expiry is not None:
@@ -205,6 +267,8 @@ class RegistrationDueCalculationService:
                 "lto_week": lto_week, "calculated_due_date": calculated,
                 "stored_expiry_date": vehicle.last_known_registration_expiry,
                 "days_remaining": days_remaining, "warning": warning,
+                "plate_schedule": plate_schedule_label,
+                "or_cr_number": None,
             }
 
         # Neither a digitized registration nor a manually-entered known
@@ -221,6 +285,8 @@ class RegistrationDueCalculationService:
             "calculated_due_date": suggested, "stored_expiry_date": None,
             "days_remaining": (suggested - as_of_date).days if suggested else None,
             "warning": None,
+            "plate_schedule": plate_schedule_label,
+            "or_cr_number": None,
         }
 
     @request_cached("reg_all_due_vehicles")

@@ -192,8 +192,24 @@ class VehicleRegistrationService(BaseTransactionService):
         self._check_registration_rules(vehicle_id, registration_type,
                                        registration_date)
 
-        validity_years = validity_years or DEFAULT_VALIDITY_YEARS.get(
-            registration_type, 1)
+        from app.modules.registration_config.service import (
+            RegistrationTemplateService)
+        from app.modules.transactions.vehicle_registration.models import (
+            RegistrationTransactionChecklistItem)
+        vehicle = VehicleService().get(vehicle_id)
+        template = (RegistrationTemplateService().find_applicable(vehicle)
+                   if vehicle else None)
+
+        # KI-19: the matched template's "Interval (Years)" used to be
+        # ignored entirely -- only an explicit validity_years argument
+        # or the hardcoded DEFAULT_VALIDITY_YEARS ever took effect. An
+        # explicit validity_years (the user overriding it on the form)
+        # still wins; absent that, the template's own interval is the
+        # next most specific source, falling back to the old default
+        # only when neither applies.
+        validity_years = (validity_years or (template.interval_years
+                                             if template else None)
+                          or DEFAULT_VALIDITY_YEARS.get(registration_type, 1))
         expiry_date = registration_date + relativedelta(years=validity_years)
 
         numbering = AutoNumberingService()
@@ -213,13 +229,6 @@ class VehicleRegistrationService(BaseTransactionService):
         db.session.add(reg)
         db.session.flush()
 
-        from app.modules.registration_config.service import (
-            RegistrationTemplateService)
-        from app.modules.transactions.vehicle_registration.models import (
-            RegistrationTransactionChecklistItem)
-        vehicle = VehicleService().get(vehicle_id)
-        template = (RegistrationTemplateService().find_applicable(vehicle)
-                   if vehicle else None)
         if template and template.checklist_items:
             for i in template.checklist_items:
                 db.session.add(RegistrationTransactionChecklistItem(
@@ -328,6 +337,21 @@ class VehicleRegistrationService(BaseTransactionService):
             reg.plate_number = plate_number
             VehicleService().assign_plate(reg.vehicle_id, plate_number)
         reg.status = "COMPLETED"
+
+        # Reported from UAT 2026-10-20: OR/CR entered here, but "the
+        # vehicle info are not updated". Vehicle.cr_number and
+        # Vehicle.last_known_registration_expiry are read directly
+        # elsewhere (MO prints' vehicle_cr_number; the Vehicle Detail
+        # screen's Identification & Compliance panel) -- this
+        # registration becoming the vehicle's newest completed one
+        # must keep both current, the same as a manual data-migration
+        # entry would.
+        from app.modules.master_data.vehicle.models import Vehicle
+        vehicle = db.session.get(Vehicle, reg.vehicle_id)
+        if vehicle is not None:
+            vehicle.cr_number = cr_number
+            vehicle.last_known_registration_expiry = reg.expiry_date
+
         db.session.commit()
         return reg
 

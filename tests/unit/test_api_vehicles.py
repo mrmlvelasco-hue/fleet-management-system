@@ -444,6 +444,58 @@ def test_detail_carries_registration_status(db, client, veh_env):
                         "days_remaining", "source"}
 
 
+def test_detail_registration_status_shows_the_or_cr_of_a_completed_registration(
+        db, client, veh_env):
+    """Reported from UAT 2026-10-20: a driver/officer completes an LTO
+    registration, enters the OR and CR numbers -- and the Vehicle
+    Detail screen's Registration Status panel still shows nothing for
+    "Latest OR / CR No.".
+
+    Root cause: RegistrationDueCalculationService.get_due_status()
+    never returned an `or_cr_number` key at all (in ANY of its three
+    branches), yet app/modules/api/vehicles.py has always read
+    `reg.get("or_cr_number")` to build this exact field -- so it was
+    `None` for every vehicle, regardless of registration history. The
+    Jinja detail screen (the working spec this API payload exists to
+    match) never had this bug: it reads the OR/CR straight off the
+    `last_registration` object it's handed, e.g.
+    `registration_status.last_registration.or_number`. This pins the
+    same OR/CR text down on the API payload the React screen reads.
+    """
+    from app.modules.master_data.vehicle.models import Vehicle
+    from app.modules.transactions.vehicle_registration.models import (
+        VehicleRegistration)
+    from datetime import date
+
+    vid = Vehicle.query.first().id
+    reg = VehicleRegistration(
+        vehicle_id=vid, registration_type="RENEWAL", status="COMPLETED",
+        registration_date=date(2026, 6, 1), expiry_date=date(2027, 6, 1),
+        or_number="OR-9988", cr_number="CR-7766")
+    db.session.add(reg)
+    db.session.commit()
+
+    token = _token(client)
+    _, body = _get(client, f"/api/v1/vehicles/{vid}", token)
+
+    assert body["registration_status"]["or_cr_number"] == "OR-9988 / CR-7766"
+
+
+def test_detail_registration_status_plate_schedule_is_a_readable_string(
+        db, client, veh_env):
+    """Same payload, the companion field: `plate_schedule` must carry
+    the actual Month/Week text the panel's label promises, not `None`
+    for a vehicle whose plate maps to a schedule."""
+    from app.modules.master_data.vehicle.models import Vehicle
+
+    v = Vehicle.query.filter_by(plate_number="AAA-1111").first()
+    token = _token(client)
+    _, body = _get(client, f"/api/v1/vehicles/{v.id}", token)
+
+    assert body["registration_status"]["plate_schedule"]
+    assert "Month" in body["registration_status"]["plate_schedule"]
+
+
 def test_detail_still_serves_the_original_consumers(db, client, veh_env):
     """This endpoint predates the React screen. Fields it already
     returned must keep working."""
