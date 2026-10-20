@@ -93,6 +93,16 @@ def _visible_movement(move_id, api_user):
     return mv if mv.id in visible_ids else None
 
 
+def _visible_checklist(checklist_id, api_user):
+    """Reuses VehicleChecklistService.get_visible -- the exact same rule
+    the checklist endpoints themselves enforce, so a driver who may open
+    their own inspection may also open its evidence photos, and nobody
+    else can."""
+    from app.modules.transactions.vehicle_checklist.service import (
+        VehicleChecklistService)
+    return VehicleChecklistService().get_visible(checklist_id, api_user)
+
+
 def _visible_atd(atd_id, api_user):
     """Return the ATD when it is visible to the current API user.
 
@@ -170,6 +180,13 @@ def _parent_visible(reference_table, reference_id, api_user):
         return _visible_movement(reference_id, api_user) is not None
     if reference_table == "atds":
         return _visible_atd(reference_id, api_user) is not None
+    if reference_table == "vehicle_checklists":
+        # Missing entirely until 2026-10-20: every checklist evidence
+        # photo fell through to the final `return False` below and
+        # 404'd on download for EVERYONE, including the driver who took
+        # it -- reported from UAT as "we cannot check or view the
+        # picture or download".
+        return _visible_checklist(reference_id, api_user) is not None
     return False
 
 

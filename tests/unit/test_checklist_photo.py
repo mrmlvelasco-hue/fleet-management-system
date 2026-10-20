@@ -229,6 +229,48 @@ def test_a_submitted_inspection_refuses_new_photos(app, client, env):
     assert r.status_code == 409
 
 
+def test_attaching_right_after_marking_ATTENTION_in_the_app_is_refused(
+        app, client, env):
+    """Reported from UAT 2026-10-20: a driver taps ATTENTION, the button
+    highlights, they immediately tap the camera -- and get refused with
+    exactly the "Mark the item first" message, even though the item
+    LOOKS marked.
+
+    The mobile screen only holds the response in local state; it is
+    not sent to the server until Save Draft / Submit (PUT
+    /checklists/<id>). The photo endpoint checks the LINE'S OWN
+    response, which is whatever was last saved. Reproduced here by NOT
+    calling _respond (which writes straight to the DB, bypassing the
+    app entirely) -- the line is exactly as fresh as a server that has
+    never heard about the tap.
+    """
+    cl, _ju = env
+    line = _line(cl)
+
+    r = _post_photo(client, cl, line)
+
+    assert r.status_code == 400
+    assert "Attention or Failed" in json.loads(
+        r.get_data(as_text=True))["message"]
+
+
+def test_saving_the_response_first_then_attaching_succeeds(app, client, env):
+    """The fix's contract from the client's side: send the response to
+    the server (PUT /checklists/<id>, exactly what Save Draft already
+    does) BEFORE the photo POST, and the same request that used to 400
+    now succeeds -- no server change needed for this half of the bug."""
+    cl, _ju = env
+    line = _line(cl)
+
+    save = client.put(
+        f"/api/v1/checklists/{cl.id}",
+        headers=_hdr(client),
+        json={"responses": [{"line_id": line.id, "response": "ATTENTION"}]})
+    assert save.status_code == 200
+
+    assert _post_photo(client, cl, line).status_code == 201
+
+
 def test_the_detail_payload_carries_the_real_letterhead(app, client, env):
     """The printed checklist said "Fleet Management System" -- a
     hardcoded product name standing in for the client's own company."""
@@ -238,6 +280,52 @@ def test_the_detail_payload_carries_the_real_letterhead(app, client, env):
     assert "company" in body
     assert "company_name" in body["company"]
     assert "logo_url" in body["company"]
+
+
+def test_the_photo_can_actually_be_downloaded_by_its_own_driver(
+        app, client, env):
+    """Reported from UAT 2026-10-20 alongside the ATTENTION-timing bug:
+    even a photo that WAS successfully attached could never be viewed
+    or downloaded afterwards -- /attachments/<id>/download 404'd for
+    every checklist photo, for everyone, including the driver who took
+    it.
+
+    Root cause: _parent_visible() in attachments.py has a branch for
+    every other attachable transaction table (maintenance_orders,
+    trip_tickets, atds, ...) but none for "vehicle_checklists" -- so it
+    fell through to its final `return False`, and the download endpoint
+    treated every checklist photo as belonging to nobody.
+    """
+    cl, ju = env
+    line = _line(cl)
+    _respond(cl, line, "FAILED")
+    photo = _post_photo(client, cl, line)
+    attachment_id = json.loads(
+        photo.get_data(as_text=True))["photo_attachment_id"]
+
+    r = client.get(f"/api/v1/attachments/{attachment_id}/download",
+                   headers=_hdr(client))
+
+    assert r.status_code == 200
+    assert r.data == JPEG
+
+
+def test_the_photo_is_refused_to_a_driver_who_cannot_see_the_checklist(
+        app, client, env):
+    """The fix must not turn the download into an open door -- it should
+    follow the SAME visibility VehicleChecklistService.get_visible
+    already enforces on the checklist itself."""
+    cl, _ju = env
+    line = _line(cl)
+    _respond(cl, line, "FAILED")
+    photo = _post_photo(client, cl, line)
+    attachment_id = json.loads(
+        photo.get_data(as_text=True))["photo_attachment_id"]
+
+    r = client.get(f"/api/v1/attachments/{attachment_id}/download",
+                   headers=_hdr(client, "maria"))
+
+    assert r.status_code == 404
 
 
 def test_list_rows_do_NOT_carry_the_letterhead(app, client, env):
