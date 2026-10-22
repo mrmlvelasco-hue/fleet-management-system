@@ -321,3 +321,343 @@ def approval_action(api_user, reference_table, reference_id, action):
 
     entry, row = _load(reference_table, reference_id)
     return jsonify(_summary(entry, row, reference_table))
+
+
+# =====================================================================
+# Mobile Approval Inbox read model (2026-10-22)
+# =====================================================================
+#
+# Source review before building the mobile Approval Inbox found two
+# gaps the existing endpoints could not fill:
+#
+#   * /worklist/pending-approvals and /worklist/inbox carry only the
+#     reference, document type, level and date. The mockup's card also
+#     shows vehicle, branch, requester, amount and status -- filling those
+#     from the phone would mean one detail request PER CARD, each gated
+#     on a different module permission.
+#   * Nothing returned what an approver has already APPROVED or
+#     REJECTED, which the inbox's filter chips need.
+#
+# So this is a READ model over the engine's own tables, nothing more:
+#
+#   * PENDING items are exactly ApprovalTaskService.list_for_user() --
+#     the same eligibility + org-scope + dedup the web worklist uses.
+#     Not a second definition of "who may approve".
+#   * Decided items are only the caller's OWN ApprovalAction rows. You
+#     can always see a decision you made; you never see someone else's.
+#   * Decisions still go through each module's existing
+#     /approve | /reject | /return endpoint, where the engine re-checks
+#     eligibility, level and state on every call.
+
+_INBOX_FILTERS = ("all", "pending", "approved", "rejected")
+_DECISIONS = ("APPROVE", "REJECT", "RETURN")
+#: The document's own money field, in the order BaseTransactionService
+#: resolves its matrix amount, plus or_cr_cost (registration). Tire and
+#: battery are handled separately: their figure is cost + labor_cost.
+_AMOUNT_FIELDS = ("amount", "estimated_cost", "actual_cost",
+                  "total_amount", "or_cr_cost")
+
+
+def _document_amount(row):
+    """The amount shown on a card: the document's own figure, or None.
+
+    Deliberately NOT ApprovalInstance.amount. That is the matrix-routing
+    figure, and BaseTransactionService._approval_amount falls back to
+    Decimal("0") when it finds none of its known fields -- every trip
+    ticket and ATD (no money at all) and every tire/battery transaction
+    (money kept in cost + labor_cost, which it does not read) is routed
+    as 0. On a card that 0 would read as "this costs nothing".
+    """
+    if row is None:
+        return None
+    if hasattr(row, "cost") or hasattr(row, "labor_cost"):
+        parts = [_num(getattr(row, f, None)) for f in ("cost", "labor_cost")]
+        parts = [p for p in parts if p is not None]
+        if parts:
+            return sum(parts)
+    for field in _AMOUNT_FIELDS:
+        value = _num(getattr(row, field, None))
+        if value is not None:
+            return value
+    return None
+
+
+def _model_for_table(reference_table):
+    """The model class mapped to a table, from SQLAlchemy's own registry.
+
+    Generic on purpose: a new approvable module shows up here without
+    this file being told about it -- the failure mode REGISTRY above and
+    worklist._REACT_ROUTE_MAP have each hit when someone forgot to add a
+    line."""
+    from app.extensions import db
+    for mapper in db.Model.registry.mappers:
+        cls = mapper.class_
+        if getattr(cls, "__tablename__", None) == reference_table:
+            return cls
+    return None
+
+
+def _rows_by_ref(refs):
+    """{(table, id): row} for every (table, id) pair, one query per table."""
+    by_table = {}
+    for table, rid in refs:
+        by_table.setdefault(table, set()).add(rid)
+    rows = {}
+    for table, ids in by_table.items():
+        model = _model_for_table(table)
+        if model is None:
+            continue
+        for r in model.query.filter(model.id.in_(ids)).all():
+            rows[(table, r.id)] = r
+    return rows
+
+
+def _iso(value):
+    """ISO text; naive datetimes are marked UTC. Every timestamp here is
+    stored naive in UTC (BaseModel.utcnow, ApprovalAction.acted_at), and
+    a phone that receives it unmarked reads it as LOCAL time -- eight
+    hours off in Manila, on every "Submitted" and "Pending for ..."."""
+    from datetime import datetime, timezone
+    if isinstance(value, datetime) and value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
+def _level_label(instance):
+    """"Fleet Manager" for the level awaiting action -- the engine's own
+    label with its "Role: " / "User: " prefix removed, the same way the
+    My Vehicle maintenance card shows it."""
+    if instance is None or instance.status != "PENDING":
+        return None
+    path = instance.approval_path
+    if path is None:
+        return None
+    from app.core.approval.engine import ApprovalEngine
+    for level in path.levels:
+        if level.level_number == instance.current_level:
+            label = ApprovalEngine()._approver_label(level)
+            for prefix in ("Role: ", "User: "):
+                if label.startswith(prefix):
+                    return label[len(prefix):]
+            return label
+    return None
+
+
+def _card(instance, row, *, task=None, my_action=None):
+    """One inbox card. Every value is read from the engine tables or the
+    document itself; anything not recorded comes back as None so the
+    phone omits it rather than showing an invented value."""
+    from app.extensions import db
+    from app.core.approval.models import ApprovalAction
+    from app.modules.user_management.models import User
+    from app.modules.api.worklist import _REACT_ROUTE_MAP
+
+    vehicle = getattr(row, "vehicle", None) if row is not None else None
+    plate = None
+    vehicle_label = None
+    if vehicle is not None:
+        plate = (getattr(vehicle, "plate_number", None)
+                 or getattr(vehicle, "conduction_number", None))
+        vehicle_label = " ".join(
+            str(x) for x in (getattr(vehicle, "brand", None),
+                             getattr(vehicle, "model", None)) if x) or None
+
+    branch = None
+    if instance.branch_id:
+        from app.modules.master_data.org.models import Branch
+        b = db.session.get(Branch, instance.branch_id)
+        branch = b.name if b else None
+    if branch is None and vehicle is not None and getattr(
+            vehicle, "branch", None):
+        branch = vehicle.branch.name
+
+    requester = None
+    if instance.submitted_by:
+        u = db.session.get(User, instance.submitted_by)
+        requester = (u.full_name or u.username) if u else None
+
+    submit = (ApprovalAction.query
+              .filter_by(instance_id=instance.id, action="SUBMIT")
+              .order_by(ApprovalAction.id.desc()).first())
+
+    amount = _document_amount(row)
+
+    doc_label = (instance.document_type.name
+                 if instance.document_type else None)
+    template = _REACT_ROUTE_MAP.get(instance.reference_table)
+    card = {
+        "reference_table": instance.reference_table,
+        "reference_id": instance.reference_id,
+        "document_label": doc_label,
+        "document_number": (getattr(row, "document_number", None)
+                            or (task.document_number if task else None)),
+        "document_status": getattr(row, "status", None),
+        # The APPROVAL's status -- PENDING / APPROVED / REJECTED /
+        # RETURNED / CANCELLED -- which is what an approver filters by.
+        "status": instance.status,
+        "plate_number": plate,
+        "vehicle_label": vehicle_label,
+        "branch": branch,
+        "requester": requester,
+        "submitted_at": _iso(submit.acted_at) if submit else None,
+        "amount": amount,
+        "current_level": (instance.current_level
+                          if instance.status == "PENDING" else None),
+        "current_level_label": _level_label(instance),
+        # When THIS level reached the approver -- what "Pending for 2
+        # days" counts from. Not submitted_at: at level 2 the clock for
+        # this approver started when level 1 signed.
+        "pending_since": (_iso(task.created_at)
+                          if task is not None and task.created_at else None),
+        "my_action": my_action.action if my_action else None,
+        "my_action_at": _iso(my_action.acted_at) if my_action else None,
+        "my_remarks": my_action.remarks if my_action else None,
+        "url": (template.format(id=instance.reference_id)
+                if template else None),
+    }
+    return card
+
+
+def _matches(card, q):
+    if not q:
+        return True
+    hay = " ".join(str(card.get(k) or "") for k in (
+        "document_number", "plate_number", "vehicle_label", "requester",
+        "document_label", "branch")).lower()
+    return q in hay
+
+
+@bp.route("/approvals/inbox", methods=["GET"])
+@api_auth_required()
+def approval_inbox(api_user):
+    """Cards for the mobile Approval Inbox.
+
+    ?filter=all|pending|approved|rejected (default all), ?q= search over
+    reference, plate, vehicle, requester, document type and branch.
+    `counts` is computed BEFORE filtering, so the chips stay put while
+    the list changes.
+    """
+    from app.core.approval.models import ApprovalAction, ApprovalInstance
+    from app.core.approval.task_service import ApprovalTaskService
+
+    which = (request.args.get("filter") or "all").lower()
+    if which not in _INBOX_FILTERS:
+        return jsonify({"message": f"Unknown filter '{which}'."}), 400
+    q = (request.args.get("q") or "").strip().lower()
+
+    tasks = ApprovalTaskService().list_for_user(api_user)
+
+    # My own decisions, newest first, one per document (the latest).
+    # Capped: this is an inbox, not an audit report.
+    mine = (ApprovalAction.query
+            .filter(ApprovalAction.acted_by == api_user.id,
+                    ApprovalAction.action.in_(_DECISIONS))
+            .order_by(ApprovalAction.id.desc())
+            .limit(300).all())
+    latest_by_instance = {}
+    for a in mine:
+        latest_by_instance.setdefault(a.instance_id, a)
+
+    pending_keys = {(t.reference_table, t.reference_id) for t in tasks}
+    instances = {}
+    if latest_by_instance:
+        for inst in ApprovalInstance.query.filter(
+                ApprovalInstance.id.in_(list(latest_by_instance))).all():
+            instances[inst.id] = inst
+
+    refs = list(pending_keys) + [
+        (i.reference_table, i.reference_id) for i in instances.values()]
+    rows = _rows_by_ref(refs)
+
+    cards = []
+    for t in tasks:
+        inst = t.instance
+        if inst is None:
+            continue
+        c = _card(inst, rows.get((t.reference_table, t.reference_id)),
+                  task=t)
+        c["bucket"] = "pending"
+        cards.append(c)
+
+    for inst_id, action in latest_by_instance.items():
+        inst = instances.get(inst_id)
+        if inst is None:
+            continue
+        key = (inst.reference_table, inst.reference_id)
+        # Back on my desk (returned and resubmitted to my level): it is a
+        # pending task now, already listed above.
+        if key in pending_keys:
+            continue
+        c = _card(inst, rows.get(key), my_action=action)
+        c["bucket"] = {"APPROVE": "approved", "REJECT": "rejected"}.get(
+            action.action, "returned")
+        cards.append(c)
+
+    cards = [c for c in cards if _matches(c, q)]
+    counts = {
+        "all": len(cards),
+        "pending": sum(1 for c in cards if c["bucket"] == "pending"),
+        "approved": sum(1 for c in cards if c["bucket"] == "approved"),
+        "rejected": sum(1 for c in cards if c["bucket"] == "rejected"),
+    }
+    if which != "all":
+        cards = [c for c in cards if c["bucket"] == which]
+
+    # Pending first, oldest waiting at the top -- the one most overdue
+    # for a decision. Decided items after, newest decision first.
+    pending = sorted((c for c in cards if c["bucket"] == "pending"),
+                     key=lambda c: c["pending_since"] or c["submitted_at"]
+                     or "")
+    decided = sorted((c for c in cards if c["bucket"] != "pending"),
+                     key=lambda c: c["my_action_at"] or "", reverse=True)
+    return jsonify({"items": pending + decided, "counts": counts,
+                    "filter": which})
+
+
+@bp.route("/approvals/<reference_table>/<int:reference_id>/card",
+          methods=["GET"])
+@api_auth_required()
+def approval_card(api_user, reference_table, reference_id):
+    """One card plus the approval chain and `can_act`, for the Approval
+    Details screen's header and History tab.
+
+    Visible to the caller only if the document is in their inbox -- an
+    eligible pending approver, or someone who has recorded a decision on
+    it. 404 otherwise (not 403): sequential ids must not become a way to
+    learn which documents exist.
+    """
+    from app.core.approval.engine import ApprovalEngine
+    from app.core.approval.models import ApprovalAction, ApprovalInstance
+    from app.core.approval.task_service import ApprovalTaskService
+    from app.modules.api.approval_eligibility import can_act_on
+
+    if _model_for_table(reference_table) is None:
+        return _not_found()
+    inst = (ApprovalInstance.query
+            .filter_by(reference_table=reference_table,
+                       reference_id=reference_id)
+            .order_by(ApprovalInstance.id.desc()).first())
+    if inst is None:
+        return _not_found()
+
+    task = next((t for t in ApprovalTaskService().list_for_user(api_user)
+                 if t.reference_table == reference_table
+                 and t.reference_id == reference_id), None)
+    mine = (ApprovalAction.query
+            .filter(ApprovalAction.instance_id == inst.id,
+                    ApprovalAction.acted_by == api_user.id,
+                    ApprovalAction.action.in_(_DECISIONS))
+            .order_by(ApprovalAction.id.desc()).first())
+    if task is None and mine is None:
+        return _not_found()
+
+    row = _rows_by_ref([(reference_table, reference_id)]).get(
+        (reference_table, reference_id))
+    card = _card(inst, row, task=task, my_action=mine)
+    engine = ApprovalEngine()
+    card["approval_chain"] = [
+        {**s, "acted_at": _iso(s.get("acted_at"))}
+        for s in engine.get_approval_chain(inst)]
+    card["can_act"] = can_act_on(inst, api_user, card["document_status"])
+    card["is_final_level"] = bool(inst.is_final_level)
+    return jsonify(card)
