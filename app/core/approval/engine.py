@@ -23,6 +23,19 @@ class InvalidStateError(Exception):
     pass
 
 
+def approver_label(level) -> str:
+    """How an approval level's approver is described, everywhere.
+
+    The approval chain, the mobile approval card and the Approval
+    Configuration screen all name an approver the same way because they
+    all call this; ApprovalEngine._approver_label() delegates here so
+    the wording has exactly one definition.
+    """
+    if level.approver_type == "USER":
+        return f"User: {level.user.full_name}" if level.user else "User: (unassigned)"
+    return f"Role: {level.role.name}" if level.role else "Role: (unassigned)"
+
+
 # Module-level event subscribers: callables (event_name, instance) -> None.
 _subscribers: list = []
 
@@ -86,9 +99,7 @@ class ApprovalEngine:
                     "business unit.")
 
     def _approver_label(self, level) -> str:
-        if level.approver_type == "USER":
-            return f"User: {level.user.full_name}" if level.user else "User: (unassigned)"
-        return f"Role: {level.role.name}" if level.role else "Role: (unassigned)"
+        return approver_label(level)
 
     def is_eligible_approver(self, instance, user) -> bool:
         """Non-raising, read-only check — safe to call at display time to

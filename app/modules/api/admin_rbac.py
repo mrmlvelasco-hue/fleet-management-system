@@ -378,12 +378,19 @@ def update_numbering(api_user, sid):
 # ── Approval Paths ──────────────────────────────────────────────────────────
 
 def _path_json(path, *, detail=False):
+    from app.core.approval.engine import approver_label
+    levels_in_order = path.levels or []
     data = {
         "id": path.id,
         "name": path.name,
         "description": path.description,
         "is_active": bool(path.is_active),
-        "level_count": len(path.levels or []),
+        "level_count": len(levels_in_order),
+        # The routing steps, so a screen listing many paths (or many
+        # matrix rows pointing at them) can draw each sequence without
+        # one detail request per row. Same labels the approval chain
+        # uses -- see approver_label().
+        "level_labels": [approver_label(lv) for lv in levels_in_order],
     }
     if detail:
         levels = []
@@ -406,10 +413,16 @@ def _path_json(path, *, detail=False):
 @bp.route("/admin/approval-paths", methods=["GET"])
 @api_auth_required("approvalpath.view")
 def list_approval_paths(api_user):
-    from app.modules.approval_config.models import ApprovalPath
-    from sqlalchemy.orm import selectinload
+    from app.modules.approval_config.models import ApprovalPath, ApprovalLevel
+    from sqlalchemy.orm import selectinload, joinedload
+    # Role and user are eager-loaded because every row now renders its
+    # approver labels; without this the payload would issue one query
+    # per level while building them.
     rows = (ApprovalPath.query
-            .options(selectinload(ApprovalPath.levels))
+            .options(selectinload(ApprovalPath.levels)
+                     .joinedload(ApprovalLevel.role),
+                     selectinload(ApprovalPath.levels)
+                     .joinedload(ApprovalLevel.user))
             .order_by(ApprovalPath.name).all())
     return jsonify({
         "items": [_path_json(p) for p in rows],
