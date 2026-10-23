@@ -324,6 +324,31 @@ class _Prefetch:
 DUE_ELIGIBLE_STATUSES = ("ACTIVE", "IN_REPAIR")
 
 
+_URGENCY_STATUS_RANK = {"OVERDUE": 0, "DUE_SOON": 1, "GOOD": 2}
+
+
+def urgency_key(status, *, next_due_km, next_due_date, odometer,
+                as_of_date, tie=""):
+    """Sort key: most urgent maintenance first.
+
+    Status first (OVERDUE, then DUE_SOON, then GOOD); within a status, the
+    smallest remaining gap -- most negative is furthest past due. Km and
+    days are compared on one rough scale (~50 km a day) so a
+    calendar-only schedule still sorts against a km one.
+
+    One rule shared by a vehicle's own due list (vehicle_due_items) and
+    the dashboard's "Vehicles Due for Maintenance" card, so the two can
+    never rank the same vehicles differently.
+    """
+    km = (next_due_km - (odometer or 0)) if next_due_km is not None else None
+    days = ((next_due_date - as_of_date).days
+            if next_due_date is not None else None)
+    gaps = [g for g in (km, days * 50 if days is not None else None)
+            if g is not None]
+    return (_URGENCY_STATUS_RANK.get(status, 3),
+            min(gaps) if gaps else float("inf"), tie)
+
+
 class PMDueCalculationService:
     def __init__(self):
         params = SystemParameterService()
@@ -651,19 +676,10 @@ class PMDueCalculationService:
                                if order is not None else None),
             })
 
-        def urgency(i):
-            km = (i["next_due_km"] - odo
-                  if i["next_due_km"] is not None else None)
-            days = ((i["next_due_date"] - as_of_date).days
-                    if i["next_due_date"] is not None else None)
-            # Compare km and days on one rough scale (~50 km a day) so a
-            # calendar-only schedule still sorts against a km one.
-            gaps = [g for g in (km, days * 50 if days is not None else None)
-                    if g is not None]
-            return (self._STATUS_RANK.get(i["status"], 3),
-                    min(gaps) if gaps else float("inf"),
-                    i["maintenance_type"] or "")
-        items.sort(key=urgency)
+        items.sort(key=lambda i: urgency_key(
+            i["status"], next_due_km=i["next_due_km"],
+            next_due_date=i["next_due_date"], odometer=odo,
+            as_of_date=as_of_date, tie=i["maintenance_type"] or ""))
         return items
 
     @request_cached("pm_all_due_vehicles")

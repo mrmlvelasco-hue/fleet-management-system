@@ -129,8 +129,18 @@ def _shared_due_rows(api_user, branch_id=None):
     scope_svc = UserOrgScopeService()
     due = [d for d in due
            if scope_svc.covers(api_user.id, branch_id=d["vehicle"].branch_id)]
-    order = {"OVERDUE": 0, "DUE_SOON": 1}
-    due.sort(key=lambda d: order.get(d.get("status"), 2))
+    # Most urgent first -- the dashboard card shows the top five and a
+    # `limit` truncates from the end, so the order IS the selection.
+    # This only put OVERDUE ahead of DUE_SOON, leaving overdue rows in
+    # arbitrary order (25,000 km over, then 10,200 km over, then 41 days
+    # overdue...). Same ranking a vehicle's own due list already uses.
+    from datetime import date as _date
+    from app.core.maintenance.due_calculation_service import urgency_key
+    _today = _date.today()
+    due.sort(key=lambda d: urgency_key(
+        d.get("status"), next_due_km=d.get("next_due_km"),
+        next_due_date=d.get("next_due_date"),
+        odometer=d["vehicle"].current_odometer, as_of_date=_today))
 
     rows = []
     for d in due:
@@ -674,11 +684,18 @@ def dashboard_bootstrap(api_user):
         action_tiles.append({"key": table, "label": label, "icon": icon,
                              "count": count, "url": url})
 
-    due_reg = {"items": [], "total": 0}
+    due_reg = {"items": [], "total": 0, "overdue": 0}
     if can_registration_report:
       try:
           from app.modules.registration_config.service import (
               RegistrationDueCalculationService)
+          from app.modules.user_management.org_scope_service import (
+              UserOrgScopeService)
+          # Was referenced below but never defined in this function: the
+          # NameError was swallowed by the `except`, so this block always
+          # returned an empty list. The card hid it by re-fetching from
+          # /dashboard/due-registration, which defines its own.
+          scope_svc = UserOrgScopeService()
           from datetime import date as _date
           due = RegistrationDueCalculationService().get_all_due_vehicles()
           if branch_id is not None:
@@ -703,9 +720,11 @@ def dashboard_bootstrap(api_user):
                   "expiry_date": expiry.isoformat() if expiry else None,
                   "days_remaining": d.get("days_remaining"),
               })
-          due_reg = {"items": items, "total": len(due)}
+          due_reg = {"items": items, "total": len(due),
+                     "overdue": sum(1 for d in due
+                                    if d.get("status") == "OVERDUE")}
       except Exception:
-          due_reg = {"items": [], "total": 0}
+          due_reg = {"items": [], "total": 0, "overdue": 0}
     return jsonify({
         "summary": {
             "fleet_count": dash.fleet_count(user=api_user, branch_id=branch_id),
@@ -727,6 +746,10 @@ def dashboard_bootstrap(api_user):
         "due_maintenance": {
             "items": due_rows[:limit],
             "total": len(due_rows),
+            # Exact, from the full set -- the client only receives
+            # `limit` rows and cannot count overdue items itself.
+            "overdue": sum(1 for r in due_rows
+                           if r.get("status") == "OVERDUE"),
         },
         "workflow": analytics_wf,
         "trends": trends,
