@@ -191,6 +191,60 @@ class MaintenanceInvoiceService(BaseTransactionService):
         self._recalculate_summary(invoice)
         return line
 
+    def update_line(self, line_id, **fields):
+        """Correct a line that was encoded wrongly, in place.
+
+        Only the fields supplied are touched; the rest of the row keeps
+        its saved values, so correcting a quantity cannot quietly blank
+        a part number.
+
+        The money is NOT taken from the caller. quantity, unit_cost and
+        discount are the only inputs; line_amount, vat_amount and
+        total_amount are recomputed by the same _calculate_line() the
+        add path uses, and the header is rebuilt by the same
+        _recalculate_summary(). A second formula here would let an
+        edited invoice disagree with one keyed in correctly first time.
+
+        Locked exactly as add_line() is: an approved invoice must be
+        reopened, and a closed order refuses the change outright --
+        correcting the money on a document that has already been
+        approved or paid is an amendment, not an edit.
+        """
+        line = db.session.get(MaintenanceInvoiceLine, line_id)
+        if not line:
+            return None
+        invoice = line.invoice
+        if (invoice.status in ("APPROVED", "COMPLETED")
+                or getattr(invoice, "locked", False)):
+            raise InvoiceLockedError(
+                "This invoice is approved and locked. Reopen it first "
+                "before correcting line items.")
+        mo = getattr(invoice, "maintenance_order", None)
+        if mo is not None and mo.status in ("COMPLETED", "CANCELLED"):
+            raise InvoiceLockedError(
+                "This maintenance order is completed and can no longer "
+                "be edited, including its invoices and attachments.")
+
+        for name in ("part_description", "part_number", "specification",
+                     "uom", "expense_category", "charged_to"):
+            if name in fields:
+                setattr(line, name, fields[name])
+
+        # Cast for the same reason add_line() does: these arrive as
+        # strings from a form, and storing the string would break any
+        # later arithmetic over the column.
+        for name in ("quantity", "unit_cost", "discount"):
+            if name in fields:
+                setattr(line, name, Decimal(str(fields[name])))
+
+        line.line_amount, line.vat_amount, line.total_amount = (
+            self._calculate_line(invoice, quantity=line.quantity,
+                                 unit_cost=line.unit_cost,
+                                 discount=line.discount))
+        db.session.commit()
+        self._recalculate_summary(invoice)
+        return line
+
     def remove_line(self, line_id):
         line = db.session.get(MaintenanceInvoiceLine, line_id)
         if not line:
