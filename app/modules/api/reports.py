@@ -94,6 +94,16 @@ def _pms_row_json(r):
     v = r["vehicle"]
     sched = r.get("schedule")
     return {
+        # The ids, so a row can be ACTED on and not just read. The
+        # dashboard's due card links a plate straight to a prefilled
+        # Maintenance Order; "View all" lands here, and this payload
+        # carried display text only -- so the same vehicle became a
+        # dead end at exactly the point someone decided to do
+        # something about it. maintenance_type_id is null when no
+        # schedule applies: the vehicle is still identified, there is
+        # simply no type to prefill.
+        "vehicle_id": v.id,
+        "maintenance_type_id": (sched.maintenance_type_id if sched else None),
         "plate_no": v.plate_number or v.conduction_number,
         "branch": v.branch.name if v.branch else None,
         "cost_center": v.cost_center or None,
@@ -187,6 +197,11 @@ def _registration_row_json(r):
     v = r["vehicle"]
     due = r.get("next_due_date")
     return {
+        # The vehicle, so a row can be acted on rather than only read --
+        # the same gap the PMS compliance rows had: the dashboard card
+        # links a plate to a prefilled renewal, and "View all" landed
+        # on a report that had dropped the id.
+        "vehicle_id": v.id,
         "plate_no": v.plate_number or v.conduction_number,
         "branch": v.branch.name if v.branch else None,
         "make": v.brand,

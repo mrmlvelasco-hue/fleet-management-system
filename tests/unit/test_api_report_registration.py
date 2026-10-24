@@ -118,3 +118,25 @@ def test_bad_branch_id_is_a_clean_400(db, client, env):
     status, _ = _get(client, "/api/v1/reports/registration-expiry?branch_id=x",
                      _token(client))
     assert status == 400
+
+
+# ------------------------------------- acting on a row (2026-10-24)
+
+def test_a_row_carries_the_vehicle_it_is_about(db, client, env):
+    """Same gap as the PMS compliance report: the dashboard's due-
+    registration card links a plate straight to a prefilled renewal,
+    but "View all" and the action list land on this report, where the
+    payload carried display text only -- so the screen listing every
+    expiring registration could not start a renewal for any of them.
+
+    Additive: every existing key is untouched.
+    """
+    status, r = _get(client, "/api/v1/reports/registration-expiry?generate=1",
+                     _token(client))
+    assert status == 200
+    body = json.loads(r.get_data(as_text=True))
+    assert body["rows"], "expected at least one vehicle in the report"
+    for row in body["rows"]:
+        assert row["vehicle_id"] is not None
+        # The fields the report already showed.
+        assert "plate_no" in row and "status" in row

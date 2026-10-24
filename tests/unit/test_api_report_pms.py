@@ -143,3 +143,62 @@ def test_bad_branch_id_is_a_clean_400(db, client, env):
     status, _ = _get(client, "/api/v1/reports/pms-compliance?branch_id=abc",
                      _token(client))
     assert status == 400
+
+
+# ------------------------------------- acting on a row (2026-10-24)
+
+def _due_env(db, env):
+    """A vehicle that is genuinely due, so a row comes back with a
+    schedule behind it."""
+    from app.extensions import db as _db
+    from app.modules.maintenance_config.models import PMSchedule
+    from app.modules.master_data.reference.models import MaintenanceType
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    mt = MaintenanceType.query.filter_by(code="RPT-MT").first()
+    _db.session.add(PMSchedule(maintenance_type_id=mt.id, trigger_mode="KM",
+                               interval_km=5000, cumulative_km=5000,
+                               vehicle_type_id=env["vt"].id))
+    vehicle = VehicleService().create(
+        vehicle_type_id=env["vt"].id, brand="Toyota", model="Vios", year=2024,
+        branch_id=env["branch"].id, conduction_number="RPT-DUE",
+        plate_number="RPT-DUE", current_odometer=40000)
+    _db.session.commit()
+    return vehicle, mt
+
+
+def test_a_row_carries_the_ids_needed_to_raise_its_order(db, client, env):
+    """Reported from UAT: the dashboard's due card links a plate
+    straight to a prefilled Maintenance Order, but "View all" lands on
+    this report, where the same vehicle was a dead end -- the payload
+    carried display text only, so the screen had nothing to link with.
+
+    Additive: every existing key is untouched.
+    """
+    vehicle, mt = _due_env(db, env)
+    status, r = _get(client, "/api/v1/reports/pms-compliance?generate=1",
+                     _token(client))
+    assert status == 200
+    body = json.loads(r.get_data(as_text=True))
+    row = next(x for x in body["rows"] if x["plate_no"] == "RPT-DUE")
+
+    assert row["vehicle_id"] == vehicle.id
+    assert row["maintenance_type_id"] == mt.id
+    # The display fields the report already showed are unchanged.
+    assert row["maintenance_type"] == "PMS"
+    assert row["make"] == "Toyota"
+    assert "status" in row
+
+
+def test_a_vehicle_with_no_schedule_still_reports_a_vehicle_to_act_on(
+        db, client, env):
+    """A vehicle with no applicable schedule has no maintenance type, so
+    an order cannot be prefilled with one -- but the vehicle itself is
+    still identified, so the row stays actionable."""
+    status, r = _get(client, "/api/v1/reports/pms-compliance?generate=1",
+                     _token(client))
+    body = json.loads(r.get_data(as_text=True))
+    rows = [x for x in body["rows"] if x["maintenance_type"] is None]
+    for row in rows:
+        assert row["vehicle_id"] is not None
+        assert row["maintenance_type_id"] is None
