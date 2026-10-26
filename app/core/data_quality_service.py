@@ -417,11 +417,17 @@ class DataQualityService:
         return rows
 
     @request_cached("dq_field_completion")
-    def field_completion(self, user=None) -> list:
+    def field_completion(self, user=None, branch_id=None) -> list:
         """Completion rate per field, worst first -- that ordering is
-        what makes the list actionable."""
+        what makes the list actionable.
+
+        branch_id scopes the rates to one branch, so the screen's branch
+        filter applies here too. request_cached folds the arguments into
+        its key, so a scoped call cannot be served a fleet-wide result
+        cached earlier in the same request.
+        """
         fields = self.scored_fields()
-        vehicles = self._vehicles(user=user)
+        vehicles = self._vehicles(user=user, branch_id=branch_id)
         self._preload_attachments(vehicles)
         total = len(vehicles)
         if not total or not fields:
@@ -444,10 +450,17 @@ class DataQualityService:
         return rows
 
     @request_cached("dq_summary")
-    def summary(self, user=None) -> dict:
-        """Headline figures for the dashboard widget."""
+    def summary(self, user=None, branch_id=None) -> dict:
+        """Headline figures for the dashboard widget.
+
+        branch_id scopes every figure to one branch. Without it the
+        scorecard's branch filter changed only the drill-down list at
+        the bottom of the page while the tiles stayed fleet-wide --
+        reported at the client kickoff, since a branch holding 4 of 157
+        vehicles still showed 157 assessed.
+        """
         fields = self.scored_fields()
-        vehicles = self._vehicles(user=user)
+        vehicles = self._vehicles(user=user, branch_id=branch_id)
         self._preload_attachments(vehicles)
         if not fields or not vehicles:
             return {"score": 0, "rating": "CRITICAL", "vehicles": 0,

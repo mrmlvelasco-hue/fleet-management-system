@@ -379,10 +379,14 @@ def get_data_quality(api_user):
     from app.core.data_quality_service import DataQualityService
     svc = DataQualityService()
     branch_id = request.args.get("branch_id", type=int)
-    summary = svc.summary(user=api_user)
+    # Every figure follows the selected branch. The branch scorecard
+    # deliberately does not: it is the ranking of branches against each
+    # other, and filtering it to a single row would leave nothing to
+    # compare with -- the screen highlights the selected row instead.
+    summary = svc.summary(user=api_user, branch_id=branch_id)
     branches = [_dq_branch(b) for b in svc.branch_scorecard(user=api_user)]
     fields = []
-    for f in svc.field_completion(user=api_user):
+    for f in svc.field_completion(user=api_user, branch_id=branch_id):
         fields.append({
             "label": f["label"],
             "group": f["group"],
