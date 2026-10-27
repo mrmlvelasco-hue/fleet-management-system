@@ -276,7 +276,8 @@ def dashboard_fuel(api_user):
     avg_kmpl is null, never 0, when nothing is measurable: zero km/L
     would read as catastrophic efficiency rather than "no fills yet".
     """
-    from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+    from app.modules.transactions.fuel.analytics import (
+        FuelAnalyticsService, fuel_scope_ids)
 
     try:
         days = int(request.args.get("days", 30))
@@ -294,8 +295,11 @@ def dashboard_fuel(api_user):
             return jsonify({"error": "bad_request",
                             "message": "branch_id must be an integer."}), 400
 
+    # The user's own org scope restricts this panel the same way it
+    # restricts /fuel -- an explicit branch_id can only narrow further.
+    scope_ids = fuel_scope_ids(api_user, branch_id)
     return jsonify(FuelAnalyticsService().summary(
-        user=api_user, days=days, branch_id=branch_id))
+        user=api_user, days=days, branch_id=scope_ids))
 
 
 @bp.route("/dashboard/workflow", methods=["GET"])

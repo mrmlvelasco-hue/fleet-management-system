@@ -1970,7 +1970,7 @@ def maintenanceinvoice_reopen(iid):
 def fuel_list():
     from app.modules.transactions.fuel.models import FuelTransaction
     from app.modules.transactions.fuel.analytics import (
-        FuelAnalyticsService, FuelAnomalyCodes)
+        FuelAnalyticsService, FuelAnomalyCodes, fuel_scope_ids)
     from app.modules.master_data.org.service import BranchService
 
     view = request.args.get("view", "all")
@@ -1985,11 +1985,15 @@ def fuel_list():
         query = query.filter(db.or_(
             FuelTransaction.anomaly_flags.isnot(None),
             FuelTransaction.odometer_status.in_(("SUSPECT", "MISSING"))))
-    if branch_id or vehicle_status:
+
+    # The acting user's OWN org scope decides what they can see at all,
+    # not only the branch_id filter they happened to pick on this page.
+    scope_ids = fuel_scope_ids(current_user, branch_id)
+    if scope_ids is not None or vehicle_status:
         from app.modules.master_data.vehicle.models import Vehicle
         query = query.join(Vehicle, Vehicle.id == FuelTransaction.vehicle_id)
-        if branch_id:
-            query = query.filter(Vehicle.branch_id == branch_id)
+        if scope_ids is not None:
+            query = query.filter(Vehicle.branch_id.in_(scope_ids))
         if vehicle_status:
             query = query.filter(Vehicle.status == vehicle_status)
 
@@ -2017,7 +2021,7 @@ def fuel_list():
     svc = FuelAnalyticsService()
     return render_template("transactions/fuel_list.html", rows=rows,
                            view=view,
-                           summary=svc.summary(),
+                           summary=svc.summary(branch_id=scope_ids),
                            exceptions=svc.exceptions_count(),
                            labels=FuelAnomalyCodes.LABELS,
                            selected_date_from=date_from,
@@ -2031,10 +2035,12 @@ def fuel_list():
 @login_required
 @require_permission("fuel.view")
 def fuel_analytics():
-    from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+    from app.modules.transactions.fuel.analytics import (
+        FuelAnalyticsService, fuel_scope_ids)
     svc = FuelAnalyticsService()
+    scope_ids = fuel_scope_ids(current_user)
     return render_template("transactions/fuel_analytics.html",
-                           summary=svc.summary(),
+                           summary=svc.summary(branch_id=scope_ids),
                            by_vehicle=svc.by_vehicle())
 
 
@@ -2157,8 +2163,15 @@ def fuel_export():
     from flask import send_file
     from app.modules.transactions.fuel.models import FuelTransaction
     from app.modules.transactions.fuel.import_export import export_fuel
-    rows = (FuelTransaction.query
-           .order_by(FuelTransaction.transaction_date.desc()).all())
+    from app.modules.transactions.fuel.analytics import fuel_scope_ids
+    query = FuelTransaction.query
+    scope_ids = fuel_scope_ids(
+        current_user, request.args.get("branch_id", type=int))
+    if scope_ids is not None:
+        from app.modules.master_data.vehicle.models import Vehicle
+        query = query.join(Vehicle, Vehicle.id == FuelTransaction.vehicle_id) \
+                    .filter(Vehicle.branch_id.in_(scope_ids))
+    rows = query.order_by(FuelTransaction.transaction_date.desc()).all()
     return send_file(BytesIO(export_fuel(rows)), as_attachment=True,
                      download_name="Fuel_Transactions.xlsx",
                      mimetype="application/vnd.openxmlformats-officedocument"
@@ -2183,8 +2196,12 @@ def fuel_import():
                                    filename=uploaded.filename,
                                    user_id=current_user.id)
                 if commit:
-                    flash(f"Imported {stats['created']} transaction(s) from "
-                         f"'{uploaded.filename}'.", "success")
+                    if stats.get("committed"):
+                        flash(f"Imported {stats['created']} transaction(s) "
+                             f"from '{uploaded.filename}'.", "success")
+                    else:
+                        flash(stats.get("message") or
+                             "Nothing was imported.", "danger")
             except ValueError as exc:
                 flash(str(exc), "danger")
             except Exception as exc:

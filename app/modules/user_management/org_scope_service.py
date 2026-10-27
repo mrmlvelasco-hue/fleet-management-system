@@ -108,6 +108,29 @@ class UserOrgScopeService:
             db.session.commit()
             self.invalidate_cache()
 
+    def allowed_branch_ids(self, user_id: int):
+        """The branch ids a user's own scope restricts them to, for a
+        plain "scope this query by branch" join -- the same rule every
+        module that does this (Vehicle.list(), the dashboards, Data
+        Quality) already applies inline, pulled out once so a module
+        that has NOT been scoped yet (Fuel, at the time this was
+        added) can reuse it rather than re-deriving it.
+
+        Returns None when the user is UNRESTRICTED -- no scope rows at
+        all (not yet opted into org-scoping, same backward-compatible
+        default as covers()), or a GLOBAL/COMPANY scope -- meaning
+        "don't filter". Returns a (possibly empty) list of branch ids
+        otherwise; an empty list means "no branch this user can see",
+        not "unrestricted".
+        """
+        scopes = self.list_for_user(user_id)
+        if not scopes:
+            return None
+        if any(sc.scope_type in ("GLOBAL", "COMPANY") for sc in scopes):
+            return None
+        return [sc.branch_id for sc in scopes
+               if sc.scope_type == "BRANCH" and sc.branch_id is not None]
+
     def covers(self, user_id: int, branch_id: int = None,
               business_unit_id: int = None) -> bool:
         """Does this user hold a scope that covers the given branch/BU?

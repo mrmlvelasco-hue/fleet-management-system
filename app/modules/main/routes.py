@@ -229,8 +229,10 @@ def dashboard():
     fuel_summary = None
     panel_visible = _panel_visibility(visible_codes)
     if current_user.has_permission("fuel.view") and panel_visible["FUEL_MANAGEMENT"]:
-        from app.modules.transactions.fuel.analytics import FuelAnalyticsService
-        fuel_summary = FuelAnalyticsService().summary(user=current_user)
+        from app.modules.transactions.fuel.analytics import (
+            FuelAnalyticsService, fuel_scope_ids)
+        fuel_summary = FuelAnalyticsService().summary(
+            user=current_user, branch_id=fuel_scope_ids(current_user))
 
     return render_template("main/dashboard.html", cards=cards,
                            for_my_action=for_my_action,

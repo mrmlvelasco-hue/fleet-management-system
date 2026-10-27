@@ -109,3 +109,34 @@ def test_remove_scope(db, env):
     scope = svc.assign(user_a.id, scope_type="BRANCH", branch_id=branch_a.id)
     svc.remove(scope.id)
     assert svc.list_for_user(user_a.id) == []
+
+
+def test_allowed_branch_ids_none_when_user_has_no_scopes(db, env):
+    """Same backward-compatible default as covers(): no scope rows at
+    all means unrestricted, not restricted-to-nothing."""
+    branch_a, branch_b, bu, role, user_a = env
+    assert UserOrgScopeService().allowed_branch_ids(user_a.id) is None
+
+
+def test_allowed_branch_ids_none_for_global_or_company_scope(db, env):
+    branch_a, branch_b, bu, role, user_a = env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="GLOBAL")
+    assert svc.allowed_branch_ids(user_a.id) is None
+
+
+def test_allowed_branch_ids_lists_only_the_users_own_branches(db, env):
+    branch_a, branch_b, bu, role, user_a = env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="BRANCH", branch_id=branch_a.id)
+    assert svc.allowed_branch_ids(user_a.id) == [branch_a.id]
+
+
+def test_allowed_branch_ids_empty_list_when_only_a_bu_scope_is_held(db, env):
+    """A BUSINESS_UNIT-only scope restricts the user but names no
+    branch -- this must come back as an empty list (restricted to
+    nothing BY BRANCH), never None (which would mean unrestricted)."""
+    branch_a, branch_b, bu, role, user_a = env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="BUSINESS_UNIT", business_unit_id=bu.id)
+    assert UserOrgScopeService().allowed_branch_ids(user_a.id) == []

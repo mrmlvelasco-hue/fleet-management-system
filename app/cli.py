@@ -604,6 +604,14 @@ def _seed_system_parameters() -> None:
         ("BATTERY_WARRANTY_WARN_DAYS", "30", "INTEGER", "TIRE_BATTERY",
          "Warn this many days before a battery's warranty ends."),
 
+        # ── Fuel management ─────────────────────────────────────────────
+        ("FUEL_IMPORT_MODE", "ALL_OR_NOTHING", "STRING", "FUEL",
+         "How a fuel statement import commits. ALL_OR_NOTHING (default): "
+         "if any row has a genuine error, nothing in the file is saved. "
+         "PARTIAL: good rows are saved and bad rows are skipped and "
+         "listed. Either way, every row's problems are always shown "
+         "before import."),
+
         # ── Appearance ────────────────────────────────────────────────
         ("SIDEBAR_SKIN_DEFAULT", "classic", "STRING", "APPEARANCE",
          "House style for the sidebar, used for anyone who hasn't "

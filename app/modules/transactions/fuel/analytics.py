@@ -29,6 +29,32 @@ from app.extensions import db
 from app.core.request_cache import request_cached
 
 
+def fuel_scope_ids(user, branch_id=None):
+    """The branch ids a fuel query/summary should be scoped to for this
+    user and an already-requested branch_id filter, if any.
+
+    One shared rule for every fuel screen (API list/export, the Jinja
+    list/export/analytics pages) rather than re-deriving it per screen,
+    which is exactly how the row list and its own KPI summary drifted
+    apart in the first place.
+
+    Returns None for "no filter at all" (an unrestricted user with no
+    explicit branch_id asked for). Otherwise a (possibly empty) list of
+    branch ids; an explicit branch_id outside a restricted user's own
+    scope resolves to an EMPTY list rather than being honoured, so a
+    crafted filter can never reach outside that user's access.
+    """
+    from app.modules.user_management.org_scope_service import (
+        UserOrgScopeService)
+    allowed = (UserOrgScopeService().allowed_branch_ids(user.id)
+              if user is not None else None)
+    if allowed is None:
+        return [branch_id] if branch_id is not None else None
+    if branch_id is not None:
+        return [branch_id] if branch_id in allowed else []
+    return allowed
+
+
 class FuelAnomalyCodes:
     OVER_TANK = "OVER_TANK"
     RAPID_REFILL = "RAPID_REFILL"
@@ -174,6 +200,13 @@ class FuelAnalyticsService:
         header's branch selector. FuelTransaction carries no branch_id
         of its own, so it's scoped through its vehicle, the same join
         every other vehicle-based dashboard count already uses.
+
+        branch_id also accepts a list/tuple/set of ids, for a user
+        restricted to several branches by their own org scope rather
+        than by a single explicit filter -- an empty collection means
+        "none of this user's branches", not "unrestricted", and
+        correctly yields the zero summary below rather than falling
+        back to the whole fleet.
         """
         from app.modules.transactions.fuel.models import FuelTransaction
         from app.modules.master_data.vehicle.models import Vehicle
@@ -182,8 +215,11 @@ class FuelAnalyticsService:
 
         def _scoped(q):
             if branch_id is not None:
-                q = q.join(Vehicle, FuelTransaction.vehicle_id == Vehicle.id) \
-                     .filter(Vehicle.branch_id == branch_id)
+                q = q.join(Vehicle, FuelTransaction.vehicle_id == Vehicle.id)
+                if isinstance(branch_id, (list, tuple, set)):
+                    q = q.filter(Vehicle.branch_id.in_(branch_id))
+                else:
+                    q = q.filter(Vehicle.branch_id == branch_id)
             return q
 
         rows = _scoped(FuelTransaction.query

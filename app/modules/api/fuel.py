@@ -73,7 +73,8 @@ def _stats_json(stats):
 @api_auth_required("fuel.view")
 def list_fuel(api_user):
     from app.modules.transactions.fuel.models import FuelTransaction
-    from app.modules.transactions.fuel.analytics import FuelAnalyticsService
+    from app.modules.transactions.fuel.analytics import (
+        FuelAnalyticsService, fuel_scope_ids)
     from app.modules.master_data.vehicle.models import Vehicle
 
     from datetime import datetime, timedelta
@@ -87,10 +88,16 @@ def list_fuel(api_user):
     vehicle_status = request.args.get("vehicle_status") or ""
     date_from = request.args.get("date_from") or ""
     date_to = request.args.get("date_to") or ""
-    if branch_id or vehicle_status:
+
+    # The acting user's OWN org scope decides what they can see at all;
+    # an explicit branch_id filter can only narrow further, never reach
+    # outside it.
+    scope_ids = fuel_scope_ids(api_user, branch_id)
+
+    if scope_ids is not None or vehicle_status:
         q = q.join(Vehicle, Vehicle.id == FuelTransaction.vehicle_id)
-        if branch_id:
-            q = q.filter(Vehicle.branch_id == branch_id)
+        if scope_ids is not None:
+            q = q.filter(Vehicle.branch_id.in_(scope_ids))
         if vehicle_status:
             q = q.filter(Vehicle.status == vehicle_status)
     if date_from:
@@ -105,11 +112,14 @@ def list_fuel(api_user):
                          < datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1))
         except ValueError:
             pass
+
     page = request.args.get("page", 1, type=int)
     page_size = min(request.args.get("page_size", 25, type=int), 200)
     q = q.order_by(FuelTransaction.transaction_date.desc())
     pagination = q.paginate(page=page, per_page=page_size, error_out=False)
-    raw = FuelAnalyticsService().summary()
+    # The KPI tiles beside the list must describe exactly the same rows
+    # the list itself is scoped to -- never the whole fleet's figures.
+    raw = FuelAnalyticsService().summary(branch_id=scope_ids)
     summary = {}
     for k, v in (raw or {}).items():
         if hasattr(v, "quantize"):
@@ -299,8 +309,19 @@ def fuel_template(api_user):
 def fuel_export(api_user):
     from app.modules.transactions.fuel.models import FuelTransaction
     from app.modules.transactions.fuel.import_export import export_fuel
-    rows = (FuelTransaction.query
-            .order_by(FuelTransaction.transaction_date.desc()).all())
+    from app.modules.transactions.fuel.analytics import fuel_scope_ids
+    from app.modules.master_data.vehicle.models import Vehicle
+
+    q = FuelTransaction.query
+    scope_ids = fuel_scope_ids(
+        api_user, request.args.get("branch_id", type=int))
+    if scope_ids is not None:
+        # Same rule as the list endpoint: an export must never hand a
+        # branch-restricted user a spreadsheet of branches their own
+        # scope doesn't cover.
+        q = q.join(Vehicle, Vehicle.id == FuelTransaction.vehicle_id) \
+             .filter(Vehicle.branch_id.in_(scope_ids))
+    rows = q.order_by(FuelTransaction.transaction_date.desc()).all()
     return send_file(
         BytesIO(export_fuel(rows)),
         as_attachment=True,
