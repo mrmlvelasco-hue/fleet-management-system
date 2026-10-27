@@ -330,6 +330,89 @@ def fuel_export(api_user):
     )
 
 
+def _analysis_filters():
+    return {
+        "year": request.args.get("year", type=int),
+        "branch_id": request.args.get("branch_id", type=int),
+        "department_id": request.args.get("department_id", type=int),
+        "vehicle_type_id": request.args.get("vehicle_type_id", type=int),
+        "fuel_type": request.args.get("fuel_type") or None,
+        "station": request.args.get("station") or None,
+        "plate": request.args.get("plate") or None,
+    }
+
+
+def _month_json(m):
+    return {
+        "month": m["month"],
+        "label": m["label"],
+        "end_odometer": m["end_odometer"],
+        "km_driven": m["km_driven"],
+        "litres": _num(m["litres"]),
+        "total_cost": _num(m["total_cost"]),
+        "km_per_litre": _num(m["km_per_litre"]),
+        "cost_per_km": _num(m["cost_per_km"]),
+        "reason": m["reason"],
+    }
+
+
+def _analysis_row_json(row):
+    return {
+        "vehicle_id": row["vehicle_id"],
+        "plate_number": row["plate_number"],
+        "vehicle_label": row["vehicle_label"],
+        "branch_id": row["branch_id"],
+        "branch_name": row["branch_name"],
+        "department_id": row["department_id"],
+        "department_name": row["department_name"],
+        "months": [_month_json(m) for m in row["months"]],
+    }
+
+
+def _analysis_summary_json(summary):
+    out = dict(summary)
+    for k in ("total_litres", "total_cost", "km_per_litre", "cost_per_km"):
+        out[k] = _num(out.get(k))
+    return out
+
+
+@bp.route("/fuel/analysis", methods=["GET"])
+@api_auth_required("fuel.view")
+def fuel_analysis(api_user):
+    from app.modules.transactions.fuel.monthly_analysis import (
+        FuelMonthlyAnalysisService)
+
+    filters = _analysis_filters()
+    svc = FuelMonthlyAnalysisService()
+    rows = svc.monthly_rows(user=api_user, **filters)
+    year = filters.pop("year", None)
+    summary = svc.fleet_summary(year=year, user=api_user, **filters)
+    return jsonify({
+        "rows": [_analysis_row_json(r) for r in rows],
+        "summary": _analysis_summary_json(summary),
+    })
+
+
+@bp.route("/fuel/analysis/export.xlsx", methods=["GET"])
+@api_auth_required("fuel.view")
+def fuel_analysis_export(api_user):
+    from app.modules.transactions.fuel.monthly_analysis import (
+        FuelMonthlyAnalysisService, export_monthly_analysis_xlsx)
+
+    filters = _analysis_filters()
+    svc = FuelMonthlyAnalysisService()
+    rows = svc.monthly_rows(user=api_user, **filters)
+    year = filters.pop("year", None)
+    summary = svc.fleet_summary(year=year, user=api_user, **filters)
+    xlsx = export_monthly_analysis_xlsx(rows, year=year, fleet_summary=summary)
+    return send_file(
+        BytesIO(xlsx),
+        as_attachment=True,
+        download_name=f"Fuel_Analysis_{summary['year']}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @bp.route("/fuel/import", methods=["POST"])
 @api_auth_required("fuel.create")
 def fuel_import(api_user):
