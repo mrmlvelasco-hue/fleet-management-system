@@ -92,6 +92,7 @@ def test_analysis_returns_rows_and_fleet_summary_for_the_year(
     plates = {r["plate_number"] for r in body["rows"]}
     assert plates == {"FAN-A1"}          # branch-scoped user
     assert len(body["rows"][0]["months"]) == 12
+    assert "begin_odometer" in body["rows"][0]["months"][0]
     assert body["summary"]["year"] == 2026
 
 
@@ -144,6 +145,7 @@ def test_export_xlsx_is_scoped_and_shaped_like_the_client_workbook(
     wb = load_workbook(BytesIO(r.data))
     ws = wb.active
     header_row = [c.value for c in ws[2]]
+    assert "Jan Begin Odometer" in header_row
     assert "Jan End Odometer" in header_row
     assert "Dec Cost/KM" in header_row
 

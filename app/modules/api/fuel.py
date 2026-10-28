@@ -346,6 +346,7 @@ def _month_json(m):
     return {
         "month": m["month"],
         "label": m["label"],
+        "begin_odometer": m["begin_odometer"],
         "end_odometer": m["end_odometer"],
         "km_driven": m["km_driven"],
         "litres": _num(m["litres"]),

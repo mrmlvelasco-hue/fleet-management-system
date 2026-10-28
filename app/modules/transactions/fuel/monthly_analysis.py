@@ -150,6 +150,15 @@ class FuelMonthlyAnalysisService:
 
             months.append({
                 "month": month, "label": MONTH_LABELS[month - 1],
+                # The baseline this month measured FROM -- shown
+                # alongside End Odometer so a reviewer can see where a
+                # month started, not just where it ended. It's the
+                # same chained value used for km_driven above, so it
+                # stays populated even in a NO_ACTIVITY/UNTRUSTED month
+                # (exactly when someone most wants to see what the
+                # vehicle's last known reading was); only a vehicle
+                # with no trustworthy reading at all, ever, shows None.
+                "begin_odometer": baseline,
                 "end_odometer": end_odometer, "km_driven": km_driven,
                 "litres": litres, "total_cost": cost,
                 "km_per_litre": km_per_litre, "cost_per_km": cost_per_km,
@@ -231,8 +240,10 @@ MISSING = "—"   # "-" -- never 0, and never a bare blank cell.
 
 _EXPORT_HEADER = ["Branch", "Department", "Plate / Conduction No.",
                   "Vehicle"]
-_MONTH_BLOCK = ["End Odometer", "KM Driven", "Total Fuel (L)", "KM/L",
-                "Cost/KM", "Total Cost"]
+# Begin Odometer leads the block -- the starting point of the month,
+# read before End Odometer or anything derived from it.
+_MONTH_BLOCK = ["Begin Odometer", "End Odometer", "KM Driven",
+                "Total Fuel (L)", "KM/L", "Cost/KM", "Total Cost"]
 
 
 def _num_or_missing(value):
@@ -287,6 +298,7 @@ def export_monthly_analysis_xlsx(rows, year=None, fleet_summary=None) -> bytes:
             # UNKNOWABLE (not zero) whenever the month has no reason
             # to trust a figure at all.
             out.extend([
+                m["begin_odometer"] if m["begin_odometer"] is not None else MISSING,
                 m["end_odometer"] if m["end_odometer"] is not None else MISSING,
                 m["km_driven"] if m["km_driven"] is not None else MISSING,
                 _num_or_missing(m["litres"]),

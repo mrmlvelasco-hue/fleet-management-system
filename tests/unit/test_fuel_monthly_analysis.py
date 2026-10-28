@@ -85,6 +85,7 @@ def test_fixture_exercises_every_documented_edge_case(db, vehicle):
 
     jan, feb, mar, apr = months[0], months[1], months[2], months[3]
 
+    assert jan["begin_odometer"] == 1000    # Dec 2025's closing reading
     assert jan["end_odometer"] == 1200
     assert jan["km_driven"] == 200          # 1200 - 1000
     assert float(jan["litres"]) == 50
@@ -93,17 +94,24 @@ def test_fixture_exercises_every_documented_edge_case(db, vehicle):
     assert round(float(jan["cost_per_km"]), 2) == 15.0
     assert jan["reason"] is None
 
+    # Begin Odometer still shows the carried-forward starting point even
+    # in a month with no activity or no trustworthy reading -- that's
+    # exactly the figure someone needs to see WHY this month has no KM
+    # Driven, not something to hide along with it.
+    assert feb["begin_odometer"] == 1200    # carried from Jan, Feb itself is empty
     assert feb["end_odometer"] is None
     assert feb["km_driven"] is None
     assert float(feb["litres"]) == 0
     assert feb["reason"] == "NO_ACTIVITY"
 
+    assert mar["begin_odometer"] == 1200    # still Jan's -- Feb had nothing either
     assert mar["end_odometer"] is None      # the only reading was SUSPECT
     assert mar["km_driven"] is None
     assert float(mar["litres"]) == 30       # the fuel was still bought
     assert float(mar["total_cost"]) == 1800
     assert mar["reason"] == "UNTRUSTED_ODOMETER"
 
+    assert apr["begin_odometer"] == 1200    # chained past Feb/Mar to Jan's 1200
     assert apr["end_odometer"] == 1600
     assert apr["km_driven"] == 400          # chained past Feb/Mar to Jan's 1200
     assert float(apr["litres"]) == 40
@@ -123,6 +131,7 @@ def test_no_prior_reading_at_all_is_a_distinct_reason(db, vehicle):
 
     result = FuelMonthlyAnalysisService().monthly_rows(year=2026)
     jan = result[0]["months"][0]
+    assert jan["begin_odometer"] is None    # nothing earlier exists at all
     assert jan["end_odometer"] == 900
     assert jan["km_driven"] is None
     assert jan["reason"] == "NO_BASELINE"
@@ -234,11 +243,16 @@ def test_export_mirrors_the_client_workbook_layout_with_a_dynamic_year(
     # not zero, and must show as an explicit dash.
     header_row = [c.value for c in ws[2]]
     data_row = [c.value for c in ws[3]]
+    jan_begin_odo_col = header_row.index("Jan Begin Odometer")
     jan_end_odo_col = header_row.index("Jan End Odometer")
     jan_km_col = header_row.index("Jan KM Driven")
     jan_kml_col = header_row.index("Jan KM/L")
     jan_cost_km_col = header_row.index("Jan Cost/KM")
-    for col in (jan_end_odo_col, jan_km_col, jan_kml_col, jan_cost_km_col):
+    # Begin Odometer is the FIRST column of the month's block -- the
+    # starting point a reviewer reads before anything else in the group.
+    assert jan_begin_odo_col == jan_end_odo_col - 1
+    for col in (jan_begin_odo_col, jan_end_odo_col, jan_km_col,
+               jan_kml_col, jan_cost_km_col):
         assert data_row[col] == "—"
 
 
