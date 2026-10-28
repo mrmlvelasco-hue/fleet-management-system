@@ -552,6 +552,36 @@ def reference_branches(api_user):
     })
 
 
+@bp.route("/reference/org-companies", methods=["GET"])
+@api_auth_required()
+def reference_org_companies(api_user):
+    """Company picker for the Vehicle form (Stage 3A).
+
+    Gated on auth only, matching /reference/branches: the person
+    enrolling or editing a vehicle needs the list to be fillable, and
+    requiring orgcompany.view would empty the dropdown for everyone who
+    assigns a vehicle to a Company without maintaining that master.
+    """
+    from app.modules.master_data.org.service import OrgCompanyService
+
+    q = (request.args.get("q") or "").strip().lower()
+    rows = OrgCompanyService().list()
+    if q:
+        rows = [c for c in rows
+               if q in (c.short_name or "").lower()
+               or q in (c.company_name or "").lower()]
+    return jsonify({
+        "items": [{
+            "id": c.id, "short_name": c.short_name,
+            "company_name": c.company_name,
+            "label": (f"{c.short_name} ({c.region.name})"
+                     if c.region else c.short_name),
+        } for c in rows[:_PICKER_LIMIT]],
+        "has_more": len(rows) > _PICKER_LIMIT,
+        "total": len(rows),
+    })
+
+
 @bp.route("/reference/users", methods=["GET"])
 @api_auth_required()
 def reference_users(api_user):

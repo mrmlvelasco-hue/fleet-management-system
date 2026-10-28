@@ -203,6 +203,25 @@ def test_branches_are_searchable(db, client, ref_env):
     assert [b["name"] for b in body["items"]] == ["Other Branch"]
 
 
+def test_companies_are_searchable_and_gated_only_on_auth(db, client, ref_env):
+    """Stage 3A: the Vehicle form's Company picker must not require
+    orgcompany.view -- the same reasoning as /reference/branches. The
+    fixture user here holds only vehicle.view."""
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    luzon = RegionService().create(code="LUZ-RS", name="Luzon")
+    san_mateo = AreaDistrictService().create(
+        code="SNM-RS", name="San Mateo", region_id=luzon.id)
+    OrgCompanyService().create(
+        short_name="Excellence", region_id=luzon.id,
+        area_district_id=san_mateo.id)
+    _status, body = _get(client, "/api/v1/reference/org-companies?q=Excel",
+                         _token(client))
+    assert _status == 200
+    assert body["items"][0]["short_name"] == "Excellence"
+    assert "Luzon" in body["items"][0]["label"]
+
+
 def test_users_are_searchable(db, client, ref_env):
     """Flask's api_search feeds a user picker (notify-on-comment,
     approver override). Inactive users are excluded -- assigning work to

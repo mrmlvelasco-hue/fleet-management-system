@@ -40,3 +40,63 @@ class BusinessUnit(db.Model, BaseModel):
     code = db.Column(db.String(20), unique=True, nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
     description = db.Column(db.String(255))
+
+
+class Region(db.Model, BaseModel):
+    """Configurable master (Stage 1 §5/D3): a Company's Region is
+    always one of these, never free text -- the client's own workbook
+    misspelling ("EDL PEtHealth") is exactly the failure mode a
+    dedicated master table exists to prevent."""
+    __tablename__ = "regions"
+    code = db.Column(db.String(20), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.String(255))
+
+
+class AreaDistrict(db.Model, BaseModel):
+    """Belongs to exactly one Region. The same code may be reused in a
+    different Region (e.g. two branches each naming an area "SNM") --
+    the uniqueness key is (code, region), not code alone."""
+    __tablename__ = "areas_districts"
+    code = db.Column(db.String(20), nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    region_id = db.Column(db.Integer, db.ForeignKey("regions.id"),
+                          nullable=False)
+    description = db.Column(db.String(255))
+    region = db.relationship("Region", backref="areas_districts")
+
+    __table_args__ = (
+        db.UniqueConstraint("code", "region_id",
+                            name="uq_area_district_code_region"),
+    )
+
+
+class OrgCompany(db.Model, BaseModel):
+    """Company master data (Stage 1 §5/D2). Deliberately allows the
+    SAME short_name/company_name to repeat under a DIFFERENT Region +
+    Area/District -- Michael's own example is "Excellence" in
+    Luzon/San Mateo and "Excellence" in Visayas/Bacolod, two distinct
+    records -- so uniqueness is on (short_name, region, area), never
+    on short_name alone.
+
+    `legacy_branch_id` is populated only by the Stage 3B migration
+    tool, when a Branch maps to exactly one company; it is never set
+    by this CRUD and never required."""
+    __tablename__ = "org_companies"
+    short_name = db.Column(db.String(80), nullable=False, index=True)
+    company_name = db.Column(db.String(200), nullable=True)
+    region_id = db.Column(db.Integer, db.ForeignKey("regions.id"),
+                          nullable=False)
+    area_district_id = db.Column(db.Integer,
+                                 db.ForeignKey("areas_districts.id"),
+                                 nullable=False)
+    legacy_branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
+                                 nullable=True)
+    region = db.relationship("Region")
+    area_district = db.relationship("AreaDistrict")
+    legacy_branch = db.relationship("Branch")
+
+    __table_args__ = (
+        db.UniqueConstraint("short_name", "region_id", "area_district_id",
+                            name="uq_company_shortname_region_area"),
+    )

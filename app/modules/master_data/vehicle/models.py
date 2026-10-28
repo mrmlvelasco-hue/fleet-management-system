@@ -28,6 +28,14 @@ class Vehicle(db.Model, BaseModel):
     fuel_type = db.Column(db.String(20))          # from Lookup FUEL_TYPE
     branch_id = db.Column(db.Integer,
                           db.ForeignKey("branches.id"), nullable=False)
+    # Stage 3A (D6): the organisational owner going forward. Nullable
+    # until the Stage 3B migration tool backfills it from `branch_id` --
+    # a vehicle created before Stage 3A, or before its branch has been
+    # mapped to a Company, simply has no company yet. Region/Area are
+    # always resolved from THIS, server-side -- never stored on the
+    # vehicle directly, so they can never drift from the Company master.
+    company_id = db.Column(db.Integer, db.ForeignKey("org_companies.id"),
+                           nullable=True)
     department_id = db.Column(db.Integer,
                               db.ForeignKey("departments.id"), nullable=True)
     business_unit_id = db.Column(db.Integer,
@@ -132,6 +140,7 @@ class Vehicle(db.Model, BaseModel):
     vehicle_type = db.relationship("VehicleType")
     branch = db.relationship("Branch")
     department = db.relationship("Department")
+    company = db.relationship("OrgCompany")
 
     @property
     def cost_center(self):

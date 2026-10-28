@@ -51,7 +51,8 @@ bp = Blueprint("master_data", __name__, url_prefix="/master",
 for _mod in ["vehicle", "driver", "tire", "battery", "vendor",
              "branch", "department", "businessunit",
              "vehicletype", "maintenancetype",
-             "vehiclebrand", "vehiclemodel"]:
+             "vehiclebrand", "vehiclemodel",
+             "region", "areadistrict", "orgcompany"]:
     for _act in ["view", "create", "update", "delete"]:
         _code = f"{_mod}.{_act}"
         registry.register(_code, _mod, _act, f"{_act.title()} {_mod}")

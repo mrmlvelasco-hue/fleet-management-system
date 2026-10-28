@@ -918,3 +918,276 @@ def reactivate_mo_transaction_type(api_user, tt_id):
         TransactionTypeService)
     TransactionTypeService().reactivate(tt_id)
     return jsonify({"ok": True})
+
+
+# ── Regions (Stage 3A — D3: configurable master, not free text) ────────────
+
+def _region_json(r):
+    return {
+        "id": r.id,
+        "code": r.code,
+        "name": r.name,
+        "description": r.description,
+        "is_active": bool(r.is_active),
+    }
+
+
+@bp.route("/regions", methods=["GET"])
+@api_auth_required("region.view")
+def list_regions(api_user):
+    from app.modules.master_data.org.service import RegionService
+    q = (request.args.get("q") or "").strip().lower()
+    rows = RegionService().list(include_inactive=True)
+    if q:
+        rows = [r for r in rows
+               if q in " ".join(filter(None, [r.code, r.name])).lower()]
+    payload, err = _page([_region_json(r) for r in rows])
+    return err if err else jsonify(payload)
+
+
+@bp.route("/regions/<int:region_id>", methods=["GET"])
+@api_auth_required("region.view")
+def get_region(api_user, region_id):
+    from app.modules.master_data.org.service import RegionService
+    r = RegionService().get(region_id)
+    if r is None:
+        return _not_found("Region")
+    return jsonify(_region_json(r))
+
+
+@bp.route("/regions", methods=["POST"])
+@api_auth_required("region.create")
+def create_region(api_user):
+    from app.modules.master_data.org.service import (
+        RegionService, DuplicateCodeError)
+    p = request.get_json(silent=True) or {}
+    code = (p.get("code") or "").strip()
+    name = (p.get("name") or "").strip()
+    if not code:
+        return _validation("code is required.", "code")
+    if not name:
+        return _validation("name is required.", "name")
+    try:
+        r = RegionService().create(
+            code=code, name=name, description=(p.get("description") or None))
+    except DuplicateCodeError as e:
+        return _validation(str(e), "code")
+    return jsonify(_region_json(r)), 201
+
+
+@bp.route("/regions/<int:region_id>", methods=["PUT", "PATCH"])
+@api_auth_required("region.update")
+def update_region(api_user, region_id):
+    from app.modules.master_data.org.service import RegionService
+    p = request.get_json(silent=True) or {}
+    fields = {}
+    for k in ("code", "name", "description"):
+        if k in p:
+            fields[k] = (p[k].strip() if isinstance(p[k], str) else p[k]) or None
+    r = RegionService().update(region_id, **fields)
+    if r is None:
+        return _not_found("Region")
+    return jsonify(_region_json(r))
+
+
+@bp.route("/regions/<int:region_id>/deactivate", methods=["POST"])
+@api_auth_required("region.delete")
+def deactivate_region(api_user, region_id):
+    from app.modules.master_data.org.service import RegionService
+    if RegionService().get(region_id) is None:
+        return _not_found("Region")
+    RegionService().deactivate(region_id)
+    return jsonify({"ok": True})
+
+
+# ── Area / District (Stage 3A — belongs to a Region) ────────────────────────
+
+def _area_district_json(a):
+    return {
+        "id": a.id,
+        "code": a.code,
+        "name": a.name,
+        "region_id": a.region_id,
+        "region": a.region.name if a.region else None,
+        "description": a.description,
+        "is_active": bool(a.is_active),
+    }
+
+
+@bp.route("/area-districts", methods=["GET"])
+@api_auth_required("areadistrict.view")
+def list_area_districts(api_user):
+    from app.modules.master_data.org.service import AreaDistrictService
+    region_id = request.args.get("region_id", type=int)
+    if region_id:
+        rows = AreaDistrictService().list_for_region(
+            region_id, include_inactive=True)
+    else:
+        rows = AreaDistrictService().list(include_inactive=True)
+    q = (request.args.get("q") or "").strip().lower()
+    if q:
+        rows = [a for a in rows
+               if q in " ".join(filter(None, [a.code, a.name])).lower()]
+    payload, err = _page([_area_district_json(a) for a in rows])
+    return err if err else jsonify(payload)
+
+
+@bp.route("/area-districts/<int:area_id>", methods=["GET"])
+@api_auth_required("areadistrict.view")
+def get_area_district(api_user, area_id):
+    from app.modules.master_data.org.service import AreaDistrictService
+    a = AreaDistrictService().get(area_id)
+    if a is None:
+        return _not_found("Area/District")
+    return jsonify(_area_district_json(a))
+
+
+@bp.route("/area-districts", methods=["POST"])
+@api_auth_required("areadistrict.create")
+def create_area_district(api_user):
+    from app.modules.master_data.org.service import (
+        AreaDistrictService, DuplicateCodeError, InvalidOrgDataError)
+    p = request.get_json(silent=True) or {}
+    code = (p.get("code") or "").strip()
+    name = (p.get("name") or "").strip()
+    region_id = p.get("region_id")
+    if not code:
+        return _validation("code is required.", "code")
+    if not name:
+        return _validation("name is required.", "name")
+    if not region_id:
+        return _validation("region_id is required.", "region_id")
+    try:
+        a = AreaDistrictService().create(
+            code=code, name=name, region_id=int(region_id),
+            description=(p.get("description") or None))
+    except DuplicateCodeError as e:
+        return _validation(str(e), "code")
+    except InvalidOrgDataError as e:
+        return _validation(str(e), "region_id")
+    return jsonify(_area_district_json(a)), 201
+
+
+@bp.route("/area-districts/<int:area_id>", methods=["PUT", "PATCH"])
+@api_auth_required("areadistrict.update")
+def update_area_district(api_user, area_id):
+    from app.modules.master_data.org.service import AreaDistrictService
+    p = request.get_json(silent=True) or {}
+    fields = {}
+    for k in ("code", "name", "description"):
+        if k in p:
+            fields[k] = (p[k].strip() if isinstance(p[k], str) else p[k]) or None
+    if "region_id" in p and p["region_id"]:
+        fields["region_id"] = int(p["region_id"])
+    a = AreaDistrictService().update(area_id, **fields)
+    if a is None:
+        return _not_found("Area/District")
+    return jsonify(_area_district_json(a))
+
+
+@bp.route("/area-districts/<int:area_id>/deactivate", methods=["POST"])
+@api_auth_required("areadistrict.delete")
+def deactivate_area_district(api_user, area_id):
+    from app.modules.master_data.org.service import AreaDistrictService
+    if AreaDistrictService().get(area_id) is None:
+        return _not_found("Area/District")
+    AreaDistrictService().deactivate(area_id)
+    return jsonify({"ok": True})
+
+
+# ── Companies (Stage 3A — D2: short_name may repeat under a different ──────
+#    Region + Area/District; D5: vendor eligibility and MO vendor rules
+#    read a vehicle's company to resolve its region)
+
+def _org_company_json(c):
+    return {
+        "id": c.id,
+        "short_name": c.short_name,
+        "company_name": c.company_name,
+        "region_id": c.region_id,
+        "region": c.region.name if c.region else None,
+        "area_district_id": c.area_district_id,
+        "area_district": c.area_district.name if c.area_district else None,
+        "legacy_branch_id": c.legacy_branch_id,
+        "is_active": bool(c.is_active),
+    }
+
+
+@bp.route("/org-companies", methods=["GET"])
+@api_auth_required("orgcompany.view")
+def list_org_companies(api_user):
+    from app.modules.master_data.org.service import OrgCompanyService
+    rows = OrgCompanyService().list(include_inactive=True)
+    region_id = request.args.get("region_id", type=int)
+    area_district_id = request.args.get("area_district_id", type=int)
+    if region_id:
+        rows = [c for c in rows if c.region_id == region_id]
+    if area_district_id:
+        rows = [c for c in rows if c.area_district_id == area_district_id]
+    q = (request.args.get("q") or "").strip().lower()
+    if q:
+        rows = [c for c in rows if q in " ".join(filter(
+            None, [c.short_name, c.company_name])).lower()]
+    payload, err = _page([_org_company_json(c) for c in rows])
+    return err if err else jsonify(payload)
+
+
+@bp.route("/org-companies/<int:company_id>", methods=["GET"])
+@api_auth_required("orgcompany.view")
+def get_org_company(api_user, company_id):
+    from app.modules.master_data.org.service import OrgCompanyService
+    c = OrgCompanyService().get(company_id)
+    if c is None:
+        return _not_found("Company")
+    return jsonify(_org_company_json(c))
+
+
+@bp.route("/org-companies", methods=["POST"])
+@api_auth_required("orgcompany.create")
+def create_org_company(api_user):
+    from app.modules.master_data.org.service import (
+        OrgCompanyService, DuplicateCodeError, InvalidOrgDataError)
+    p = request.get_json(silent=True) or {}
+    short_name = (p.get("short_name") or "").strip()
+    if not short_name:
+        return _validation("short_name is required.", "short_name")
+    try:
+        c = OrgCompanyService().create(
+            short_name=short_name,
+            region_id=p.get("region_id"),
+            area_district_id=p.get("area_district_id"),
+            company_name=(p.get("company_name") or None),
+            legacy_branch_id=(p.get("legacy_branch_id") or None))
+    except DuplicateCodeError as e:
+        return _validation(str(e), "short_name")
+    except InvalidOrgDataError as e:
+        return _validation(str(e), "region_id")
+    return jsonify(_org_company_json(c)), 201
+
+
+@bp.route("/org-companies/<int:company_id>", methods=["PUT", "PATCH"])
+@api_auth_required("orgcompany.update")
+def update_org_company(api_user, company_id):
+    from app.modules.master_data.org.service import OrgCompanyService
+    p = request.get_json(silent=True) or {}
+    fields = {}
+    for k in ("short_name", "company_name"):
+        if k in p:
+            fields[k] = (p[k].strip() if isinstance(p[k], str) else p[k]) or None
+    for k in ("region_id", "area_district_id", "legacy_branch_id"):
+        if k in p:
+            fields[k] = (int(p[k]) if p[k] else None)
+    c = OrgCompanyService().update(company_id, **fields)
+    if c is None:
+        return _not_found("Company")
+    return jsonify(_org_company_json(c))
+
+
+@bp.route("/org-companies/<int:company_id>/deactivate", methods=["POST"])
+@api_auth_required("orgcompany.delete")
+def deactivate_org_company(api_user, company_id):
+    from app.modules.master_data.org.service import OrgCompanyService
+    if OrgCompanyService().get(company_id) is None:
+        return _not_found("Company")
+    OrgCompanyService().deactivate(company_id)
+    return jsonify({"ok": True})

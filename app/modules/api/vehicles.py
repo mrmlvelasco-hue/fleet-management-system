@@ -316,6 +316,8 @@ def _serialise(v):
         "current_odometer": v.current_odometer,
         "branch": v.branch.name if v.branch else None,
         "branch_id": v.branch_id,
+        "company": v.company.short_name if v.company else None,
+        "company_id": v.company_id,
     }
 
 
@@ -540,6 +542,12 @@ def detail_json(v):
         "assigned_driver_id": v.assigned_driver_id,
         "branch": v.branch.name if v.branch else None,
         "branch_id": v.branch_id,
+        # Stage 3A (D6): the organisational owner going forward. Region
+        # and Area/District are intentionally NOT duplicated here --
+        # read them from the Company record itself so they can never
+        # drift from it.
+        "company": v.company.short_name if v.company else None,
+        "company_id": v.company_id,
         "department": v.department.name if v.department else None,
         "department_id": v.department_id,
         "assignment": v.assignment,
@@ -770,7 +778,8 @@ _WRITABLE = [
     "has_vtpl_bi", "vtpl_bi_from_date", "vtpl_bi_to_date",
     "has_inland_marine",
     # Assignment & remarks
-    "branch_id", "department_id", "assigned_driver_id", "assignment",
+    "branch_id", "company_id", "department_id", "assigned_driver_id",
+    "assignment",
     "assignment_group_classification", "remarks", "notes",
     "pm_schedule_id", "last_pm_date", "last_pm_odometer",
 ]
