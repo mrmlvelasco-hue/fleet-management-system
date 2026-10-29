@@ -48,6 +48,16 @@ class User(db.Model, BaseModel, UserMixin):
     employee_id = db.Column(db.String(40), nullable=True)
     branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
                           nullable=True)
+    # Stage 3D: the Company counterpart of branch_id.
+    #
+    # branch_id is still THE data-access boundary (NULL = GLOBAL) and
+    # nothing reads this column yet -- populating it does not grant or
+    # remove any access. Switching the boundary over is a separate,
+    # security-sensitive step that also needs the org-scope assignment
+    # UI deferred in v274; until then this is data, not permission.
+    company_id = db.Column(db.Integer,
+                           db.ForeignKey("org_companies.id"),
+                           nullable=True, index=True)
     department_id = db.Column(db.Integer, db.ForeignKey("departments.id"),
                               nullable=True)
     last_login_at = db.Column(db.DateTime, nullable=True)

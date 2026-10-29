@@ -1527,7 +1527,69 @@ def notifications_backfill_document_numbers():
     print(f"Notifications backfill: {updated} updated, {skipped} skipped.")
 
 
+company_cli = AppGroup("company", help="Branch -> Company migration (3D).")
+
+
+def _print_company_report(report):
+    """One table per line, widest-first, so a long run stays readable in
+    a terminal and the outstanding work is the last thing on screen."""
+    for name, stats in sorted(report.get("tables", {}).items()):
+        parts = ", ".join(f"{k}={v}" for k, v in stats.items() if v)
+        click.echo(f"  {name:<32} {parts or 'nothing to do'}")
+    unmapped = report.get("unmapped_branches") or []
+    if unmapped:
+        click.echo("")
+        click.secho(f"  {len(unmapped)} branch(es) have NO Company mapped "
+                    f"-- records under them were left alone:", fg="yellow")
+        for b in unmapped:
+            click.echo(f"    - {b['code']}  {b['name']}")
+        click.echo("  Map them in Master Data -> Branches, then re-run.")
+
+
+@company_cli.command("backfill")
+@click.option("--commit", is_flag=True, default=False,
+              help="Actually write. Omit for a dry-run preview.")
+@with_appcontext
+def company_backfill(commit):
+    """Fill company_id across masters and transactions from each
+    Branch's mapped Company. Safe to re-run; never overwrites a Company
+    already set, never guesses for an unmapped branch."""
+    from app.modules.master_data.org.company_backfill import (
+        CompanyBackfillService)
+    report = CompanyBackfillService().run(dry_run=not commit)
+    mode = "APPLIED" if commit else "DRY RUN (nothing written)"
+    click.secho(f"Company backfill -- {mode}",
+                fg="green" if commit else "cyan", bold=True)
+    _print_company_report(report)
+    if not commit:
+        click.echo("\nRe-run with --commit to apply.")
+
+
+@company_cli.command("reconcile")
+@with_appcontext
+def company_reconcile():
+    """Check the Company axis agrees with the Branch axis. Read-only.
+
+    This is the gate before any code starts reading company_id: it must
+    report BALANCED first.
+    """
+    from app.modules.master_data.org.company_backfill import (
+        CompanyReconciliationService)
+    report = CompanyReconciliationService().run()
+    click.secho("Company / Branch reconciliation", fg="cyan", bold=True)
+    _print_company_report(report)
+    click.echo("")
+    if report["balanced"]:
+        click.secho("  BALANCED -- every record's Company matches its "
+                    "branch's mapping.", fg="green", bold=True)
+    else:
+        click.secho("  NOT BALANCED -- see missing_company / mismatched "
+                    "above. Do not switch any screen to Company yet.",
+                    fg="red", bold=True)
+
+
 def register_cli(app):
+    app.cli.add_command(company_cli)
     app.cli.add_command(ocr_check_command)
     app.cli.add_command(attachments_cli)
     app.cli.add_command(email_cli)

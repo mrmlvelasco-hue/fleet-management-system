@@ -140,6 +140,15 @@ class MaintenanceOrder(db.Model, BaseModel):
     # the "From" branch the report needs to show.
     origin_branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
                                  nullable=True)
+    # Stage 3D: the Company ends of the same transfer. With Branch
+    # retired these carry the Asset Transfer Report's "From" and "To";
+    # Michael's Companies are per-location (one legal company repeated
+    # per Region/Area), so a CAVITE 2 -> SOUTH LUZON 3 move is a real
+    # Company-to-Company move and both ends stay meaningful.
+    destination_company_id = db.Column(
+        db.Integer, db.ForeignKey("org_companies.id"), nullable=True)
+    origin_company_id = db.Column(
+        db.Integer, db.ForeignKey("org_companies.id"), nullable=True)
     # Generated once, at completion, via AutoNumberingService.generate("ATR")
     # -- a separate series from the MO's own document_number (MO-2026-...)
     # since the Asset Transfer Report is treated as its own printable

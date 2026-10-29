@@ -68,6 +68,13 @@ class VehicleChecklist(db.Model, BaseModel):
     # at 300k rows will not reveal.
     branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
                           nullable=True, index=True)
+    # Stage 3D: SNAPSHOT of the org context when this document was
+    # raised -- same rule as ApprovalInstance.company_id (D7), so a
+    # later reassignment never rewrites history. Nullable: documents
+    # raised before this column carry none.
+    company_id = db.Column(db.Integer,
+                           db.ForeignKey("org_companies.id"),
+                           nullable=True, index=True)
     odometer = db.Column(db.Integer, nullable=True)
     # THE most-filtered column once the history becomes a daily log:
     # "what did we find last Tuesday" is the question this table exists

@@ -18,6 +18,18 @@ vendor_branches = db.Table(
               primary_key=True),
 )
 
+# Stage 3D: the Company counterpart of vendor_branches. Vendors serve
+# MANY branches, so the Company side must also be an association -- a
+# vendor serving three Companies could not be recorded on a single
+# column. Additive: vendor_branches is untouched.
+vendor_companies = db.Table(
+    "vendor_companies",
+    db.Column("vendor_id", db.Integer, db.ForeignKey("vendors.id"),
+              primary_key=True),
+    db.Column("company_id", db.Integer, db.ForeignKey("org_companies.id"),
+              primary_key=True),
+)
+
 vendor_business_units = db.Table(
     "vendor_business_units",
     db.Column("vendor_id", db.Integer, db.ForeignKey("vendors.id"),

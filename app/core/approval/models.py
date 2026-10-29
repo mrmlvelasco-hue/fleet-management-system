@@ -103,6 +103,12 @@ class ApprovalTask(db.Model, BaseModel):
                                  nullable=True)
     branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
                           nullable=True)
+    # Stage 3D: Company counterpart of branch_id, mirroring the snapshot
+    # ApprovalInstance.company_id already carries (D7) so a task can be
+    # matched on Company once Branch is retired.
+    company_id = db.Column(db.Integer,
+                           db.ForeignKey("org_companies.id"),
+                           nullable=True, index=True)
     business_unit_id = db.Column(db.Integer,
                                  db.ForeignKey("business_units.id"),
                                  nullable=True)

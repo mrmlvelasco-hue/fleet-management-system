@@ -56,6 +56,13 @@ class VehicleHandoverChecklist(db.Model, BaseModel):
                            nullable=False, index=True)
     branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
                           nullable=True, index=True)
+    # Stage 3D: SNAPSHOT of the org context when this document was
+    # raised -- same rule as ApprovalInstance.company_id (D7), so a
+    # later reassignment never rewrites history. Nullable: documents
+    # raised before this column carry none.
+    company_id = db.Column(db.Integer,
+                           db.ForeignKey("org_companies.id"),
+                           nullable=True, index=True)
 
     #: Linked when the assignee has a Driver record; nullable because
     #: the paper form's "Name of Assignee" is filled for anyone handed a

@@ -45,6 +45,14 @@ class Department(db.Model, BaseModel):
     name = db.Column(db.String(120), nullable=False)
     branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
                           nullable=False)
+    # Stage 3D: organisational owner, carried here so it survives
+    # Branch's retirement. NOTE the uniqueness constraint below is still
+    # (code, branch_id) -- retiring Branch means re-keying it to
+    # (code, company_id), which can collide in existing data and is
+    # therefore a deliberate later step, not part of this additive one.
+    company_id = db.Column(db.Integer,
+                           db.ForeignKey("org_companies.id"),
+                           nullable=True, index=True)
     # The financial allocation code for this department. Nullable: not
     # every organisation tracks cost centres, and every department that
     # already exists predates this field -- making it required would

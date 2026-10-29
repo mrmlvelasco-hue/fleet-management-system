@@ -36,6 +36,12 @@ class Driver(db.Model, BaseModel):
 
     branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
                           nullable=False)
+    # Stage 3D: organisational owner, carried here so it survives
+    # Branch's retirement. Nullable -- an unmapped legacy record is
+    # the normal state until the Company backfill runs.
+    company_id = db.Column(db.Integer,
+                           db.ForeignKey("org_companies.id"),
+                           nullable=True, index=True)
     department_id = db.Column(db.Integer, db.ForeignKey("departments.id"),
                               nullable=True)
     section = db.Column(db.String(100), nullable=True)
