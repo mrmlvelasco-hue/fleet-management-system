@@ -1191,3 +1191,26 @@ def deactivate_org_company(api_user, company_id):
         return _not_found("Company")
     OrgCompanyService().deactivate(company_id)
     return jsonify({"ok": True})
+
+
+@bp.route("/org-companies/migrate-branches", methods=["POST"])
+@api_auth_required("orgcompany.create")
+def migrate_branches_to_companies(api_user):
+    """Stage 3B (D6): upload a Branch -> Company mapping sheet. Dry-run
+    by default (preview only, nothing written); pass commit=1 to apply.
+    Same upload convention as /fuel/import."""
+    from app.modules.master_data.org.company_migration import (
+        import_company_mapping)
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        return jsonify({"error": "validation",
+                        "message": "Choose a file to upload."}), 400
+    commit = request.form.get("commit") == "1"
+    try:
+        stats = import_company_mapping(uploaded.stream, dry_run=not commit)
+    except ValueError as exc:
+        return jsonify({"error": "validation", "message": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": "validation",
+                        "message": f"Could not read the file: {exc}"}), 400
+    return jsonify(stats)
