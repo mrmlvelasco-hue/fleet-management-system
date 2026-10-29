@@ -254,6 +254,64 @@ def list_drivers(api_user):
     })
 
 
+@bp.route("/drivers/import/template", methods=["GET"])
+@api_auth_required("driver.create")
+def driver_import_template_api(api_user):
+    """Fill-in Excel template for the Driver/Assignee bulk import, with
+    this install's own Branch and Department codes on its Reference
+    sheet. Same pattern and permission rule as /vendors/import/template
+    and /vehicles/import/template: importing is creating."""
+    from io import BytesIO
+    from flask import send_file
+    from app.modules.master_data.driver.import_service import build_template
+    return send_file(
+        BytesIO(build_template()), as_attachment=True,
+        download_name="Driver_Assignee_Import_Template.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument"
+                 ".spreadsheetml.sheet")
+
+
+@bp.route("/drivers/import", methods=["POST"])
+@api_auth_required("driver.create")
+def driver_import_api(api_user):
+    """Validate (and, only with commit=1, save) a filled-in template.
+
+    Multipart: `file` (.xlsx), `commit` ("1" to save). A preview is the
+    default, as for vendors/vehicles -- uploading the wrong file saves
+    nothing. Existing employee/license numbers are skipped and reported,
+    never overwritten.
+
+    Returns {dry_run, total_rows, created, skipped,
+             errors: [{row, identifier, problems: [...]}]}.
+    An unreadable file, or one missing required columns, is a 400.
+
+    No photo is ever attached by this route -- see
+    import_service.py's module docstring. REQUIRE_ASSIGNEE_PHOTO (and,
+    if needed, REQUIRE_DRIVER_LICENSE) should be switched off in System
+    Administration for the duration of a bulk import.
+
+    Registered BEFORE /drivers/<int:driver_id>: "import" is not an int,
+    so the order is not load-bearing today, but keeping the literal
+    routes first means a future <employee_number> route cannot capture
+    it.
+    """
+    from app.modules.master_data.driver.import_service import import_drivers
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        return jsonify({"error": "validation",
+                        "message": "Choose a filled-in template file to "
+                                   "upload."}), 400
+    dry_run = request.form.get("commit") != "1"
+    try:
+        stats = import_drivers(uploaded.stream, dry_run=dry_run)
+    except ValueError as exc:          # e.g. missing required columns
+        return jsonify({"error": "validation", "message": str(exc)}), 400
+    except Exception as exc:           # not an .xlsx, corrupt file, ...
+        return jsonify({"error": "validation",
+                        "message": f"Could not read the file: {exc}"}), 400
+    return jsonify({"dry_run": dry_run, **stats})
+
+
 @bp.route("/drivers/summary", methods=["GET"])
 @api_auth_required("driver.view")
 def drivers_summary(api_user):
