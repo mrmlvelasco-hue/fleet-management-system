@@ -1154,10 +1154,16 @@ def create_org_company(api_user):
     try:
         c = OrgCompanyService().create(
             short_name=short_name,
-            region_id=p.get("region_id"),
-            area_district_id=p.get("area_district_id"),
+            # The browser form sends every field as a JSON string (e.g.
+            # "7"), never a number. Coerce to int here -- same as
+            # update_org_company below -- so the service layer's int
+            # comparisons against DB-loaded ids don't spuriously fail.
+            region_id=(int(p["region_id"]) if p.get("region_id") else None),
+            area_district_id=(int(p["area_district_id"])
+                               if p.get("area_district_id") else None),
             company_name=(p.get("company_name") or None),
-            legacy_branch_id=(p.get("legacy_branch_id") or None))
+            legacy_branch_id=(int(p["legacy_branch_id"])
+                               if p.get("legacy_branch_id") else None))
     except DuplicateCodeError as e:
         return _validation(str(e), "short_name")
     except InvalidOrgDataError as e:

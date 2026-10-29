@@ -128,6 +128,20 @@ def test_create_company(db, client, env):
     assert body["region_id"] == env["luzon"].id
 
 
+def test_create_company_accepts_string_ids_from_the_browser_form(db, client, env):
+    # React's SimpleMasterForm keeps every field value as a string, so a
+    # real browser POST sends region_id/area_district_id as JSON strings
+    # (e.g. "7"), never numbers. This reproduces that exact shape for a
+    # genuinely matching Region/Area-District pair, which must succeed.
+    status, body = _post(
+        client, "/api/v1/org-companies", _token(client),
+        {"short_name": "Excellence", "region_id": str(env["luzon"].id),
+         "area_district_id": str(env["san_mateo"].id),
+         "company_name": "Excellence Poultry and Livestock Specialist Inc."})
+    assert status == 201
+    assert body["region_id"] == env["luzon"].id
+
+
 def test_company_mismatched_region_and_area_is_rejected(db, client, env):
     visayas = RegionService().create(code="VIS2", name="Visayas")
     status, body = _post(
