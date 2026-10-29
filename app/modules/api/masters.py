@@ -47,6 +47,12 @@ def _page(rows):
 # ── Branches ────────────────────────────────────────────────────────────────
 
 def _branch_json(b):
+    # company/region/area_district are RESOLVED from the Company record,
+    # never stored on the branch -- same rule as Vehicle (Stage 3A), so
+    # they can never drift from the master. company_id alone would be
+    # ambiguous in a UI: per D2 several Companies share one short_name
+    # and differ only by Region + Area/District.
+    co = b.company
     return {
         "id": b.id,
         "code": b.code,
@@ -55,6 +61,11 @@ def _branch_json(b):
         "city": b.city,
         "phone": b.phone,
         "email": b.email,
+        "company_id": b.company_id,
+        "company": co.short_name if co else None,
+        "region": co.region.name if co and co.region else None,
+        "area_district": (co.area_district.name
+                          if co and co.area_district else None),
         "is_active": bool(b.is_active),
     }
 
@@ -86,7 +97,7 @@ def get_branch(api_user, branch_id):
 @api_auth_required("branch.create")
 def create_branch(api_user):
     from app.modules.master_data.org.service import (
-        BranchService, DuplicateCodeError)
+        BranchService, DuplicateCodeError, InvalidOrgDataError)
     p = request.get_json(silent=True) or {}
     code = (p.get("code") or "").strip()
     name = (p.get("name") or "").strip()
@@ -100,22 +111,37 @@ def create_branch(api_user):
             address=(p.get("address") or None),
             city=(p.get("city") or None),
             phone=(p.get("phone") or None),
-            email=(p.get("email") or None))
+            email=(p.get("email") or None),
+            # The browser form sends ids as strings -- coerce, same as
+            # every other id on this blueprint (see v278).
+            company_id=(int(p["company_id"]) if p.get("company_id")
+                        else None))
     except DuplicateCodeError as e:
         return _validation(str(e), "code")
+    except InvalidOrgDataError as e:
+        return _validation(str(e), "company_id")
     return jsonify(_branch_json(b)), 201
 
 
 @bp.route("/branches/<int:branch_id>", methods=["PUT", "PATCH"])
 @api_auth_required("branch.update")
 def update_branch(api_user, branch_id):
-    from app.modules.master_data.org.service import BranchService
+    from app.modules.master_data.org.service import (
+        BranchService, InvalidOrgDataError)
     p = request.get_json(silent=True) or {}
     fields = {}
     for k in ("code", "name", "address", "city", "phone", "email"):
         if k in p:
             fields[k] = (p[k].strip() if isinstance(p[k], str) else p[k]) or None
-    b = BranchService().update(branch_id, **fields)
+    # Sent explicitly so a blank CLEARS the mapping -- correcting a
+    # wrongly-mapped branch has to be possible, not silently ignored.
+    if "company_id" in p:
+        fields["company_id"] = (int(p["company_id"]) if p["company_id"]
+                                else None)
+    try:
+        b = BranchService().update(branch_id, **fields)
+    except InvalidOrgDataError as e:
+        return _validation(str(e), "company_id")
     if b is None:
         return _not_found("Branch")
     return jsonify(_branch_json(b))

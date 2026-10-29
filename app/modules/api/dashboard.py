@@ -73,6 +73,37 @@ def _requested_branch_id(user):
     return branch_id, None
 
 
+def _requested_company_id(user):
+    """Resolve the dashboard Company filter (Stage 3C).
+
+    Purely a NARROWING filter, deliberately NOT an access boundary:
+    User.branch_id remains the data-access rule until org scopes are
+    assigned (v274) and the Branch axis is retired. So this only ever
+    reduces what the caller could already see -- it can never widen it,
+    whichever Company is asked for.
+
+    Returns (company_id_or_None, error_response_or_None).
+    """
+    raw = request.args.get("company_id")
+    if raw is None or raw == "":
+        return None, None
+    try:
+        company_id = int(raw)
+    except (TypeError, ValueError):
+        return None, (jsonify({
+            "error": "bad_request",
+            "message": "company_id must be an integer."}), 400)
+
+    from app.modules.master_data.org.models import OrgCompany
+    company = OrgCompany.query.filter_by(id=company_id,
+                                         is_active=True).first()
+    if company is None:
+        return None, (jsonify({
+            "error": "bad_request",
+            "message": f"No active company with id {company_id}."}), 400)
+    return company_id, None
+
+
 def _availability(fleet_status: dict):
     """Share of the fleet that is ACTIVE, from the real status counts.
 
@@ -189,10 +220,14 @@ def dashboard_summary(api_user):
     branch_id, error = _requested_branch_id(api_user)
     if error:
         return error
+    company_id, error = _requested_company_id(api_user)
+    if error:
+        return error
 
     dash = DashboardService()
     analytics = DashboardAnalyticsService()
-    fleet_status = analytics.fleet_by_status(user=api_user, branch_id=branch_id)
+    fleet_status = analytics.fleet_by_status(user=api_user, branch_id=branch_id,
+                                             company_id=company_id)
     # Report widgets are permission-gated independently from vehicle.view.
     # A user may legitimately see vehicles without being allowed to see
     # the PMS compliance / due report. Never calculate or return that
@@ -203,7 +238,8 @@ def dashboard_summary(api_user):
                 if can_pm_report else [])
 
     return jsonify({
-        "fleet_count": dash.fleet_count(user=api_user, branch_id=branch_id),
+        "fleet_count": dash.fleet_count(user=api_user, branch_id=branch_id,
+                                        company_id=company_id),
         "maintenance_due_count": len(due_rows),
         "approvals_pending_count": dash.approvals_pending_count(
             api_user, branch_id=branch_id),
@@ -216,6 +252,7 @@ def dashboard_summary(api_user):
             user=api_user, branch_id=branch_id),
         "availability_percentage": _availability(fleet_status),
         "branch_id": branch_id,
+        "company_id": company_id,
     })
 
 
@@ -233,8 +270,11 @@ def dashboard_fleet_status(api_user):
     branch_id, error = _requested_branch_id(api_user)
     if error:
         return error
+    company_id, error = _requested_company_id(api_user)
+    if error:
+        return error
     return jsonify(DashboardAnalyticsService().fleet_by_status(
-        user=api_user, branch_id=branch_id))
+        user=api_user, branch_id=branch_id, company_id=company_id))
 
 
 @bp.route("/dashboard/charts", methods=["GET"])
@@ -388,6 +428,39 @@ def dashboard_branches(api_user):
         ],
         "global_access": global_access,
         "selected_branch_id": api_user.branch_id,
+    })
+
+
+@bp.route("/dashboard/companies", methods=["GET"])
+@api_auth_required("vehicle.view")
+def dashboard_companies(api_user):
+    """Companies this user may filter the dashboard by (Stage 3C).
+
+    Same reasoning as /dashboard/branches: the dropdown is populated from
+    here, never from a list in the React source, so a Company added in
+    Master Data appears in the filter with no frontend deploy.
+
+    The label carries short name + Region + Area/District because per D2
+    the short_name repeats across Regions/Areas -- the picker is where
+    that ambiguity would otherwise surface as several identical options.
+    A branch-scoped user is offered only the Company their own branch
+    rolls up to, so the filter can never suggest data they may not see.
+    """
+    from app.extensions import db
+    from app.modules.api.reference import _company_label
+    from app.modules.master_data.org.models import Branch, OrgCompany
+
+    q = OrgCompany.query.filter_by(is_active=True)
+    if api_user.branch_id is not None:
+        branch = db.session.get(Branch, api_user.branch_id)
+        own = getattr(branch, "company_id", None)
+        # No mapped Company yet means nothing to offer -- an empty list,
+        # not every Company in the system.
+        q = q.filter(OrgCompany.id == own) if own else q.filter(db.false())
+    companies = q.order_by(OrgCompany.short_name).all()
+    return jsonify({
+        "items": [{"id": c.id, "short_name": c.short_name,
+                   "label": _company_label(c)} for c in companies],
     })
 
 
@@ -583,6 +656,9 @@ def dashboard_bootstrap(api_user):
     branch_id, error = _requested_branch_id(api_user)
     if error:
         return error
+    company_id, error = _requested_company_id(api_user)
+    if error:
+        return error
     try:
         limit = int(request.args.get("limit", 20))
     except (TypeError, ValueError):
@@ -592,7 +668,8 @@ def dashboard_bootstrap(api_user):
 
     dash = DashboardService()
     analytics = DashboardAnalyticsService()
-    fleet_status = analytics.fleet_by_status(user=api_user, branch_id=branch_id)
+    fleet_status = analytics.fleet_by_status(user=api_user, branch_id=branch_id,
+                                             company_id=company_id)
 
     can_pm_report = api_user.has_permission("reportpmscompliance.view")
     can_registration_report = api_user.has_permission("reportregistrationexpiry.view")
@@ -618,6 +695,19 @@ def dashboard_bootstrap(api_user):
         {"id": b.id, "code": b.code, "name": b.name}
         for b in branch_rows
     ]
+    # Companies ride along in the same one-shot payload as branches, so
+    # the Company filter costs no extra round trip during the
+    # Branch->Company transition when both filters are on screen.
+    from app.modules.api.reference import _company_label
+    from app.modules.master_data.org.models import OrgCompany
+    _coq = OrgCompany.query.filter_by(is_active=True)
+    if api_user.branch_id is not None:
+        _own = next((b.company_id for b in branch_rows), None)
+        _coq = _coq.filter(OrgCompany.id == _own) if _own else _coq.filter(
+            db.false())
+    companies = [{"id": c.id, "short_name": c.short_name,
+                  "label": _company_label(c)}
+                 for c in _coq.order_by(OrgCompany.short_name).all()]
 
     awaiting = {"items": [], "total": 0}
     tasks = []
@@ -763,6 +853,7 @@ def dashboard_bootstrap(api_user):
             "global_access": global_access,
             "selected_branch_id": api_user.branch_id,
         },
+        "companies": {"items": companies},
         "awaiting_approval": awaiting,
         "action_tiles": action_tiles,
         "due_registration": due_reg,

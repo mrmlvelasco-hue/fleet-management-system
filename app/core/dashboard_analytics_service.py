@@ -78,7 +78,8 @@ class DashboardAnalyticsService:
         return [b for b in visible if b == branch_id]
 
     @request_cached("chart_fleet_by_status")
-    def fleet_by_status(self, user=None, branch_id=None) -> dict:
+    def fleet_by_status(self, user=None, branch_id=None,
+                        company_id=None) -> dict:
         from app.modules.master_data.vehicle.models import Vehicle
         q = (db.session.query(Vehicle.status, func.count(Vehicle.id))
             .filter(Vehicle.is_active.is_(True))
@@ -86,6 +87,12 @@ class DashboardAnalyticsService:
         branch_ids = self._scoped_branch_ids(user, branch_id)
         if branch_ids is not None:
             q = q.filter(Vehicle.branch_id.in_(branch_ids))
+        if company_id:
+            # Stage 3C: narrow by EFFECTIVE Company, the same shared
+            # predicate the KPI counts use, so the chart and the tile
+            # above it can never disagree.
+            from app.core.company_resolution import company_filter
+            q = q.filter(company_filter(Vehicle, company_id))
         rows = q.all()
         labels = [r[0] for r in rows]
         return {

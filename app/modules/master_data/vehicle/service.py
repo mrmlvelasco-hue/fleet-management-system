@@ -321,7 +321,7 @@ class VehicleService:
         return None
 
     def list(self, include_inactive=False, branch_id=None, user=None,
-             include_disposed=False):
+             include_disposed=False, company_id=None):
         from sqlalchemy.orm import joinedload
         # Matches exactly what vehicle_list.html accesses per row
         # (v.vehicle_type.name, v.branch.name) -- without this, listing
@@ -341,6 +341,12 @@ class VehicleService:
             q = q.filter(Vehicle.status != "DISPOSED")
         if branch_id:
             q = q.filter_by(branch_id=branch_id)
+        if company_id:
+            # Effective Company: the vehicle's own, else its branch's.
+            # One shared definition so this count and the list screen
+            # can never disagree about what belongs to a Company.
+            from app.core.company_resolution import company_filter
+            q = q.filter(company_filter(Vehicle, company_id))
         records = q.order_by(Vehicle.brand, Vehicle.model).all()
         if user is None:
             return records

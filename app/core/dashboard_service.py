@@ -23,9 +23,16 @@ class DashboardService:
     calls are unchanged.
     """
 
-    def fleet_count(self, user=None, branch_id=None) -> int:
+    def fleet_count(self, user=None, branch_id=None, company_id=None) -> int:
+        # Stage 3C: company_id narrows by EFFECTIVE Company (the
+        # vehicle's own, else its branch's). It composes with branch_id
+        # rather than replacing it -- during the Branch->Company
+        # transition both filters are offered, and asking for a branch
+        # outside the chosen Company must narrow to nothing, not
+        # silently drop one of the two.
         return len(VehicleService().list(include_inactive=False, user=user,
-                                         branch_id=branch_id))
+                                         branch_id=branch_id,
+                                         company_id=company_id))
 
     def tire_stock_count(self, user=None, branch_id=None) -> int:
         return len(TireService().list(status="IN_STOCK", user=user,

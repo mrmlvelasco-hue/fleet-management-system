@@ -43,9 +43,25 @@ class _BaseMasterService:
 class BranchService(_BaseMasterService):
     model = Branch
 
+    @staticmethod
+    def _validate_company(kwargs):
+        """A branch may point at a Company (v277) -- validated HERE, in the
+        service, not in the route, so every caller (CRUD API, migration
+        tool, CLI) gets the same guarantee. A null/blank value is a
+        legitimate "not mapped yet" and is normalised to None."""
+        if "company_id" not in kwargs:
+            return
+        raw = kwargs["company_id"]
+        if raw in (None, ""):
+            kwargs["company_id"] = None
+            return
+        if db.session.get(OrgCompany, raw) is None:
+            raise InvalidOrgDataError("That Company does not exist.")
+
     def create(self, code, name, **kwargs):
         if Branch.query.filter_by(code=code).first():
             raise DuplicateCodeError(f"Branch code '{code}' already exists.")
+        self._validate_company(kwargs)
         obj = Branch(code=code, name=name, **kwargs)
         db.session.add(obj)
         db.session.commit()
@@ -55,6 +71,7 @@ class BranchService(_BaseMasterService):
         obj = db.session.get(Branch, record_id)
         if obj is None:
             return None
+        self._validate_company(kwargs)
         for k, v in kwargs.items():
             setattr(obj, k, v)
         db.session.commit()
