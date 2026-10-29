@@ -222,6 +222,34 @@ def test_companies_are_searchable_and_gated_only_on_auth(db, client, ref_env):
     assert "Luzon" in body["items"][0]["label"]
 
 
+def test_company_picker_labels_carry_region_and_area_district(
+        db, client, ref_env):
+    """Per D2 the SAME short_name legitimately repeats under a different
+    Region + Area/District, so the picker label is the only thing telling
+    two "Excellence" rows apart. Region alone is not enough: a real fleet
+    has several Areas/Districts inside one Region (South Luzon holds
+    CAVITE 2, South Luzon and SOUTH LUZON 3), which a Region-only label
+    renders as three identical, unpickable options."""
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    south = RegionService().create(code="SL-RS", name="South Luzon")
+    cavite2 = AreaDistrictService().create(
+        code="CAV2-RS", name="CAVITE 2", region_id=south.id)
+    sl3 = AreaDistrictService().create(
+        code="SL3-RS", name="SOUTH LUZON 3", region_id=south.id)
+    OrgCompanyService().create(short_name="Excellence", region_id=south.id,
+                               area_district_id=cavite2.id)
+    OrgCompanyService().create(short_name="Excellence", region_id=south.id,
+                               area_district_id=sl3.id)
+    _status, body = _get(client, "/api/v1/reference/org-companies?q=Excel",
+                         _token(client))
+    assert _status == 200
+    labels = sorted(i["label"] for i in body["items"])
+    assert labels == ["Excellence (South Luzon / CAVITE 2)",
+                      "Excellence (South Luzon / SOUTH LUZON 3)"]
+    assert len(set(labels)) == len(labels)
+
+
 def test_users_are_searchable(db, client, ref_env):
     """Flask's api_search feeds a user picker (notify-on-comment,
     approver override). Inactive users are excluded -- assigning work to

@@ -552,6 +552,14 @@ def reference_branches(api_user):
     })
 
 
+def _company_label(c):
+    """One Company rendered for a picker: short name plus the Region and
+    Area/District that make it unique (D2's own uniqueness key). Falls
+    back gracefully if either side is somehow missing."""
+    parts = [p.name for p in (c.region, c.area_district) if p is not None]
+    return f"{c.short_name} ({' / '.join(parts)})" if parts else c.short_name
+
+
 @bp.route("/reference/org-companies", methods=["GET"])
 @api_auth_required()
 def reference_org_companies(api_user):
@@ -574,8 +582,12 @@ def reference_org_companies(api_user):
         "items": [{
             "id": c.id, "short_name": c.short_name,
             "company_name": c.company_name,
-            "label": (f"{c.short_name} ({c.region.name})"
-                     if c.region else c.short_name),
+            # Per D2 the same short_name legitimately repeats under a
+            # different Region + Area/District, so BOTH are needed to
+            # tell two rows apart -- a real fleet has several
+            # Areas/Districts inside one Region, which a Region-only
+            # label renders as identical, unpickable options.
+            "label": _company_label(c),
         } for c in rows[:_PICKER_LIMIT]],
         "has_more": len(rows) > _PICKER_LIMIT,
         "total": len(rows),
