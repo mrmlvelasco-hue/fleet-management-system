@@ -21,6 +21,16 @@ nothing is ever duplicated. When a NEW Company is created, its
 documented convention) -- only from the FIRST row that creates it, if
 several branches turn out to consolidate under the same Company.
 
+**Branch.company_id (Stage 3B follow-up):** every row's Branch also
+gets its `company_id` backfilled to the resolved Company -- the EDL
+Group hierarchy's real storage (one Company has several Branches: San
+Mateo, Cavite 2, South Luzon, ...), so any branch-scoped master data
+(Driver/Assignee, Department, ...) can read Company straight off its
+own branch_id with no column of its own. Same never-overwrite rule as
+Vehicle: a Branch whose company_id is already set (manually, or by an
+earlier run) is left alone and counted separately, never clobbered by
+a later or corrected sheet.
+
 **Recommended follow-up (not done here):** `_load_rows`/`_norm`/
 `_map_headers` below intentionally duplicate the equivalent helpers in
 `fuel/import_export.py` rather than importing them, because those are
@@ -129,6 +139,8 @@ def import_company_mapping(file_stream, dry_run: bool = True) -> dict:
         "companies_matched_existing": [],
         "vehicles_updated": 0,
         "vehicles_already_assigned_skipped": 0,
+        "branches_updated": 0,
+        "branches_already_assigned_skipped": 0,
         "errors": [],
     }
 
@@ -244,15 +256,25 @@ def import_company_mapping(file_stream, dry_run: bool = True) -> dict:
             created_this_run[triple_key] = company
 
         if dry_run:
-            # Preview the vehicle impact even for a company that would
-            # only be created on apply — the branch's vehicles are
-            # already known regardless.
+            # Preview the Branch/vehicle impact even for a company that
+            # would only be created on apply — whether branch.company_id
+            # is already set is already known regardless of `company`.
+            if branch.company_id is not None:
+                stats["branches_already_assigned_skipped"] += 1
+            else:
+                stats["branches_updated"] += 1
             for v in Vehicle.query.filter_by(branch_id=branch.id).all():
                 if v.company_id is not None:
                     stats["vehicles_already_assigned_skipped"] += 1
                 else:
                     stats["vehicles_updated"] += 1
             continue
+
+        if branch.company_id is not None:
+            stats["branches_already_assigned_skipped"] += 1
+        else:
+            branch.company_id = company.id
+            stats["branches_updated"] += 1
 
         for v in Vehicle.query.filter_by(branch_id=branch.id).all():
             if v.company_id is not None:

@@ -99,6 +99,7 @@ def test_commit_1_applies_the_mapping(db, client, env):
     body = json.loads(r.get_data(as_text=True))
     assert r.status_code == 200
     assert body["applied"] is True
+    assert body["branches_updated"] == 1
     assert OrgCompany.query.filter_by(short_name="Migrate API Co").count() == 1
 
 

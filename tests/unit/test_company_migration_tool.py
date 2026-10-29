@@ -75,9 +75,11 @@ def test_dry_run_previews_without_writing_anything(db, vt):
     assert result["applied"] is False
     assert len(result["companies_created"]) == 1
     assert result["vehicles_updated"] == 1
+    assert result["branches_updated"] == 1
     assert result["errors"] == []
     # Nothing actually written.
     assert OrgCompany.query.count() == 0
+    assert branch.company_id is None
 
 
 def test_apply_creates_the_company_and_backfills_the_vehicle(db, vt):
@@ -93,6 +95,7 @@ def test_apply_creates_the_company_and_backfills_the_vehicle(db, vt):
 
     assert result["applied"] is True
     assert result["vehicles_updated"] == 1
+    assert result["branches_updated"] == 1
     company = OrgCompany.query.filter_by(short_name="Excellence Mig2").first()
     assert company is not None
     assert company.region_id == region.id
@@ -101,6 +104,8 @@ def test_apply_creates_the_company_and_backfills_the_vehicle(db, vt):
     assert company.legacy_branch_id == branch.id
     _db.session.refresh(vehicle)
     assert vehicle.company_id == company.id
+    _db.session.refresh(branch)
+    assert branch.company_id == company.id
 
 
 def test_apply_never_overwrites_a_manually_assigned_company(db, vt):
@@ -124,6 +129,54 @@ def test_apply_never_overwrites_a_manually_assigned_company(db, vt):
     assert result["vehicles_updated"] == 0
     _db.session.refresh(vehicle)
     assert vehicle.company_id == manual_company.id
+
+
+def test_apply_never_overwrites_a_manually_assigned_branch_company(db, vt):
+    """Same never-overwrite rule as Vehicle, now for Branch: a Branch
+    whose company_id an admin (or an earlier run) already set is left
+    alone, even when this sheet names a different Company for it."""
+    branch = _branch("MIG-003B")
+    region = RegionService().create(code="RG-MIG3B", name="Luzon Mig3B")
+    area = AreaDistrictService().create(code="AD-MIG3B", name="Area Mig3B",
+                                        region_id=region.id)
+    manual_company = OrgCompanyService().create(
+        short_name="Manually Set Branch Co", region_id=region.id,
+        area_district_id=area.id)
+    branch.company_id = manual_company.id
+    _db.session.commit()
+
+    file_stream = _xlsx([("MIG-003B", "Some Other Co", None,
+                          "RG-MIG3B", "AD-MIG3B")])
+    result = import_company_mapping(file_stream, dry_run=False)
+
+    assert result["branches_already_assigned_skipped"] == 1
+    assert result["branches_updated"] == 0
+    _db.session.refresh(branch)
+    assert branch.company_id == manual_company.id
+
+
+def test_each_branch_under_a_shared_company_gets_its_own_company_id(db, vt):
+    """The EDL Group hierarchy: several Branches (San Mateo, Cavite 2,
+    ...) under ONE Company -- each Branch's own company_id is set
+    independently, all pointing at the same shared Company record."""
+    branch_1 = _branch("MIG-SAME-B1")
+    branch_2 = _branch("MIG-SAME-B2")
+    region = RegionService().create(code="RG-SAME-B", name="Region Same B")
+    AreaDistrictService().create(code="AD-SAME-B", name="Area Same B",
+                                 region_id=region.id)
+
+    file_stream = _xlsx([
+        ("MIG-SAME-B1", "Shared Branch Co", None, "RG-SAME-B", "AD-SAME-B"),
+        ("MIG-SAME-B2", "Shared Branch Co", None, "RG-SAME-B", "AD-SAME-B"),
+    ])
+    result = import_company_mapping(file_stream, dry_run=False)
+
+    assert result["branches_updated"] == 2
+    company = OrgCompany.query.filter_by(short_name="Shared Branch Co").first()
+    _db.session.refresh(branch_1)
+    _db.session.refresh(branch_2)
+    assert branch_1.company_id == company.id
+    assert branch_2.company_id == company.id
 
 
 # ── D2: same short_name, different Region/Area-District ────────────
@@ -284,6 +337,8 @@ def test_applying_the_same_file_twice_creates_no_duplicates_and_no_double_counts
     assert len(result["companies_matched_existing"]) == 1
     assert result["vehicles_updated"] == 0
     assert result["vehicles_already_assigned_skipped"] == 1
+    assert result["branches_updated"] == 0
+    assert result["branches_already_assigned_skipped"] == 1
 
 
 # ── The actual 16-company synthetic dataset Michael asked for ──────
@@ -337,6 +392,7 @@ def test_sixteen_company_synthetic_dataset_with_duplicate_short_names(db, vt):
 
     assert result["errors"] == []
     assert result["vehicles_updated"] == 16
+    assert result["branches_updated"] == 16
     assert OrgCompany.query.filter_by(short_name="Excellence").count() == 2
     assert OrgCompany.query.filter_by(short_name="Golden Grain").count() == 2
     assert OrgCompany.query.count() == 16  # 16 rows, no two share a triple
@@ -344,8 +400,10 @@ def test_sixteen_company_synthetic_dataset_with_duplicate_short_names(db, vt):
     for branch, vehicle, (short_name, rcode, acode) in zip(
             branches, vehicles, rows_spec):
         _db.session.refresh(vehicle)
+        _db.session.refresh(branch)
         company = db.session.get(OrgCompany, vehicle.company_id)
         assert company is not None
         assert company.short_name == short_name
         assert company.region_id == regions[rcode].id
         assert company.area_district_id == areas[acode].id
+        assert branch.company_id == company.id

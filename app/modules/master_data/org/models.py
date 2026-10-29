@@ -15,6 +15,29 @@ class Branch(db.Model, BaseModel):
                                 nullable=True)
     manager = db.relationship("User", foreign_keys=[manager_user_id])
 
+    # Stage 3B follow-up: ONE Company per Branch (the EDL Group
+    # hierarchy -- a Company such as "Excellence" has several Branches
+    # under it, e.g. San Mateo, Cavite 2, South Luzon). Stored here,
+    # once, rather than duplicated as its own company_id column on
+    # every branch-scoped master (Driver, Department, ...): anything
+    # that already has branch_id gets Company for free via
+    # `branch.company_id`, with no schema change and no separate
+    # migration of its own.
+    #
+    # Nullable because this predates the real Branch->Company mapping
+    # sheet -- every existing Branch is simply unassigned until the
+    # migration tool (company_migration.py) sets it.
+    #
+    # Vehicle keeps its OWN company_id (Stage 3A/3B) rather than always
+    # deriving it from branch_id -- that column is the deliberate,
+    # per-vehicle override Stage 3A already allows (a vehicle manually
+    # reassigned to a different Company than its Branch's default).
+    # This column is the DEFAULT every branch-scoped record without its
+    # own override inherits; it is not meant to replace that override.
+    company_id = db.Column(db.Integer, db.ForeignKey("org_companies.id"),
+                           nullable=True)
+    company = db.relationship("OrgCompany", foreign_keys=[company_id])
+
 
 class Department(db.Model, BaseModel):
     __tablename__ = "departments"
@@ -94,7 +117,7 @@ class OrgCompany(db.Model, BaseModel):
                                  nullable=True)
     region = db.relationship("Region")
     area_district = db.relationship("AreaDistrict")
-    legacy_branch = db.relationship("Branch")
+    legacy_branch = db.relationship("Branch", foreign_keys=[legacy_branch_id])
 
     __table_args__ = (
         db.UniqueConstraint("short_name", "region_id", "area_district_id",
