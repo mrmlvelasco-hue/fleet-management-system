@@ -739,6 +739,14 @@ def _scope_json(s):
         "business_unit_id": s.business_unit_id,
         "business_unit_name": (s.business_unit.name
                                if getattr(s, "business_unit", None) else None),
+        "company_id": s.company_id,
+        "company_name": (s.company.short_name
+                         if getattr(s, "company", None) else None),
+        "region_id": s.region_id,
+        "region_name": (s.region.name if getattr(s, "region", None) else None),
+        "area_district_id": s.area_district_id,
+        "area_district_name": (s.area_district.name
+                               if getattr(s, "area_district", None) else None),
     }
 
 
@@ -780,7 +788,10 @@ def user_org_scope_add(api_user, uid):
         scope = UserOrgScopeService().assign(
             uid, scope_type=(p.get("scope_type") or "").upper(),
             branch_id=p.get("branch_id"),
-            business_unit_id=p.get("business_unit_id"))
+            business_unit_id=p.get("business_unit_id"),
+            company_id=p.get("company_id"),
+            region_id=p.get("region_id"),
+            area_district_id=p.get("area_district_id"))
     except InvalidScopeError as e:
         return jsonify({"error": "validation_error",
                         "message": str(e)}), 400

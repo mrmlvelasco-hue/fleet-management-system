@@ -29,6 +29,8 @@ import pytest
 from app.core.security.password import hash_password
 from app.extensions import db
 from app.modules.master_data.org.models import Branch
+from app.modules.master_data.org.service import (
+    RegionService, AreaDistrictService, OrgCompanyService)
 from app.modules.user_management.models import Permission, Role, User
 from app.modules.user_management.org_scope_service import UserOrgScopeService
 
@@ -169,3 +171,47 @@ def test_an_unknown_user_is_a_404(app, client, env):
     r = client.get("/api/v1/admin/users/999999/org-scopes",
                    headers=_hdr(client))
     assert r.status_code == 404
+
+
+# ── Stage 3B: ORG_COMPANY/ORG_REGION/ORG_AREA_DISTRICT over the API ────
+
+@pytest.fixture()
+def org_env(app, env):
+    admin, target, b1, b2 = env
+    region = RegionService().create(code="RG-API", name="Luzon API")
+    area = AreaDistrictService().create(code="AD-API", name="San Mateo API",
+                                        region_id=region.id)
+    company = OrgCompanyService().create(short_name="Excellence API",
+                                         region_id=region.id,
+                                         area_district_id=area.id)
+    return admin, target, region, area, company
+
+
+def test_assigning_an_org_company_scope(app, client, org_env):
+    admin, target, region, area, company = org_env
+    r = client.post(f"/api/v1/admin/users/{target.id}/org-scopes",
+                    headers=_hdr(client),
+                    json={"scope_type": "ORG_COMPANY", "company_id": company.id})
+    assert r.status_code == 201
+    body = _body(r)
+    assert body["company_id"] == company.id
+    assert body["company_name"] == "Excellence API"
+    svc = UserOrgScopeService()
+    assert svc.covers(target.id, company_id=company.id) is True
+
+
+def test_assigning_an_org_region_scope(app, client, org_env):
+    admin, target, region, area, company = org_env
+    r = client.post(f"/api/v1/admin/users/{target.id}/org-scopes",
+                    headers=_hdr(client),
+                    json={"scope_type": "ORG_REGION", "region_id": region.id})
+    assert r.status_code == 201
+    assert _body(r)["region_id"] == region.id
+    assert UserOrgScopeService().covers(target.id, company_id=company.id) is True
+
+
+def test_an_org_company_scope_without_a_company_is_refused(app, client, org_env):
+    admin, target, region, area, company = org_env
+    r = client.post(f"/api/v1/admin/users/{target.id}/org-scopes",
+                    headers=_hdr(client), json={"scope_type": "ORG_COMPANY"})
+    assert r.status_code == 400

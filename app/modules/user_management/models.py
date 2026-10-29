@@ -151,20 +151,39 @@ class UserOrgScope(db.Model, BaseModel):
     """Organizational scope a user is authorized to act within for
     approval purposes — independent of Role, since the same Role (e.g.
     "Fleet Manager") may be held by different users in different branches.
-    A user can have multiple scope rows (multi-branch access)."""
+    A user can have multiple scope rows (multi-branch access).
+
+    Stage 3B note: "COMPANY" (below) is a legacy value that predates the
+    multi-company org model (Stage 3A) and means "unrestricted", exactly
+    like GLOBAL -- it is NOT scoped to one company and has no company_id
+    behind it. It is left exactly as-is for backward compatibility.
+    ORG_COMPANY / ORG_REGION / ORG_AREA_DISTRICT are the real per-company
+    scopes, deliberately given distinct names so adding them could never
+    silently redefine what any existing "COMPANY" row means."""
     __tablename__ = "user_org_scopes"
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    # BRANCH | BUSINESS_UNIT | COMPANY | GLOBAL
+    # BRANCH | BUSINESS_UNIT | COMPANY | GLOBAL | ORG_COMPANY | ORG_REGION |
+    # ORG_AREA_DISTRICT
     scope_type = db.Column(db.String(20), nullable=False)
     branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
                           nullable=True)
     business_unit_id = db.Column(db.Integer,
                                  db.ForeignKey("business_units.id"),
                                  nullable=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("org_companies.id"),
+                           nullable=True)
+    region_id = db.Column(db.Integer, db.ForeignKey("regions.id"),
+                          nullable=True)
+    area_district_id = db.Column(db.Integer,
+                                 db.ForeignKey("areas_districts.id"),
+                                 nullable=True)
 
     user = db.relationship("User", backref="org_scopes")
     branch = db.relationship("Branch")
     business_unit = db.relationship("BusinessUnit")
+    company = db.relationship("OrgCompany")
+    region = db.relationship("Region")
+    area_district = db.relationship("AreaDistrict")
 
 
 class PasswordHistory(db.Model, BaseModel):

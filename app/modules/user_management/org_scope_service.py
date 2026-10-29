@@ -6,7 +6,15 @@ unit, unless they hold COMPANY/GLOBAL scope."""
 from app.extensions import db
 from app.modules.user_management.models import UserOrgScope
 
-VALID_SCOPE_TYPES = {"BRANCH", "BUSINESS_UNIT", "COMPANY", "GLOBAL"}
+VALID_SCOPE_TYPES = {"BRANCH", "BUSINESS_UNIT", "COMPANY", "GLOBAL",
+                     "ORG_COMPANY", "ORG_REGION", "ORG_AREA_DISTRICT"}
+
+# Stage 3B: these three are the real per-company scopes, kept deliberately
+# separate from the legacy "COMPANY" value (which means unrestricted, same
+# as GLOBAL -- see UserOrgScope's docstring). Covering any of these means
+# the scope narrows the user to one Company/Region/Area-District rather
+# than opening everything up.
+ORG_SCOPE_TYPES = {"ORG_COMPANY", "ORG_REGION", "ORG_AREA_DISTRICT"}
 
 
 class InvalidScopeError(Exception):
@@ -15,7 +23,9 @@ class InvalidScopeError(Exception):
 
 class UserOrgScopeService:
     def assign(self, user_id: int, *, scope_type: str, branch_id: int = None,
-               business_unit_id: int = None) -> UserOrgScope:
+               business_unit_id: int = None, company_id: int = None,
+               region_id: int = None, area_district_id: int = None
+               ) -> UserOrgScope:
         if scope_type not in VALID_SCOPE_TYPES:
             raise InvalidScopeError(
                 f"'{scope_type}' is not a valid scope type. Must be one "
@@ -25,11 +35,25 @@ class UserOrgScopeService:
         if scope_type == "BUSINESS_UNIT" and not business_unit_id:
             raise InvalidScopeError(
                 "BUSINESS_UNIT scope requires a business_unit_id.")
+        if scope_type == "ORG_COMPANY" and not company_id:
+            raise InvalidScopeError(
+                "ORG_COMPANY scope requires a company_id.")
+        if scope_type == "ORG_REGION" and not region_id:
+            raise InvalidScopeError(
+                "ORG_REGION scope requires a region_id.")
+        if scope_type == "ORG_AREA_DISTRICT" and not area_district_id:
+            raise InvalidScopeError(
+                "ORG_AREA_DISTRICT scope requires an area_district_id.")
 
-        scope = UserOrgScope(user_id=user_id, scope_type=scope_type,
-                            branch_id=branch_id if scope_type == "BRANCH" else None,
-                            business_unit_id=business_unit_id
-                            if scope_type == "BUSINESS_UNIT" else None)
+        scope = UserOrgScope(
+            user_id=user_id, scope_type=scope_type,
+            branch_id=branch_id if scope_type == "BRANCH" else None,
+            business_unit_id=business_unit_id
+            if scope_type == "BUSINESS_UNIT" else None,
+            company_id=company_id if scope_type == "ORG_COMPANY" else None,
+            region_id=region_id if scope_type == "ORG_REGION" else None,
+            area_district_id=area_district_id
+            if scope_type == "ORG_AREA_DISTRICT" else None)
         db.session.add(scope)
         db.session.commit()
         # A request that GRANTS a scope and then re-reads it must not
@@ -131,11 +155,25 @@ class UserOrgScopeService:
         return [sc.branch_id for sc in scopes
                if sc.scope_type == "BRANCH" and sc.branch_id is not None]
 
-    def covers(self, user_id: int, branch_id: int = None,
-              business_unit_id: int = None) -> bool:
-        """Does this user hold a scope that covers the given branch/BU?
+    @staticmethod
+    def _company_org_ids(company_id: int):
+        """The (region_id, area_district_id) the given Company is filed
+        under, for resolving ORG_REGION/ORG_AREA_DISTRICT coverage — a
+        scope holder never needs to know every Company in their Region,
+        just the Region itself. Returns (None, None) if the company_id
+        does not resolve (defensive; should not happen in practice)."""
+        from app.modules.master_data.org.models import OrgCompany
+        company = db.session.get(OrgCompany, company_id)
+        if company is None:
+            return None, None
+        return company.region_id, company.area_district_id
 
-        No branch/BU passed at all → nothing to check → True (backward
+    def covers(self, user_id: int, branch_id: int = None,
+              business_unit_id: int = None, company_id: int = None) -> bool:
+        """Does this user hold a scope that covers the given branch/BU/
+        Company?
+
+        No context passed at all → nothing to check → True (backward
         compatibility for approval instances with no recorded org
         context).
 
@@ -145,12 +183,15 @@ class UserOrgScopeService:
         been explicitly assigned a scope yet — only users an admin has
         actually configured a UserOrgScope for become restricted to it).
         """
-        if branch_id is None and business_unit_id is None:
+        if branch_id is None and business_unit_id is None and company_id is None:
             return True
 
         scopes = self.list_for_user(user_id)
         if not scopes:
             return True
+
+        company_region_id = company_area_id = None
+        company_org_ids_resolved = False
 
         for scope in scopes:
             if scope.scope_type in ("GLOBAL", "COMPANY"):
@@ -161,4 +202,19 @@ class UserOrgScopeService:
             if (scope.scope_type == "BUSINESS_UNIT" and business_unit_id is not None
                     and scope.business_unit_id == business_unit_id):
                 return True
+            if scope.scope_type == "ORG_COMPANY" and company_id is not None \
+                    and scope.company_id == company_id:
+                return True
+            if scope.scope_type in ("ORG_REGION", "ORG_AREA_DISTRICT") \
+                    and company_id is not None:
+                if not company_org_ids_resolved:
+                    company_region_id, company_area_id = \
+                        self._company_org_ids(company_id)
+                    company_org_ids_resolved = True
+                if scope.scope_type == "ORG_REGION" \
+                        and scope.region_id == company_region_id:
+                    return True
+                if scope.scope_type == "ORG_AREA_DISTRICT" \
+                        and scope.area_district_id == company_area_id:
+                    return True
         return False

@@ -92,11 +92,12 @@ class ApprovalEngine:
             # backward compatibility for modules that don't pass one).
             if not UserOrgScopeService().covers(
                     user.id, branch_id=instance.branch_id,
-                    business_unit_id=instance.business_unit_id):
+                    business_unit_id=instance.business_unit_id,
+                    company_id=instance.company_id):
                 raise NotEligibleApproverError(
                     "You hold the approver role, but your organizational "
                     "scope does not cover this transaction's branch/"
-                    "business unit.")
+                    "business unit/company.")
 
     def _approver_label(self, level) -> str:
         return approver_label(level)
@@ -227,7 +228,8 @@ class ApprovalEngine:
 
     def submit(self, document_type_code, reference_table, reference_id,
                amount=None, user=None, branch_id=None,
-               business_unit_id=None, document_number=None) -> ApprovalInstance:
+               business_unit_id=None, company_id=None,
+               document_number=None) -> ApprovalInstance:
         dt = self.doc_types.get_by_code(document_type_code)
         if dt is None:
             raise InvalidStateError(
@@ -259,6 +261,7 @@ class ApprovalEngine:
             document_type_id=dt.id, reference_table=reference_table,
             reference_id=reference_id, amount=amount,
             branch_id=branch_id, business_unit_id=business_unit_id,
+            company_id=company_id,
             submitted_by=user.id if user else None)
         db.session.add(instance)
         db.session.flush()

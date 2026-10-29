@@ -24,6 +24,11 @@ class ApprovalInstance(db.Model, BaseModel):
     business_unit_id = db.Column(db.Integer,
                                  db.ForeignKey("business_units.id"),
                                  nullable=True)
+    # Stage 3B (D4): the vehicle/transaction's Company at submission time,
+    # snapshotted the same way branch_id/business_unit_id already are —
+    # NULL means "no company context recorded", same role-only fallback.
+    company_id = db.Column(db.Integer, db.ForeignKey("org_companies.id"),
+                           nullable=True)
     current_level = db.Column(db.Integer, default=0, nullable=False)
     # DRAFT | PENDING | APPROVED | REJECTED | RETURNED | CANCELLED
     status = db.Column(db.String(12), default="DRAFT", nullable=False, index=True)

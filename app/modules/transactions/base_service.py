@@ -145,6 +145,22 @@ class BaseTransactionService:
                 continue
         return None
 
+    def _infer_company_id(self, record):
+        """Stage 3B (D4/D7) equivalent of _infer_branch_id: best-effort
+        Company context for ORG_COMPANY/ORG_REGION/ORG_AREA_DISTRICT
+        approval eligibility, with the same no-code-change-per-module and
+        backward-compatible-None-fallback guarantees."""
+        for path in ("vehicle.company_id", "company_id"):
+            obj = record
+            try:
+                for attr in path.split("."):
+                    obj = getattr(obj, attr)
+                if obj is not None:
+                    return obj
+            except AttributeError:
+                continue
+        return None
+
     # Field names each module uses for the value the Approval Matrix is
     # banded on. Checked in order, first non-None wins.
     #
@@ -204,6 +220,7 @@ class BaseTransactionService:
             self.document_type_code, self.reference_table, record_id,
             amount=self._approval_amount(record), user=user,
             branch_id=self._infer_branch_id(record),
+            company_id=self._infer_company_id(record),
             document_number=getattr(record, "document_number", None))
         record.approval_instance_id = instance.id
         db.session.commit()
@@ -235,6 +252,8 @@ class BaseTransactionService:
         inst = record.approval_instance
         if inst is not None and inst.branch_id is None:
             inst.branch_id = self._infer_branch_id(record)
+        if inst is not None and inst.company_id is None:
+            inst.company_id = self._infer_company_id(record)
         self.engine.resubmit(inst, user, remarks)
         db.session.commit()
         return record
