@@ -35,6 +35,15 @@ def _vehicle_matches(vehicle, filters: dict) -> bool:
     if filters.get("branch_id"):
         if vehicle.branch_id != int(filters["branch_id"]):
             return False
+    if filters.get("company_id"):
+        # EFFECTIVE Company -- the vehicle's own, else its branch's --
+        # using the one shared definition, so a report, its export and
+        # the dashboard can never disagree about what belongs to a
+        # Company. This single check covers both report screens AND
+        # both Excel exports, which all route through here.
+        from app.core.company_resolution import effective_company_id
+        if effective_company_id(vehicle) != int(filters["company_id"]):
+            return False
     if filters.get("vehicle_type_id"):
         if vehicle.vehicle_type_id != int(filters["vehicle_type_id"]):
             return False
@@ -188,6 +197,11 @@ def generate_vehicle_register_xlsx(filters: dict = None, user=None):
         groups = [g for g in groups
                   if any(v.get("branch_id") == wanted
                          for v in g["vehicles"])]
+    if filters.get("company_id"):
+        wanted_co = int(filters["company_id"])
+        groups = [g for g in groups
+                  if any(v.get("company_id") == wanted_co
+                         for v in g["vehicles"])]
 
     columns = [
         ("Plate No.", "plate_number"), ("Assignee", "assignee"),
@@ -304,6 +318,14 @@ def generate_maintenance_cost_summary_xlsx(filters: dict = None, user=None):
     if filters.get("branch_id"):
         query = query.filter(MaintenanceOrder.vehicle.has(
             branch_id=int(filters["branch_id"])))
+    if filters.get("company_id"):
+        # Must mirror _cost_orders in reports.py exactly, or the export
+        # would contain a different set than the screen it was taken
+        # from.
+        from app.core.company_resolution import company_filter
+        from app.modules.master_data.vehicle.models import Vehicle
+        query = query.filter(MaintenanceOrder.vehicle.has(
+            company_filter(Vehicle, int(filters["company_id"]))))
     if filters.get("vehicle_type_id"):
         query = query.filter(MaintenanceOrder.vehicle.has(
             vehicle_type_id=int(filters["vehicle_type_id"])))

@@ -51,7 +51,8 @@ def _pms_filters():
     """The four filter keys, parsed and validated. Returns (filters,
     error_response)."""
     filters = {}
-    for key in ("branch_id", "vehicle_type_id", "maintenance_type_id"):
+    for key in ("branch_id", "company_id", "vehicle_type_id",
+                "maintenance_type_id"):
         val, err = _int_arg(key)
         if err:
             return None, err
@@ -159,7 +160,7 @@ def report_pms_compliance_export(api_user):
 
 def _registration_filters():
     filters = {}
-    for key in ("branch_id", "vehicle_type_id"):
+    for key in ("branch_id", "company_id", "vehicle_type_id"):
         val, err = _int_arg(key)
         if err:
             return None, err
@@ -248,7 +249,7 @@ def report_registration_expiry_export(api_user):
 
 def _cost_filters():
     filters = {}
-    for key in ("branch_id", "vehicle_type_id"):
+    for key in ("branch_id", "company_id", "vehicle_type_id"):
         val, err = _int_arg(key)
         if err:
             return None, err
@@ -274,6 +275,13 @@ def _cost_orders(filters, user):
     if filters.get("branch_id"):
         query = query.filter(MaintenanceOrder.vehicle.has(
             branch_id=filters["branch_id"]))
+    if filters.get("company_id"):
+        # An MO carries no Company of its own, so it is scoped through
+        # its vehicle -- the same join the branch filter above uses.
+        from app.core.company_resolution import company_filter
+        from app.modules.master_data.vehicle.models import Vehicle
+        query = query.filter(MaintenanceOrder.vehicle.has(
+            company_filter(Vehicle, int(filters["company_id"]))))
     if filters.get("vehicle_type_id"):
         query = query.filter(MaintenanceOrder.vehicle.has(
             vehicle_type_id=filters["vehicle_type_id"]))
