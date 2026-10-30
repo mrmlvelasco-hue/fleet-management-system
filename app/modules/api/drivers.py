@@ -58,6 +58,26 @@ def _display_name(d):
     return name
 
 
+def _effective_company(d):
+    """Effective Company of a driver as display fields, or empties.
+
+    Uses the one shared resolution rule (own company_id, else the
+    branch's) so this list cannot disagree with the dashboard or the
+    vehicle screens about what a record belongs to.
+    """
+    from app.extensions import db
+    from app.core.company_resolution import effective_company_id
+    from app.modules.master_data.org.models import OrgCompany
+    cid = effective_company_id(d)
+    co = db.session.get(OrgCompany, cid) if cid else None
+    if co is None:
+        return {}
+    return {"id": co.id, "short_name": co.short_name,
+            "region": co.region.name if co.region else None,
+            "area_district": (co.area_district.name
+                              if co.area_district else None)}
+
+
 def _serialise(d):
     return {
         "id": d.id,
@@ -83,6 +103,20 @@ def _serialise(d):
             d.license_expiry and d.license_expiry < date.today()),
         "branch": d.branch.name if d.branch else None,
         "branch_id": d.branch_id,
+        # Stage 3D: without these there was no field for a Company
+        # column to render, and the form could not read back what it
+        # saved. Resolved through the branch when the record carries no
+        # Company of its own -- the §20 inheritance rule.
+        # company_id is the record's OWN column -- what the form edits
+        # and writes back. The display fields below are the EFFECTIVE
+        # values (own, else inherited through the branch). Keeping them
+        # apart matters: if company_id returned the inherited value, the
+        # form would read it back and the next save would silently turn
+        # an inherited Company into an explicitly assigned one.
+        "company_id": d.company_id,
+        "company": _effective_company(d).get("short_name"),
+        "region": _effective_company(d).get("region"),
+        "area_district": _effective_company(d).get("area_district"),
         "department": d.department.name if d.department else None,
         "status": d.status,
         # Not the id -- the list does not render photos. But with
@@ -482,6 +516,19 @@ def _serialise_detail(d):
         # Organization
         "branch": d.branch.name if d.branch else None,
         "branch_id": d.branch_id,
+        # The detail shape is also what POST and PUT answer with, so
+        # omitting Company here meant the form could not read back what
+        # it had just saved.
+        # company_id is the record's OWN column -- what the form edits
+        # and writes back. The display fields below are the EFFECTIVE
+        # values (own, else inherited through the branch). Keeping them
+        # apart matters: if company_id returned the inherited value, the
+        # form would read it back and the next save would silently turn
+        # an inherited Company into an explicitly assigned one.
+        "company_id": d.company_id,
+        "company": _effective_company(d).get("short_name"),
+        "region": _effective_company(d).get("region"),
+        "area_district": _effective_company(d).get("area_district"),
         "department": d.department.name if d.department else None,
         "department_id": d.department_id,
         "section": d.section,
@@ -543,7 +590,8 @@ _WRITABLE = [
     # License
     "license_number", "license_expiry", "license_type",
     # Organization
-    "branch_id", "department_id", "section", "cost_center", "position",
+    "branch_id", "company_id", "department_id", "section", "cost_center",
+    "position",
     "job_title", "employment_status", "employment_type",
     # Contact
     "phone", "office_number", "home_number", "email", "complete_address",
@@ -555,7 +603,8 @@ _WRITABLE = [
 #: Labels match the Jinja form's, so both apps report the same problem in
 #: the same words.
 _COERCER = Coercer(
-    ints={"branch_id": "Branch", "department_id": "Department"},
+    ints={"branch_id": "Branch", "company_id": "Company",
+          "department_id": "Department"},
     dates={"license_expiry": "License Expiry"},
 )
 
@@ -641,6 +690,14 @@ def create_driver(api_user):
     payload, photo_file = _read_payload()
     try:
         fields = _COERCER.fields(payload, _WRITABLE)
+        # Company replaced Branch as the required org field on the FORM
+        # (2026-10-30). The API rule is the broader one: the record must
+        # resolve to a Company, whether by company_id or by a branch
+        # mapped to one -- see coercion.org_anchor_error.
+        from app.modules.api.coercion import org_anchor_error
+        anchor_error = org_anchor_error(fields, "assignee")
+        if anchor_error:
+            return anchor_error
         svc = DriverService()
         driver = svc.create(user=api_user, photo_file=photo_file, **fields)
         # Same separate link step as update() and as Flask's own create

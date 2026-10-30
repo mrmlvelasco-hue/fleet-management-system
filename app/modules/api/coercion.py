@@ -143,3 +143,41 @@ def company_arg(args=None):
         return None, (jsonify({
             "error": "bad_request",
             "message": "company_id must be an integer."}), 400)
+
+
+def org_anchor_error(fields, label="record"):
+    """Refuse a create that would leave a record with NO org context.
+
+    Returns an error response, or None when the record is anchored.
+
+    The rule is "must resolve to a Company", not "must send
+    company_id": a caller supplying a branch_id that maps to a Company
+    has given a perfectly good anchor, and the record inherits Company
+    through it (the §20 rule every list already uses). Demanding the
+    column explicitly would add no safety while breaking API callers,
+    integrations and the Excel importers, which supply a branch.
+
+    Why an anchor is required at all: branch_id became nullable when
+    Branch came off the forms (migration e5b3d81c7a24), and
+    UserOrgScopeService.covers() treats "no org context" as "no
+    restriction" -- so a record with neither Branch nor Company would
+    be visible to EVERY user regardless of their scope.
+    """
+    from flask import jsonify
+    from app.extensions import db
+    from app.modules.master_data.org.models import Branch
+
+    if fields.get("company_id"):
+        return None
+    branch_id = fields.get("branch_id")
+    if branch_id:
+        branch = db.session.get(Branch, branch_id)
+        if branch is not None and branch.company_id:
+            return None
+    message = ("Company is required." if not branch_id else
+               "Company is required: the selected Branch is not mapped "
+               "to a Company yet.")
+    return jsonify({
+        "error": "validation",
+        "message": message,
+        "fields": {"company_id": message}}), 400

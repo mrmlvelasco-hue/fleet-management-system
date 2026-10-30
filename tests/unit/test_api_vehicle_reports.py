@@ -75,9 +75,10 @@ def test_report_requires_its_own_permission(db, client, rep_env):
     assert r.status_code == 403
 
 
-def test_report_is_grouped_by_branch(db, client, rep_env):
-    """The legacy VEMS layout is one section per branch. Flattening it
-    would change what the report IS, not just how it looks."""
+def test_report_is_grouped_by_company(db, client, rep_env):
+    """One section per COMPANY since 2026-10-30 (was per branch).
+    Flattening it would change what the report IS, not just how it
+    looks -- the grouping is the layout."""
     token = _token(client)
     r = client.get("/api/v1/reports/vehicle-register", headers=_auth(token))
     assert r.status_code == 200
@@ -87,7 +88,8 @@ def test_report_is_grouped_by_branch(db, client, rep_env):
     # The service's own key is "vehicles"; passed through unchanged
     # rather than renamed, so the API and the Jinja report describe the
     # same structure.
-    assert set(group) >= {"branch_code", "branch_name", "vehicles"}
+    assert set(group) >= {"company_id", "company", "company_label",
+                          "region", "area_district", "vehicles"}
     assert group["vehicles"]
 
 
@@ -191,8 +193,11 @@ def test_register_report_branch_filter_returns_that_branch(db, client, rep_env):
     assert r.status_code == 200
     body = json.loads(r.get_data(as_text=True))
     assert len(body["groups"]) == 1
-    assert body["groups"][0]["branch_code"] == branch.code
+    # The section is a Company now; the branch filter still narrows to
+    # the vehicles under that branch, which is what this test is for.
     assert body["groups"][0]["vehicles"][0]["plate_number"] == "REP-1111"
+    assert all(v["branch_id"] == branch.id
+               for v in body["groups"][0]["vehicles"])
 
 
 def test_register_report_unknown_branch_is_empty_not_everything(db, client,

@@ -50,7 +50,20 @@ def write_env(db):
 
     vt = VehicleTypeService().create(code="LV-W", name="Light",
                                      category="LIGHT")
-    branch = BranchService().create(code="BR-W", name="Write Branch")
+    # Mapped to a Company: post-cutover (2026-10-30) a create must
+    # resolve to one. A record with no org context at all is visible to
+    # every user, because covers() reads "no context" as "no
+    # restriction" -- so the API refuses it.
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    _region = RegionService().create(code="LUZ-W", name="Luzon")
+    _area = AreaDistrictService().create(code="NCR-W", name="Metro Manila",
+                                         region_id=_region.id)
+    _company = OrgCompanyService().create(
+        short_name="Excellence", region_id=_region.id,
+        area_district_id=_area.id)
+    branch = BranchService().create(code="BR-W", name="Write Branch",
+                                    company_id=_company.id)
 
     # strict=True means brand and model must resolve against the master
     # list -- the same rule the Jinja form applies. Seeding them here is

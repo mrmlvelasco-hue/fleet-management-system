@@ -1007,11 +1007,10 @@ def create_vehicle(api_user):
     # on. It also guarantees every new vehicle has an org anchor --
     # branch_id is nullable now, and a record with NEITHER would be
     # visible to every user.
-    if not fields.get("company_id"):
-        return jsonify({
-            "error": "validation",
-            "message": "Company is required.",
-            "fields": {"company_id": "Company is required."}}), 400
+    from app.modules.api.coercion import org_anchor_error
+    anchor_error = org_anchor_error(fields, "vehicle")
+    if anchor_error:
+        return anchor_error
     try:
         # strict=True mirrors the Jinja route exactly: brand and model
         # must resolve against the master list. Passing False here would

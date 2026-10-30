@@ -36,7 +36,18 @@ from app.modules.user_management.models import Permission, Role, User
 def rig(db, app):
     sync_permissions()
     db.session.commit()
-    branch = Branch(name="HQ", code="HQ")
+    # Mapped to a Company: post-cutover (2026-10-30) a create must
+    # resolve to one, or the record has no org context and would be
+    # visible to every user.
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    _region = RegionService().create(code="LUZ-LNK", name="Luzon")
+    _area = AreaDistrictService().create(code="NCR-LNK", name="Metro Manila",
+                                         region_id=_region.id)
+    _company = OrgCompanyService().create(
+        short_name="Excellence", region_id=_region.id,
+        area_district_id=_area.id)
+    branch = Branch(name="HQ", code="HQ", company_id=_company.id)
     db.session.add(branch)
     db.session.flush()
 

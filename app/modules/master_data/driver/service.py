@@ -50,7 +50,7 @@ class EmergencyContactService:
 
 class DriverService:
     def create(self, employee_number, first_name, last_name,
-               branch_id, assignee_type="DRIVER", license_number=None,
+               branch_id=None, assignee_type="DRIVER", license_number=None,
                license_expiry=None, license_type=None, photo_file=None,
                user=None, **kwargs):
         # Both creation constraints below are CONFIGURABLE, because both
@@ -262,9 +262,15 @@ class DriverService:
         from app.modules.user_management.org_scope_service import (
             UserOrgScopeService)
         scope_svc = UserOrgScopeService()
+        from app.core.company_resolution import effective_company_id
         return [d for d in records
                if d.created_by == getattr(user, "id", None)
-               or scope_svc.covers(user.id, branch_id=d.branch_id)]
+               or scope_svc.covers(
+                   user.id, branch_id=d.branch_id,
+                   # Passed so a driver with NO branch resolves through
+                   # Company. Without it covers() short-circuits on the
+                   # null branch and returns True for every user.
+                   company_id=effective_company_id(d))]
 
     def get_expiring_licenses(self, days=30):
         """Drivers whose license expires within `days` days."""

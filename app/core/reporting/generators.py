@@ -204,7 +204,9 @@ def generate_vehicle_register_xlsx(filters: dict = None, user=None):
                          for v in g["vehicles"])]
 
     columns = [
-        ("Plate No.", "plate_number"), ("Assignee", "assignee"),
+        ("Plate No.", "plate_number"),
+        ("Region", "region"), ("Area / District", "area_district"),
+        ("Assignee", "assignee"),
         ("Make", "make"), ("Model", "model"), ("Variant", "variant"),
         ("Year", "year"), ("Displacement", "displacement"),
         ("Fuel", "fuel"), ("Transmission", "transmission"),
@@ -215,7 +217,13 @@ def generate_vehicle_register_xlsx(filters: dict = None, user=None):
     ]
     wb, ws = _new_workbook("Vehicle Register Details", "Vehicle Register")
     for group in groups:
-        ws.append([group["branch_code"]])
+        # Must mirror the screen's section heading exactly -- an export
+        # that groups differently from the report it was taken from is
+        # a different document. This read branch_code until the report
+        # regrouped on Company (2026-10-30), which made it raise.
+        ws.append([group.get("company_label")
+                   or group.get("company")
+                   or "Unassigned"])
         r = ws.max_row
         ws.cell(r, 1).font = Font(bold=True)
         for c in range(1, len(columns) + 1):

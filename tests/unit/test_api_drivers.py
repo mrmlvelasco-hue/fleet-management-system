@@ -72,8 +72,23 @@ def drv_env(db):
     nobody.roles = [nobody_role]
     db.session.add_all([role, user, nobody_role, nobody])
 
-    manila = BranchService().create(code="BR-DM", name="Manila")
-    cebu = BranchService().create(code="BR-DC", name="Cebu")
+    # Branches are mapped to a Company, which is the post-cutover state
+    # (2026-10-30): a record must resolve to a Company or it has no org
+    # context at all, and anything with no org context is visible to
+    # every user. The API refuses a create under an unmapped branch and
+    # says so -- these fixtures reflect a system that has been mapped.
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    _region = RegionService().create(code="LUZ-DRV", name="Luzon")
+    _area = AreaDistrictService().create(code="NCR-DRV", name="Metro Manila",
+                                         region_id=_region.id)
+    _company = OrgCompanyService().create(
+        short_name="Excellence", region_id=_region.id,
+        area_district_id=_area.id)
+    manila = BranchService().create(code="BR-DM", name="Manila",
+                                    company_id=_company.id)
+    cebu = BranchService().create(code="BR-DC", name="Cebu",
+                                  company_id=_company.id)
     db.session.commit()
 
     _driver(db, "EMP-001", "Juan", "Dela Cruz", branch_id=manila.id,
