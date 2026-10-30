@@ -95,10 +95,21 @@ def _driver(**extra):
             **extra}
 
 
+def _tire(**extra):
+    return {"serial_number": "T-OA1", "brand": "Bridgestone",
+            "size": "185/65R15", "tire_type": "RADIAL", **extra}
+
+
+def _battery(**extra):
+    return {"serial_number": "B-OA1", "brand": "Motolite", **extra}
+
+
 # (label, path, payload builder)
 CASES = [
     ("vehicle", "/api/v1/vehicles", _vehicle),
     ("driver", "/api/v1/drivers", _driver),
+    ("tire", "/api/v1/tires", _tire),
+    ("battery", "/api/v1/batteries", _battery),
 ]
 
 

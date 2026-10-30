@@ -44,9 +44,12 @@ class TireService:
             return obj
         if obj.created_by == getattr(user, "id", None):
             return obj
+        from app.core.company_resolution import effective_company_id
         from app.modules.user_management.org_scope_service import (
             UserOrgScopeService)
-        if UserOrgScopeService().covers(user.id, branch_id=obj.branch_id):
+        if UserOrgScopeService().covers(
+                user.id, branch_id=obj.branch_id,
+                company_id=effective_company_id(obj)):
             return obj
         return None
 
@@ -68,12 +71,14 @@ class TireService:
         records = q.order_by(Tire.brand, Tire.serial_number).all()
         if user is None:
             return records
+        from app.core.company_resolution import effective_company_id
         from app.modules.user_management.org_scope_service import (
             UserOrgScopeService)
         scope_svc = UserOrgScopeService()
         return [t for t in records
                if t.created_by == getattr(user, "id", None)
-               or scope_svc.covers(user.id, branch_id=t.branch_id)]
+               or scope_svc.covers(user.id, branch_id=t.branch_id,
+                                   company_id=effective_company_id(t))]
 
     def deactivate(self, record_id):
         obj = db.session.get(Tire, record_id)

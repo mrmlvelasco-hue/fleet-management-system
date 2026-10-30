@@ -21,13 +21,13 @@ _TIRE_STATUSES = ("IN_STOCK", "MOUNTED", "RETREADED", "DISPOSED")
 _WRITABLE = [
     "serial_number", "brand", "size", "tire_type",
     "purchase_date", "purchase_cost", "tread_depth_initial",
-    "vendor_id", "branch_id", "status",
+    "vendor_id", "branch_id", "company_id", "status",
     "vehicle_id", "wheel_position",
 ]
 
 _COERCER = Coercer(
     ints={"vendor_id": "Vendor", "branch_id": "Branch",
-          "vehicle_id": "Vehicle"},
+          "company_id": "Company", "vehicle_id": "Vehicle"},
     dates={"purchase_date": "Purchase Date"},
     decimals={"purchase_cost": "Purchase Cost",
               "tread_depth_initial": "Tread Depth (Initial)"},
@@ -38,7 +38,23 @@ def _bad(message, code=400):
     return jsonify({"error": "bad_request", "message": message}), code
 
 
+def _effective_company(t):
+    """Resolved Company + Region/Area-District -- {} when unresolved."""
+    from app.core.company_resolution import effective_company_id
+    from app.extensions import db
+    from app.modules.master_data.org.models import OrgCompany
+    co_id = effective_company_id(t)
+    co = db.session.get(OrgCompany, co_id) if co_id else None
+    if co is None:
+        return {}
+    return {"id": co.id, "short_name": co.short_name,
+            "region": co.region.name if co.region else None,
+            "area_district": co.area_district.name
+                if co.area_district else None}
+
+
 def _serialise(t):
+    co = _effective_company(t)
     return {
         "id": t.id,
         "serial_number": t.serial_number,
@@ -49,6 +65,15 @@ def _serialise(t):
         "is_active": bool(t.is_active),
         "branch": t.branch.name if t.branch else None,
         "branch_id": t.branch_id,
+        # Raw column -- what the form edits and re-saves. The resolved
+        # value (own, else the branch's) is "company" below; collapsing
+        # the two would turn an inherited Company into an explicit one
+        # the moment this record is next saved (2026-10-30, same fix as
+        # Vehicle/Driver).
+        "company_id": t.company_id,
+        "company": co.get("short_name"),
+        "region": co.get("region"),
+        "area_district": co.get("area_district"),
         "vendor": t.vendor.name if t.vendor else None,
         "vendor_id": t.vendor_id,
         "purchase_date": t.purchase_date.isoformat() if t.purchase_date else None,
@@ -151,13 +176,16 @@ def tires_export(api_user):
     wb = Workbook()
     ws = wb.active
     ws.title = "Tires"
-    headers = ["Serial", "Brand", "Size", "Type", "Branch", "Status",
-               "Active", "Purchase Date", "Purchase Cost", "Tread Depth"]
+    headers = ["Serial", "Brand", "Size", "Type", "Company", "Region",
+               "Area / District", "Status", "Active", "Purchase Date",
+               "Purchase Cost", "Tread Depth"]
     ws.append(headers)
     for t in rows:
+        co = _effective_company(t)
         ws.append([
             t.serial_number, t.brand, t.size, t.tire_type,
-            t.branch.name if t.branch else None, t.status,
+            co.get("short_name"), co.get("region"), co.get("area_district"),
+            t.status,
             "Yes" if t.is_active else "No",
             t.purchase_date.isoformat() if t.purchase_date else None,
             float(t.purchase_cost) if t.purchase_cost is not None else None,
@@ -211,6 +239,10 @@ def create_tire(api_user):
                 return jsonify({"error": "validation",
                                 "message": f"{req} is required.",
                                 "fields": {req: "Required."}}), 400
+        from app.modules.api.coercion import org_anchor_error
+        anchor_error = org_anchor_error(fields, "tire")
+        if anchor_error:
+            return anchor_error
         tire = TireService().create(
             serial_number=fields.pop("serial_number"),
             brand=fields.pop("brand"),

@@ -90,12 +90,15 @@ class BatteryTransactionService(BaseTransactionService):
             old.mounted_odometer = None
         if txn.battery_id is None:
             vehicle = txn.vehicle
+            from app.core.company_resolution import effective_company_id
             new = Battery(serial_number=txn.new_serial
                           or rep.auto_serial("BAT", txn),
                           brand=txn.new_brand, model=txn.new_model,
                           warranty_months=txn.new_warranty_months,
                           vendor_id=txn.vendor_id,
                           branch_id=vehicle.branch_id if vehicle else None,
+                          company_id=effective_company_id(vehicle)
+                          if vehicle else None,
                           purchase_date=txn.transaction_date,
                           purchase_cost=txn.cost, status="IN_STOCK")
             db.session.add(new)

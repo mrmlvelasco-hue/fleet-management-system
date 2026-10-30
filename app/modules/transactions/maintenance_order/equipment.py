@@ -28,6 +28,22 @@ ACTIONS = {"TIRE": ("REPLACE", "ROTATE", "INSPECT", "REPAIR"),
            "BATTERY": ("REPLACE", "TEST")}
 LINE_STATUSES = ("PLANNED", "DONE")
 INSTALL_SOURCES = ("VENDOR", "STOCK")
+
+
+def _vehicle_company_id(vehicle):
+    """The vehicle's Company, own or inherited via Branch -- or None.
+
+    A Tire/Battery auto-enrolled here used to carry only branch_id. Once
+    Vehicle's own branch_id became nullable (Stage 3D), a Company-only
+    vehicle produced a Tire/Battery with NEITHER Branch nor Company --
+    exactly the record UserOrgScopeService.covers() treats as visible to
+    everyone. Stamping Company here closes that path (2026-10-30, found
+    while checking the Company cutover's impact on MO, per Michael).
+    """
+    if vehicle is None:
+        return None
+    from app.core.company_resolution import effective_company_id
+    return effective_company_id(vehicle)
 TEST_RESULTS = ("GOOD", "WEAK", "REPLACE")
 CLOSED_ORDER_STATUSES = ("COMPLETED", "CANCELLED", "REJECTED")
 # Light-vehicle default when nothing on the vehicle is registered yet.
@@ -415,7 +431,8 @@ class EquipmentWorkService:
                  brand=desc[:80], size="UNKNOWN", tire_type="RADIAL",
                  status="MOUNTED", vehicle_id=order.vehicle_id,
                  wheel_position=line.position,
-                 branch_id=order.vehicle.branch_id if order.vehicle else None)
+                 branch_id=order.vehicle.branch_id if order.vehicle else None,
+                 company_id=_vehicle_company_id(order.vehicle))
         db.session.add(t)
         db.session.flush()
         line.current_tire_id = t.id
@@ -429,7 +446,8 @@ class EquipmentWorkService:
                     brand=desc[:80], status="MOUNTED",
                     vehicle_id=order.vehicle_id,
                     branch_id=order.vehicle.branch_id
-                    if order.vehicle else None)
+                    if order.vehicle else None,
+                    company_id=_vehicle_company_id(order.vehicle))
         db.session.add(b)
         db.session.flush()
         line.current_battery_id = b.id
@@ -444,6 +462,7 @@ class EquipmentWorkService:
                  size=line.new_size, tire_type="RADIAL",
                  vendor_id=order.vendor_id,
                  branch_id=order.vehicle.branch_id if order.vehicle else None,
+                 company_id=_vehicle_company_id(order.vehicle),
                  purchase_date=completed_date,
                  tread_depth_initial=line.tread_depth_mm, status="IN_STOCK")
         db.session.add(t)
@@ -461,6 +480,7 @@ class EquipmentWorkService:
                     vendor_id=order.vendor_id,
                     branch_id=order.vehicle.branch_id
                     if order.vehicle else None,
+                    company_id=_vehicle_company_id(order.vehicle),
                     purchase_date=completed_date, status="IN_STOCK")
         db.session.add(b)
         db.session.flush()

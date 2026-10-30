@@ -131,12 +131,15 @@ class TireTransactionService(BaseTransactionService):
             old.mounted_odometer = None
         if txn.tire_id is None:
             vehicle = txn.vehicle
+            from app.core.company_resolution import effective_company_id
             new = Tire(serial_number=txn.new_serial
                        or rep.auto_serial("TIR", txn),
                        brand=txn.new_brand, model=txn.new_model,
                        size=txn.new_size, tire_type="RADIAL",
                        vendor_id=txn.vendor_id,
                        branch_id=vehicle.branch_id if vehicle else None,
+                       company_id=effective_company_id(vehicle)
+                       if vehicle else None,
                        purchase_date=txn.transaction_date,
                        purchase_cost=txn.cost,
                        tread_depth_initial=txn.tread_depth_mm,

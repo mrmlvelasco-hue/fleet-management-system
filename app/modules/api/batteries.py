@@ -19,13 +19,13 @@ _BATTERY_STATUSES = ("IN_STOCK", "MOUNTED", "DISPOSED")
 _WRITABLE = [
     "serial_number", "brand", "capacity_ah", "voltage",
     "purchase_date", "purchase_cost", "vendor_id", "branch_id",
-    "status", "vehicle_id",
+    "company_id", "status", "vehicle_id",
 ]
 
 _COERCER = Coercer(
     ints={"vendor_id": "Vendor", "branch_id": "Branch",
-          "vehicle_id": "Vehicle", "capacity_ah": "Capacity (Ah)",
-          "voltage": "Voltage"},
+          "company_id": "Company", "vehicle_id": "Vehicle",
+          "capacity_ah": "Capacity (Ah)", "voltage": "Voltage"},
     dates={"purchase_date": "Purchase Date"},
     decimals={"purchase_cost": "Purchase Cost"},
 )
@@ -35,7 +35,23 @@ def _bad(message, code=400):
     return jsonify({"error": "bad_request", "message": message}), code
 
 
+def _effective_company(b):
+    """Resolved Company + Region/Area-District -- {} when unresolved."""
+    from app.core.company_resolution import effective_company_id
+    from app.extensions import db
+    from app.modules.master_data.org.models import OrgCompany
+    co_id = effective_company_id(b)
+    co = db.session.get(OrgCompany, co_id) if co_id else None
+    if co is None:
+        return {}
+    return {"id": co.id, "short_name": co.short_name,
+            "region": co.region.name if co.region else None,
+            "area_district": co.area_district.name
+                if co.area_district else None}
+
+
 def _serialise(b):
+    co = _effective_company(b)
     return {
         "id": b.id,
         "serial_number": b.serial_number,
@@ -46,6 +62,10 @@ def _serialise(b):
         "is_active": bool(b.is_active),
         "branch": b.branch.name if b.branch else None,
         "branch_id": b.branch_id,
+        "company_id": b.company_id,
+        "company": co.get("short_name"),
+        "region": co.get("region"),
+        "area_district": co.get("area_district"),
         "vendor": b.vendor.name if b.vendor else None,
         "vendor_id": b.vendor_id,
         "purchase_date": b.purchase_date.isoformat() if b.purchase_date else None,
@@ -143,12 +163,15 @@ def batteries_export(api_user):
     wb = Workbook()
     ws = wb.active
     ws.title = "Batteries"
-    ws.append(["Serial", "Brand", "Capacity (Ah)", "Voltage", "Branch",
-               "Status", "Active", "Purchase Date", "Purchase Cost"])
+    ws.append(["Serial", "Brand", "Capacity (Ah)", "Voltage", "Company",
+               "Region", "Area / District", "Status", "Active",
+               "Purchase Date", "Purchase Cost"])
     for b in rows:
+        co = _effective_company(b)
         ws.append([
             b.serial_number, b.brand, b.capacity_ah, b.voltage,
-            b.branch.name if b.branch else None, b.status,
+            co.get("short_name"), co.get("region"), co.get("area_district"),
+            b.status,
             "Yes" if b.is_active else "No",
             b.purchase_date.isoformat() if b.purchase_date else None,
             float(b.purchase_cost) if b.purchase_cost is not None else None,
@@ -200,6 +223,10 @@ def create_battery(api_user):
                 return jsonify({"error": "validation",
                                 "message": f"{req} is required.",
                                 "fields": {req: "Required."}}), 400
+        from app.modules.api.coercion import org_anchor_error
+        anchor_error = org_anchor_error(fields, "battery")
+        if anchor_error:
+            return anchor_error
         battery = BatteryService().create(
             serial_number=fields.pop("serial_number"),
             brand=fields.pop("brand"),
