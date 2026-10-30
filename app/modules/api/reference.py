@@ -594,6 +594,59 @@ def reference_org_companies(api_user):
     })
 
 
+@bp.route("/reference/regions", methods=["GET"])
+@api_auth_required()
+def reference_regions(api_user):
+    """Region picker for the Vendor form's Company/Region/Area-District
+    coverage selector (Batch 7). Gated on auth only, matching
+    /reference/branches and /reference/org-companies: scoping a vendor
+    is an operational task for whoever maintains vendors, not limited
+    to admins who hold org-master permissions."""
+    from app.modules.master_data.org.service import RegionService
+
+    q = (request.args.get("q") or "").strip().lower()
+    rows = RegionService().list()
+    if q:
+        rows = [r for r in rows if q in (r.name or "").lower()
+               or q in (r.code or "").lower()]
+    return jsonify({
+        "items": [{"id": r.id, "code": r.code, "name": r.name,
+                   "label": f"{r.code} — {r.name}" if r.code else r.name}
+                  for r in rows[:_PICKER_LIMIT]],
+        "has_more": len(rows) > _PICKER_LIMIT,
+        "total": len(rows),
+    })
+
+
+def _area_district_label(a):
+    """One Area/District rendered for a picker: name plus its Region,
+    the same reasoning as _company_label -- the same Area/District code
+    legitimately repeats under a different Region (D3's own uniqueness
+    key is (code, region), not code alone)."""
+    return f"{a.name} ({a.region.name})" if a.region else a.name
+
+
+@bp.route("/reference/area-districts", methods=["GET"])
+@api_auth_required()
+def reference_area_districts(api_user):
+    """Area/District picker for the Vendor form's Company/Region/
+    Area-District coverage selector (Batch 7)."""
+    from app.modules.master_data.org.service import AreaDistrictService
+
+    q = (request.args.get("q") or "").strip().lower()
+    rows = AreaDistrictService().list()
+    if q:
+        rows = [a for a in rows if q in (a.name or "").lower()
+               or q in (a.code or "").lower()]
+    return jsonify({
+        "items": [{"id": a.id, "code": a.code, "name": a.name,
+                   "label": _area_district_label(a)}
+                  for a in rows[:_PICKER_LIMIT]],
+        "has_more": len(rows) > _PICKER_LIMIT,
+        "total": len(rows),
+    })
+
+
 @bp.route("/reference/users", methods=["GET"])
 @api_auth_required()
 def reference_users(api_user):

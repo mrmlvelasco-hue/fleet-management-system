@@ -250,6 +250,36 @@ def test_company_picker_labels_carry_region_and_area_district(
     assert len(set(labels)) == len(labels)
 
 
+# ── Batch 7 (2026-10-31): Region / Area-District pickers ──────────────
+# for the Vendor form's Company/Region/Area-District coverage selectors
+# (VendorForm.tsx), the same "search instead of a capped flat list"
+# reasoning as org-companies above -- a vendor scoped to a whole Region
+# still needs to be able to FIND that Region among however many exist.
+
+def test_regions_are_searchable_and_gated_only_on_auth(db, client, ref_env):
+    from app.modules.master_data.org.service import RegionService
+    RegionService().create(code="LUZ-RGS", name="Luzon Region Search")
+    RegionService().create(code="VIS-RGS", name="Visayas Region Search")
+    _status, body = _get(client, "/api/v1/reference/regions?q=Luzon",
+                         _token(client))
+    assert _status == 200
+    assert [r["name"] for r in body["items"]] == ["Luzon Region Search"]
+
+
+def test_area_districts_are_searchable_and_carry_region_label(
+        db, client, ref_env):
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService)
+    luzon = RegionService().create(code="LUZ-ADS", name="Luzon AD Search")
+    AreaDistrictService().create(code="SNM-ADS", name="San Mateo AD Search",
+                                 region_id=luzon.id)
+    _status, body = _get(client, "/api/v1/reference/area-districts?q=San",
+                         _token(client))
+    assert _status == 200
+    assert body["items"][0]["name"] == "San Mateo AD Search"
+    assert "Luzon AD Search" in body["items"][0]["label"]
+
+
 def test_users_are_searchable(db, client, ref_env):
     """Flask's api_search feeds a user picker (notify-on-comment,
     approver override). Inactive users are excluded -- assigning work to
