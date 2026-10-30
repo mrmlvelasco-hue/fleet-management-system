@@ -210,3 +210,66 @@ def test_register_report_unknown_branch_is_empty_not_everything(db, client,
                    headers=_auth(t))
     assert r.status_code == 200
     assert json.loads(r.get_data(as_text=True))["groups"] == []
+
+
+@pytest.fixture()
+def two_company_rep_env(db, rep_env):
+    """A second Company with its own vehicle, so the Company filter has
+    something real to narrow away (2026-10-31): Michael reported the
+    on-screen Vehicle Register report's Company dropdown has no effect
+    on the result."""
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    user, branch = rep_env
+    vt = VehicleTypeService().create(code="LV-R2", name="Light R2",
+                                     category="LIGHT")
+    region = RegionService().create(code="NL-VRR", name="North Luzon VRR")
+    area = AreaDistrictService().create(code="NL2-VRR", name="North Luzon 2 VRR",
+                                        region_id=region.id)
+    co_a = OrgCompanyService().create(short_name="CoA-VRR", region_id=region.id,
+                                      area_district_id=area.id)
+    co_b = OrgCompanyService().create(short_name="CoB-VRR", region_id=region.id,
+                                      area_district_id=area.id)
+    VehicleService().create(
+        vehicle_type_id=vt.id, brand="Ford", model="Ranger", year=2022,
+        company_id=co_a.id, conduction_number="R-002",
+        plate_number="REP-COA")
+    VehicleService().create(
+        vehicle_type_id=vt.id, brand="Mazda", model="BT-50", year=2022,
+        company_id=co_b.id, conduction_number="R-003",
+        plate_number="REP-COB")
+    db.session.commit()
+    return user, branch, co_a, co_b
+
+
+def test_register_report_company_filter_returns_only_that_company(
+        db, client, two_company_rep_env):
+    user, branch, co_a, co_b = two_company_rep_env
+    t = _token(client)
+    r = client.get(f"/api/v1/reports/vehicle-register?company_id={co_a.id}",
+                   headers=_auth(t))
+    assert r.status_code == 200
+    body = json.loads(r.get_data(as_text=True))
+    assert len(body["groups"]) == 1
+    plates = {v["plate_number"] for v in body["groups"][0]["vehicles"]}
+    assert plates == {"REP-COA"}
+
+
+def test_register_export_company_filter_matches_the_screen(
+        db, client, two_company_rep_env):
+    """The export must agree with the on-screen report about what a
+    Company filter means -- the generator already supports company_id
+    (generators.py), the export route just never forwarded it."""
+    user, branch, co_a, co_b = two_company_rep_env
+    t = _token(client)
+    r = client.get(
+        f"/api/v1/reports/vehicle-register/export.xlsx?company_id={co_a.id}",
+        headers=_auth(t))
+    assert r.status_code == 200
+    from openpyxl import load_workbook
+    from io import BytesIO
+    wb = load_workbook(BytesIO(r.data))
+    ws = wb["Vehicle Register"]
+    plates = {row[0].value for row in ws.iter_rows(min_row=1)
+             if row[0].value and str(row[0].value).startswith("REP-")}
+    assert plates == {"REP-COA"}

@@ -1086,6 +1086,22 @@ def vehicle_register_report(api_user):
                   if any(r.get("branch_id") == wanted
                          for r in g.get("vehicles", []))]
 
+    company_id = request.args.get("company_id")
+    if company_id:
+        # 2026-10-31: the Company filter was wired on the screen (and
+        # in the XLSX generator) but never read HERE -- the on-screen
+        # report ignored it entirely, which is what Michael reported.
+        # Each row's company_id is already the EFFECTIVE Company
+        # (report_service.get_rows()), so this matches the vehicle the
+        # same way the Vehicle Master list and the dashboard would.
+        try:
+            wanted_co = int(company_id)
+        except (TypeError, ValueError):
+            return _bad("company_id must be an integer.")
+        groups = [g for g in groups
+                  if any(r.get("company_id") == wanted_co
+                         for r in g.get("vehicles", []))]
+
     return jsonify({
         "groups": groups,
         # A printed register with no timestamp cannot be told apart from
@@ -1114,6 +1130,16 @@ def vehicle_register_export(api_user):
             filters["branch_id"] = int(branch_id)
         except (TypeError, ValueError):
             return _bad("branch_id must be an integer.")
+    company_id = request.args.get("company_id")
+    if company_id:
+        # 2026-10-31: generate_vehicle_register_xlsx() already supports
+        # filters["company_id"] -- this route just never forwarded the
+        # query param to it, so the export silently ignored the same
+        # Company filter the on-screen report ignored.
+        try:
+            filters["company_id"] = int(company_id)
+        except (TypeError, ValueError):
+            return _bad("company_id must be an integer.")
 
     filename, xlsx = generate_vehicle_register_xlsx(filters=filters,
                                                     user=api_user)
