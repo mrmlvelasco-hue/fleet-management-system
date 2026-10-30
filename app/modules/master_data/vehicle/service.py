@@ -377,21 +377,13 @@ class VehicleService:
 
     @staticmethod
     def _companies_in_scope(scope):
-        """Company ids covered by an ORG_REGION / ORG_AREA_DISTRICT
-        scope. A holder never needs every Company in their Region
-        granted individually -- the same resolution covers() performs,
-        expressed here for the SQL path."""
-        from app.modules.master_data.org.models import OrgCompany
-        q = OrgCompany.query
-        if scope.scope_type == "ORG_REGION" and scope.region_id:
-            q = q.filter(OrgCompany.region_id == scope.region_id)
-        elif (scope.scope_type == "ORG_AREA_DISTRICT"
-              and scope.area_district_id):
-            q = q.filter(
-                OrgCompany.area_district_id == scope.area_district_id)
-        else:
-            return []
-        return [c.id for c in q.all()]
+        """Deprecated alias -- the shared definition now lives in
+        app.core.company_resolution.companies_in_scope() so this and
+        SearchableService._apply_org_scope() can't drift apart. Kept as
+        a thin forwarder in case anything outside this module still
+        calls it by this name."""
+        from app.core.company_resolution import companies_in_scope
+        return companies_in_scope(scope)
 
     def list_page(self, user=None, q=None, status=None, vehicle_type_id=None,
                   branch_id=None, company_id=None, sort="plate",

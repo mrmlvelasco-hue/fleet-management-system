@@ -37,6 +37,26 @@ def effective_company_id(record):
     return getattr(branch, "company_id", None) if branch is not None else None
 
 
+def companies_in_scope(scope):
+    """Company ids covered by an ORG_REGION / ORG_AREA_DISTRICT
+    UserOrgScope. A holder never needs every Company in their Region
+    granted individually -- the same resolution UserOrgScopeService.
+    covers() performs, expressed here for the SQL/query-filter path so
+    Vehicle.list_page() and SearchableService._apply_org_scope() (and
+    any future org-scope-aware query) share one definition rather than
+    two that could silently drift apart."""
+    from app.modules.master_data.org.models import OrgCompany
+    q = OrgCompany.query
+    if scope.scope_type == "ORG_REGION" and scope.region_id:
+        q = q.filter(OrgCompany.region_id == scope.region_id)
+    elif (scope.scope_type == "ORG_AREA_DISTRICT"
+          and scope.area_district_id):
+        q = q.filter(OrgCompany.area_district_id == scope.area_district_id)
+    else:
+        return []
+    return [c.id for c in q.all()]
+
+
 def company_filter(model, company_id):
     """The same rule as a SQL predicate, for `query.filter(...)`.
 

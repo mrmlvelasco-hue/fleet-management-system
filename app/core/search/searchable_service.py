@@ -36,15 +36,28 @@ class SearchableService:
         return query
 
     def _apply_org_scope(self, query, user):
-        """Restrict results to branches/business units the user's scope
-        covers — the search/select2/table endpoints share this with
-        VehicleService.list()/BaseTransactionService.list() and every
-        other org-scope-aware list() this session, so a Manila-scoped
-        user can't pick a Cebu vehicle from a dropdown even though the
-        Vehicle Master list already hides it. Same rollout-safety rule:
-        no scope rows assigned at all, or a GLOBAL/COMPANY scope, means
-        unrestricted; records with no branch_id recorded are visible to
-        everyone regardless of scope."""
+        """Restrict results to branches/business units/Companies the
+        user's scope covers — the search/select2/table endpoints share
+        this with VehicleService.list_page()/BaseTransactionService.list()
+        and every other org-scope-aware list() this session, so a
+        Manila-scoped user can't pick a Cebu vehicle from a dropdown
+        even though the Vehicle Master list already hides it. Same
+        rollout-safety rule: no scope rows assigned at all, or a
+        GLOBAL/COMPANY scope, means unrestricted.
+
+        Batch 4/5 (2026-10-30): a record with no branch_id recorded is
+        NOT automatically visible to everyone anymore. Since Batch 1-3,
+        every Company-only Vehicle/Driver/Tire/Battery has branch_id
+        NULL by design (Company replaced Branch as the anchor), so the
+        old "branch_id IS NULL -> unrestricted" fallback leaked every
+        Company-only record, from every Company, past a plain
+        BRANCH-scoped user's picker -- the same bug class as the
+        MO/transaction finding in Batch 3, just surfaced in generic
+        search. A branchless record is now visible only through its
+        OWN effective Company via company_filter(), mirroring
+        VehicleService.list_page()'s query-level ORG_COMPANY/REGION/
+        AREA_DISTRICT handling exactly, so the picker and the list
+        screen can never disagree about what a scope covers."""
         if user is None or not hasattr(self.model, "branch_id"):
             return query
         from app.modules.user_management.org_scope_service import (
@@ -55,7 +68,7 @@ class SearchableService:
         if any(s.scope_type in ("GLOBAL", "COMPANY") for s in scopes):
             return query
         branch_ids = [s.branch_id for s in scopes if s.scope_type == "BRANCH"]
-        conditions = [self.model.branch_id.is_(None)]
+        conditions = []
         if branch_ids:
             conditions.append(self.model.branch_id.in_(branch_ids))
         if hasattr(self.model, "business_unit_id"):
@@ -63,6 +76,23 @@ class SearchableService:
                      if s.scope_type == "BUSINESS_UNIT"]
             if bu_ids:
                 conditions.append(self.model.business_unit_id.in_(bu_ids))
+        if hasattr(self.model, "company_id"):
+            from app.core.company_resolution import (
+                company_filter, companies_in_scope)
+            for s in scopes:
+                if s.scope_type == "ORG_COMPANY" and s.company_id:
+                    conditions.append(company_filter(self.model, s.company_id))
+                elif s.scope_type in ("ORG_REGION", "ORG_AREA_DISTRICT"):
+                    for cid in companies_in_scope(s):
+                        conditions.append(company_filter(self.model, cid))
+        if not conditions:
+            # No BRANCH/BUSINESS_UNIT/ORG_* scope rows matched anything
+            # this model can be filtered by -- the user's only scopes
+            # are of a kind irrelevant to this model (e.g. a BRANCH
+            # scope against a model with no branch_id). Nothing to
+            # restrict by, so fall back to unrestricted rather than an
+            # always-false filter that would hide everything.
+            return query
         return query.filter(db.or_(*conditions))
 
     def search(self, q=None, page=1, per_page=None, sort_by=None,
