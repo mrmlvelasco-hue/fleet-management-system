@@ -759,6 +759,8 @@ def _broadcast_json(row):
                 ),
                 "branch_id": r.branch_id,
                 "department_id": r.department_id,
+                # Batch 8: Michael -- broadcast audience by Company.
+                "company_id": r.company_id,
             }
             for r in row.recipients
         ],

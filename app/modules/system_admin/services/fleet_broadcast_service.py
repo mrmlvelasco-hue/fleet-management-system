@@ -50,6 +50,9 @@ class FleetBroadcastService:
         "SPECIFIC_USER",
         "BRANCH",
         "DEPARTMENT",
+        # Batch 8 (2026-10-31): Michael -- "the broadcast is also
+        # possible to select per company".
+        "COMPANY",
     )
 
     # ------------------------------------------------------------------
@@ -385,6 +388,9 @@ class FleetBroadcastService:
                 department_id=self._int_or_none(
                     item.get("department_id")
                 ),
+                company_id=self._int_or_none(
+                    item.get("company_id")
+                ),
             )
 
             required = {
@@ -395,6 +401,7 @@ class FleetBroadcastService:
                     "department_id",
                     row.department_id,
                 ),
+                "COMPANY": ("company_id", row.company_id),
             }.get(recipient_type)
 
             if required and not required[1]:
@@ -461,6 +468,20 @@ class FleetBroadcastService:
                     recipient.department_id is not None
                     and recipient.department_id
                     == getattr(user, "department_id", None)
+                ):
+                    return True
+
+            elif recipient_type == "COMPANY":
+                # Batch 8: same effective-Company rule as every other
+                # Company filter in the app (Vehicle, Vendor, Data
+                # Quality) -- the user's own company_id if set, else
+                # their branch's. Reused rather than re-derived so a
+                # user targeted by a Company broadcast is exactly the
+                # same set a Company-scoped list screen would show.
+                from app.core.company_resolution import effective_company_id
+                if (
+                    recipient.company_id is not None
+                    and effective_company_id(user) == recipient.company_id
                 ):
                     return True
 
@@ -548,6 +569,26 @@ class FleetBroadcastService:
                         User.is_active.is_(True),
                         User.department_id
                         == recipient.department_id,
+                    )
+                    .with_entities(User.id)
+                    .all()
+                )
+
+                user_ids.update(
+                    user_id
+                    for (user_id,) in matches
+                )
+
+            elif recipient_type == "COMPANY":
+                # Same effective-Company predicate as the Vehicle/
+                # Vendor Company filters -- own company_id if set,
+                # else inherited via Branch.
+                from app.core.company_resolution import company_filter
+                matches = (
+                    User.query
+                    .filter(
+                        User.is_active.is_(True),
+                        company_filter(User, recipient.company_id),
                     )
                     .with_entities(User.id)
                     .all()

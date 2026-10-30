@@ -215,6 +215,9 @@ class FleetBroadcastRecipient(db.Model, BaseModel):
                         nullable=True)
     branch_id = db.Column(db.Integer, nullable=True, index=True)
     department_id = db.Column(db.Integer, nullable=True, index=True)
+    # Batch 8 (2026-10-31): Michael -- "the broadcast is also possible
+    # to select per company", alongside BRANCH, not instead of it.
+    company_id = db.Column(db.Integer, nullable=True, index=True)
 
     broadcast = db.relationship(
         "FleetBroadcast",
