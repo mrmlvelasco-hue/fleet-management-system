@@ -327,3 +327,126 @@ def test_a_scoped_call_is_not_served_the_fleet_wide_cached_result(
                          for f in svc.field_completion(branch_id=small.id)}
         assert all_fields["Plate Number"]["missing"] == 6
         assert scoped_fields["Plate Number"]["missing"] == 0
+
+
+@pytest.fixture()
+def company_graded(db):
+    """A Company-only vehicle (branch_id intentionally NULL since Batch
+    1) alongside a normal branch-anchored one, so the scorecard's
+    'Branch' field can be checked against the real org-anchor rule
+    rather than the raw column (2026-10-31, Batch 6)."""
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+
+    vt = VehicleTypeService().create(code="LV-DQ2", name="Light DQ2",
+                                     category="LIGHT")
+    region = RegionService().create(code="NL-DQ2", name="North Luzon DQ2")
+    area = AreaDistrictService().create(code="NL2-DQ2", name="North Luzon 2 DQ2",
+                                        region_id=region.id)
+    co = OrgCompanyService().create(short_name="CoDQ2", region_id=region.id,
+                                    area_district_id=area.id)
+    branch = BranchService().create(code="BR-DQ2", name="Branch DQ2",
+                                    company_id=co.id)
+
+    branch_anchored = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2022,
+        branch_id=branch.id, conduction_number="DQ2-BR",
+        plate_number="DQ2A-111", chassis_number="CH1", engine_number="EN1")
+    company_only = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Ford", model="Ranger", year=2021,
+        company_id=co.id, conduction_number="DQ2-CO",
+        plate_number="DQ2A-222", chassis_number="CH2", engine_number="EN2")
+    db.session.commit()
+    DataQualityService().sync_fields()
+    db.session.commit()
+    return co, branch, branch_anchored, company_only
+
+
+def test_a_company_only_vehicle_is_not_flagged_as_missing_branch(
+        db, company_graded):
+    """The whole point of the fix: a vehicle anchored via Company alone
+    must not be penalised for having no Branch -- it IS organisationally
+    anchored, just not through Branch."""
+    co, branch, branch_anchored, company_only = company_graded
+    svc = DataQualityService()
+    result = svc.score_vehicle(company_only)
+    missing_names = {f.field_name for f in result["missing"]}
+    assert "branch_id" not in missing_names
+
+
+def test_a_branch_anchored_vehicle_still_counts_branch_as_filled(
+        db, company_graded):
+    co, branch, branch_anchored, company_only = company_graded
+    svc = DataQualityService()
+    result = svc.score_vehicle(branch_anchored)
+    missing_names = {f.field_name for f in result["missing"]}
+    assert "branch_id" not in missing_names
+
+
+def test_an_unanchored_vehicle_still_counts_branch_as_missing(db, company_graded):
+    """Make sure the fix doesn't just always say 'filled' -- a vehicle
+    with NEITHER Branch nor Company must still be flagged."""
+    co, branch, branch_anchored, company_only = company_graded
+    vt = VehicleTypeService().create(code="LV-DQ2-UNANCHORED",
+                                     name="Light DQ2 Unanchored",
+                                     category="LIGHT")
+    unanchored = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Mazda", model="BT-50", year=2020,
+        conduction_number="DQ2-UN")
+    svc = DataQualityService()
+    result = svc.score_vehicle(unanchored)
+    missing_names = {f.field_name for f in result["missing"]}
+    assert "branch_id" in missing_names
+
+
+def test_summary_can_be_scoped_to_a_company(db, company_graded):
+    co, branch, branch_anchored, company_only = company_graded
+    svc = DataQualityService()
+    scoped = svc.summary(company_id=co.id)
+    # Both vehicles resolve to this Company: one directly, one through
+    # its mapped Branch.
+    assert scoped["vehicles"] == 2
+
+
+def test_field_completion_can_be_scoped_to_a_company(db, company_graded):
+    co, branch, branch_anchored, company_only = company_graded
+    svc = DataQualityService()
+    rows = {f["label"]: f for f in svc.field_completion(company_id=co.id)}
+    assert rows["Plate Number"]["filled"] == 2
+
+
+def test_the_endpoint_scopes_its_figures_to_the_selected_company(
+        db, client, company_graded):
+    """End to end, through the route the screen actually calls -- the
+    Company counterpart of test_the_endpoint_scopes_its_figures_to_the_
+    selected_branch above."""
+    import json
+
+    from app.core.security.password import hash_password
+    from app.core.security.registry import sync_permissions
+    from app.extensions import db as _db
+    from app.modules.user_management.models import Permission, Role, User
+
+    co, branch, branch_anchored, company_only = company_graded
+    sync_permissions()
+    _db.session.commit()
+    role = Role(name="DQ Reader Co")
+    role.permissions = Permission.query.filter(
+        Permission.code == "dataquality.view").all()
+    user = User(username="dqrco", email="dqrco@e.com",
+               password_hash=hash_password("secret123"), is_active=True)
+    user.roles = [role]
+    _db.session.add_all([role, user])
+    _db.session.commit()
+
+    r = client.post("/api/v1/auth/token",
+                    json={"username": "dqrco", "password": "secret123"})
+    token = json.loads(r.get_data(as_text=True))["access_token"]
+    head = {"Authorization": f"Bearer {token}"}
+
+    scoped = json.loads(client.get(
+        f"/api/v1/admin/data-quality?company_id={co.id}",
+        headers=head).get_data(as_text=True))
+
+    assert scoped["summary"]["vehicles"] == 2
+    assert scoped["selected_company_id"] == co.id

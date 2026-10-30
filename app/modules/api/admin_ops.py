@@ -379,14 +379,18 @@ def get_data_quality(api_user):
     from app.core.data_quality_service import DataQualityService
     svc = DataQualityService()
     branch_id = request.args.get("branch_id", type=int)
-    # Every figure follows the selected branch. The branch scorecard
-    # deliberately does not: it is the ranking of branches against each
-    # other, and filtering it to a single row would leave nothing to
-    # compare with -- the screen highlights the selected row instead.
-    summary = svc.summary(user=api_user, branch_id=branch_id)
+    company_id = request.args.get("company_id", type=int)
+    # Every figure follows the selected branch/Company. The branch
+    # scorecard deliberately does not: it is the ranking of branches
+    # against each other, and filtering it to a single row would leave
+    # nothing to compare with -- the screen highlights the selected row
+    # instead.
+    summary = svc.summary(user=api_user, branch_id=branch_id,
+                          company_id=company_id)
     branches = [_dq_branch(b) for b in svc.branch_scorecard(user=api_user)]
     fields = []
-    for f in svc.field_completion(user=api_user, branch_id=branch_id):
+    for f in svc.field_completion(user=api_user, branch_id=branch_id,
+                                  company_id=company_id):
         fields.append({
             "label": f["label"],
             "group": f["group"],
@@ -397,8 +401,10 @@ def get_data_quality(api_user):
             "is_required": f["is_required"],
         })
     gaps = []
-    if branch_id:
-        for row in svc.vehicles_with_gaps(branch_id=branch_id, user=api_user):
+    if branch_id or company_id:
+        for row in svc.vehicles_with_gaps(branch_id=branch_id,
+                                          company_id=company_id,
+                                          user=api_user):
             v = row["vehicle"]
             missing = row.get("missing") or []
             labels = []
@@ -424,6 +430,7 @@ def get_data_quality(api_user):
         "fields": fields,
         "gaps": gaps,
         "selected_branch_id": branch_id,
+        "selected_company_id": company_id,
     })
 
 

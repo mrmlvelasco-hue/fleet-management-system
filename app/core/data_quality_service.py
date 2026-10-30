@@ -40,7 +40,8 @@ FIELD_LABELS = {
     "chassis_number": "Chassis Number",
     "engine_number": "Engine Number",
     "vehicle_type_id": "Vehicle Type",
-    "branch_id": "Branch",
+    "branch_id": "Branch / Company",
+    "company_id": "Company (direct)",
     "department_id": "Department",
     "business_unit_id": "Business Unit",
     "assigned_driver_id": "Assigned Driver",
@@ -71,8 +72,8 @@ FIELD_GROUPS = {
     "TECHNICAL": ("engine_type", "transmission", "fuel_type",
                  "displacement", "component_group", "current_odometer",
                  "current_engine_hours"),
-    "ORGANISATION": ("branch_id", "department_id", "business_unit_id",
-                    "assigned_driver_id", "assignment",
+    "ORGANISATION": ("branch_id", "company_id", "department_id",
+                    "business_unit_id", "assigned_driver_id", "assignment",
                     "assignment_group_classification", "vehicle_usage"),
     "ACQUISITION": ("acquisition_date", "acquisition_cost", "supplier",
                    "leasing_company", "delivery_date", "start_date",
@@ -317,6 +318,15 @@ class DataQualityService:
                         return True
                 return False
             return "*" in bag if code == "*" else code.upper() in bag
+        if field_name == "branch_id":
+            # Batch 6 (2026-10-31): Branch is no longer the only org
+            # anchor -- a Company-only vehicle (branch_id intentionally
+            # NULL since Batch 1) is fully anchored and must not be
+            # penalised here for having no Branch. "Filled" now means
+            # "resolves to a Company, by either path", the same rule
+            # org_anchor_error() and every scope check already use.
+            from app.core.company_resolution import effective_company_id
+            return effective_company_id(vehicle) is not None
         value = getattr(vehicle, field_name, None)
         if value is None:
             return False
@@ -356,12 +366,19 @@ class DataQualityService:
             return "WARNING"
         return "CRITICAL"
 
-    def _vehicles(self, user=None, branch_id=None):
+    def _vehicles(self, user=None, branch_id=None, company_id=None):
         from app.modules.master_data.vehicle.models import Vehicle
         query = Vehicle.query.filter(Vehicle.is_active.is_(True),
                                     Vehicle.status != "DISPOSED")
         if branch_id:
             query = query.filter(Vehicle.branch_id == branch_id)
+        if company_id:
+            # Batch 6: same effective-Company predicate every other
+            # Company-scoped list uses, so this screen's Company filter
+            # can never disagree with the Vehicle Master list about
+            # what belongs to a Company.
+            from app.core.company_resolution import company_filter
+            query = query.filter(company_filter(Vehicle, company_id))
         return query.all()
 
     @request_cached("dq_branch_scorecard")
@@ -417,17 +434,18 @@ class DataQualityService:
         return rows
 
     @request_cached("dq_field_completion")
-    def field_completion(self, user=None, branch_id=None) -> list:
+    def field_completion(self, user=None, branch_id=None, company_id=None) -> list:
         """Completion rate per field, worst first -- that ordering is
         what makes the list actionable.
 
-        branch_id scopes the rates to one branch, so the screen's branch
-        filter applies here too. request_cached folds the arguments into
-        its key, so a scoped call cannot be served a fleet-wide result
-        cached earlier in the same request.
+        branch_id/company_id scope the rates to one branch/Company, so
+        the screen's filters apply here too. request_cached folds the
+        arguments into its key, so a scoped call cannot be served a
+        fleet-wide result cached earlier in the same request.
         """
         fields = self.scored_fields()
-        vehicles = self._vehicles(user=user, branch_id=branch_id)
+        vehicles = self._vehicles(user=user, branch_id=branch_id,
+                                  company_id=company_id)
         self._preload_attachments(vehicles)
         total = len(vehicles)
         if not total or not fields:
@@ -450,17 +468,18 @@ class DataQualityService:
         return rows
 
     @request_cached("dq_summary")
-    def summary(self, user=None, branch_id=None) -> dict:
+    def summary(self, user=None, branch_id=None, company_id=None) -> dict:
         """Headline figures for the dashboard widget.
 
-        branch_id scopes every figure to one branch. Without it the
-        scorecard's branch filter changed only the drill-down list at
-        the bottom of the page while the tiles stayed fleet-wide --
-        reported at the client kickoff, since a branch holding 4 of 157
-        vehicles still showed 157 assessed.
+        branch_id/company_id scope every figure to one branch/Company.
+        Without it the scorecard's filter changed only the drill-down
+        list at the bottom of the page while the tiles stayed fleet-wide
+        -- reported at the client kickoff, since a branch holding 4 of
+        157 vehicles still showed 157 assessed.
         """
         fields = self.scored_fields()
-        vehicles = self._vehicles(user=user, branch_id=branch_id)
+        vehicles = self._vehicles(user=user, branch_id=branch_id,
+                                  company_id=company_id)
         self._preload_attachments(vehicles)
         if not fields or not vehicles:
             return {"score": 0, "rating": "CRITICAL", "vehicles": 0,
@@ -496,11 +515,13 @@ class DataQualityService:
                               for label, count in common],
         }
 
-    def vehicles_with_gaps(self, branch_id=None, user=None, limit=200):
-        """Drill-down: Branch -> Vehicle -> Missing Fields."""
+    def vehicles_with_gaps(self, branch_id=None, company_id=None, user=None,
+                          limit=200):
+        """Drill-down: Branch/Company -> Vehicle -> Missing Fields."""
         fields = self.scored_fields()
         rows = []
-        vehicles = self._vehicles(user=user, branch_id=branch_id)
+        vehicles = self._vehicles(user=user, branch_id=branch_id,
+                                  company_id=company_id)
         self._preload_attachments(vehicles)
         for vehicle in vehicles:
             result = self.score_vehicle(vehicle, fields)
