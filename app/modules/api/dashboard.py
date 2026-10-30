@@ -140,14 +140,14 @@ _DUE_CACHE = {}  # key -> (expires_at, rows)
 _DUE_TTL_SEC = 12
 
 
-def _shared_due_rows(api_user, branch_id=None):
+def _shared_due_rows(api_user, branch_id=None, company_id=None):
     """DUE_SOON / OVERDUE rows visible to api_user, as plain dicts."""
     from app.core.maintenance.due_calculation_service import (
         PMDueCalculationService)
     from app.modules.user_management.org_scope_service import (
         UserOrgScopeService)
 
-    key = (getattr(api_user, "id", None), branch_id)
+    key = (getattr(api_user, "id", None), branch_id, company_id)
     now = time.time()
     with _DUE_LOCK:
         hit = _DUE_CACHE.get(key)
@@ -157,6 +157,10 @@ def _shared_due_rows(api_user, branch_id=None):
     due = PMDueCalculationService().get_all_due_vehicles()
     if branch_id is not None:
         due = [d for d in due if d["vehicle"].branch_id == branch_id]
+    if company_id is not None:
+        from app.core.company_resolution import effective_company_id
+        due = [d for d in due
+               if effective_company_id(d["vehicle"]) == company_id]
     scope_svc = UserOrgScopeService()
     due = [d for d in due
            if scope_svc.covers(api_user.id, branch_id=d["vehicle"].branch_id)]
@@ -234,7 +238,7 @@ def dashboard_summary(api_user):
     # report population for such a user.
     can_pm_report = api_user.has_permission("reportpmscompliance.view")
     can_registration_report = api_user.has_permission("reportregistrationexpiry.view")
-    due_rows = (_shared_due_rows(api_user, branch_id)
+    due_rows = (_shared_due_rows(api_user, branch_id, company_id)
                 if can_pm_report else [])
 
     return jsonify({
@@ -242,14 +246,16 @@ def dashboard_summary(api_user):
                                         company_id=company_id),
         "maintenance_due_count": len(due_rows),
         "approvals_pending_count": dash.approvals_pending_count(
-            api_user, branch_id=branch_id),
+            api_user, branch_id=branch_id, company_id=company_id),
         "registrations_expiring_count": (
-            dash.registrations_expiring_count(user=api_user, branch_id=branch_id)
+            dash.registrations_expiring_count(user=api_user,
+                                              branch_id=branch_id,
+                                              company_id=company_id)
             if can_registration_report else 0),
         "tire_stock_count": dash.tire_stock_count(
-            user=api_user, branch_id=branch_id),
+            user=api_user, branch_id=branch_id, company_id=company_id),
         "battery_stock_count": dash.battery_stock_count(
-            user=api_user, branch_id=branch_id),
+            user=api_user, branch_id=branch_id, company_id=company_id),
         "availability_percentage": _availability(fleet_status),
         "branch_id": branch_id,
         "company_id": company_id,
@@ -673,14 +679,15 @@ def dashboard_bootstrap(api_user):
 
     can_pm_report = api_user.has_permission("reportpmscompliance.view")
     can_registration_report = api_user.has_permission("reportregistrationexpiry.view")
-    due_rows = (_shared_due_rows(api_user, branch_id)
+    due_rows = (_shared_due_rows(api_user, branch_id, company_id)
                 if can_pm_report else [])
 
     analytics_wf = analytics.approval_workflow_counts(
-        user=api_user, branch_id=branch_id)
+        user=api_user, branch_id=branch_id, company_id=company_id)
     trends = analytics.kpi_trends(user=api_user)
     registration_status = analytics.all_charts(
-        user=api_user, only=["registration_status"], branch_id=branch_id
+        user=api_user, only=["registration_status"], branch_id=branch_id,
+        company_id=company_id
     ).get("registration_status")
 
     from app.modules.master_data.org.models import Branch
@@ -821,20 +828,23 @@ def dashboard_bootstrap(api_user):
           due_reg = {"items": [], "total": 0, "overdue": 0}
     return jsonify({
         "summary": {
-            "fleet_count": dash.fleet_count(user=api_user, branch_id=branch_id),
+            "fleet_count": dash.fleet_count(
+                user=api_user, branch_id=branch_id, company_id=company_id),
             "maintenance_due_count": len(due_rows),
             "approvals_pending_count": dash.approvals_pending_count(
-            api_user, branch_id=branch_id),
+                api_user, branch_id=branch_id, company_id=company_id),
             "registrations_expiring_count": (
                 dash.registrations_expiring_count(
-                    user=api_user, branch_id=branch_id)
+                    user=api_user, branch_id=branch_id,
+                    company_id=company_id)
                 if can_registration_report else 0),
             "tire_stock_count": dash.tire_stock_count(
-                user=api_user, branch_id=branch_id),
+                user=api_user, branch_id=branch_id, company_id=company_id),
             "battery_stock_count": dash.battery_stock_count(
-                user=api_user, branch_id=branch_id),
+                user=api_user, branch_id=branch_id, company_id=company_id),
             "availability_percentage": _availability(fleet_status),
             "branch_id": branch_id,
+            "company_id": company_id,
         },
         "fleet_status": fleet_status,
         "due_maintenance": {

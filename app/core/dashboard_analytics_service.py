@@ -399,7 +399,7 @@ class DashboardAnalyticsService:
     # Each chart's data, keyed by the name the front end asks for.
     # Values are the bound method, not the result -- so a caller wanting
     # one chart pays for one chart.
-    def _chart_builders(self, user=None, branch_id=None):
+    def _chart_builders(self, user=None, branch_id=None, company_id=None):
         """branch_id is threaded only into the charts that support it.
 
         fleet_by_branch is deliberately excluded: it exists to COMPARE
@@ -411,17 +411,18 @@ class DashboardAnalyticsService:
         """
         return {
             "fleet_by_status": lambda: self.fleet_by_status(
-                user=user, branch_id=branch_id),
+                user=user, branch_id=branch_id, company_id=company_id),
             "fleet_by_branch": lambda: self.fleet_by_branch(user=user),
             "maintenance_cost_trend": lambda: self.maintenance_cost_trend(user=user),
             "pm_compliance": lambda: self.pm_compliance(
                 user=user, branch_id=branch_id),
             "mo_by_type": lambda: self.maintenance_orders_by_type(user=user),
             "registration_status": lambda: self.registration_status(
-                user=user, branch_id=branch_id),
+                user=user, branch_id=branch_id, company_id=company_id),
         }
 
-    def all_charts(self, user=None, only=None, branch_id=None) -> dict:
+    def all_charts(self, user=None, only=None, branch_id=None,
+                   company_id=None) -> dict:
         """Chart payloads. `only` limits it to the named charts.
 
         Why this matters: these six have wildly different costs.
@@ -438,7 +439,8 @@ class DashboardAnalyticsService:
         request charts individually means each one appears as soon as
         its OWN data is ready.
         """
-        builders = self._chart_builders(user=user, branch_id=branch_id)
+        builders = self._chart_builders(user=user, branch_id=branch_id,
+                                        company_id=company_id)
         if only:
             wanted = [k for k in only if k in builders]
         else:
@@ -446,7 +448,8 @@ class DashboardAnalyticsService:
         return {k: builders[k]() for k in wanted}
 
     @request_cached("chart_approval_workflow")
-    def approval_workflow_counts(self, user=None, branch_id=None) -> dict:
+    def approval_workflow_counts(self, user=None, branch_id=None,
+                                 company_id=None) -> dict:
         """Live counts for the Approval Workflow timeline, optionally
         scoped to one branch.
 
@@ -469,16 +472,29 @@ class DashboardAnalyticsService:
         from app.modules.transactions.maintenance_order.models import (
             MaintenanceOrder)
 
+        from app.core.company_resolution import company_filter
+
         def _mo_count(**filters):
             q = db.session.query(func.count(MaintenanceOrder.id)).filter_by(**filters)
+            # An MO carries no branch/company of its own, so both axes
+            # are scoped through its vehicle -- the same join every
+            # other MO-based dashboard count already uses.
+            if branch_id is not None or company_id is not None:
+                q = q.join(Vehicle, MaintenanceOrder.vehicle_id == Vehicle.id)
             if branch_id is not None:
-                q = q.join(Vehicle, MaintenanceOrder.vehicle_id == Vehicle.id) \
-                     .filter(Vehicle.branch_id == branch_id)
+                q = q.filter(Vehicle.branch_id == branch_id)
+            if company_id is not None:
+                q = q.filter(company_filter(Vehicle, company_id))
             return q.scalar() or 0
 
         def _instance_count(**filters):
             if branch_id is not None:
                 filters = {**filters, "branch_id": branch_id}
+            if company_id is not None:
+                # The snapshot taken at submission (D7). An instance
+                # raised before that column existed carries None and is
+                # correctly outside a Company-filtered view.
+                filters = {**filters, "company_id": company_id}
             return db.session.query(func.count(ApprovalInstance.id)).filter_by(
                 **filters).scalar() or 0
 
@@ -561,7 +577,8 @@ class DashboardAnalyticsService:
         return trends
 
     @request_cached("chart_registration_status")
-    def registration_status(self, user=None, branch_id=None) -> dict:
+    def registration_status(self, user=None, branch_id=None,
+                            company_id=None) -> dict:
         """Registration health of the whole fleet, as the mockup's
         'Vehicle Registration Status' donut: Active / Expiring Soon /
         For Renewal, with counts and percentages.
@@ -586,6 +603,10 @@ class DashboardAnalyticsService:
         # against.
         if branch_id is not None:
             due = [d for d in due if d["vehicle"].branch_id == branch_id]
+        if company_id is not None:
+            from app.core.company_resolution import effective_company_id
+            due = [d for d in due
+                   if effective_company_id(d["vehicle"]) == company_id]
         overdue = sum(1 for d in due if d["status"] == "OVERDUE")
         soon = sum(1 for d in due if d["status"] == "DUE_SOON")
         flagged = {d["vehicle"].id for d in due}
@@ -595,6 +616,13 @@ class DashboardAnalyticsService:
         branch_ids = self._scoped_branch_ids(user, branch_id)
         if branch_ids is not None:
             q = q.filter(Vehicle.branch_id.in_(branch_ids))
+        if company_id:
+            # The due list above and this total MUST be scoped to the
+            # same set, or "For Renewal" can exceed the fleet it is
+            # drawn against -- the donut would show more overdue
+            # vehicles than vehicles.
+            from app.core.company_resolution import company_filter
+            q = q.filter(company_filter(Vehicle, company_id))
         total = q.scalar() or 0
         active = max(0, total - len(flagged))
 

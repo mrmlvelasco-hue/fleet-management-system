@@ -51,7 +51,7 @@ class TireService:
         return None
 
     def list(self, include_inactive=False, status=None, user=None,
-             branch_id=None):
+             branch_id=None, company_id=None):
         q = Tire.query
         if not include_inactive:
             q = q.filter_by(is_active=True)
@@ -59,6 +59,12 @@ class TireService:
             q = q.filter_by(status=status)
         if branch_id:
             q = q.filter_by(branch_id=branch_id)
+        if company_id:
+            # Effective Company: own, else the branch's --
+            # one shared definition, so this count and the
+            # list screen can never disagree.
+            from app.core.company_resolution import company_filter
+            q = q.filter(company_filter(Tire, company_id))
         records = q.order_by(Tire.brand, Tire.serial_number).all()
         if user is None:
             return records

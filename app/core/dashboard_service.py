@@ -9,6 +9,17 @@ from app.modules.master_data.battery.service import BatteryService
 from app.core.approval.task_service import ApprovalTaskService
 
 
+def _company_of(vehicle, mapped=None):
+    """Effective Company of a vehicle: its own, else its branch's.
+
+    The Python-side twin of company_resolution.company_filter, for the
+    counts that filter in Python because their source is a calculation
+    service rather than a query.
+    """
+    from app.core.company_resolution import effective_company_id
+    return effective_company_id(vehicle)
+
+
 class DashboardService:
     """Every method takes an optional `branch_id` so a caller can narrow
     to a single branch WITHOUT bypassing org-scoping: `user` is still
@@ -34,20 +45,28 @@ class DashboardService:
                                          branch_id=branch_id,
                                          company_id=company_id))
 
-    def tire_stock_count(self, user=None, branch_id=None) -> int:
+    def tire_stock_count(self, user=None, branch_id=None,
+                         company_id=None) -> int:
         return len(TireService().list(status="IN_STOCK", user=user,
-                                      branch_id=branch_id))
+                                      branch_id=branch_id,
+                                      company_id=company_id))
 
-    def battery_stock_count(self, user=None, branch_id=None) -> int:
+    def battery_stock_count(self, user=None, branch_id=None,
+                            company_id=None) -> int:
         return len(BatteryService().list(status="IN_STOCK", user=user,
-                                         branch_id=branch_id))
+                                         branch_id=branch_id,
+                                         company_id=company_id))
 
-    def maintenance_due_count(self, user=None, branch_id=None) -> int:
+    def maintenance_due_count(self, user=None, branch_id=None,
+                              company_id=None) -> int:
         from app.core.maintenance.due_calculation_service import (
             PMDueCalculationService)
         due = PMDueCalculationService().get_all_due_vehicles()
         if branch_id is not None:
             due = [d for d in due if d["vehicle"].branch_id == branch_id]
+        if company_id is not None:
+            due = [d for d in due
+                   if _company_of(d["vehicle"]) == company_id]
         if user is None:
             return len(due)
         from app.modules.user_management.org_scope_service import (
@@ -64,7 +83,8 @@ class DashboardService:
         vehicles = sorted(vehicles, key=lambda v: v.id, reverse=True)
         return vehicles[:limit]
 
-    def approvals_pending_count(self, user, branch_id=None) -> int:
+    def approvals_pending_count(self, user, branch_id=None,
+                                company_id=None) -> int:
         """Tasks awaiting this user's decision, optionally scoped to one
         branch.
 
@@ -80,10 +100,17 @@ class DashboardService:
         tasks = ApprovalTaskService().list_for_user(user)
         if branch_id is not None:
             tasks = [t for t in tasks if t.branch_id == branch_id]
+        if company_id is not None:
+            # company_id is the snapshot taken at submission (D7); a
+            # task raised before that column existed carries None and is
+            # correctly excluded from a Company-filtered view.
+            tasks = [t for t in tasks
+                     if getattr(t, "company_id", None) == company_id]
         return len(tasks)
 
     def registrations_expiring_count(self, user=None, days_ahead: int = 30,
-                                     branch_id=None) -> int:
+                                     branch_id=None,
+                                     company_id=None) -> int:
         """Count of vehicles needing registration attention.
 
         Deliberately uses the SAME RegistrationDueCalculationService that
@@ -100,6 +127,9 @@ class DashboardService:
         due = RegistrationDueCalculationService().get_all_due_vehicles()
         if branch_id is not None:
             due = [d for d in due if d["vehicle"].branch_id == branch_id]
+        if company_id is not None:
+            due = [d for d in due
+                   if _company_of(d["vehicle"]) == company_id]
         if user is None:
             return len(due)
         from app.modules.user_management.org_scope_service import (
