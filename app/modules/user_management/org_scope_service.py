@@ -168,6 +168,78 @@ class UserOrgScopeService:
             return None, None
         return company.region_id, company.area_district_id
 
+    def covers_org(self, user_id: int, *, company_id: int = None,
+                  region_id: int = None, area_district_id: int = None
+                  ) -> bool:
+        """Does this user's scope cover the given Company/Region/
+        Area-District, given DIRECTLY rather than resolved from a
+        transaction's company_id? covers() can only ask "does this
+        scope cover Company X" (and derives X's region/area to check an
+        ORG_REGION/ORG_AREA_DISTRICT scope) -- it has no way to ask
+        "does this scope cover Region X" when nothing has told it which
+        Company, which is exactly what a Vendor assigned directly to a
+        Region/Area-District (Batch 7) needs to ask.
+
+        Exactly one of the three kwargs is expected; passing none at
+        all is the same backward-compatible "nothing to check" rule
+        covers() uses. A broader user scope covers a narrower target
+        (ORG_REGION covers a Company or Area/District inside it) and a
+        narrower user scope covers a broader target it sits inside
+        (ORG_COMPANY covers its own Region), so the match is symmetric
+        around whichever of region/area the target resolves to.
+        """
+        if company_id is None and region_id is None \
+                and area_district_id is None:
+            return True
+
+        scopes = self.list_for_user(user_id)
+        if not scopes:
+            return True
+
+        target_region_id, target_area_id = region_id, area_district_id
+        if company_id is not None:
+            target_region_id, target_area_id = \
+                self._company_org_ids(company_id)
+        elif area_district_id is not None and target_region_id is None:
+            from app.modules.master_data.org.models import AreaDistrict
+            area = db.session.get(AreaDistrict, area_district_id)
+            target_region_id = area.region_id if area else None
+
+        for scope in scopes:
+            if scope.scope_type in ("GLOBAL", "COMPANY"):
+                return True
+            if (scope.scope_type == "ORG_COMPANY" and company_id is not None
+                    and scope.company_id == company_id):
+                return True
+            if (scope.scope_type == "ORG_AREA_DISTRICT"
+                    and area_district_id is not None
+                    and scope.area_district_id == area_district_id):
+                return True
+            if (scope.scope_type == "ORG_AREA_DISTRICT"
+                    and target_area_id is not None
+                    and scope.area_district_id == target_area_id):
+                return True
+            if (scope.scope_type == "ORG_COMPANY" and area_district_id is not None
+                    and scope.company_id is not None):
+                _, sc_area_id = self._company_org_ids(scope.company_id)
+                if sc_area_id == area_district_id:
+                    return True
+            if (scope.scope_type == "ORG_REGION" and target_region_id is not None
+                    and scope.region_id == target_region_id):
+                return True
+            if (scope.scope_type == "ORG_COMPANY" and region_id is not None
+                    and scope.company_id is not None):
+                sc_region_id, _ = self._company_org_ids(scope.company_id)
+                if sc_region_id == region_id:
+                    return True
+            if (scope.scope_type == "ORG_AREA_DISTRICT" and region_id is not None
+                    and scope.area_district_id is not None):
+                from app.modules.master_data.org.models import AreaDistrict
+                sc_area = db.session.get(AreaDistrict, scope.area_district_id)
+                if sc_area is not None and sc_area.region_id == region_id:
+                    return True
+        return False
+
     def covers(self, user_id: int, branch_id: int = None,
               business_unit_id: int = None, company_id: int = None) -> bool:
         """Does this user hold a scope that covers the given branch/BU/

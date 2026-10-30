@@ -264,3 +264,106 @@ def test_allowed_branch_ids_empty_when_only_an_org_company_scope_is_held(
     svc = UserOrgScopeService()
     svc.assign(user_a.id, scope_type="ORG_COMPANY", company_id=company_a.id)
     assert svc.allowed_branch_ids(user_a.id) == []
+
+
+# ── Batch 7: covers_org() -- a bare Region/Area-District target, for an
+# object (a Vendor) assigned directly to one rather than to a specific
+# Company in it. covers() cannot express this: it only ever resolves a
+# region/area FROM a company_id, so it has no way to ask "does this
+# scope cover Region X" when nothing has told it which Company. ────────
+
+def test_covers_org_no_target_falls_back_to_true(db, org_env):
+    region_a, region_b, area_a, area_b, company_a, company_b, user_a = org_env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="ORG_COMPANY", company_id=company_a.id)
+    assert svc.covers_org(user_a.id) is True
+
+
+def test_covers_org_true_when_user_has_no_scopes_at_all(db, org_env):
+    region_a, region_b, area_a, area_b, company_a, company_b, user_a = org_env
+    svc = UserOrgScopeService()
+    assert svc.covers_org(user_a.id, company_id=company_a.id) is True
+
+
+def test_covers_org_global_and_legacy_company_scope_cover_everything(
+        db, org_env):
+    region_a, region_b, area_a, area_b, company_a, company_b, user_a = org_env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="GLOBAL")
+    assert svc.covers_org(user_a.id, region_id=region_b.id) is True
+    assert svc.covers_org(user_a.id, area_district_id=area_b.id) is True
+    assert svc.covers_org(user_a.id, company_id=company_b.id) is True
+
+
+def test_covers_org_company_target_matches_an_org_company_scope(db, org_env):
+    region_a, region_b, area_a, area_b, company_a, company_b, user_a = org_env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="ORG_COMPANY", company_id=company_a.id)
+    assert svc.covers_org(user_a.id, company_id=company_a.id) is True
+    assert svc.covers_org(user_a.id, company_id=company_b.id) is False
+
+
+def test_covers_org_region_target_matches_an_org_region_scope_exactly(
+        db, org_env):
+    region_a, region_b, area_a, area_b, company_a, company_b, user_a = org_env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="ORG_REGION", region_id=region_a.id)
+    assert svc.covers_org(user_a.id, region_id=region_a.id) is True
+    assert svc.covers_org(user_a.id, region_id=region_b.id) is False
+
+
+def test_covers_org_region_target_matches_a_narrower_org_company_scope(
+        db, org_env):
+    """A user scoped to one Company within a Region can see something
+    assigned to that whole Region -- their Company is part of it."""
+    region_a, region_b, area_a, area_b, company_a, company_b, user_a = org_env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="ORG_COMPANY", company_id=company_a.id)
+    assert svc.covers_org(user_a.id, region_id=region_a.id) is True
+    assert svc.covers_org(user_a.id, region_id=region_b.id) is False
+
+
+def test_covers_org_region_target_matches_a_narrower_org_area_district_scope(
+        db, org_env):
+    region_a, region_b, area_a, area_b, company_a, company_b, user_a = org_env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="ORG_AREA_DISTRICT",
+              area_district_id=area_a.id)
+    assert svc.covers_org(user_a.id, region_id=region_a.id) is True
+    assert svc.covers_org(user_a.id, region_id=region_b.id) is False
+
+
+def test_covers_org_area_district_target_matches_exactly(db, org_env):
+    region_a, region_b, area_a, area_b, company_a, company_b, user_a = org_env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="ORG_AREA_DISTRICT",
+              area_district_id=area_a.id)
+    assert svc.covers_org(user_a.id, area_district_id=area_a.id) is True
+    assert svc.covers_org(user_a.id, area_district_id=area_b.id) is False
+
+
+def test_covers_org_area_district_target_matches_a_broader_org_region_scope(
+        db, org_env):
+    """A user scoped to the whole Region covers any Area/District
+    inside it, same direction as the Company case above."""
+    region_a, region_b, area_a, area_b, company_a, company_b, user_a = org_env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="ORG_REGION", region_id=region_a.id)
+    assert svc.covers_org(user_a.id, area_district_id=area_a.id) is True
+    assert svc.covers_org(user_a.id, area_district_id=area_b.id) is False
+
+
+def test_covers_org_company_target_matches_a_broader_region_or_area_scope(
+        db, org_env):
+    region_a, region_b, area_a, area_b, company_a, company_b, user_a = org_env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="ORG_REGION", region_id=region_a.id)
+    assert svc.covers_org(user_a.id, company_id=company_a.id) is True
+    assert svc.covers_org(user_a.id, company_id=company_b.id) is False
+
+
+def test_covers_org_false_once_user_has_a_non_matching_scope(db, org_env):
+    region_a, region_b, area_a, area_b, company_a, company_b, user_a = org_env
+    svc = UserOrgScopeService()
+    svc.assign(user_a.id, scope_type="ORG_COMPANY", company_id=company_b.id)
+    assert svc.covers_org(user_a.id, region_id=region_a.id) is False

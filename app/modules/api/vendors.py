@@ -46,6 +46,12 @@ def _serialise(v, *, detail=False):
         "vendor_type": v.vendor_type,
         "is_active": bool(v.is_active),
         "contact_person": v.contact_person,
+        # Batch 7: surfaced outside `detail` too, same as the rest of
+        # this summary shape, so a list screen's row can show how a
+        # vendor is scoped without a second round trip per row.
+        "company_ids": [c.id for c in (v.companies or [])],
+        "region_ids": [r.id for r in (v.regions or [])],
+        "area_district_ids": [a.id for a in (v.area_districts or [])],
     }
     if detail:
         data.update({
@@ -55,6 +61,19 @@ def _serialise(v, *, detail=False):
             "branches": [
                 {"id": b.id, "code": getattr(b, "code", None), "name": b.name}
                 for b in (v.branches or [])
+            ],
+            # Batch 7 (2026-10-31): Company/Region/Area-District
+            # scoping, alongside Branch -- Michael's decision that
+            # Vendor coverage must be configurable at all three.
+            "companies": [
+                {"id": c.id, "label": c.short_name}
+                for c in (v.companies or [])
+            ],
+            "regions": [
+                {"id": r.id, "name": r.name} for r in (v.regions or [])
+            ],
+            "area_districts": [
+                {"id": a.id, "name": a.name} for a in (v.area_districts or [])
             ],
             "contacts": [
                 _contact_json(c) for c in (v.other_contacts or [])
@@ -257,6 +276,21 @@ def create_vendor(api_user):
         if isinstance(branch_ids, list) and branch_ids:
             VendorService().assign_branches(
                 vendor.id, [int(x) for x in branch_ids])
+        # Batch 7 (2026-10-31): Company/Region/Area-District, alongside
+        # branch_ids above -- same "only act when a non-empty list was
+        # actually sent" rule, since create() has nothing to clear yet.
+        company_ids = payload.get("company_ids") or []
+        if isinstance(company_ids, list) and company_ids:
+            VendorService().assign_companies(
+                vendor.id, [int(x) for x in company_ids])
+        region_ids = payload.get("region_ids") or []
+        if isinstance(region_ids, list) and region_ids:
+            VendorService().assign_regions(
+                vendor.id, [int(x) for x in region_ids])
+        area_district_ids = payload.get("area_district_ids") or []
+        if isinstance(area_district_ids, list) and area_district_ids:
+            VendorService().assign_area_districts(
+                vendor.id, [int(x) for x in area_district_ids])
     except (DuplicateCodeError, FieldValueError, ValueError, TypeError) as exc:
         return _validation_response(exc)
     return jsonify(_serialise(vendor, detail=True)), 201
@@ -286,6 +320,23 @@ def update_vendor(api_user, vendor_id):
         if "branch_ids" in payload:
             branch_ids = payload.get("branch_ids") or []
             svc.assign_branches(vendor_id, [int(x) for x in branch_ids])
+            vendor = svc.get(vendor_id)
+        # Batch 7 (2026-10-31): Company/Region/Area-District, mirroring
+        # branch_ids immediately above -- presence of the key (even as
+        # an empty list) means "replace this axis", so a vendor's scope
+        # can be cleared the same way branch_ids already can.
+        if "company_ids" in payload:
+            company_ids = payload.get("company_ids") or []
+            svc.assign_companies(vendor_id, [int(x) for x in company_ids])
+            vendor = svc.get(vendor_id)
+        if "region_ids" in payload:
+            region_ids = payload.get("region_ids") or []
+            svc.assign_regions(vendor_id, [int(x) for x in region_ids])
+            vendor = svc.get(vendor_id)
+        if "area_district_ids" in payload:
+            area_district_ids = payload.get("area_district_ids") or []
+            svc.assign_area_districts(
+                vendor_id, [int(x) for x in area_district_ids])
             vendor = svc.get(vendor_id)
     except (FieldValueError, ValueError, TypeError) as exc:
         return _validation_response(exc)

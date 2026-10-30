@@ -71,6 +71,47 @@ class VendorService:
         db.session.commit()
         return obj
 
+    def assign_companies(self, record_id, company_ids):
+        """Replace this vendor's full set of served Companies (Batch 7).
+        Alongside branches/business_units, not instead of them -- an
+        empty list clears ONLY this axis."""
+        from app.modules.master_data.org.models import OrgCompany
+        obj = db.session.get(Vendor, record_id)
+        if obj is None:
+            return None
+        obj.companies = (
+            OrgCompany.query.filter(OrgCompany.id.in_(company_ids)).all()
+            if company_ids else [])
+        db.session.commit()
+        return obj
+
+    def assign_regions(self, record_id, region_ids):
+        """Replace this vendor's full set of served Regions (Batch 7) --
+        "serves all of Luzon" rather than one Company in it."""
+        from app.modules.master_data.org.models import Region
+        obj = db.session.get(Vendor, record_id)
+        if obj is None:
+            return None
+        obj.regions = (
+            Region.query.filter(Region.id.in_(region_ids)).all()
+            if region_ids else [])
+        db.session.commit()
+        return obj
+
+    def assign_area_districts(self, record_id, area_district_ids):
+        """Replace this vendor's full set of served Area/Districts
+        (Batch 7)."""
+        from app.modules.master_data.org.models import AreaDistrict
+        obj = db.session.get(Vendor, record_id)
+        if obj is None:
+            return None
+        obj.area_districts = (
+            AreaDistrict.query.filter(
+                AreaDistrict.id.in_(area_district_ids)).all()
+            if area_district_ids else [])
+        db.session.commit()
+        return obj
+
     def get(self, record_id):
         return db.session.get(Vendor, record_id)
 
@@ -91,7 +132,9 @@ class VendorService:
         return None
 
     def _is_visible(self, vendor, user) -> bool:
-        if not vendor.branches and not vendor.business_units:
+        if not (vendor.branches or vendor.business_units
+                or vendor.companies or vendor.regions
+                or vendor.area_districts):
             return True
         from app.modules.user_management.org_scope_service import (
             UserOrgScopeService)
@@ -100,6 +143,19 @@ class VendorService:
             return True
         if any(scope_svc.covers(user.id, business_unit_id=bu.id)
               for bu in vendor.business_units):
+            return True
+        # Batch 7: Company/Region/Area-District are alternatives to
+        # Branch/BU, not a further narrowing -- a vendor matching ANY
+        # one assigned axis is visible, same "any assignment is enough"
+        # rule the two existing axes already follow.
+        if any(scope_svc.covers_org(user.id, company_id=c.id)
+              for c in vendor.companies):
+            return True
+        if any(scope_svc.covers_org(user.id, region_id=r.id)
+              for r in vendor.regions):
+            return True
+        if any(scope_svc.covers_org(user.id, area_district_id=a.id)
+              for a in vendor.area_districts):
             return True
         return False
 
