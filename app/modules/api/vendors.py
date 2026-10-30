@@ -65,8 +65,12 @@ def _serialise(v, *, detail=False):
             # Batch 7 (2026-10-31): Company/Region/Area-District
             # scoping, alongside Branch -- Michael's decision that
             # Vendor coverage must be configurable at all three.
+            # "name" rather than "label" here, matching regions/
+            # area_districts below -- all three are plain {id, name}
+            # pairs, consistent for whichever of the three the React
+            # coverage selector is rendering a chip for.
             "companies": [
-                {"id": c.id, "label": c.short_name}
+                {"id": c.id, "name": c.short_name}
                 for c in (v.companies or [])
             ],
             "regions": [
