@@ -243,12 +243,19 @@ class DriverService:
             return obj
         return None
 
-    def list(self, include_inactive=False, branch_id=None, user=None):
+    def list(self, include_inactive=False, branch_id=None, user=None,
+             company_id=None):
         q = Driver.query
         if not include_inactive:
             q = q.filter_by(is_active=True)
         if branch_id:
             q = q.filter_by(branch_id=branch_id)
+        if company_id:
+            # Effective Company -- the driver's own, else their branch's.
+            # This is what §20 anticipated: a driver inherits Company
+            # through branch_id, so mapping branches is enough.
+            from app.core.company_resolution import company_filter
+            q = q.filter(company_filter(Driver, company_id))
         records = q.order_by(Driver.last_name, Driver.first_name).all()
         if user is None:
             return records

@@ -127,8 +127,13 @@ def list_purchase_requests(api_user):
     q = request.args.get("q")
     status = request.args.get("status")
 
+    from app.modules.api.coercion import company_arg
+    _company_id, _cerr = company_arg()
+    if _cerr:
+        return _cerr
     rows, pagination = PurchaseRequestService().list_filtered(
         user=api_user, search=q or None, status=status or None,
+        company_id=_company_id,
         page=page, per_page=page_size)
     return jsonify({
         "items": [_pr_json(pr) for pr in rows],

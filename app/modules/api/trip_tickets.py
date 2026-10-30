@@ -158,9 +158,14 @@ def list_trip_tickets(api_user):
 
     page = request.args.get("page", 1, type=int)
     page_size = min(request.args.get("page_size", 25, type=int), 100)
+    from app.modules.api.coercion import company_arg
+    _company_id, _cerr = company_arg()
+    if _cerr:
+        return _cerr
     rows, pagination = TripTicketService().list_filtered(
         user=api_user, search=request.args.get("q") or None,
         status=request.args.get("status") or None,
+        company_id=_company_id,
         page=page, per_page=page_size)
     return jsonify({
         "items": [_trip_json(t) for t in rows],

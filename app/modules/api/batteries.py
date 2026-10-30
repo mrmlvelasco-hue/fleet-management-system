@@ -65,15 +65,18 @@ def _filtered(api_user):
     try:
         branch_id = request.args.get("branch_id")
         branch_id = int(branch_id) if branch_id else None
+        company_id = request.args.get("company_id")
+        company_id = int(company_id) if company_id else None
     except (TypeError, ValueError):
-        return None, _bad("branch_id must be an integer.")
+        return None, _bad("branch_id and company_id must be integers.")
 
     if status and status not in _BATTERY_STATUSES:
         return None, _bad(f"Unknown status '{status}'.")
 
     rows = BatteryService().list(
         include_inactive=True, status=status or None,
-        user=api_user, branch_id=branch_id)
+        user=api_user, branch_id=branch_id,
+        company_id=company_id)
 
     if q:
         rows = [b for b in rows if q in " ".join(filter(None, [

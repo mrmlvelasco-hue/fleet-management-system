@@ -122,13 +122,16 @@ def _filtered(api_user):
     try:
         branch_id = request.args.get("branch_id")
         branch_id = int(branch_id) if branch_id else None
+        company_id = request.args.get("company_id")
+        company_id = int(company_id) if company_id else None
     except (TypeError, ValueError):
-        return None, _bad("branch_id must be an integer.")
+        return None, _bad("branch_id and company_id must be integers.")
 
     # include_inactive=True: the list has its own status filter, and
     # hiding INACTIVE rows here would make that filter unable to show
     # them. Soft-deleted rows are a separate concern from status.
     rows = DriverService().list(include_inactive=True, branch_id=branch_id,
+                                company_id=company_id,
                                 user=api_user)
 
     if status:

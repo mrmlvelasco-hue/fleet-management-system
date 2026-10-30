@@ -369,8 +369,9 @@ class VehicleService:
         return visible
 
     def list_page(self, user=None, q=None, status=None, vehicle_type_id=None,
-                  branch_id=None, sort="plate", direction="asc",
-                  page=1, page_size=20, include_disposed=False):
+                  branch_id=None, company_id=None, sort="plate",
+                  direction="asc", page=1, page_size=20,
+                  include_disposed=False):
         """One page of vehicles, filtered and sorted IN SQL.
 
         `list()` above loads every visible vehicle and filters visibility
@@ -400,6 +401,12 @@ class VehicleService:
             query = query.filter(Vehicle.status != "DISPOSED")
         if branch_id:
             query = query.filter(Vehicle.branch_id == branch_id)
+        if company_id:
+            # Same shared predicate list() uses, so the paged screen and
+            # the dashboard count can never disagree about what belongs
+            # to a Company.
+            from app.core.company_resolution import company_filter
+            query = query.filter(company_filter(Vehicle, company_id))
 
         if user is not None:
             scope_svc = UserOrgScopeService()

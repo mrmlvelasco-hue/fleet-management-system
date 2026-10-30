@@ -115,3 +115,31 @@ class Coercer:
 
 
 __all__ = ["Coercer", "FieldValueError", "date", "Decimal"]
+
+
+def company_arg(args=None):
+    """Parse `company_id` from a query string, STRICTLY.
+
+    Returns (company_id_or_None, error_response_or_None).
+
+    Deliberately not `request.args.get("company_id", type=int)`: that
+    returns None for a malformed value, so a typo'd or truncated filter
+    silently returns EVERYTHING under a filter the user believes is
+    applied. That is the exact failure mode behind the dashboard reading
+    156 vehicles instead of 2 -- wrong numbers that look right are worse
+    than an error.
+
+    Shared so every list endpoint parses it the same way; the two Company
+    bugs so far were both a call site that differed from the others.
+    """
+    from flask import jsonify, request
+    args = request.args if args is None else args
+    raw = args.get("company_id")
+    if raw is None or raw == "":
+        return None, None
+    try:
+        return int(raw), None
+    except (TypeError, ValueError):
+        return None, (jsonify({
+            "error": "bad_request",
+            "message": "company_id must be an integer."}), 400)

@@ -157,9 +157,14 @@ def list_atd(api_user):
     status = (request.args.get("status") or "").strip().upper() or None
     svc = ATDService()
     if hasattr(svc, "list_filtered"):
+        from app.modules.api.coercion import company_arg
+        _company_id, _cerr = company_arg()
+        if _cerr:
+            return _cerr
         rows, pagination = svc.list_filtered(
             user=api_user, page=page, per_page=page_size,
-            search=q, status=status)
+            search=q, status=status,
+            company_id=_company_id)
         items = [_atd_json(a) for a in rows]
         return jsonify({
             "items": items,

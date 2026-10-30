@@ -637,8 +637,9 @@ class BaseTransactionService:
 
     def list_filtered(self, *, user=None, page=1, per_page=25,
                      search=None, status=None, branch_id=None,
-                     date_from=None, date_to=None, date_field=None,
-                     include_inactive=True, extra_filters=None):
+                     company_id=None, date_from=None, date_to=None,
+                     date_field=None, include_inactive=True,
+                     extra_filters=None):
         """One page of records matching the standard transaction filters.
 
         Deliberately built on _visible_query, the same base list() uses,
@@ -676,6 +677,15 @@ class BaseTransactionService:
             branch_clause = self._branch_scope_clause([int(branch_id)], [])
             if branch_clause is not None:
                 query = query.filter(branch_clause)
+
+        if company_id:
+            # Stage 3C: one edit here covers EVERY transaction list --
+            # Maintenance Order, Purchase Request, Trip Ticket, ATD,
+            # Vehicle Movement, Tire/Battery transaction, Maintenance
+            # Invoice and Handover all page through list_filtered.
+            company_clause = self._company_scope_clause(int(company_id))
+            if company_clause is not None:
+                query = query.filter(company_clause)
 
         date_col = self._date_column(date_field)
         if date_col is not None:
@@ -755,6 +765,40 @@ class BaseTransactionService:
             parts.append(self.model.department_id.in_(
                 db.session.query(Department.id)
                 .filter(Department.branch_id.in_(branch_ids))))
+        if not parts:
+            return None
+        return or_(*parts)
+
+    def _company_scope_clause(self, company_id):
+        """SQL for "this document belongs to Company X".
+
+        The company twin of _branch_scope_clause, walking the same
+        attributes in the same order: the document's own company_id
+        (a snapshot taken at submission, per D7), then its vehicle's
+        EFFECTIVE company, then its department's.
+
+        Unlike the branch clause this does NOT fall back to including
+        records with no company at all: a filter asking for one Company
+        that returned every unassigned document as well would overstate
+        it, which is the failure mode that made the dashboard read 156
+        instead of 2.
+        """
+        from sqlalchemy import or_
+        from app.core.company_resolution import company_filter
+
+        parts = []
+        if hasattr(self.model, "company_id"):
+            parts.append(self.model.company_id == company_id)
+        if hasattr(self.model, "vehicle_id"):
+            from app.modules.master_data.vehicle.models import Vehicle
+            parts.append(self.model.vehicle_id.in_(
+                db.session.query(Vehicle.id)
+                .filter(company_filter(Vehicle, company_id))))
+        if hasattr(self.model, "department_id"):
+            from app.modules.master_data.org.models import Department
+            parts.append(self.model.department_id.in_(
+                db.session.query(Department.id)
+                .filter(Department.company_id == company_id)))
         if not parts:
             return None
         return or_(*parts)

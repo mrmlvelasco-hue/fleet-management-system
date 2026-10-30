@@ -536,9 +536,14 @@ def list_maintenance_orders_v2(api_user):
 
     # Prefer list_filtered when available
     if hasattr(svc, "list_filtered"):
+        from app.modules.api.coercion import company_arg
+        _company_id, _cerr = company_arg()
+        if _cerr:
+            return _cerr
         rows, pagination = svc.list_filtered(
             user=api_user, page=page, per_page=page_size,
             search=q or None, status=status,
+            company_id=_company_id,
             extra_filters=extra or None)
         total = pagination.total
         items = [_order_json(o) for o in rows]

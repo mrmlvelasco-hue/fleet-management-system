@@ -306,9 +306,14 @@ def _approval_chain(inst):
 def _list(api_user, service_cls, **json_kw):
     page = request.args.get("page", 1, type=int)
     page_size = min(request.args.get("page_size", 25, type=int), 100)
+    from app.modules.api.coercion import company_arg
+    company_id, _cerr = company_arg()
+    if _cerr:
+        return _cerr
     rows, pagination = service_cls().list_filtered(
         user=api_user, search=request.args.get("q") or None,
         status=request.args.get("status") or None,
+        company_id=company_id,
         page=page, per_page=page_size)
     return jsonify({
         "items": [_txn_json(t, **json_kw) for t in rows],

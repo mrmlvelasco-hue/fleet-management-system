@@ -84,12 +84,15 @@ def _list_filters():
         return None, _bad("dir must be 'asc' or 'desc'.")
 
     branch_id = request.args.get("branch_id")
+    company_id = request.args.get("company_id")
     vehicle_type_id = request.args.get("vehicle_type_id")
     try:
         branch_id = int(branch_id) if branch_id else None
+        company_id = int(company_id) if company_id else None
         vehicle_type_id = int(vehicle_type_id) if vehicle_type_id else None
     except (TypeError, ValueError):
-        return None, _bad("branch_id and vehicle_type_id must be integers.")
+        return None, _bad(
+            "branch_id, company_id and vehicle_type_id must be integers.")
 
     return {
         "q": q or None,
@@ -97,6 +100,7 @@ def _list_filters():
         "sort": sort,
         "direction": direction,
         "branch_id": branch_id,
+        "company_id": company_id,
         "vehicle_type_id": vehicle_type_id,
         # Disposed visibility is an EXPLICIT toggle, mirroring the Jinja
         # route's show_disposed=1 -- deliberately independent of the
