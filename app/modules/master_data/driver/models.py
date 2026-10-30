@@ -34,8 +34,10 @@ class Driver(db.Model, BaseModel):
     license_expiry = db.Column(db.Date, nullable=True)
     license_type = db.Column(db.String(20), nullable=True)  # Lookup LICENSE_TYPE
 
+    # Stage 3D: nullable since 2026-10-30, mirroring Vehicle -- Branch
+    # removed from the form, Company required in its place.
     branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
-                          nullable=False)
+                          nullable=True)
     # Stage 3D: organisational owner, carried here so it survives
     # Branch's retirement. Nullable -- an unmapped legacy record is
     # the normal state until the Company backfill runs.

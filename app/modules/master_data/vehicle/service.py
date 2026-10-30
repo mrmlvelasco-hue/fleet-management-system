@@ -124,7 +124,7 @@ def _validate_business_rules(data: dict) -> None:
 
 class VehicleService:
     def create(self, vehicle_type_id, brand, model, year,
-               branch_id, conduction_number=None, plate_number=None,
+               branch_id=None, conduction_number=None, plate_number=None,
                strict=False, **kwargs):
         if conduction_number and Vehicle.query.filter_by(
                 conduction_number=conduction_number).first():
@@ -353,9 +353,16 @@ class VehicleService:
         from app.modules.user_management.org_scope_service import (
             UserOrgScopeService)
         scope_svc = UserOrgScopeService()
+        from app.core.company_resolution import effective_company_id
         visible = [v for v in records
                    if v.created_by == getattr(user, "id", None)
-                   or scope_svc.covers(user.id, branch_id=v.branch_id)]
+                   or scope_svc.covers(
+                       user.id, branch_id=v.branch_id,
+                       # Passed so a vehicle with NO branch resolves
+                       # through its Company. Without it covers()
+                       # short-circuits on the null branch and returns
+                       # True, making the record visible to everyone.
+                       company_id=effective_company_id(v))]
         # Same further narrowing as list_page(). A test asserts the two
         # return identical ids, because the dashboard counts through
         # this path and the screen pages through the other -- if they
@@ -367,6 +374,24 @@ class VehicleService:
             assigned = set(AssigneeScopeService().assigned_vehicle_ids(user))
             visible = [v for v in visible if v.id in assigned]
         return visible
+
+    @staticmethod
+    def _companies_in_scope(scope):
+        """Company ids covered by an ORG_REGION / ORG_AREA_DISTRICT
+        scope. A holder never needs every Company in their Region
+        granted individually -- the same resolution covers() performs,
+        expressed here for the SQL path."""
+        from app.modules.master_data.org.models import OrgCompany
+        q = OrgCompany.query
+        if scope.scope_type == "ORG_REGION" and scope.region_id:
+            q = q.filter(OrgCompany.region_id == scope.region_id)
+        elif (scope.scope_type == "ORG_AREA_DISTRICT"
+              and scope.area_district_id):
+            q = q.filter(
+                OrgCompany.area_district_id == scope.area_district_id)
+        else:
+            return []
+        return [c.id for c in q.all()]
 
     def list_page(self, user=None, q=None, status=None, vehicle_type_id=None,
                   branch_id=None, company_id=None, sort="plate",
@@ -421,10 +446,26 @@ class VehicleService:
                 if not unrestricted:
                     ids = [sc.branch_id for sc in scopes
                            if sc.scope_type == "BRANCH" and sc.branch_id]
-                    query = query.filter(or_(
-                        Vehicle.created_by == user.id,
-                        Vehicle.branch_id.in_(ids) if ids else False,
-                    ))
+                    allowed = [Vehicle.created_by == user.id]
+                    if ids:
+                        allowed.append(Vehicle.branch_id.in_(ids))
+                    # Stage 3D: the org-scope types added in v274 must be
+                    # honoured HERE too, not only in list()'s Python
+                    # check. Without this an ORG_COMPANY-scoped user fell
+                    # through to the empty branch list and saw NOTHING on
+                    # the paged screen while list() showed them their
+                    # fleet -- the two disagreeing about the same
+                    # question, which a test now pins.
+                    from app.core.company_resolution import company_filter
+                    for sc in scopes:
+                        if sc.scope_type == "ORG_COMPANY" and sc.company_id:
+                            allowed.append(
+                                company_filter(Vehicle, sc.company_id))
+                        elif (sc.scope_type in ("ORG_REGION",
+                                                "ORG_AREA_DISTRICT")):
+                            for cid in self._companies_in_scope(sc):
+                                allowed.append(company_filter(Vehicle, cid))
+                    query = query.filter(or_(*allowed))
 
             # Assignment scope, applied AFTER org scope and as a further
             # narrowing -- never as an alternative to it. A vehicle

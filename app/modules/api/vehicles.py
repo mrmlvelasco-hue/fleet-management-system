@@ -275,6 +275,13 @@ def vehicles_summary(api_user):
     branch_id, error = _requested_branch_id(api_user)
     if error:
         return error
+    # The tiles sit directly above the table and answer the same
+    # question, so they must take the same filters. Missing this is how
+    # they came to read 156 while the table beside them read 2.
+    from app.modules.api.coercion import company_arg
+    company_id, error = company_arg()
+    if error:
+        return error
     status = (request.args.get("status") or "").strip().upper()
     if status and status not in _VALID_STATUSES:
         return _bad(f"Unknown status '{status}'.")
@@ -288,7 +295,8 @@ def vehicles_summary(api_user):
     rows, _ = VehicleService().list_page(
         user=api_user, q=(request.args.get("q") or "").strip() or None,
         status=status or None, vehicle_type_id=vehicle_type_id,
-        branch_id=branch_id, page=1, page_size=100000,
+        branch_id=branch_id, company_id=company_id,
+        page=1, page_size=100000,
         include_disposed=(request.args.get("show_disposed") == "1"))
 
     # How many disposed vehicles exist to REVEAL -- deliberately
@@ -299,6 +307,7 @@ def vehicles_summary(api_user):
     # materialise the rows.
     _disposed_rows, disposed_total = VehicleService().list_page(
         user=api_user, status="DISPOSED", branch_id=branch_id,
+        company_id=company_id,
         page=1, page_size=1, include_disposed=True)
 
     summary = _summary(rows)
@@ -882,6 +891,11 @@ _INT_FIELDS = {
     "current_odometer": "Current Odometer",
     "current_engine_hours": "Current Engine Hours",
     "branch_id": "Branch",
+    # company_id was absent here, so a browser form -- which posts every
+    # field as a STRING -- stored "4" and then compared unequal to 4 in
+    # every Python-side company check. The same shape as the v278 bug
+    # that made Company creation impossible.
+    "company_id": "Company",
     "department_id": "Department",
     "assigned_driver_id": "Assigned Driver",
     "pm_schedule_id": "Assigned PM Template",
@@ -986,6 +1000,18 @@ def create_vehicle(api_user):
             "error": "validation",
             "message": "Year is required.",
             "fields": {"year": "Year is required."}}), 400
+    # Company replaced Branch as the required org field (2026-10-30).
+    # Checked explicitly for the same reason as Year above: left to the
+    # database it surfaces as the service's generic duplicate message,
+    # naming the wrong field and telling the user nothing they can act
+    # on. It also guarantees every new vehicle has an org anchor --
+    # branch_id is nullable now, and a record with NEITHER would be
+    # visible to every user.
+    if not fields.get("company_id"):
+        return jsonify({
+            "error": "validation",
+            "message": "Company is required.",
+            "fields": {"company_id": "Company is required."}}), 400
     try:
         # strict=True mirrors the Jinja route exactly: brand and model
         # must resolve against the master list. Passing False here would

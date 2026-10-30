@@ -26,8 +26,14 @@ class Vehicle(db.Model, BaseModel):
     current_engine_hours = db.Column(db.Integer, nullable=True)
     color = db.Column(db.String(50))
     fuel_type = db.Column(db.String(20))          # from Lookup FUEL_TYPE
+    # Stage 3D: nullable since 2026-10-30. Branch was removed from the
+    # Vehicle form and Company made required in its place, so a vehicle
+    # enrolled today has a Company and no Branch. Legacy rows keep
+    # theirs. Visibility resolves Company when branch is NULL -- without
+    # that, covers() short-circuits on a null branch and the record
+    # would be visible to EVERY user.
     branch_id = db.Column(db.Integer,
-                          db.ForeignKey("branches.id"), nullable=False)
+                          db.ForeignKey("branches.id"), nullable=True)
     # Stage 3A (D6): the organisational owner going forward. Nullable
     # until the Stage 3B migration tool backfills it from `branch_id` --
     # a vehicle created before Stage 3A, or before its branch has been

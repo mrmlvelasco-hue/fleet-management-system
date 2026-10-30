@@ -85,11 +85,24 @@ def test_vendor_company_coverage_table_exists(db):
     assert cols == {"vendor_id", "company_id"}
 
 
-def test_branch_columns_are_untouched(db):
-    """The whole point of this step being additive: nothing about Branch
-    changes yet, so the system keeps running on it while the new columns
-    are backfilled and reconciled."""
+def test_branch_columns_relaxed_only_when_company_took_over(db):
+    """Branch was deliberately untouched while the company columns were
+    being added -- that step was purely additive, so the system kept
+    running on Branch while the new columns were backfilled and
+    reconciled.
+
+    It was relaxed only afterwards (migration e5b3d81c7a24, 2026-10-30),
+    once Michael confirmed Company replaces Branch on the Vehicle and
+    Driver forms. The ORDER matters: relaxing NOT NULL before Company
+    was populated and proven would have allowed records with no org
+    context at all, which are visible to every user.
+
+    The foreign key itself stays, so existing rows keep their branch.
+    """
     from app.modules.master_data.vehicle.models import Vehicle
     from app.modules.master_data.driver.models import Driver
-    assert Vehicle.__table__.columns["branch_id"].nullable is False
-    assert Driver.__table__.columns["branch_id"].nullable is False
+    for model in (Vehicle, Driver):
+        col = model.__table__.columns["branch_id"]
+        assert col.nullable is True
+        assert {fk.target_fullname for fk in col.foreign_keys} == {
+            "branches.id"}, f"{model.__name__} lost its branch FK"
