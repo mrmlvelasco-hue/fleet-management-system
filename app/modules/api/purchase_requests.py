@@ -113,6 +113,29 @@ def _pr_json(pr, *, detail=False):
         mo = _linked_mo(pr.id)
         data["linked_mo_id"] = mo.id if mo else None
         data["linked_mo_document_number"] = mo.document_number if mo else None
+
+        # Detail-only audit metadata for the transaction review screen.
+        # Resolve actor labels in one query; do not expose user IDs as labels.
+        data["created_at"] = (pr.created_at.isoformat()
+                              if getattr(pr, "created_at", None) else None)
+        data["updated_at"] = (pr.updated_at.isoformat()
+                              if getattr(pr, "updated_at", None) else None)
+        actor_ids = {uid for uid in (
+            getattr(pr, "created_by", None),
+            getattr(pr, "updated_by", None),
+        ) if uid is not None}
+        if actor_ids:
+            from app.modules.user_management.models import User
+            actors = {u.id: (getattr(u, "full_name", None)
+                             or u.username)
+                      for u in User.query.filter(User.id.in_(actor_ids)).all()}
+        else:
+            actors = {}
+        data["created_by_name"] = actors.get(getattr(pr, "created_by", None))
+        data["updated_by_name"] = actors.get(getattr(pr, "updated_by", None))
+        data["requested_by_name"] = (
+            (pr.requester.full_name or pr.requester.username)
+            if getattr(pr, "requester", None) else None)
     return data
 
 

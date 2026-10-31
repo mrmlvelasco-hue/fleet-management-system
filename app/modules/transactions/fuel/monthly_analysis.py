@@ -251,52 +251,92 @@ def _num_or_missing(value):
 
 
 def export_monthly_analysis_xlsx(rows, year=None, fleet_summary=None) -> bytes:
-    """The web report's own figures, laid out the way the client's
-    MONTHLY FUEL ANALYSIS workbook is laid out -- one row per vehicle,
-    a 6-column block per month -- but using THIS engine's corrected
-    monthly_rows()/fleet_summary() output, not the workbook's own
-    formulas. A month with nothing computable writes "-", never a 0
-    that would read as zero consumption.
+    """Export the existing server-calculated monthly fuel figures with
+    the client's month-by-month color coding. Calculations and exported
+    values remain sourced exclusively from monthly_rows()/fleet_summary().
     """
+    from openpyxl.utils import get_column_letter
+
     year = year or datetime.now().year
     wb = Workbook()
     ws = wb.active
     ws.title = f"{year} Fuel Cost & Consumption"
 
-    title_font = Font(bold=True, size=13)
-    header_fill = PatternFill("solid", fgColor="1F3B4D")
-    header_font = Font(bold=True, color="FFFFFF")
+    # Palette follows the supplied monthly workbook: blue vehicle fields,
+    # green month bands, and alternating yellow/light-green month blocks.
+    title_font = Font(bold=True, size=14, color="17324D")
+    white_bold = Font(bold=True, color="FFFFFF")
+    dark_font = Font(color="203040")
+    month_header_fill = PatternFill("solid", fgColor="00B050")
+    identity_header_fill = PatternFill("solid", fgColor="BDD6EE")
+    identity_body_fill = PatternFill("solid", fgColor="EAF2F8")
+    month_fills = [
+        PatternFill("solid", fgColor="FFE598"),  # Jan, Mar, ...
+        PatternFill("solid", fgColor="C5E0B3"),  # Feb, Apr, ...
+    ]
+    border_color = "D5DEE7"
+    from openpyxl.styles import Border, Side
+    thin_border = Border(
+        left=Side(style="thin", color=border_color),
+        right=Side(style="thin", color=border_color),
+        top=Side(style="thin", color=border_color),
+        bottom=Side(style="thin", color=border_color),
+    )
 
-    ws.merge_cells(start_row=1, start_column=1, end_row=1,
-                   end_column=len(_EXPORT_HEADER) + 12 * len(_MONTH_BLOCK))
-    ws.cell(row=1, column=1,
-           value=f"{year} FUEL COST & CONSUMPTION").font = title_font
+    first_month_col = len(_EXPORT_HEADER) + 1
+    last_col = len(_EXPORT_HEADER) + 12 * len(_MONTH_BLOCK)
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
+    title_cell = ws.cell(row=1, column=1, value=f"{year} FUEL COST & CONSUMPTION")
+    title_cell.font = title_font
+    title_cell.alignment = Alignment(vertical="center", horizontal="left")
+    ws.row_dimensions[1].height = 28
 
-    header_row = list(_EXPORT_HEADER)
-    for label in MONTH_LABELS:
-        header_row.extend(f"{label} {col}" for col in _MONTH_BLOCK)
-    ws.append([None])     # placeholder so append lands on row 2
-    for i, text in enumerate(header_row, start=1):
-        cell = ws.cell(row=2, column=i, value=text)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(wrap_text=True, horizontal="center")
-    ws.row_dimensions[2].height = 30
+    # Vehicle identification headers span both header rows.
+    for col, label in enumerate(_EXPORT_HEADER, start=1):
+        ws.merge_cells(start_row=2, start_column=col, end_row=3, end_column=col)
+        cell = ws.cell(row=2, column=col, value=label)
+        cell.fill = identity_header_fill
+        cell.font = Font(bold=True, color="17324D")
+        cell.alignment = Alignment(wrap_text=True, horizontal="center", vertical="center")
+        cell.border = thin_border
+
+    # One merged month header per seven-column block, with metric labels below.
+    for month_index, label in enumerate(MONTH_LABELS):
+        start_col = first_month_col + month_index * len(_MONTH_BLOCK)
+        end_col = start_col + len(_MONTH_BLOCK) - 1
+        ws.merge_cells(start_row=2, start_column=start_col, end_row=2, end_column=end_col)
+        month_cell = ws.cell(row=2, column=start_col, value=label.upper())
+        month_cell.fill = month_header_fill
+        month_cell.font = white_bold
+        month_cell.alignment = Alignment(horizontal="center", vertical="center")
+        month_cell.border = thin_border
+        for offset, metric_label in enumerate(_MONTH_BLOCK):
+            col = start_col + offset
+            cell = ws.cell(row=3, column=col, value=metric_label)
+            cell.fill = month_fills[month_index % 2]
+            cell.font = Font(bold=True, color="203040")
+            cell.alignment = Alignment(wrap_text=True, horizontal="center", vertical="center")
+            cell.border = thin_border
+
+    ws.row_dimensions[2].height = 24
+    ws.row_dimensions[3].height = 38
+
+    # Sensible widths for fixed fields and monthly measurements.
     ws.column_dimensions["A"].width = 22
-    ws.column_dimensions["C"].width = 18
-    ws.column_dimensions["D"].width = 22
+    ws.column_dimensions["B"].width = 22
+    ws.column_dimensions["C"].width = 21
+    ws.column_dimensions["D"].width = 24
+    for col in range(first_month_col, last_col + 1):
+        offset = (col - first_month_col) % len(_MONTH_BLOCK)
+        ws.column_dimensions[get_column_letter(col)].width = 15 if offset in (0, 1, 2) else 14
 
+    # Data values are unchanged; only formatting is applied to the emitted cells.
     for row in rows:
         out = [row.get("branch_name") or MISSING,
-              row.get("department_name") or MISSING,
-              row.get("plate_number") or MISSING,
-              row.get("vehicle_label") or MISSING]
+               row.get("department_name") or MISSING,
+               row.get("plate_number") or MISSING,
+               row.get("vehicle_label") or MISSING]
         for m in row["months"]:
-            # Litres and cost are real, summed totals for the month --
-            # genuinely zero when nothing was bought, which is a true
-            # fact, not a gap. End Odometer/KM/KM-L/Cost-KM are each
-            # UNKNOWABLE (not zero) whenever the month has no reason
-            # to trust a figure at all.
             out.extend([
                 m["begin_odometer"] if m["begin_odometer"] is not None else MISSING,
                 m["end_odometer"] if m["end_odometer"] is not None else MISSING,
@@ -307,14 +347,54 @@ def export_monthly_analysis_xlsx(rows, year=None, fleet_summary=None) -> bytes:
                 _num_or_missing(m["total_cost"]),
             ])
         ws.append(out)
+        row_num = ws.max_row
+        ws.row_dimensions[row_num].height = 21
+        for col in range(1, last_col + 1):
+            cell = ws.cell(row=row_num, column=col)
+            cell.font = dark_font
+            cell.border = thin_border
+            cell.alignment = Alignment(vertical="center", horizontal="left" if col <= 4 else "right")
+            if col <= 4:
+                cell.fill = identity_body_fill
+            else:
+                month_index = (col - first_month_col) // len(_MONTH_BLOCK)
+                cell.fill = month_fills[month_index % 2]
+                metric_offset = (col - first_month_col) % len(_MONTH_BLOCK)
+                if isinstance(cell.value, (int, float)):
+                    if metric_offset in (0, 1, 2):
+                        cell.number_format = '#,##0'
+                    elif metric_offset == 3:
+                        cell.number_format = '#,##0.0'
+                    elif metric_offset == 4:
+                        cell.number_format = '#,##0.00'
+                    else:
+                        cell.number_format = '₱#,##0.00'
+
+    data_last_row = ws.max_row
+    if data_last_row >= 4:
+        ws.auto_filter.ref = f"A3:{get_column_letter(last_col)}{data_last_row}"
+    ws.freeze_panes = "E4"
+    ws.sheet_view.showGridLines = False
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.page_setup.orientation = "landscape"
+    ws.print_title_rows = "1:3"
 
     if fleet_summary:
         ws.append([])
+        total_row = ws.max_row + 1
         ws.append(["FLEET TOTAL", None, None, None,
-                  f"Litres: {fleet_summary.get('total_litres')}",
-                  None, None, None,
-                  f"Cost: {fleet_summary.get('total_cost')}", None, None, None,
-                  f"Php/KM: {_num_or_missing(fleet_summary.get('cost_per_km'))}"])
+                   f"Litres: {fleet_summary.get('total_litres')}",
+                   None, None, None,
+                   f"Cost: {fleet_summary.get('total_cost')}", None, None, None,
+                   f"Php/KM: {_num_or_missing(fleet_summary.get('cost_per_km'))}"])
+        for cell in ws[total_row]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="1F3B4D")
+            cell.border = thin_border
+            cell.alignment = Alignment(vertical="center")
+        ws.row_dimensions[total_row].height = 23
 
     buf = BytesIO()
     wb.save(buf)

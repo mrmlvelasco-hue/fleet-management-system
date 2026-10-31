@@ -413,6 +413,15 @@ def _order_json(o, *, detail=False):
             "vehicle_chassis_number": (
                 getattr(o.vehicle, "chassis_number", None) if o.vehicle else None),
             "vehicle_color": getattr(o.vehicle, "color", None) if o.vehicle else None,
+            "vehicle_body_type": (getattr(o.vehicle, "vehicle_body_type", None)
+                                  if o.vehicle else None),
+            "vehicle_fuel_type": (getattr(o.vehicle, "fuel_type", None)
+                                  if o.vehicle else None),
+            "vehicle_department": (o.vehicle.department.name
+                                   if o.vehicle and o.vehicle.department else None),
+            "requester_name": (
+                (o.requester.full_name or o.requester.username)
+                if o.requester else None),
             "vehicle_far_number": (
                 getattr(o.vehicle, "far_number", None) if o.vehicle else None),
             "vehicle_odometer": (

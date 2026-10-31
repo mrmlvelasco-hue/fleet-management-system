@@ -24,6 +24,45 @@ def _conflict(message):
     return jsonify({"error": "conflict", "message": message}), 409
 
 
+def _log_relationship_change(*, table_name, record_id, old_values, new_values, api_user):
+    """Audit many-to-many RBAC changes that ORM model listeners cannot see."""
+    if old_values == new_values:
+        return
+    from app.core.models.audit_log import AuditLog
+    from app.extensions import db
+    AuditLogRow = AuditLog(
+        table_name=table_name,
+        record_id=record_id,
+        action="UPDATE",
+        old_values=old_values,
+        new_values=new_values,
+        user_id=getattr(api_user, "id", None),
+        ip_address=request.remote_addr,
+    )
+    db.session.add(AuditLogRow)
+    db.session.commit()
+
+
+def _log_role_membership_changes(*, user_id, old_role_ids, new_role_ids, api_user):
+    """Write a role-centric audit entry as well as the user-centric one."""
+    from app.core.models.audit_log import AuditLog
+    from app.extensions import db
+    changed = set(old_role_ids) ^ set(new_role_ids)
+    if not changed:
+        return
+    for role_id in sorted(changed):
+        was_assigned = role_id in old_role_ids
+        is_assigned = role_id in new_role_ids
+        db.session.add(AuditLog(
+            table_name="role_users", record_id=role_id, action="UPDATE",
+            old_values={"user_id": user_id, "assigned": was_assigned},
+            new_values={"user_id": user_id, "assigned": is_assigned},
+            user_id=getattr(api_user, "id", None),
+            ip_address=request.remote_addr,
+        ))
+    db.session.commit()
+
+
 # ── Users ───────────────────────────────────────────────────────────────────
 
 def _user_json(u, *, detail=False):
@@ -145,6 +184,15 @@ def create_user(api_user):
         )
     except Exception as e:
         return _conflict(str(e))
+    assigned_role_ids = sorted(r.id for r in (u.roles or []))
+    if assigned_role_ids:
+        _log_relationship_change(
+            table_name="user_roles", record_id=u.id,
+            old_values={"role_ids": []},
+            new_values={"role_ids": assigned_role_ids}, api_user=api_user)
+        _log_role_membership_changes(
+            user_id=u.id, old_role_ids=[], new_role_ids=assigned_role_ids,
+            api_user=api_user)
     return jsonify(_user_json(u, detail=True)), 201
 
 
@@ -178,12 +226,23 @@ def update_user(api_user, uid):
     if "restrict_to_assigned_vehicles" in p:
         kwargs["restrict_to_assigned_vehicles"] = bool(
             p["restrict_to_assigned_vehicles"])
+    from app.modules.user_management.models import User
+    existing_user = User.query.filter_by(id=uid).first()
+    old_role_ids = sorted(r.id for r in (existing_user.roles or [])) if existing_user else []
     try:
         u = UserService().update_user(uid, **kwargs)
     except Exception as e:
         return _conflict(str(e))
     if u is None:
         return _not_found("User")
+    new_role_ids = sorted(r.id for r in (u.roles or []))
+    _log_relationship_change(
+        table_name="user_roles", record_id=u.id,
+        old_values={"role_ids": old_role_ids},
+        new_values={"role_ids": new_role_ids}, api_user=api_user)
+    _log_role_membership_changes(
+        user_id=u.id, old_role_ids=old_role_ids,
+        new_role_ids=new_role_ids, api_user=api_user)
     return jsonify(_user_json(u, detail=True))
 
 
@@ -239,6 +298,22 @@ def list_roles(api_user):
     })
 
 
+@bp.route("/admin/roles/<int:rid>/users", methods=["GET"])
+@api_auth_required("user.view")
+def list_role_users(api_user, rid):
+    from app.modules.user_management.models import Role, User, user_roles
+    from sqlalchemy.orm import joinedload
+    role = Role.query.filter_by(id=rid).first()
+    if role is None:
+        return _not_found("Role")
+    rows = (User.query.join(user_roles, User.id == user_roles.c.user_id)
+            .filter(user_roles.c.role_id == rid)
+            .options(joinedload(User.branch), joinedload(User.department),
+                     joinedload(User.roles))
+            .order_by(User.username).all())
+    return jsonify({"items": [_user_json(u) for u in rows], "total": len(rows)})
+
+
 @bp.route("/admin/roles/<int:rid>", methods=["GET"])
 @api_auth_required("role.view")
 def get_role(api_user, rid):
@@ -282,12 +357,20 @@ def update_role(api_user, rid):
         kwargs["description"] = (p.get("description") or "").strip() or None
     if "permission_ids" in p:
         kwargs["permission_ids"] = p["permission_ids"] or []
+    from app.modules.user_management.models import Role
+    existing_role = Role.query.filter_by(id=rid).first()
+    old_permission_ids = sorted(p.id for p in (existing_role.permissions or [])) if existing_role else []
     try:
         r = RoleService().update_role(rid, **kwargs)
     except Exception as e:
         return _conflict(str(e))
     if r is None:
         return _not_found("Role")
+    new_permission_ids = sorted(p.id for p in (r.permissions or []))
+    _log_relationship_change(
+        table_name="role_permissions", record_id=r.id,
+        old_values={"permission_ids": old_permission_ids},
+        new_values={"permission_ids": new_permission_ids}, api_user=api_user)
     return jsonify(_role_json(r, detail=True))
 
 

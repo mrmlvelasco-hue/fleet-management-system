@@ -111,14 +111,54 @@ def _print_report_context(item):
         CompanyProfileService)
     from app.modules.master_data.routes import _attachment_rows
     from app.core.approval.engine import ApprovalEngine
+    company = CompanyProfileService().get()
+    logo_data_uri = None
+    if company and getattr(company, "logo_attachment_id", None):
+        import base64
+        from app.core.models.attachment import Attachment
+        from app.core.attachments.attachment_service import AttachmentService
+        logo_attachment = db.session.get(Attachment, company.logo_attachment_id)
+        if logo_attachment and logo_attachment.is_active:
+            logo_bytes = AttachmentService().get_bytes(logo_attachment) or b""
+            if logo_bytes:
+                mime = logo_attachment.mime_type or "image/png"
+                logo_data_uri = (f"data:{mime};base64," +
+                                 base64.b64encode(logo_bytes).decode("ascii"))
     return {
-        "company": CompanyProfileService().get(),
+        "company": company,
+        "logo_data_uri": logo_data_uri,
         "approval_chain_data": (ApprovalEngine().get_approval_chain(item.approval_instance)
-                               if item.approval_instance else []),
+                               if item and item.approval_instance else []),
         "attachments": (_attachment_rows(item.__tablename__, item.id)
                         if item else []),
         "print_timestamp": datetime.now().strftime("%m/%d/%Y - %H:%M"),
     }
+
+
+def _pr_amount_in_words(value):
+    """Readable peso amount for the Purchase Request print copy."""
+    from decimal import Decimal, InvalidOperation
+    ones = ["Zero", "One", "Two", "Three", "Four", "Five", "Six",
+            "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve",
+            "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen",
+            "Eighteen", "Nineteen"]
+    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty",
+            "Seventy", "Eighty", "Ninety"]
+    def words(n):
+        if n < 20: return ones[n]
+        if n < 100: return tens[n // 10] + ("-" + ones[n % 10] if n % 10 else "")
+        if n < 1000: return ones[n // 100] + " Hundred" + (" " + words(n % 100) if n % 100 else "")
+        for unit, label in ((1_000_000_000, "Billion"), (1_000_000, "Million"), (1000, "Thousand")):
+            if n >= unit:
+                return words(n // unit) + " " + label + (" " + words(n % unit) if n % unit else "")
+        return str(n)
+    try:
+        amount = Decimal(str(value or 0)).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError):
+        return "—"
+    whole = int(abs(amount))
+    cents = int((abs(amount) - whole) * 100)
+    return ("Negative " if amount < 0 else "") + words(whole) + " Pesos" + (f" and {cents:02d}/100" if cents else " Only")
 
 
 # ── Trip Tickets ────────────────────────────────────────────────────────────
@@ -1043,8 +1083,20 @@ def maintenanceorder_print(oid):
     attachments = _attachment_rows("maintenance_orders", oid)
     approval_chain_data = (ApprovalEngine().get_approval_chain(item.approval_instance)
                            if item.approval_instance else [])
+    logo_data_uri = None
+    if company and getattr(company, "logo_attachment_id", None):
+        import base64
+        from app.core.models.attachment import Attachment
+        from app.core.attachments.attachment_service import AttachmentService
+        logo_attachment = db.session.get(Attachment, company.logo_attachment_id)
+        if logo_attachment and logo_attachment.is_active:
+            logo_bytes = AttachmentService().get_bytes(logo_attachment) or b""
+            if logo_bytes:
+                mime = logo_attachment.mime_type or "image/png"
+                logo_data_uri = (f"data:{mime};base64," +
+                                 base64.b64encode(logo_bytes).decode("ascii"))
     return render_template("transactions/maintenanceorder_print.html",
-                           item=item, company=company,
+                           item=item, company=company, logo_data_uri=logo_data_uri,
                            last_completed=last_completed,
                            attachments=attachments,
                            approval_chain_data=approval_chain_data)
@@ -1498,8 +1550,14 @@ def purchaserequest_detail(pid):
 @require_permission("purchaserequest.print")
 def purchaserequest_print(pid):
     item = db.session.get(PurchaseRequest, pid)
+    if item is None:
+        abort(404)
+    from app.modules.transactions.maintenance_order.models import MaintenanceOrder
+    linked_mo = MaintenanceOrder.query.filter_by(purchase_request_id=item.id).first() if item else None
     return render_template("transactions/purchaserequest_print.html",
-                           item=item, **_print_report_context(item))
+                           item=item, linked_mo=linked_mo,
+                           amount_in_words=_pr_amount_in_words(item.amount),
+                           **_print_report_context(item))
 
 
 @bp.route("/purchase-requests/<int:pid>/submit", methods=["POST"])
@@ -1743,12 +1801,43 @@ def vehicleregistration_complete(rid):
         DuplicateCRNumberError)
     f = request.form
     try:
+        from app.core.attachments.attachment_service import (
+            AttachmentError, AttachmentService)
+        from app.modules.transactions.vehicle_registration.models import (
+            VehicleRegistration)
+        reg = db.session.get(VehicleRegistration, rid)
+        if reg is None:
+            abort(404)
+
+        # Upload the scans against the registration transaction before
+        # completing it. CR is mandatory; OR scan is optional.
+        cr_file = request.files.get("cr_scan")
+        if cr_file and cr_file.filename:
+            AttachmentService().upload(
+                cr_file, "vehicle_registrations", rid, user=current_user,
+                document_type="CR")
+        or_file = request.files.get("or_scan")
+        if or_file and or_file.filename:
+            AttachmentService().upload(
+                or_file, "vehicle_registrations", rid, user=current_user,
+                document_type="OR")
+        cr_scans = [
+            a for a in AttachmentService().list_for(
+                "vehicle_registrations", rid)
+            if (getattr(a, "document_type", None) or "").upper() == "CR"
+        ]
+        if not cr_scans:
+            raise ValueError(
+                "Upload the Certificate of Registration (CR) scan before completing this registration.")
+
         VehicleRegistrationService().complete(
             rid, or_number=f["or_number"], cr_number=f["cr_number"],
             plate_number=f.get("plate_number") or None)
         flash("Vehicle Registration completed.", "success")
     except (RegistrationDateOrderError, DuplicateORNumberError,
-           DuplicateCRNumberError) as e:
+           DuplicateCRNumberError, ValueError) as e:
+        flash(str(e), "danger")
+    except AttachmentError as e:
         flash(str(e), "danger")
     return redirect(url_for("transactions.vehicleregistration_detail", rid=rid))
 

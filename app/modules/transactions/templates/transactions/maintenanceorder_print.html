@@ -77,6 +77,8 @@
       text-align: center;
     }
 
+    .letterhead-logo { display:block; max-width:112px; max-height:68px; object-fit:contain; margin:0 auto 6px; }
+
     .letterhead h1 {
       font-size: 17px;
       font-weight: 800;
@@ -108,6 +110,9 @@
       margin-top: 2px;
       line-height: 1.1;
     }
+
+    .doc-number { text-align:center; font-size:15px; font-weight:800; color:#173b70; margin:0 0 8px; }
+    .doc-status { display:flex; justify-content:center; margin:0 0 12px; }
 
     .doc-title {
       text-align: center;
@@ -249,8 +254,10 @@
   <div class="header-container">
     <div style="width: 75px;"></div> {# Spacer for center balancing #}
     <div class="letterhead">
+      {% if logo_data_uri %}<img class="letterhead-logo" src="{{ logo_data_uri }}" alt="Company logo">{% endif %}
       <h1>{{ company.company_name if company else 'Company Name' }}</h1>
-      <div>{{ company.address_line1 if company else '' }} {{ company.city if company else '' }}</div>
+      <div>{{ company.address_line1 if company else '' }}{% if company and company.address_line2 %}, {{ company.address_line2 }}{% endif %}{% if company and company.city %}, {{ company.city }}{% endif %}{% if company and company.country %}, {{ company.country }}{% endif %}</div>
+      <div>{% if company and company.phone %}{{ company.phone }}{% endif %}{% if company and company.email %} · {{ company.email }}{% endif %}{% if company and company.tin %} · TIN: {{ company.tin }}{% endif %}</div>
     </div>
     <div class="qr-block">
       <canvas id="qrCanvas"></canvas>
@@ -258,55 +265,66 @@
     </div>
   </div>
 
-  <div class="doc-title">MAINTENANCE ORDER — {{ item.document_number or 'DRAFT' }}</div>
+  <div class="doc-title">MAINTENANCE ORDER</div>
+  <div class="doc-number">{{ item.document_number or 'DRAFT' }}</div>
+  <div class="doc-status"><span class="status-pill status-{{ item.status }}">{{ item.status|replace('_', ' ') }}</span></div>
 
-  <h6 class="section">Work Order Information</h6>
-  <table class="info">
-    <tr>
-      <td class="label">Maintenance Type</td>
-      <td>{{ item.maintenance_type.name }} ({{ item.category }})</td>
-      <td class="label">Status</td>
-      <td><span class="status-pill status-{{ item.status }}">{{ item.status }}</span></td>
-    </tr>
-    <tr>
-      <td class="label">Scheduled Date</td>
-      <td>{{ item.scheduled_date }}</td>
-      <td class="label">Completed Date</td>
-      <td>{{ item.completed_date or '—' }}</td>
-    </tr>
-    <tr>
-      <td class="label">Last Completed WO</td>
-      <td colspan="3">
-        {{ last_completed.document_number ~ ' (' ~ last_completed.completed_date|string ~ ')' if last_completed else 'None on record' }}
-      </td>
-    </tr>
-  </table>
-
-  <h6 class="section">Vehicle Information</h6>
+  <h6 class="section">1. Vehicle Information</h6>
   <table class="info">
     <tr>
       <td class="label">Plate Number</td>
-      <td><strong>{{ item.vehicle.plate_number or item.vehicle.conduction_number }}</strong></td>
-      <td class="label">Brand / Model</td>
+      <td><strong>{{ item.vehicle.plate_number or item.vehicle.conduction_number or '—' }}</strong></td>
+      <td class="label">Model</td>
       <td>{{ item.vehicle.brand }} {{ item.vehicle.model }}</td>
     </tr>
     <tr>
-      <td class="label">Odometer</td>
-      <td>{{ "{:,}".format(item.vehicle.current_odometer|int) if item.vehicle.current_odometer else (item.odometer_at_service or '—') }} km</td>
-      <td class="label">Branch / Sales Office</td>
-      <td>{{ item.vehicle.branch.name if item.vehicle.branch else '—' }}</td>
+      <td class="label">Chassis No.</td><td>{{ item.vehicle.chassis_number or '—' }}</td>
+      <td class="label">Engine No.</td><td>{{ item.vehicle.engine_number or '—' }}</td>
     </tr>
     <tr>
-      <td class="label">Current Assignee</td>
-      <td>{{ item.vehicle.assigned_driver.full_name if item.vehicle.assigned_driver else '—' }}</td>
-      <td class="label">Assignee Position</td>
-      <td>{{ item.vehicle.assigned_driver.job_title if item.vehicle.assigned_driver and item.vehicle.assigned_driver.job_title else '—' }}</td>
+      <td class="label">Year Model</td><td>{{ item.vehicle.year or '—' }}</td>
+      <td class="label">Body Type</td><td>{{ item.vehicle.vehicle_body_type or '—' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Department</td><td>{{ item.vehicle.department.name if item.vehicle.department else '—' }}</td>
+      <td class="label">Fuel Type</td><td>{{ item.vehicle.fuel_type or '—' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Branch / Sales Office</td><td>{{ item.vehicle.branch.name if item.vehicle.branch else '—' }}</td>
+      <td class="label">Current Assignee</td><td>{{ item.vehicle.assigned_driver.full_name if item.vehicle.assigned_driver else '—' }}</td>
+    </tr>
+  </table>
+
+
+  <h6 class="section">2. Maintenance Details</h6>
+  <table class="info">
+    <tr>
+      <td class="label">Maintenance Type</td>
+      <td>{{ item.maintenance_type.name if item.maintenance_type else (item.transaction_type.name if item.transaction_type else '—') }}</td>
+      <td class="label">Request Date</td>
+      <td>{{ item.created_at.strftime('%Y-%m-%d') if item.created_at else '—' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Prepared By</td>
+      <td>{{ (item.requester.full_name or item.requester.username) if item.requester else '—' }}</td>
+      <td class="label">Scheduled Date</td>
+      <td>{{ item.scheduled_date or '—' }}</td>
     </tr>
     <tr>
       <td class="label">Assigned Mechanic</td>
       <td>{{ item.assigned_mechanic or '—' }}</td>
-      <td class="label">Vendor</td>
-      <td>{{ item.vendor.name if item.vendor else '—' }}</td>
+      <td class="label">Location / Branch</td>
+      <td>{{ item.vehicle.branch.name if item.vehicle and item.vehicle.branch else '—' }}</td>
+    </tr>
+    <tr>
+      <td class="label">Odometer Reading</td>
+      <td>{{ '{:,}'.format(item.odometer_at_service|int) if item.odometer_at_service is not none else '—' }} km</td>
+      <td class="label">Status</td>
+      <td><span class="status-pill status-{{ item.status }}">{{ item.status|replace('_', ' ') }}</span></td>
+    </tr>
+    <tr>
+      <td class="label">Vendor / Service Provider</td>
+      <td colspan="3">{{ item.vendor.name if item.vendor else '—' }}</td>
     </tr>
   </table>
 

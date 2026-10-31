@@ -221,6 +221,26 @@ def list_audit_trail(api_user):
 
     if table:
         q = q.filter(AuditLog.table_name == table)
+    # A role-scoped audit view includes both role master changes and its
+    # many-to-many permission assignments (stored against role id).
+    role_id = request.args.get("role_id")
+    if role_id:
+        try:
+            from sqlalchemy import or_, and_
+            rid = int(role_id)
+            q = q.filter(or_(
+                and_(AuditLog.table_name == "roles", AuditLog.record_id == rid),
+                and_(AuditLog.table_name == "role_permissions", AuditLog.record_id == rid),
+                and_(AuditLog.table_name == "role_users", AuditLog.record_id == rid),
+            ))
+        except (TypeError, ValueError):
+            return _validation("role_id must be an integer.", "role_id")
+    record_id = request.args.get("record_id")
+    if record_id:
+        try:
+            q = q.filter(AuditLog.record_id == int(record_id))
+        except (TypeError, ValueError):
+            return _validation("record_id must be an integer.", "record_id")
     if action:
         q = q.filter(AuditLog.action == action)
     if user_id:
