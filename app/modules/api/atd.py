@@ -43,11 +43,18 @@ def _iso(d):
 
 def _atd_json(a, *, detail=False):
     from app.modules.transactions.atd.service import ATDService
+    from app.modules.system_admin.models import Lookup
     plate = None
     vehicle_label = None
     if a.vehicle:
         plate = a.vehicle.plate_number or a.vehicle.conduction_number
         vehicle_label = f"{a.vehicle.brand or ''} {a.vehicle.model or ''}".strip()
+    category = getattr(a, "vehicle_category", None)
+    category_lookup = (Lookup.query.filter_by(
+        lookup_type="VEHICLE_CATEGORY", code=category).first()
+        if category else None)
+    scope_name = ((category_lookup.description if category_lookup else category)
+                  or (a.vehicle_type.name if a.vehicle_type else None))
     driver_name = None
     if a.driver:
         driver_name = getattr(a.driver, "full_name", None) or getattr(
@@ -57,6 +64,11 @@ def _atd_json(a, *, detail=False):
         "document_number": a.document_number,
         "status": a.status,
         "vehicle_id": a.vehicle_id,
+        "authorization_type": getattr(a, "authorization_type", None) or "SPECIFIC_VEHICLE",
+        "vehicle_type_id": a.vehicle_type_id,
+        "vehicle_category": category,
+        "vehicle_type_name": scope_name,
+        "vehicle_type_category": (a.vehicle_type.category if a.vehicle_type else None),
         "plate_number": plate,
         "vehicle_label": vehicle_label,
         "driver_id": a.driver_id,
@@ -203,10 +215,18 @@ def create_atd(api_user):
     from app.modules.transactions.atd.service import ATDService
     p = request.get_json(silent=True) or {}
     try:
-        vehicle_id = int(p["vehicle_id"])
+        vehicle_id = int(p["vehicle_id"]) if p.get("vehicle_id") not in (None, "") else None
         driver_id = int(p["driver_id"])
     except (KeyError, TypeError, ValueError):
-        return _validation("vehicle_id and driver_id are required.", "vehicle_id")
+        return _validation("driver_id must be an integer.", "driver_id")
+    authorization_type = str(p.get("authorization_type") or
+                             "SPECIFIC_VEHICLE").strip().upper()
+    try:
+        vehicle_type_id = (int(p["vehicle_type_id"])
+                           if p.get("vehicle_type_id") not in (None, "") else None)
+    except (TypeError, ValueError):
+        return _validation("vehicle_type_id must be an integer.", "vehicle_type_id")
+    vehicle_category = str(p.get("vehicle_category") or "").strip().upper() or None
     purpose = (p.get("purpose") or "").strip()
     if not purpose:
         return _validation("purpose is required.", "purpose")
@@ -229,10 +249,15 @@ def create_atd(api_user):
         odo = int(odo) if odo not in (None, "") else None
     except (TypeError, ValueError):
         return _validation("odometer_out must be an integer.", "odometer_out")
-    a = ATDService().create(
-        vehicle_id=vehicle_id, driver_id=driver_id, purpose=purpose,
-        valid_from=valid_from, valid_to=valid_to, user=api_user,
-        maintenance_order_id=mo_id, odometer_out=odo)
+    try:
+        a = ATDService().create(
+            vehicle_id=vehicle_id, authorization_type=authorization_type,
+            vehicle_type_id=vehicle_type_id, vehicle_category=vehicle_category,
+            driver_id=driver_id,
+            purpose=purpose, valid_from=valid_from, valid_to=valid_to,
+            user=api_user, maintenance_order_id=mo_id, odometer_out=odo)
+    except ValueError as exc:
+        return _validation(str(exc), "authorization_type")
     return jsonify(_atd_json(a, detail=True)), 201
 
 

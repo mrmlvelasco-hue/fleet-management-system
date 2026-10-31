@@ -93,6 +93,21 @@ class TripTicketService(BaseTransactionService):
         if trip.approval_instance and trip.approval_instance.status != "APPROVED":
             raise InvalidTripStateError(
                 "Trip Ticket must be APPROVED before release.")
+        if not trip.driver_id:
+            raise InvalidTripStateError(
+                "A master driver with a valid Authority To Drive is required before release.")
+        from app.modules.transactions.atd.models import AuthorityToDrive
+        from app.modules.transactions.atd.service import ATDService
+        from app.modules.master_data.vehicle.models import Vehicle
+        vehicle = db.session.get(Vehicle, trip.vehicle_id)
+        valid_atd = any(
+            ATDService.authorizes_vehicle(atd, vehicle)
+            for atd in AuthorityToDrive.query.filter_by(
+                driver_id=trip.driver_id, status="ACTIVE").all())
+        if not valid_atd:
+            raise InvalidTripStateError(
+                "No approved, active, in-date ATD authorizes this driver "
+                "to use the selected vehicle.")
         trip.status = "RELEASED"
         db.session.commit()
         return trip

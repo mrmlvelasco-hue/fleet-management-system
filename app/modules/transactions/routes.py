@@ -337,11 +337,19 @@ def atd_new():
         "valid_from": request.args.get("valid_from"),
         "valid_to": request.args.get("valid_to"),
     }
+    from app.modules.system_admin.services.lookup_service import LookupService
+    vehicle_categories = LookupService().get_by_type_with_fallback(
+        "VEHICLE_CATEGORY")
     if request.method == "POST":
         f = request.form
         try:
+            authorization_type = (f.get("authorization_type") or
+                                  "SPECIFIC_VEHICLE").upper()
             ATDService().create(
-                vehicle_id=int(f["vehicle_id"]), driver_id=int(f["driver_id"]),
+                vehicle_id=int(f["vehicle_id"]) if f.get("vehicle_id") else None,
+                authorization_type=authorization_type,
+                vehicle_category=(f.get("vehicle_category") or "").strip().upper() or None,
+                driver_id=int(f["driver_id"]),
                 purpose=f["purpose"],
                 valid_from=parse_form_date(f.get("valid_from"), "Valid From",
                                            required=True),
@@ -352,11 +360,12 @@ def atd_new():
                 user=current_user)
             flash("Authority To Drive created.", "success")
             return redirect(url_for("transactions.atd_list"))
-        except (DateFormatError, RequiredFieldError) as e:
+        except (DateFormatError, RequiredFieldError, ValueError) as e:
             flash(str(e), "danger")
     return render_template("transactions/atd_form.html",
                            prefill_vehicle=prefill_vehicle,
                            prefill_order=prefill_order, prefill=prefill,
+                           vehicle_categories=vehicle_categories,
                            title="New Authority To Drive")
 
 
@@ -378,7 +387,8 @@ def atd_detail(aid):
     item = ATDService().get_visible(aid, current_user)
     if item is None:
         abort(403)
-    return render_template("transactions/atd_detail.html", item=item)
+    return render_template("transactions/atd_detail.html", item=item,
+                           vehicle_category_label=_atd_category_label(item))
 
 
 @bp.route("/atd/<int:aid>/print")
@@ -391,12 +401,26 @@ def atd_print(aid):
     from app.core.approval.engine import ApprovalEngine
     item = db.session.get(AuthorityToDrive, aid)
     company = CompanyProfileService().get()
+    vehicle_category_label = _atd_category_label(item)
     approval_chain_data = (ApprovalEngine().get_approval_chain(item.approval_instance)
                            if item.approval_instance else [])
     return render_template("transactions/atd_print.html", item=item,
                            company=company,
+                           vehicle_category_label=vehicle_category_label,
                            approval_chain_data=approval_chain_data,
                            print_timestamp=datetime.now().strftime("%m/%d/%Y - %H:%M"))
+
+
+def _atd_category_label(item):
+    if not item:
+        return None
+    if getattr(item, "vehicle_category", None):
+        from app.modules.system_admin.models import Lookup
+        row = Lookup.query.filter_by(
+            lookup_type="VEHICLE_CATEGORY",
+            code=item.vehicle_category).first()
+        return row.description if row else item.vehicle_category
+    return item.vehicle_type.name if item.vehicle_type else None
 
 
 @bp.route("/atd/<int:aid>/submit", methods=["POST"])

@@ -5,7 +5,7 @@ API endpoints. Thin controllers only — business logic in services."""
 import os
 from datetime import datetime
 from flask import (Blueprint, render_template, redirect, url_for, flash,
-                   request, jsonify, current_app)
+                   request, jsonify, current_app, abort)
 from flask_login import login_required, current_user
 
 from app.core.security.decorators import require_permission
@@ -518,8 +518,50 @@ def audit_trail():
         q = q.filter(AuditLog.timestamp <= request.args["date_to"] + " 23:59:59")
     logs = q.order_by(AuditLog.id.desc()).limit(500).all()
     tables = db.session.query(AuditLog.table_name).distinct().all()
+
+    # Resolve actor names and permission IDs so the compact audit list is
+    # understandable without exposing raw JSON in the table itself.
+    from app.modules.user_management.models import User, Permission
+    user_ids = {log.user_id for log in logs if log.user_id}
+    users = {u.id: (getattr(u, "full_name", None) or u.username)
+             for u in User.query.filter(User.id.in_(user_ids)).all()} if user_ids else {}
+    permission_ids = set()
+    for log in logs:
+        for payload in (log.old_values or {}, log.new_values or {}):
+            if isinstance(payload, dict) and isinstance(payload.get("permission_ids"), list):
+                permission_ids.update(pid for pid in payload["permission_ids"] if isinstance(pid, int))
+    permission_names = {p.id: p.code for p in Permission.query.filter(
+        Permission.id.in_(permission_ids)).all()} if permission_ids else {}
+
+    audit_rows = []
+    for log in logs:
+        old_values = log.old_values or {}
+        new_values = log.new_values or {}
+        changes = []
+        if log.table_name == "role_permissions" and isinstance(old_values, dict) and isinstance(new_values, dict):
+            old_ids = set(old_values.get("permission_ids") or [])
+            new_ids = set(new_values.get("permission_ids") or [])
+            added = [permission_names.get(pid, f"Permission #{pid}") for pid in sorted(new_ids - old_ids)]
+            removed = [permission_names.get(pid, f"Permission #{pid}") for pid in sorted(old_ids - new_ids)]
+            if added:
+                changes.append({"field": "Permissions added", "from": "—", "to": ", ".join(added)})
+            if removed:
+                changes.append({"field": "Permissions removed", "from": "—", "to": ", ".join(removed)})
+        elif isinstance(old_values, dict) and isinstance(new_values, dict):
+            for key in sorted(set(old_values) | set(new_values)):
+                before, after = old_values.get(key), new_values.get(key)
+                if before != after:
+                    changes.append({"field": key.replace("_", " ").title(),
+                                    "from": before if before is not None else "—",
+                                    "to": after if after is not None else "—"})
+        summary = ("Permission access updated" if log.table_name == "role_permissions"
+                   else "Role membership updated" if log.table_name == "role_users"
+                   else f"{log.table_name.replace('_', ' ').title()} {log.action.lower()}")
+        audit_rows.append({"log": log, "username": users.get(log.user_id, str(log.user_id) if log.user_id else "System"),
+                           "summary": summary, "changes": changes})
+
     return render_template("system_admin/audit_trail.html", logs=logs,
-                           tables=[t[0] for t in tables],
+                           audit_rows=audit_rows, tables=[t[0] for t in tables],
                            filters=request.args)
 
 
@@ -1077,18 +1119,32 @@ def analytics():
 @login_required
 @require_permission("dataquality.view")
 def data_quality():
-    """Branch scorecard, field completion analytics and the drill-down."""
+    """Company scorecard, field completion analytics and the drill-down."""
     from app.core.data_quality_service import DataQualityService
+    from app.modules.api.coercion import company_arg
+    from app.modules.master_data.org.models import OrgCompany
+    if request.args.get("branch_id") not in (None, ""):
+        abort(400, description="branch_id has been replaced by company_id.")
+    company_id, error = company_arg()
+    if error:
+        abort(400, description="company_id must be an integer.")
     svc = DataQualityService()
-    branch_id = request.args.get("branch_id", type=int)
+    companies = (OrgCompany.query.filter_by(is_active=True)
+                 .order_by(OrgCompany.short_name).all())
+    selected_company = next((c for c in companies if c.id == company_id), None)
     return render_template(
         "system_admin/data_quality.html",
-        summary=svc.summary(user=current_user),
-        branches=svc.branch_scorecard(user=current_user),
-        fields=svc.field_completion(user=current_user),
-        gaps=(svc.vehicles_with_gaps(branch_id=branch_id, user=current_user)
-             if branch_id else None),
-        selected_branch_id=branch_id)
+        summary=svc.summary(user=current_user, company_id=company_id),
+        companies=companies,
+        scorecard=svc.company_scorecard(user=current_user,
+                                        company_id=company_id),
+        fields=svc.field_completion(user=current_user,
+                                    company_id=company_id),
+        gaps=(svc.vehicles_with_gaps(company_id=company_id,
+                                     user=current_user)
+              if company_id is not None else None),
+        selected_company_id=company_id,
+        selected_company=selected_company)
 
 
 @bp.route("/data-quality/settings", methods=["GET", "POST"])

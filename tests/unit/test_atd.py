@@ -92,3 +92,85 @@ def test_cancel_atd(db, env):
                      valid_to=date(2026, 7, 31), user=requester)
     svc.cancel(atd.id, user=requester)
     assert db.session.get(AuthorityToDrive, atd.id).status == "CANCELLED"
+
+
+def test_vehicle_type_authorization_needs_no_vehicle_or_odometer(db, env):
+    vehicle, driver, requester, approver = env
+    atd = ATDService().create(
+        authorization_type="VEHICLE_TYPE", vehicle_category="LIGHT",
+        vehicle_id=None, driver_id=driver.id, purpose="Pool vehicle use",
+        valid_from=date.today(), valid_to=date.today(), odometer_out=123,
+        user=requester)
+    assert atd.vehicle_id is None
+    assert atd.vehicle_type_id is None
+    assert atd.vehicle_category == "LIGHT"
+    assert atd.odometer_out is None
+
+
+def test_motorcycle_only_needs_no_vehicle_or_type(db, env):
+    vehicle, driver, requester, approver = env
+    atd = ATDService().create(
+        authorization_type="MOTORCYCLE_ONLY", vehicle_id=None,
+        vehicle_type_id=None, driver_id=driver.id, purpose="Motorcycle use",
+        valid_from=date.today(), valid_to=date.today(), user=requester)
+    assert atd.vehicle_id is None
+    assert atd.vehicle_type_id is None
+
+
+def test_specific_vehicle_without_vehicle_is_rejected(db, env):
+    _vehicle, driver, requester, _approver = env
+    from app.modules.transactions.atd.service import ATDValidationError
+    with pytest.raises(ATDValidationError, match="vehicle is required"):
+        ATDService().create(
+            authorization_type="SPECIFIC_VEHICLE", vehicle_id=None,
+            driver_id=driver.id, purpose="Specific use",
+            valid_from=date.today(), valid_to=date.today(), user=requester)
+
+
+def test_unknown_vehicle_category_is_rejected(db, env):
+    _vehicle, driver, requester, _approver = env
+    from app.modules.transactions.atd.service import ATDValidationError
+    with pytest.raises(ATDValidationError, match="Vehicle Category"):
+        ATDService().create(
+            authorization_type="VEHICLE_TYPE", vehicle_category="NOT_A_LOOKUP",
+            driver_id=driver.id, purpose="Invalid category",
+            valid_from=date.today(), valid_to=date.today(), user=requester)
+
+
+def test_type_authority_only_matches_same_vehicle_type_when_live(db, env):
+    vehicle, driver, requester, approver = env
+    atd = ATDService().create(
+        authorization_type="VEHICLE_TYPE", vehicle_category="LIGHT",
+        driver_id=driver.id, purpose="Pool vehicle use",
+        valid_from=date.today(), valid_to=date.today(), user=requester)
+    ATDService().submit(atd.id, requester)
+    ATDService().approve(atd.id, approver)
+    ATDService().activate(atd.id)
+    assert ATDService.authorizes_vehicle(atd, vehicle)
+
+    other_type = VehicleTypeService().create(
+        code="OTHER-ATD", name="Other type", category="HEAVY")
+    other_vehicle = VehicleService().create(
+        vehicle_type_id=other_type.id, brand="Other", model="Unit",
+        year=2024, conduction_number="ATD-OTHER")
+    assert not ATDService.authorizes_vehicle(atd, other_vehicle)
+
+
+def test_motorcycle_only_authorizes_motorcycles_and_requires_live_approval(db, env):
+    vehicle, driver, requester, approver = env
+    branch_id = vehicle.branch_id
+    motorcycle_type = VehicleTypeService().create(
+        code="MOTO-ATD", name="Motorcycle", category="MOTORCYCLE")
+    motorcycle = VehicleService().create(
+        vehicle_type_id=motorcycle_type.id, brand="Honda", model="Click",
+        year=2024, branch_id=branch_id, conduction_number="ATD-MOTO")
+    atd = ATDService().create(
+        authorization_type="MOTORCYCLE_ONLY", driver_id=driver.id,
+        purpose="Motorcycle use", valid_from=date.today(),
+        valid_to=date.today(), user=requester)
+    assert not ATDService.authorizes_vehicle(atd, motorcycle)
+    ATDService().submit(atd.id, requester)
+    ATDService().approve(atd.id, approver)
+    ATDService().activate(atd.id)
+    assert ATDService.authorizes_vehicle(atd, motorcycle)
+    assert not ATDService.authorizes_vehicle(atd, vehicle)

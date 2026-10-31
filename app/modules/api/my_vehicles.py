@@ -83,6 +83,16 @@ def _vehicle_label(vehicle_id):
     return v.plate_number or v.conduction_number
 
 
+def _atd_category_label(atd):
+    category = getattr(atd, "vehicle_category", None)
+    if category:
+        from app.modules.system_admin.models import Lookup
+        row = Lookup.query.filter_by(
+            lookup_type="VEHICLE_CATEGORY", code=category).first()
+        return row.description if row else category
+    return atd.vehicle_type.name if atd.vehicle_type else None
+
+
 def _row(v, detail=False):
     data = {
         "id": v.id,
@@ -424,15 +434,16 @@ def _readiness_atd(vehicle_id, api_user):
     document for an assigned vehicle, so its absence is no row at all
     rather than a warning."""
     from app.modules.transactions.atd.models import AuthorityToDrive
+    from app.modules.master_data.vehicle.models import Vehicle
     from app.modules.transactions.atd.service import ATDService
     assignee = AssigneeScopeService().assignee_for(api_user)
     if assignee is None:
         return None
+    vehicle = db.session.get(Vehicle, vehicle_id)
     for atd in (AuthorityToDrive.query
-                .filter_by(vehicle_id=vehicle_id, driver_id=assignee.id,
-                           status="ACTIVE")
+                .filter_by(driver_id=assignee.id, status="ACTIVE")
                 .order_by(AuthorityToDrive.valid_to.desc()).all()):
-        if not ATDService.is_expired(atd):
+        if ATDService.authorizes_vehicle(atd, vehicle):
             return {"key": "atd", "label": "Authority To Drive",
                     "state": "ok",
                     "detail": (f"{atd.document_number or 'ATD'} active until "
@@ -670,6 +681,10 @@ def my_atds(api_user):
         "id": a.id,
         "document_number": a.document_number,
         "vehicle_id": a.vehicle_id,
+        "authorization_type": getattr(a, "authorization_type", None) or "SPECIFIC_VEHICLE",
+        "vehicle_type_id": a.vehicle_type_id,
+        "vehicle_category": a.vehicle_category,
+        "vehicle_type_name": _atd_category_label(a),
         # The vehicle is named, not just referenced by id.
         #
         # An ATD is NOT filtered by whether the vehicle is assigned to
@@ -705,6 +720,10 @@ def my_atd_detail(api_user, aid):
         "id": atd.id,
         "document_number": atd.document_number,
         "vehicle_id": atd.vehicle_id,
+        "authorization_type": getattr(atd, "authorization_type", None) or "SPECIFIC_VEHICLE",
+        "vehicle_type_id": atd.vehicle_type_id,
+        "vehicle_category": atd.vehicle_category,
+        "vehicle_type_name": _atd_category_label(atd),
         "plate_number": _vehicle_label(atd.vehicle_id),
         "driver_id": atd.driver_id,
         "status": atd.status,

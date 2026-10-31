@@ -2,64 +2,74 @@
 {% block title %}Audit Trail{% endblock %}
 {% block breadcrumbs %}<li class="breadcrumb-item active">Audit Trail</li>{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="h3 mb-0">Audit Trail</h1>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div><h1 class="h3 mb-1">Audit Trail</h1><p class="text-muted mb-0">Review who changed records, when the change happened, and what was modified.</p></div>
   <div class="d-flex gap-2 no-print">
-    <a class="btn btn-sm btn-outline-success" href="{{ url_for('system_admin.audit_trail_export', **filters) }}">
-      <i class="bi bi-file-earmark-excel me-1"></i>Export to Excel</a>
-    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
-      <i class="bi bi-printer me-1"></i>Print / Save as PDF</button>
+    <a class="btn btn-sm btn-outline-success" href="{{ url_for('system_admin.audit_trail_export', **filters) }}"><i class="bi bi-file-earmark-excel me-1"></i>Export to Excel</a>
+    <button class="btn btn-sm btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print / Save as PDF</button>
   </div>
 </div>
-<style>@media print { .no-print { display: none; } }</style>
+<style>
+.audit-list{font-size:.84rem}.audit-list th{font-size:.69rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;background:#f8fafc;white-space:nowrap}.audit-list td{vertical-align:middle}.audit-date{min-width:145px;white-space:nowrap;color:#64748b}.audit-summary{font-weight:600;color:#0f172a}.audit-sub{display:block;margin-top:3px;color:#94a3b8;font-size:.72rem}.audit-change-preview{max-width:460px;overflow-wrap:anywhere;color:#475569;font-size:.78rem}.audit-change-preview div+div{margin-top:3px}.audit-view{white-space:nowrap}.audit-diff{display:grid;gap:9px}.audit-diff-row{border:1px solid #e5eaf1;border-radius:9px;padding:10px}.audit-diff-row strong{display:block;margin-bottom:7px;font-size:.8rem}.audit-from-to{display:grid;grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr);align-items:center;gap:8px}.audit-from-to span{padding:8px;border-radius:7px;background:#f8fafc;overflow-wrap:anywhere;font-size:.78rem}.audit-from-to small{display:block;color:#94a3b8;font-size:.62rem;font-weight:700;letter-spacing:.05em}.audit-json{max-height:280px;overflow:auto;padding:12px;border-radius:8px;background:#0f172a;color:#dbeafe;font-size:.75rem;white-space:pre-wrap;overflow-wrap:anywhere}.audit-modal-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.audit-modal-meta>div{padding:10px;border:1px solid #e5eaf1;border-radius:8px;font-size:.8rem}.audit-modal-meta small{display:block;color:#94a3b8;text-transform:uppercase;font-size:.62rem;font-weight:700;margin-bottom:4px}@media(max-width:700px){.audit-modal-meta{grid-template-columns:1fr}.audit-from-to{grid-template-columns:1fr}.audit-from-to .bi-arrow-right{transform:rotate(90deg);text-align:center}}@media print{.no-print{display:none!important}.audit-list{font-size:9px}}
+</style>
 <div class="card mb-3 no-print"><div class="card-body">
 <form method="get" class="row g-2 align-items-end">
-  <div class="col-md-3"><label class="form-label">Table</label>
-    <select name="table" class="form-select fms-select2">
-      <option value="">All tables</option>
-      {% for t in tables %}<option value="{{ t }}" {{ 'selected' if filters.get('table')==t }}>{{ t }}</option>{% endfor %}
-    </select></div>
-  <div class="col-md-2"><label class="form-label">Action</label>
-    <select name="action" class="form-select">
-      <option value="">All</option>
-      <option value="CREATE" {{ 'selected' if filters.get('action')=='CREATE' }}>CREATE</option>
-      <option value="UPDATE" {{ 'selected' if filters.get('action')=='UPDATE' }}>UPDATE</option>
-      <option value="DELETE" {{ 'selected' if filters.get('action')=='DELETE' }}>DELETE</option>
-    </select></div>
-  <div class="col-md-2"><label class="form-label">Date From</label>
-    <input type="date" name="date_from" class="form-control" value="{{ filters.get('date_from','') }}"></div>
-  <div class="col-md-2"><label class="form-label">Date To</label>
-    <input type="date" name="date_to" class="form-control" value="{{ filters.get('date_to','') }}"></div>
-  <div class="col-md-2">
-    <button class="btn btn-secondary w-100" type="submit"><i class="bi bi-search me-1"></i>Filter</button>
-  </div>
-  <div class="col-md-1">
-    <a class="btn btn-outline-secondary w-100" href="{{ url_for('system_admin.audit_trail') }}">Clear</a>
-  </div>
+  <div class="col-md-3"><label class="form-label">Table</label><select name="table" class="form-select fms-select2"><option value="">All tables</option>{% for t in tables %}<option value="{{ t }}" {{ 'selected' if filters.get('table')==t }}>{{ t }}</option>{% endfor %}</select></div>
+  <div class="col-md-2"><label class="form-label">Action</label><select name="action" class="form-select"><option value="">All</option><option value="CREATE" {{ 'selected' if filters.get('action')=='CREATE' }}>CREATE</option><option value="UPDATE" {{ 'selected' if filters.get('action')=='UPDATE' }}>UPDATE</option><option value="DELETE" {{ 'selected' if filters.get('action')=='DELETE' }}>DELETE</option></select></div>
+  <div class="col-md-2"><label class="form-label">Date From</label><input type="date" name="date_from" class="form-control" value="{{ filters.get('date_from','') }}"></div>
+  <div class="col-md-2"><label class="form-label">Date To</label><input type="date" name="date_to" class="form-control" value="{{ filters.get('date_to','') }}"></div>
+  <div class="col-md-2"><button class="btn btn-secondary w-100" type="submit"><i class="bi bi-search me-1"></i>Filter</button></div>
+  <div class="col-md-1"><a class="btn btn-outline-secondary w-100" href="{{ url_for('system_admin.audit_trail') }}">Clear</a></div>
 </form>
 </div></div>
-<div class="card"><div class="card-body">
-<table class="table table-striped table-sm fms-datatable" style="font-size:.85rem">
-  <thead><tr><th>ID</th><th>Timestamp</th><th>Table</th><th>Record</th><th>Action</th><th>User</th><th>Changes</th></tr></thead>
-  <tbody>
-  {% for log in logs %}
-    <tr>
-      <td>{{ log.id }}</td>
-      <td class="text-nowrap">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-      <td><code>{{ log.table_name }}</code></td>
-      <td>{{ log.record_id }}</td>
-      <td><span class="badge text-bg-{{ 'success' if log.action=='CREATE' else 'warning' if log.action=='UPDATE' else 'danger' }}">{{ log.action }}</span></td>
-      <td>{{ log.user_id or '—' }}</td>
-      <td>
-        {% if log.action == 'UPDATE' and log.old_values %}
-          {% for k, v in log.old_values.items() %}
-          <span class="text-muted"><code>{{ k }}</code>: <del>{{ v }}</del> → {{ log.new_values.get(k) }}</span><br>
-          {% endfor %}
-        {% endif %}
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div></div>
+<div class="card"><div class="card-header bg-white d-flex justify-content-between align-items-center"><strong>Audit Events</strong><span class="badge text-bg-light">{{ logs|length }} records · latest 500</span></div><div class="card-body p-0">
+<div class="table-responsive"><table class="table table-hover table-sm mb-0 audit-list"><thead><tr><th class="ps-3">DATE / TIME</th><th>ACTIVITY</th><th>CHANGES</th><th>USER</th><th class="text-end pe-3">DETAILS</th></tr></thead><tbody>
+{% for row in audit_rows %}{% set log = row.log %}
+<tr><td class="ps-3 audit-date">{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.timestamp else '—' }}</td>
+<td><span class="audit-summary">{{ row.summary }}</span><span class="audit-sub"><code>{{ log.table_name }}</code> · Record #{{ log.record_id if log.record_id is not none else '—' }} · <span class="badge text-bg-{{ 'success' if log.action=='CREATE' else 'warning' if log.action=='UPDATE' else 'danger' }}">{{ log.action }}</span></span></td>
+<td><div class="audit-change-preview">{% for change in row.changes[:2] %}<div><strong>{{ change.field }}:</strong> {{ change['from'] }} <i class="bi bi-arrow-right text-muted"></i> {{ change['to'] }}</div>{% endfor %}{% if row.changes|length > 2 %}<small class="text-muted">+{{ row.changes|length - 2 }} more changes</small>{% elif not row.changes %}<span class="text-muted">No field-level details recorded</span>{% endif %}</div></td>
+<td>{{ row.username }}</td><td class="text-end pe-3"><button type="button" class="btn btn-sm btn-outline-primary audit-view" data-audit-id="{{ log.id }}"><i class="bi bi-eye me-1"></i>View</button></td></tr>
+<script type="application/json" id="audit-old-{{ log.id }}">{{ (log.old_values or {})|tojson }}</script><script type="application/json" id="audit-new-{{ log.id }}">{{ (log.new_values or {})|tojson }}</script><script type="application/json" id="audit-diff-{{ log.id }}">{{ row.changes|tojson }}</script>
+{% else %}<tr><td colspan="5" class="text-center text-muted py-5">No audit records found for the selected filters.</td></tr>{% endfor %}
+</tbody></table></div></div></div>
+
+<div class="modal fade" id="auditDetailModal" tabindex="-1" aria-labelledby="auditDetailTitle" aria-hidden="true"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title" id="auditDetailTitle">Audit Event Details</h5><div class="small text-muted" id="auditDetailSubtitle"></div></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><div class="audit-modal-meta mb-3"><div><small>Action</small><strong id="auditDetailAction">—</strong></div><div><small>Table</small><strong id="auditDetailTable">—</strong></div><div><small>Record ID</small><strong id="auditDetailRecord">—</strong></div></div><h6 class="fw-bold">Field Changes · From → To</h6><div class="audit-diff mb-3" id="auditDiff"><div class="text-muted small">No field-level difference available.</div></div><h6 class="fw-bold">Raw JSON · Old Values</h6><pre class="audit-json" id="auditOldJson">{}</pre><h6 class="fw-bold mt-3">Raw JSON · New Values</h6><pre class="audit-json" id="auditNewJson">{}</pre></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div></div></div></div>
+<script>
+document.addEventListener('click', function(event) {
+  const button = event.target.closest('[data-audit-id]');
+  if (!button) return;
+  const id = button.dataset.auditId;
+  const row = button.closest('tr');
+  const readJson = (elementId) => { try { return JSON.parse(document.getElementById(elementId)?.textContent || '{}'); } catch (_) { return {}; } };
+  const oldValues = readJson(`audit-old-${id}`);
+  const newValues = readJson(`audit-new-${id}`);
+  const recordedDiff = readJson(`audit-diff-${id}`);
+  document.getElementById('auditDetailTitle').textContent = `Audit Event #${id}`;
+  document.getElementById('auditDetailSubtitle').textContent = row?.querySelector('.audit-date')?.textContent.trim() || '';
+  document.getElementById('auditDetailAction').textContent = row?.querySelector('.badge')?.textContent.trim() || '—';
+  document.getElementById('auditDetailTable').textContent = row?.querySelector('code')?.textContent.trim() || '—';
+  document.getElementById('auditDetailRecord').textContent = row?.querySelector('.audit-sub')?.textContent.split('·')[1]?.replace('Record #','').trim() || '—';
+  const diff = document.getElementById('auditDiff');
+  diff.replaceChildren();
+  const keys = [...new Set([...Object.keys(oldValues || {}), ...Object.keys(newValues || {})])];
+  const display = (value) => value === undefined || value === null ? '—' : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+  const changes = Array.isArray(recordedDiff) && recordedDiff.length ? recordedDiff : keys.filter((key) => JSON.stringify(oldValues?.[key]) !== JSON.stringify(newValues?.[key])).map((key) => ({field:key.replaceAll('_',' '), from:oldValues?.[key], to:newValues?.[key]}));
+  changes.forEach((change) => {
+    const item = document.createElement('div'); item.className = 'audit-diff-row';
+    const title = document.createElement('strong'); title.textContent = change.field || 'Changed field';
+    const values = document.createElement('div'); values.className = 'audit-from-to';
+    const from = document.createElement('span'); from.textContent = display(change.from);
+    const fromLabel = document.createElement('small'); fromLabel.textContent = 'FROM'; from.prepend(fromLabel);
+    const arrow = document.createElement('i'); arrow.className = 'bi bi-arrow-right text-muted';
+    const to = document.createElement('span'); to.textContent = display(change.to);
+    const toLabel = document.createElement('small'); toLabel.textContent = 'TO'; to.prepend(toLabel);
+    values.append(from, arrow, to); item.append(title, values); diff.append(item);
+  });
+  if (!diff.children.length) diff.textContent = 'No field-level difference available.';
+  document.getElementById('auditOldJson').textContent = JSON.stringify(oldValues, null, 2);
+  document.getElementById('auditNewJson').textContent = JSON.stringify(newValues, null, 2);
+  const modal = document.getElementById('auditDetailModal');
+  if (window.bootstrap?.Modal) window.bootstrap.Modal.getOrCreateInstance(modal).show();
+});
+</script>
 {% endblock %}

@@ -14,6 +14,31 @@ from app.modules.document_config.service import (
 from app.modules.transactions.trip_ticket.service import TripTicketService
 
 
+def _add_active_atd(db, vehicle, driver):
+    """A physical release now needs an approved live ATD for the pair."""
+    from app.core.approval.models import ApprovalInstance
+    from app.modules.document_config.models import DocumentType
+    from app.modules.transactions.atd.models import AuthorityToDrive
+    dt = DocumentType.query.filter_by(code="ATD").first()
+    if dt is None:
+        dt = DocumentTypeService().create(
+            code="ATD", name="Authority To Drive",
+            requires_approval=False, auto_numbering=True)
+    atd = AuthorityToDrive(
+        vehicle_id=vehicle.id, driver_id=driver.id,
+        purpose="Trip Ticket regression fixture", valid_from=date.today(),
+        valid_to=date.today(), status="ACTIVE")
+    db.session.add(atd)
+    db.session.flush()
+    approval = ApprovalInstance(
+        document_type_id=dt.id, reference_table="authority_to_drives",
+        reference_id=atd.id, status="APPROVED")
+    db.session.add(approval)
+    db.session.flush()
+    atd.approval_instance_id = approval.id
+    db.session.commit()
+
+
 @pytest.fixture()
 def env(db):
     branch = BranchService().create(code="BR-ODOFIX", name="Odo Fix Branch")
@@ -42,6 +67,7 @@ def test_completing_trip_ticket_updates_vehicle_odometer(db, env):
         vehicle_id=vehicle.id, driver_id=driver.id, destination="Tagaytay",
         purpose="Delivery", departure_datetime=datetime(2026, 7, 20, 8, 0),
         odometer_out=1000, user=None)
+    _add_active_atd(db, vehicle, driver)
     TripTicketService().release(trip.id)
     TripTicketService().complete(trip.id, odometer_in=1250,
                                  return_datetime=datetime(2026, 7, 20, 17, 0))
@@ -63,6 +89,7 @@ def test_completing_trip_ticket_does_not_regress_odometer(db, env):
         vehicle_id=vehicle.id, driver_id=driver.id, destination="Tagaytay",
         purpose="Delivery", departure_datetime=datetime(2026, 7, 20, 8, 0),
         odometer_out=1000, user=None)
+    _add_active_atd(db, vehicle, driver)
     TripTicketService().release(trip.id)
     TripTicketService().complete(trip.id, odometer_in=1250,
                                  return_datetime=datetime(2026, 7, 20, 17, 0))

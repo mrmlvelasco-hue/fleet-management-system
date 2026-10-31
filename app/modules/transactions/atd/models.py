@@ -8,8 +8,20 @@ class AuthorityToDrive(db.Model, BaseModel):
 
     document_number = db.Column(db.String(40), unique=True, nullable=True,
                                 index=True)
+    # Existing records remain vehicle-specific; new ATDs may authorize a
+    # vehicle type or motorcycle use without binding a single fleet unit.
     vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"),
-                           nullable=False)
+                           nullable=True)
+    authorization_type = db.Column(db.String(24), nullable=False,
+                                   default="SPECIFIC_VEHICLE",
+                                   server_default="SPECIFIC_VEHICLE")
+    vehicle_type_id = db.Column(db.Integer,
+                                db.ForeignKey("vehicle_types.id"),
+                                nullable=True)
+    # New type-wide authorizations use the VEHICLE_CATEGORY lookup code
+    # (LIGHT, HEAVY, MOTORCYCLE, SPECIAL). vehicle_type_id remains for
+    # previously issued type-specific ATDs.
+    vehicle_category = db.Column(db.String(80), nullable=True)
     driver_id = db.Column(db.Integer, db.ForeignKey("drivers.id"),
                           nullable=False)
     purpose = db.Column(db.String(255), nullable=False)
@@ -37,6 +49,7 @@ class AuthorityToDrive(db.Model, BaseModel):
         db.Integer, db.ForeignKey("approval_instances.id"), nullable=True)
 
     vehicle = db.relationship("Vehicle")
+    vehicle_type = db.relationship("VehicleType")
     driver = db.relationship("Driver")
     maintenance_order = db.relationship("MaintenanceOrder")
     requester = db.relationship("User", foreign_keys=[requested_by])

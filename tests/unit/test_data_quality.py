@@ -140,10 +140,10 @@ def test_required_fields_are_reported_separately(db, graded):
         "chassis_number", "color"}
 
 
-def test_branch_scorecard_ranks_worst_first(db, graded):
+def test_company_scorecard_ranks_worst_first(db, graded):
     """The screen exists to show where attention is needed."""
     _only(db, "chassis_number")
-    rows = DataQualityService().branch_scorecard()
+    rows = DataQualityService().company_scorecard()
     assert rows
     assert rows == sorted(rows, key=lambda r: r["score"])
     assert rows[0]["rank"] == 1
@@ -180,26 +180,40 @@ def test_no_scored_fields_does_not_divide_by_zero(db, graded):
     db.session.commit()
     result = DataQualityService().score_vehicle(full)
     assert result["score"] == 0
-    assert DataQualityService().branch_scorecard() == []
+    assert DataQualityService().company_scorecard() == []
 
 
-# ---------------------------------- the branch filter (2026-10-26)
+# ---------------------------------- the Company filter (2026-10-31)
 
 @pytest.fixture()
-def two_branches(db):
-    """A big, sparse branch and a small, well-filled one -- so a filtered
+def two_companies(db):
+    """A big, sparse Company and a small, well-filled one -- so a filtered
     figure cannot coincidentally equal the fleet-wide one."""
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+
     vt = VehicleTypeService().create(code="LV-BR", name="Light",
                                      category="LIGHT")
-    big = BranchService().create(code="BIG", name="Manila Hub")
-    small = BranchService().create(code="SML", name="East Asia Labs")
+    region = RegionService().create(code="DQ-REG", name="DQ Region")
+    area = AreaDistrictService().create(code="DQ-AREA", name="DQ Area",
+                                        region_id=region.id)
+    big = OrgCompanyService().create(short_name="DQ Big",
+                                     region_id=region.id,
+                                     area_district_id=area.id)
+    small = OrgCompanyService().create(short_name="DQ Small",
+                                       region_id=region.id,
+                                       area_district_id=area.id)
+    big_branch = BranchService().create(code="BIG", name="Manila Hub",
+                                        company_id=big.id)
+    small_branch = BranchService().create(code="SML", name="East Asia Labs",
+                                          company_id=small.id)
     for i in range(6):
         VehicleService().create(
             vehicle_type_id=vt.id, brand="Toyota", model="Vios", year=2024,
-            branch_id=big.id, conduction_number=f"BR-BIG-{i}")
+            branch_id=big_branch.id, conduction_number=f"BR-BIG-{i}")
     VehicleService().create(
         vehicle_type_id=vt.id, brand="Toyota", model="Camry", year=2024,
-        branch_id=small.id, conduction_number="BR-SML-0",
+        branch_id=small_branch.id, conduction_number="BR-SML-0",
         plate_number="SML-000", chassis_number="CH-S", engine_number="EN-S")
     db.session.commit()
     DataQualityService().sync_fields()
@@ -208,45 +222,43 @@ def two_branches(db):
     return big, small
 
 
-def test_summary_counts_only_the_branch_asked_for(db, two_branches):
-    """Reported at kickoff: picking a branch changed nothing above the
-    drill-down list. summary() took no branch_id at all, so the tiles
-    were always fleet-wide while the control implied otherwise."""
-    big, small = two_branches
+def test_summary_counts_only_the_company_asked_for(db, two_companies):
+    """The Company selection scopes every report metric and scorecard row."""
+    big, small = two_companies
     svc = DataQualityService()
 
     everywhere = svc.summary()
     assert everywhere["vehicles"] == 7
 
-    just_small = svc.summary(branch_id=small.id)
+    just_small = svc.summary(company_id=small.id)
     assert just_small["vehicles"] == 1
     # That one vehicle has all three scored fields filled.
     assert just_small["score"] == 100
     assert just_small["incomplete"] == 0
     assert just_small["missing_points"] == 0
 
-    just_big = svc.summary(branch_id=big.id)
+    just_big = svc.summary(company_id=big.id)
     assert just_big["vehicles"] == 6
     assert just_big["incomplete"] == 6
     assert just_big["score"] < everywhere["score"] < just_small["score"]
 
 
-def test_field_completion_counts_only_the_branch_asked_for(db, two_branches):
-    big, small = two_branches
+def test_field_completion_counts_only_the_company_asked_for(db, two_companies):
+    big, small = two_companies
     svc = DataQualityService()
 
-    small_rows = {f["label"]: f for f in svc.field_completion(branch_id=small.id)}
+    small_rows = {f["label"]: f for f in svc.field_completion(company_id=small.id)}
     plate = small_rows["Plate Number"]
     assert plate["filled"] == 1 and plate["missing"] == 0
     assert plate["rate"] == 100
 
-    big_rows = {f["label"]: f for f in svc.field_completion(branch_id=big.id)}
+    big_rows = {f["label"]: f for f in svc.field_completion(company_id=big.id)}
     assert big_rows["Plate Number"]["missing"] == 6
     assert big_rows["Plate Number"]["rate"] == 0
 
 
-def test_the_fleet_wide_figures_are_unchanged_when_no_branch_is_asked_for(
-        db, two_branches):
+def test_the_fleet_wide_figures_are_unchanged_when_no_company_is_selected(
+        db, two_companies):
     """The default must stay exactly what it was."""
     svc = DataQualityService()
     assert svc.summary()["vehicles"] == 7
@@ -255,8 +267,8 @@ def test_the_fleet_wide_figures_are_unchanged_when_no_branch_is_asked_for(
     assert rows["Plate Number"]["missing"] == 6
 
 
-def test_the_endpoint_scopes_its_figures_to_the_selected_branch(
-        db, client, two_branches):
+def test_the_endpoint_scopes_its_figures_to_the_selected_company(
+        db, client, two_companies):
     """End to end, through the route the screen actually calls."""
     import json
 
@@ -276,7 +288,7 @@ def test_the_endpoint_scopes_its_figures_to_the_selected_branch(
     _db.session.add_all([role, user])
     _db.session.commit()
 
-    big, small = two_branches
+    big, small = two_companies
     r = client.post("/api/v1/auth/token",
                     json={"username": "dqr", "password": "secret123"})
     token = json.loads(r.get_data(as_text=True))["access_token"]
@@ -285,7 +297,7 @@ def test_the_endpoint_scopes_its_figures_to_the_selected_branch(
     everywhere = json.loads(client.get(
         "/api/v1/admin/data-quality", headers=head).get_data(as_text=True))
     scoped = json.loads(client.get(
-        f"/api/v1/admin/data-quality?branch_id={small.id}",
+        f"/api/v1/admin/data-quality?company_id={small.id}",
         headers=head).get_data(as_text=True))
 
     assert everywhere["summary"]["vehicles"] == 7
@@ -296,35 +308,34 @@ def test_the_endpoint_scopes_its_figures_to_the_selected_branch(
                         if f["label"] == "Plate Number")
     assert scoped_plate["missing"] == 0
 
-    # The branch scorecard still ranks EVERY branch: it is the
-    # comparison, and filtering it to one row would leave nothing to
-    # compare against. The drill-down keeps following the selection.
-    assert len(scoped["branches"]) == 2
-    assert scoped["selected_branch_id"] == small.id
-    assert len(scoped["gaps"]) == 0  # the one small-branch vehicle is complete
+    # All sections, including the scorecard, follow the same Company.
+    assert len(scoped["companies"]) == 1
+    assert scoped["companies"][0]["company_id"] == small.id
+    assert scoped["selected_company_id"] == small.id
+    assert len(scoped["gaps"]) == 0
 
 
 def test_a_scoped_call_is_not_served_the_fleet_wide_cached_result(
-        db, app, two_branches):
+        db, app, two_companies):
     """summary() and field_completion() are @request_cached. If the
     cache keyed on the method alone, the first call in a request would
-    answer every later one -- so a branch filter applied after a
+    answer every later one -- so a Company filter applied after a
     fleet-wide read would silently show the whole fleet's numbers under
-    one branch's name. The decorator folds arguments into its key; this
+    one Company's name. The decorator folds arguments into its key; this
     pins that, because the bug it prevents is invisible by inspection.
     """
-    _big, small = two_branches
+    _big, small = two_companies
     with app.test_request_context("/"):
         svc = DataQualityService()
         everywhere = svc.summary()
-        scoped = svc.summary(branch_id=small.id)
+        scoped = svc.summary(company_id=small.id)
         assert everywhere["vehicles"] == 7
         assert scoped["vehicles"] == 1, (
-            "a branch-scoped summary was served the fleet-wide result")
+            "a Company-scoped summary was served the fleet-wide result")
 
         all_fields = {f["label"]: f for f in svc.field_completion()}
         scoped_fields = {f["label"]: f
-                         for f in svc.field_completion(branch_id=small.id)}
+                         for f in svc.field_completion(company_id=small.id)}
         assert all_fields["Plate Number"]["missing"] == 6
         assert scoped_fields["Plate Number"]["missing"] == 0
 
@@ -417,9 +428,7 @@ def test_field_completion_can_be_scoped_to_a_company(db, company_graded):
 
 def test_the_endpoint_scopes_its_figures_to_the_selected_company(
         db, client, company_graded):
-    """End to end, through the route the screen actually calls -- the
-    Company counterpart of test_the_endpoint_scopes_its_figures_to_the_
-    selected_branch above."""
+    """The selected Company controls the scorecard and figures end to end."""
     import json
 
     from app.core.security.password import hash_password
@@ -450,3 +459,14 @@ def test_the_endpoint_scopes_its_figures_to_the_selected_company(
 
     assert scoped["summary"]["vehicles"] == 2
     assert scoped["selected_company_id"] == co.id
+    assert len(scoped["companies"]) == 1
+    assert scoped["companies"][0]["company_id"] == co.id
+
+    malformed = client.get(
+        "/api/v1/admin/data-quality?company_id=not-a-number",
+        headers=head)
+    assert malformed.status_code == 400
+    retired_filter = client.get(
+        "/api/v1/admin/data-quality?branch_id=9999",
+        headers=head)
+    assert retired_filter.status_code == 400

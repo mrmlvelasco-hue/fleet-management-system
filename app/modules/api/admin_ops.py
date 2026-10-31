@@ -360,16 +360,16 @@ def save_dashboard_config(api_user):
 
 # ── Data quality ──────────────────────────────────────────────────────────
 
-def _dq_branch(b):
+def _dq_company(row):
     return {
-        "rank": b.get("rank"),
-        "branch_id": b["branch"].id if b.get("branch") else None,
-        "branch_name": b.get("branch_name"),
-        "vehicles": b.get("vehicles"),
-        "complete": b.get("complete"),
-        "incomplete": b.get("incomplete"),
-        "score": b.get("score"),
-        "rating": b.get("rating"),
+        "rank": row.get("rank"),
+        "company_id": row.get("company_id"),
+        "company_name": row.get("company_name"),
+        "vehicles": row.get("vehicles"),
+        "complete": row.get("complete"),
+        "incomplete": row.get("incomplete"),
+        "score": row.get("score"),
+        "rating": row.get("rating"),
     }
 
 
@@ -377,20 +377,22 @@ def _dq_branch(b):
 @api_auth_required("dataquality.view")
 def get_data_quality(api_user):
     from app.core.data_quality_service import DataQualityService
+    from app.modules.api.coercion import company_arg
+    if request.args.get("branch_id") not in (None, ""):
+        return jsonify({
+            "error": "bad_request",
+            "message": "branch_id has been replaced by company_id.",
+        }), 400
+    company_id, error = company_arg()
+    if error:
+        return error
     svc = DataQualityService()
-    branch_id = request.args.get("branch_id", type=int)
-    company_id = request.args.get("company_id", type=int)
-    # Every figure follows the selected branch/Company. The branch
-    # scorecard deliberately does not: it is the ranking of branches
-    # against each other, and filtering it to a single row would leave
-    # nothing to compare with -- the screen highlights the selected row
-    # instead.
-    summary = svc.summary(user=api_user, branch_id=branch_id,
-                          company_id=company_id)
-    branches = [_dq_branch(b) for b in svc.branch_scorecard(user=api_user)]
+    summary = svc.summary(user=api_user, company_id=company_id)
+    companies = [_dq_company(row) for row in
+                 svc.company_scorecard(user=api_user,
+                                       company_id=company_id)]
     fields = []
-    for f in svc.field_completion(user=api_user, branch_id=branch_id,
-                                  company_id=company_id):
+    for f in svc.field_completion(user=api_user, company_id=company_id):
         fields.append({
             "label": f["label"],
             "group": f["group"],
@@ -401,15 +403,15 @@ def get_data_quality(api_user):
             "is_required": f["is_required"],
         })
     gaps = []
-    if branch_id or company_id:
-        for row in svc.vehicles_with_gaps(branch_id=branch_id,
-                                          company_id=company_id,
+    if company_id:
+        for row in svc.vehicles_with_gaps(company_id=company_id,
                                           user=api_user):
             v = row["vehicle"]
             missing = row.get("missing") or []
             labels = []
             for m in missing:
-                labels.append(getattr(m, "label", None) or str(m))
+                labels.append((m.get("label") if isinstance(m, dict) else
+                               getattr(m, "label", None)) or str(m))
             gaps.append({
                 "id": getattr(v, "id", None),
                 "plate_number": getattr(v, "plate_number", None),
@@ -426,10 +428,9 @@ def get_data_quality(api_user):
             "missing_points": summary.get("missing_points"),
             "common_missing": summary.get("common_missing") or [],
         },
-        "branches": branches,
+        "companies": companies,
         "fields": fields,
         "gaps": gaps,
-        "selected_branch_id": branch_id,
         "selected_company_id": company_id,
     })
 
@@ -446,7 +447,7 @@ def get_dq_settings(api_user):
         grouped.setdefault(f.field_group, []).append({
             "id": f.id,
             "field_name": f.field_name,
-            "label": f.label,
+            "label": DataQualityService.display_label(f),
             "is_required": f.is_required,
             "include_in_score": f.include_in_score,
             "weight": f.weight,

@@ -12,15 +12,29 @@
   <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
     <div>
       <h1 class="h3 mb-1 fw-bold text-dark">Fleet Data Quality Scorecard</h1>
-      <p class="text-muted small mb-0">Monitor Vehicle Master completeness, field-level coverage, and branch audit compliance.</p>
+      <p class="text-muted small mb-0">Monitor Vehicle Master completeness and Company data coverage.</p>
     </div>
+    <div class="d-flex align-items-center gap-2">
+    <form method="get" action="{{ url_for('system_admin.data_quality') }}">
+      <label class="visually-hidden" for="dqCompanyFilter">Company</label>
+      <select id="dqCompanyFilter" name="company_id" class="form-select" onchange="this.form.submit()">
+        <option value="">All companies</option>
+        {% for company in companies %}
+        <option value="{{ company.id }}" {{ 'selected' if selected_company_id == company.id }}>
+          {{ company.short_name }} ({{ company.region.name }} / {{ company.area_district.name }})
+        </option>
+        {% endfor %}
+      </select>
+    </form>
     {% if current_user.has_permission('dataquality.manage') %}
     <a class="btn btn-outline-primary"
        href="{{ url_for('system_admin.data_quality_settings') }}">
       <i class="bi bi-sliders me-1"></i>Configure Fields
     </a>
     {% endif %}
+    </div>
   </div>
+  <p class="text-muted small mb-3">Showing <strong>{% if selected_company %}{{ selected_company.short_name }} ({{ selected_company.region.name }} / {{ selected_company.area_district.name }}){% else %}all companies{% endif %}</strong> · {{ summary.vehicles }} vehicles assessed</p>
 
   <!-- Headline KPI Grid -->
   <div class="ent-kpi-grid mb-4">
@@ -63,12 +77,12 @@
   </div>
 
   <div class="row g-4 mb-4">
-    <!-- Branch Ranking Card -->
+    <!-- Company Ranking Card -->
     <div class="col-12 col-xl-7">
       <div class="card border-0 shadow-sm h-100">
         <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
-          <span>Branch Scorecard</span>
-          <span class="badge bg-light text-muted border fw-normal">Lowest Score First</span>
+          <span>Company Scorecard</span>
+          <span class="badge bg-light text-muted border fw-normal">{{ 'Selected Company' if selected_company_id else 'Lowest Score First' }}</span>
         </div>
         <div class="card-body p-0">
           <div class="table-responsive">
@@ -76,21 +90,25 @@
               <thead class="table-light small text-uppercase text-muted">
                 <tr>
                   <th class="ps-3" style="width: 40px;">#</th>
-                  <th>Branch</th>
+                  <th>Company</th>
                   <th class="text-end">Vehicles</th>
                   <th class="text-end">Complete</th>
                   <th style="width: 190px;" class="pe-3">Data Quality</th>
                 </tr>
               </thead>
               <tbody>
-              {% for b in branches %}
+              {% for b in scorecard %}
                 <tr>
                   <td class="ps-3 text-muted fw-semibold">{{ b.rank }}</td>
                   <td>
+                    {% if b.company_id is not none %}
                     <a class="ent-grid__link fw-semibold text-decoration-none"
-                       href="{{ url_for('system_admin.data_quality', branch_id=b.branch.id) if b.branch else '#' }}">
-                      {{ b.branch_name }}
+                       href="{{ url_for('system_admin.data_quality', company_id=b.company_id) }}">
+                      {{ b.company_name }}
                     </a>
+                    {% else %}
+                    <span class="fw-semibold">{{ b.company_name }}</span>
+                    {% endif %}
                   </td>
                   <td class="text-end font-monospace">{{ b.vehicles }}</td>
                   <td class="text-end font-monospace">
@@ -206,14 +224,14 @@
     </div>
   </div>
 
-  <!-- Branch Drill-Down Panel -->
+  <!-- Company Drill-Down Panel -->
   {% if gaps is not none %}
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white fw-bold py-3 border-bottom d-flex justify-content-between align-items-center">
       <span>Vehicles with Missing Information</span>
       <a class="btn btn-sm btn-outline-secondary"
          href="{{ url_for('system_admin.data_quality') }}">
-        <i class="bi bi-x-circle me-1"></i>Clear Branch Filter
+        <i class="bi bi-x-circle me-1"></i>Clear Company Filter
       </a>
     </div>
     <div class="card-body p-0" style="max-height: 520px; overflow-y: auto;">
@@ -252,7 +270,7 @@
             <tr>
               <td colspan="3" class="text-center text-muted py-4">
                 <i class="bi bi-shield-check fs-3 text-success d-block mb-2"></i>
-                Every vehicle in this branch is complete and fully compliant.
+                Every vehicle in this Company is complete and fully compliant.
               </td>
             </tr>
           {% endfor %}
@@ -264,7 +282,7 @@
   {% else %}
   <div class="alert alert-light border text-muted small d-flex align-items-center mb-0">
     <i class="bi bi-info-circle me-2 fs-6"></i>
-    Select a specific branch from the scorecard above to drill down into vehicle-level field gaps.
+    Select a Company from the scorecard above to drill down into vehicle-level field gaps.
   </div>
   {% endif %}
 

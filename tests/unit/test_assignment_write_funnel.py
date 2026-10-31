@@ -195,6 +195,19 @@ def test_hook_defaults_keep_existing_callers_working(app, env):
     assert db.session.get(Vehicle, v.id).assigned_driver_id == juan.id
 
 
+def test_atd_approval_hook_does_not_change_vehicle_assignment(app, env):
+    from types import SimpleNamespace
+    from app.modules.master_data.vehicle.assignment_hooks import _on_approval_event
+    b, vt, juan, _maria = env
+    v = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2024,
+        branch_id=b.id, conduction_number="A-ATD-NO-ASSIGN")
+    _on_approval_event("approved_final", SimpleNamespace(
+        reference_table="authority_to_drives", reference_id=123))
+    assert db.session.get(Vehicle, v.id).assigned_driver_id is None
+    assert _open(v.id) == []
+
+
 def test_hook_still_no_ops_on_missing_ids(app, env):
     """Unchanged safety property: a failed lookup here must never block
     an ATD approval or MO completion from going through."""

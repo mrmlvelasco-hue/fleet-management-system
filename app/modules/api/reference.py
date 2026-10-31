@@ -37,6 +37,33 @@ from app.modules.api.auth import api_auth_required
 from app.modules.api.routes import bp
 
 
+@bp.route("/reference/vehicle-types", methods=["GET"])
+@api_auth_required()
+def reference_vehicle_types(api_user):
+    """Active vehicle types for ATD authorization; includes motorcycles.
+
+    This is non-sensitive form reference data, like the driver picker. A
+    user with ATD access must be able to request a type-wide permit without
+    also needing vehicle register permissions.
+    """
+    from app.modules.master_data.reference.service import VehicleTypeService
+    rows = VehicleTypeService().list()
+    return jsonify({"items": [{"id": t.id, "name": t.name,
+                               "code": t.code, "category": t.category}
+                    for t in rows]})
+
+
+@bp.route("/reference/vehicle-categories", methods=["GET"])
+@api_auth_required()
+def reference_vehicle_categories(api_user):
+    """The active VEHICLE_CATEGORY Lookup Maintenance values for ATDs."""
+    from app.modules.system_admin.services.lookup_service import LookupService
+    rows = LookupService().get_by_type_with_fallback("VEHICLE_CATEGORY")
+    return jsonify({"items": [{"code": row.code,
+                               "description": row.description}
+                              for row in rows]})
+
+
 def _bad(message):
     return jsonify({"error": "bad_request", "message": message}), 400
 

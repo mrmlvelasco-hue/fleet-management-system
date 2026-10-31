@@ -1,7 +1,7 @@
 """Fleet Data Quality Scorecard.
 
 Measures how completely the Vehicle Master is filled in, per vehicle and
-per branch.
+per Company.
 
 Deliberately NOT hardcoded: which fields count, whether each is
 mandatory, and what each is worth are all rows in `data_quality_fields`,
@@ -40,7 +40,7 @@ FIELD_LABELS = {
     "chassis_number": "Chassis Number",
     "engine_number": "Engine Number",
     "vehicle_type_id": "Vehicle Type",
-    "branch_id": "Branch / Company",
+    "branch_id": "Company assignment",
     "company_id": "Company (direct)",
     "department_id": "Department",
     "business_unit_id": "Business Unit",
@@ -366,13 +366,18 @@ class DataQualityService:
             return "WARNING"
         return "CRITICAL"
 
-    def _vehicles(self, user=None, branch_id=None, company_id=None):
+    @staticmethod
+    def display_label(field):
+        """Use current Company wording for the retained branch anchor."""
+        if field.field_name == "branch_id":
+            return FIELD_LABELS["branch_id"]
+        return field.label
+
+    def _vehicles(self, user=None, company_id=None):
         from app.modules.master_data.vehicle.models import Vehicle
         query = Vehicle.query.filter(Vehicle.is_active.is_(True),
                                     Vehicle.status != "DISPOSED")
-        if branch_id:
-            query = query.filter(Vehicle.branch_id == branch_id)
-        if company_id:
+        if company_id is not None:
             # Batch 6: same effective-Company predicate every other
             # Company-scoped list uses, so this screen's Company filter
             # can never disagree with the Vehicle Master list about
@@ -381,29 +386,31 @@ class DataQualityService:
             query = query.filter(company_filter(Vehicle, company_id))
         return query.all()
 
-    @request_cached("dq_branch_scorecard")
-    def branch_scorecard(self, user=None) -> list:
-        """Per-branch rollup, ranked worst-first.
+    @request_cached("dq_company_scorecard")
+    def company_scorecard(self, user=None, company_id=None) -> list:
+        """Per-Company rollup, ranked worst-first.
 
         Worst-first because the point of the screen is to show where
-        attention is needed; a ranking that opens with the branches
+        attention is needed; a ranking that opens with the Companies
         already doing well buries the ones that aren't.
         """
-        from app.modules.master_data.org.models import Branch
+        from app.modules.master_data.org.models import OrgCompany
+        from app.core.company_resolution import effective_company_id
 
         fields = self.scored_fields()
         if not fields:
             return []
 
-        branches = {b.id: b for b in Branch.query.all()}
-        vehicles = self._vehicles(user=user)
+        companies = {c.id: c for c in OrgCompany.query.all()}
+        vehicles = self._vehicles(user=user, company_id=company_id)
         self._preload_attachments(vehicles)
         buckets = {}
         for vehicle in vehicles:
             result = self.score_vehicle(vehicle, fields)
+            company_id = effective_company_id(vehicle)
             bucket = buckets.setdefault(
-                vehicle.branch_id,
-                {"branch": branches.get(vehicle.branch_id),
+                company_id,
+                {"company": companies.get(company_id),
                  "vehicles": 0, "complete": 0, "incomplete": 0,
                  "score_sum": 0.0, "missing_points": 0})
             bucket["vehicles"] += 1
@@ -415,12 +422,21 @@ class DataQualityService:
                 bucket["complete"] += 1
 
         rows = []
-        for branch_id, bucket in buckets.items():
+        for company_id, bucket in buckets.items():
             average = bucket["score_sum"] / bucket["vehicles"]
+            company = bucket["company"]
+            company_label = "(No company assigned)"
+            if company:
+                location = [name for name in (
+                    getattr(company.region, "name", None),
+                    getattr(company.area_district, "name", None),
+                ) if name]
+                company_label = company.short_name
+                if location:
+                    company_label += f" ({' / '.join(location)})"
             rows.append({
-                "branch": bucket["branch"],
-                "branch_name": (bucket["branch"].name if bucket["branch"]
-                               else "(No branch assigned)"),
+                "company_id": company_id,
+                "company_name": company_label,
                 "vehicles": bucket["vehicles"],
                 "complete": bucket["complete"],
                 "incomplete": bucket["incomplete"],
@@ -434,18 +450,17 @@ class DataQualityService:
         return rows
 
     @request_cached("dq_field_completion")
-    def field_completion(self, user=None, branch_id=None, company_id=None) -> list:
+    def field_completion(self, user=None, company_id=None) -> list:
         """Completion rate per field, worst first -- that ordering is
         what makes the list actionable.
 
-        branch_id/company_id scope the rates to one branch/Company, so
+        company_id scopes the rates to one Company, so
         the screen's filters apply here too. request_cached folds the
         arguments into its key, so a scoped call cannot be served a
         fleet-wide result cached earlier in the same request.
         """
         fields = self.scored_fields()
-        vehicles = self._vehicles(user=user, branch_id=branch_id,
-                                  company_id=company_id)
+        vehicles = self._vehicles(user=user, company_id=company_id)
         self._preload_attachments(vehicles)
         total = len(vehicles)
         if not total or not fields:
@@ -457,7 +472,7 @@ class DataQualityService:
                         if self._is_filled(v, field.field_name))
             rate = filled / total * 100
             rows.append({
-                "field": field, "label": field.label,
+                "field": field, "label": self.display_label(field),
                 "group": field.field_group,
                 "filled": filled, "missing": total - filled,
                 "rate": round(rate, 1),
@@ -468,18 +483,17 @@ class DataQualityService:
         return rows
 
     @request_cached("dq_summary")
-    def summary(self, user=None, branch_id=None, company_id=None) -> dict:
+    def summary(self, user=None, company_id=None) -> dict:
         """Headline figures for the dashboard widget.
 
-        branch_id/company_id scope every figure to one branch/Company.
+        company_id scopes every figure to one Company.
         Without it the scorecard's filter changed only the drill-down
         list at the bottom of the page while the tiles stayed fleet-wide
-        -- reported at the client kickoff, since a branch holding 4 of
+        -- reported at the client kickoff, since a Company holding 4 of
         157 vehicles still showed 157 assessed.
         """
         fields = self.scored_fields()
-        vehicles = self._vehicles(user=user, branch_id=branch_id,
-                                  company_id=company_id)
+        vehicles = self._vehicles(user=user, company_id=company_id)
         self._preload_attachments(vehicles)
         if not fields or not vehicles:
             return {"score": 0, "rating": "CRITICAL", "vehicles": 0,
@@ -495,10 +509,10 @@ class DataQualityService:
             if result["missing"]:
                 incomplete += 1
             for field in result["missing"]:
-                missing_counter[field.label] = missing_counter.get(
-                    field.label, 0) + 1
+                label = self.display_label(field)
+                missing_counter[label] = missing_counter.get(label, 0) + 1
 
-        branches = self.branch_scorecard(user=user)
+        companies = self.company_scorecard(user=user, company_id=company_id)
         overall = total_score / len(vehicles)
         common = sorted(missing_counter.items(), key=lambda kv: -kv[1])[:5]
         return {
@@ -507,21 +521,20 @@ class DataQualityService:
             "vehicles": len(vehicles),
             "incomplete": incomplete,
             "missing_points": missing_points,
-            # branch_scorecard is worst-first, so the bottom 5 are its
+            # company_scorecard is worst-first, so the bottom 5 are its
             # head and the top 5 its tail reversed.
-            "bottom": branches[:5],
-            "top": list(reversed(branches[-5:])),
+            "bottom": companies[:5],
+            "top": list(reversed(companies[-5:])),
             "common_missing": [{"label": label, "count": count}
                               for label, count in common],
         }
 
-    def vehicles_with_gaps(self, branch_id=None, company_id=None, user=None,
+    def vehicles_with_gaps(self, company_id=None, user=None,
                           limit=200):
-        """Drill-down: Branch/Company -> Vehicle -> Missing Fields."""
+        """Drill-down: Company -> Vehicle -> Missing Fields."""
         fields = self.scored_fields()
         rows = []
-        vehicles = self._vehicles(user=user, branch_id=branch_id,
-                                  company_id=company_id)
+        vehicles = self._vehicles(user=user, company_id=company_id)
         self._preload_attachments(vehicles)
         for vehicle in vehicles:
             result = self.score_vehicle(vehicle, fields)
@@ -531,8 +544,16 @@ class DataQualityService:
                 "vehicle": vehicle,
                 "score": result["score"],
                 "rating": self.rating_of(result["score"]),
-                "missing": result["missing"],
-                "missing_required": result["missing_required"],
+                "missing": [{
+                    "field_name": field.field_name,
+                    "label": self.display_label(field),
+                    "is_required": field.is_required,
+                } for field in result["missing"]],
+                "missing_required": [{
+                    "field_name": field.field_name,
+                    "label": self.display_label(field),
+                    "is_required": field.is_required,
+                } for field in result["missing_required"]],
             })
         rows.sort(key=lambda r: r["score"])
         return rows[:limit]

@@ -35,9 +35,25 @@
           <div class="row g-3">
 
             <div class="col-md-6">
-              <label class="form-label fw-semibold">Vehicle</label>
+              <label class="form-label fw-semibold">Authorization Type</label>
+              <select name="authorization_type" id="atdAuthorizationType" class="form-select" required>
+                <option value="VEHICLE_TYPE">Vehicle Type / Multiple Available Vehicles</option>
+                <option value="SPECIFIC_VEHICLE" {{ 'selected' if prefill_vehicle else '' }}>Specific Vehicle</option>
+                <option value="MOTORCYCLE_ONLY">Motorcycle Only</option>
+              </select>
+            </div>
+            <div class="col-md-6" id="atdVehicleTypeWrap">
+              <label class="form-label fw-semibold">Vehicle Category</label>
+              <select name="vehicle_category" id="atdVehicleType" class="form-select">
+                <option value="">— Select vehicle category —</option>
+                {% for category in vehicle_categories %}<option value="{{ category.code }}">{{ category.description }} ({{ category.code }})</option>{% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-6" id="atdVehicleWrap">
+              <label class="form-label fw-semibold">Vehicle <span class="text-muted small fw-normal">(optional for vehicle type)</span></label>
               <div class="input-group">
-                <select name="vehicle_id" id="atdVehicleSelect" class="form-select" required>
+                <select name="vehicle_id" id="atdVehicleSelect" class="form-select">
                   {% if prefill_vehicle %}
                   <option value="{{ prefill_vehicle.id }}" selected>
                     {{ prefill_vehicle.plate_number or prefill_vehicle.conduction_number }} — {{ prefill_vehicle.brand }} {{ prefill_vehicle.model }}
@@ -137,11 +153,40 @@
     jQuery(function () {
       initAjaxSelect("#atdVehicleSelect", "{{ url_for('api_search.search_vehicles') }}",
         { placeholder: "Type plate number, make, or model..." });
+      jQuery("#atdVehicleSelect").on("select2:select", function () {
+        jQuery("#atdAuthorizationType").val("SPECIFIC_VEHICLE").trigger("change");
+      });
       initAjaxSelect("#atdDriverSelect", "{{ url_for('api_search.search_drivers') }}",
         { placeholder: "Type employee number or name..." });
       wireVehicleSearchModal("atdVehicleModalBtn", "atdVehicleSelect",
         "{{ url_for('api_search.search_vehicles_table') }}");
     });
   }
+  (function () {
+    const mode = document.getElementById("atdAuthorizationType");
+    const type = document.getElementById("atdVehicleType");
+    const vehicle = document.getElementById("atdVehicleSelect");
+    const odometer = document.querySelector('[name="odometer_out"]');
+    function sync() {
+      const isType = mode.value === "VEHICLE_TYPE";
+      const isSpecific = mode.value === "SPECIFIC_VEHICLE";
+      document.getElementById("atdVehicleTypeWrap").hidden = !isType;
+      document.getElementById("atdVehicleWrap").hidden = !isType && !isSpecific;
+      vehicle.required = isSpecific;
+      type.required = isType;
+      odometer.disabled = !isSpecific;
+      if (!isType) type.value = "";
+      if (!isSpecific) odometer.value = "";
+    }
+    mode.addEventListener("change", function () {
+      if (mode.value !== "SPECIFIC_VEHICLE") {
+        if (window.jQuery && jQuery.fn.select2 && jQuery(vehicle).data("select2"))
+          jQuery(vehicle).val(null).trigger("change.select2");
+        else vehicle.value = "";
+      }
+      sync();
+    });
+    sync();
+  })();
 </script>
 {% endblock %}
