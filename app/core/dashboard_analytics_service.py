@@ -178,6 +178,18 @@ class DashboardAnalyticsService:
 
         group_by:
           BRANCH      -- one line per branch (the overview)
+          COMPANY     -- one line per effective Company (Michael,
+                        2026-11-02: "the analysis Maintenance Cost Trend
+                        by Branch that should be company"). Uses the
+                        SAME effective-company rule as the rest of the
+                        app (Vehicle.company_id, else its Branch's), so
+                        this chart can't disagree with the Company
+                        picker or the KPI tiles about which Company a
+                        vehicle belongs to. A vehicle whose branch is
+                        not yet mapped to a Company (the normal state
+                        mid-cutover) is bucketed into its own "Unmapped"
+                        series rather than dropped, so the grand total
+                        here always matches the BRANCH total.
           DEPARTMENT  -- one line per department. Only meaningful within
                         one branch, since department codes repeat across
                         branches and mixing them would silently merge
@@ -219,12 +231,21 @@ class DashboardAnalyticsService:
                        "error": "Select a branch to break down by department."}
             group_col = Department.name
             group_id_col = Department.id
+        elif group_by == "COMPANY":
+            # The same "own company_id, else branch's" rule as
+            # app.core.company_resolution.effective_company_id, expressed
+            # as a SQL GROUP BY expression -- that function itself works
+            # row-by-row in Python and isn't usable inside an aggregate
+            # query, so this mirrors it rather than calling it.
+            group_id_col = func.coalesce(Vehicle.company_id, Branch.company_id)
+            group_col = None   # resolved to a label in Python, below
         else:
             group_col = Branch.name
             group_id_col = Branch.id
 
+        select_cols = [group_id_col] + ([group_col] if group_col is not None else [])
         q = (db.session.query(
-                group_id_col, group_col,
+                *select_cols,
                 extract("year", MaintenanceOrder.completed_date),
                 extract("month", MaintenanceOrder.completed_date),
                 func.coalesce(func.sum(MaintenanceOrder.actual_cost), 0))
@@ -236,21 +257,38 @@ class DashboardAnalyticsService:
             q = (q.join(Department, Department.id == Vehicle.department_id)
                 .filter(Vehicle.branch_id == int(branch_id)))
         else:
+            # COMPANY also needs the Branch join, for its company_id
+            # fallback above.
             q = q.join(Branch, Branch.id == Vehicle.branch_id)
 
         visible = self._visible_branch_ids(user)
         if visible is not None:
             q = q.filter(Vehicle.branch_id.in_(visible))
 
-        q = q.group_by(group_id_col, group_col,
+        q = q.group_by(*select_cols,
                       extract("year", MaintenanceOrder.completed_date),
                       extract("month", MaintenanceOrder.completed_date))
 
         totals = {}
         names = {}
-        for gid, gname, yr, mo, total in q.all():
-            names[gid] = gname
-            totals[(gid, int(yr), int(mo))] = float(total)
+        if group_by == "COMPANY":
+            for gid, yr, mo, total in q.all():
+                names[gid] = None  # resolved in bulk below
+                totals[(gid, int(yr), int(mo))] = float(total)
+
+            from app.modules.master_data.org.models import OrgCompany
+            from app.core.company_resolution import company_label
+            company_ids = [gid for gid in names if gid is not None]
+            companies = {c.id: c for c in OrgCompany.query.filter(
+                OrgCompany.id.in_(company_ids)).all()} if company_ids else {}
+            for gid in names:
+                names[gid] = (company_label(companies[gid])
+                             if gid is not None and gid in companies
+                             else "Unmapped")
+        else:
+            for gid, gname, yr, mo, total in q.all():
+                names[gid] = gname
+                totals[(gid, int(yr), int(mo))] = float(total)
 
         labels = [date(yr, mo, 1).strftime("%b %Y") for yr, mo in month_keys]
         # A distinct ordering for multi-series lines. The standard

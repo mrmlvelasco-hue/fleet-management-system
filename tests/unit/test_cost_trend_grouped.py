@@ -55,6 +55,50 @@ def cost_world(app, db):
     return {"b1": b1, "b2": b2, "d1": d1, "d2": d2}
 
 
+@pytest.fixture()
+def company_cost_world(app, db):
+    """Same shape as cost_world, but with Alpha mapped to a Company and
+    Beta left unmapped -- the real state of a fleet mid-cutover
+    (Michael's own: some branches mapped, some not yet)."""
+    from app.modules.master_data.org.service import (
+        BranchService, OrgCompanyService, RegionService, AreaDistrictService)
+    from app.modules.master_data.reference.service import VehicleTypeService
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    from app.modules.user_management.models import User
+
+    sync_permissions(); db.session.commit()
+    _seed_admin("Testpass123!")
+    admin = User.query.filter_by(username="admin").first()
+
+    region = RegionService().create(code="RG-CT", name="Region CT")
+    area = AreaDistrictService().create(code="AD-CT", name="Area CT",
+                                        region_id=region.id)
+    company = OrgCompanyService().create(short_name="Excellence",
+                                         region_id=region.id,
+                                         area_district_id=area.id)
+    b1 = BranchService().create(code="BR-CT1", name="Mapped Branch",
+                                company_id=company.id)
+    b2 = BranchService().create(code="BR-CT2", name="Unmapped Branch")
+    vt = VehicleTypeService().create(code="LV-CT", name="Light",
+                                     category="LIGHT")
+    v1 = VehicleService().create(vehicle_type_id=vt.id, brand="T", model="H",
+                                 year=2022, branch_id=b1.id,
+                                 conduction_number="CT1")
+    v2 = VehicleService().create(vehicle_type_id=vt.id, brand="T", model="H",
+                                 year=2022, branch_id=b2.id,
+                                 conduction_number="CT2")
+    today = date.today()
+    for v, cost in ((v1, 1500), (v2, 700)):
+        db.session.add(MaintenanceOrder(
+            vehicle_id=v.id, order_category="MAINTENANCE", status="COMPLETED",
+            scheduled_date=today, completed_date=today,
+            actual_cost=cost, requested_by=admin.id))
+    db.session.commit()
+    return {"company": company, "b1": b1, "b2": b2}
+
+
 def _svc():
     from app.core.dashboard_analytics_service import DashboardAnalyticsService
     return DashboardAnalyticsService()
@@ -138,3 +182,54 @@ def test_endpoint_supports_the_department_drilldown(app, db, cost_world):
     assert payload["group_by"] == "DEPARTMENT"
     assert {ds["label"] for ds in payload["datasets"]} == {
         "Ops Alpha", "Logistics Alpha"}
+
+
+def test_company_grouping_returns_one_series_per_company(
+        app, db, company_cost_world):
+    """Michael: 'the analysis Maintenance Cost Trend by Branch that
+    should be company' -- a branch mapped to a Company is grouped under
+    that Company's label, not its own branch name."""
+    from app.core.company_resolution import company_label
+    r = _svc().maintenance_cost_trend_grouped(group_by="COMPANY")
+    labels = {ds["label"] for ds in r["datasets"]}
+    assert company_label(company_cost_world["company"]) in labels
+
+
+def test_company_grouping_uses_the_composite_label(app, db,
+                                                    company_cost_world):
+    """Not a bare short_name -- the same Region/Area-District composite
+    the Company picker uses, so the chart legend can't be confused with
+    a same-named Company elsewhere."""
+    r = _svc().maintenance_cost_trend_grouped(group_by="COMPANY")
+    labels = {ds["label"] for ds in r["datasets"]}
+    assert "Excellence (" in "".join(labels)
+
+
+def test_company_grouping_buckets_unmapped_branches_separately(
+        app, db, company_cost_world):
+    """A branch with no Company yet (mid-cutover, the real state of
+    Michael's own fleet) must still show up on the chart -- silently
+    dropping its cost would make the total disagree with the by-branch
+    view."""
+    r = _svc().maintenance_cost_trend_grouped(group_by="COMPANY")
+    labels = {ds["label"] for ds in r["datasets"]}
+    assert "Unmapped" in labels
+
+
+def test_company_grouping_totals_sum_to_the_branch_totals(app, db,
+                                                          company_cost_world):
+    r = _svc().maintenance_cost_trend_grouped(group_by="COMPANY")
+    grand_total = sum(sum(ds["data"]) for ds in r["datasets"])
+    assert grand_total == 1500 + 700
+
+
+def test_endpoint_supports_the_company_grouping(app, db,
+                                                company_cost_world):
+    client = app.test_client()
+    client.post("/login", data={"username": "admin",
+                                "password": "Testpass123!"},
+                follow_redirects=True)
+    payload = client.get(
+        "/dashboard/cost-trend-grouped?group_by=COMPANY").get_json()
+    assert payload["group_by"] == "COMPANY"
+    assert any("Excellence" in ds["label"] for ds in payload["datasets"])

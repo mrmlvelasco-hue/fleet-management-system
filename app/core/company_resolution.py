@@ -37,6 +37,26 @@ def effective_company_id(record):
     return getattr(branch, "company_id", None) if branch is not None else None
 
 
+def company_label(company):
+    """One Company rendered for display: short name plus the Region and
+    Area/District that make it unique (D2's own uniqueness key) --
+    short_name legitimately repeats across Companies (Michael's own
+    fleet has five "Excellence" rows), so a bare short_name is not
+    enough to tell two apart on a chart legend any more than on a
+    picker. Falls back gracefully if either side is somehow missing.
+
+    Moved here from reference.py's `_company_label` (2026-11-02) so the
+    Company picker and any report that groups by Company (e.g. the
+    dashboard's cost-trend chart) render the same label the same way,
+    rather than each defining it again and risking drift.
+    """
+    if company is None:
+        return None
+    parts = [p.name for p in (company.region, company.area_district)
+            if p is not None]
+    return f"{company.short_name} ({' / '.join(parts)})" if parts else company.short_name
+
+
 def companies_in_scope(scope):
     """Company ids covered by an ORG_REGION / ORG_AREA_DISTRICT
     UserOrgScope. A holder never needs every Company in their Region

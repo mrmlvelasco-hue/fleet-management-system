@@ -580,11 +580,10 @@ def reference_branches(api_user):
 
 
 def _company_label(c):
-    """One Company rendered for a picker: short name plus the Region and
-    Area/District that make it unique (D2's own uniqueness key). Falls
-    back gracefully if either side is somehow missing."""
-    parts = [p.name for p in (c.region, c.area_district) if p is not None]
-    return f"{c.short_name} ({' / '.join(parts)})" if parts else c.short_name
+    """Delegates to app.core.company_resolution.company_label -- the
+    one definition, also used by any report that groups by Company."""
+    from app.core.company_resolution import company_label
+    return company_label(c)
 
 
 @bp.route("/reference/org-companies", methods=["GET"])
