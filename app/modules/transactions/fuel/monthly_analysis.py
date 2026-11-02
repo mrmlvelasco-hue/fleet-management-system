@@ -42,7 +42,8 @@ MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 
 class FuelMonthlyAnalysisService:
 
-    def _filtered_vehicle_query(self, *, branch_id=None, department_id=None,
+    def _filtered_vehicle_query(self, *, branch_id=None, company_id=None,
+                                department_id=None,
                                 vehicle_type_id=None, plate=None, user=None):
         from app.modules.master_data.vehicle.models import Vehicle
         from app.modules.transactions.fuel.analytics import fuel_scope_ids
@@ -52,6 +53,12 @@ class FuelMonthlyAnalysisService:
         scope_ids = fuel_scope_ids(user, branch_id)
         if scope_ids is not None:
             q = q.filter(Vehicle.branch_id.in_(scope_ids))
+        if company_id:
+            # 2026-11-02: the Company twin of branch_id, same as the
+            # transaction list/export -- resolved through the vehicle's
+            # own EFFECTIVE company, same rule as everywhere else.
+            from app.core.company_resolution import company_filter
+            q = q.filter(company_filter(Vehicle, company_id))
         if department_id:
             q = q.filter(Vehicle.department_id == department_id)
         if vehicle_type_id:
@@ -167,7 +174,8 @@ class FuelMonthlyAnalysisService:
 
         return months
 
-    def monthly_rows(self, year=None, *, branch_id=None, department_id=None,
+    def monthly_rows(self, year=None, *, branch_id=None, company_id=None,
+                     department_id=None,
                      vehicle_type_id=None, fuel_type=None, station=None,
                      plate=None, user=None):
         """One row per vehicle, each with a 12-month series.
@@ -180,7 +188,8 @@ class FuelMonthlyAnalysisService:
         year = year or datetime.now().year
 
         vehicles = self._filtered_vehicle_query(
-            branch_id=branch_id, department_id=department_id,
+            branch_id=branch_id, company_id=company_id,
+            department_id=department_id,
             vehicle_type_id=vehicle_type_id, plate=plate, user=user).all()
 
         rows = []

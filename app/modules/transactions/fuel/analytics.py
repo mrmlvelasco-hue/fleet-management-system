@@ -175,9 +175,10 @@ class FuelAnalyticsService:
         return {"count": query.count()}
 
     @request_cached("fuel_summary")
-    def summary(self, user=None, days=30, branch_id=None) -> dict:
+    def summary(self, user=None, days=30, branch_id=None,
+               company_id=None) -> dict:
         """Fleet-wide fuel summary for the given window, optionally
-        scoped to one branch.
+        scoped to one branch and/or one Company.
 
         If the window contains nothing but the fleet DOES have fuel
         history, this falls back to reporting ALL of it rather than
@@ -207,19 +208,33 @@ class FuelAnalyticsService:
         "none of this user's branches", not "unrestricted", and
         correctly yields the zero summary below rather than falling
         back to the whole fleet.
+
+        company_id (2026-11-02): the Company twin of branch_id, added
+        because every other KPI tile beside a Company-filtered list
+        already honours company_id while this one didn't -- the exact
+        same drift branch_id was added here to close. Resolved through
+        the vehicle's EFFECTIVE company (its own company_id, else its
+        branch's), the same rule company_filter() applies everywhere
+        else, so this panel can never disagree with the list it sits
+        beside. Single id only (no list/tuple form): nothing in this
+        codebase currently asks for more than one Company at a time.
         """
         from app.modules.transactions.fuel.models import FuelTransaction
         from app.modules.master_data.vehicle.models import Vehicle
+        from app.core.company_resolution import company_filter
         from datetime import date
         start = date.today() - timedelta(days=days)
 
         def _scoped(q):
-            if branch_id is not None:
+            if branch_id is not None or company_id is not None:
                 q = q.join(Vehicle, FuelTransaction.vehicle_id == Vehicle.id)
-                if isinstance(branch_id, (list, tuple, set)):
-                    q = q.filter(Vehicle.branch_id.in_(branch_id))
-                else:
-                    q = q.filter(Vehicle.branch_id == branch_id)
+                if branch_id is not None:
+                    if isinstance(branch_id, (list, tuple, set)):
+                        q = q.filter(Vehicle.branch_id.in_(branch_id))
+                    else:
+                        q = q.filter(Vehicle.branch_id == branch_id)
+                if company_id is not None:
+                    q = q.filter(company_filter(Vehicle, company_id))
             return q
 
         rows = _scoped(FuelTransaction.query

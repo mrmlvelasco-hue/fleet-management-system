@@ -85,21 +85,29 @@ def list_fuel(api_user):
             FuelTransaction.anomaly_flags.isnot(None),
             FuelTransaction.odometer_status.in_(("SUSPECT", "MISSING"))))
     branch_id = request.args.get("branch_id", type=int)
+    company_id = request.args.get("company_id", type=int)
     vehicle_status = request.args.get("vehicle_status") or ""
     date_from = request.args.get("date_from") or ""
     date_to = request.args.get("date_to") or ""
 
     # The acting user's OWN org scope decides what they can see at all;
     # an explicit branch_id filter can only narrow further, never reach
-    # outside it.
+    # outside it. company_id (2026-11-02) is a second, independent
+    # narrowing filter -- the Company-dropdown twin of branch_id -- and
+    # does NOT touch the user-access scope check above: Fuel's security
+    # boundary stays exactly as it was, company_id only ever narrows
+    # what that boundary already allows.
     scope_ids = fuel_scope_ids(api_user, branch_id)
 
-    if scope_ids is not None or vehicle_status:
+    if scope_ids is not None or vehicle_status or company_id:
         q = q.join(Vehicle, Vehicle.id == FuelTransaction.vehicle_id)
         if scope_ids is not None:
             q = q.filter(Vehicle.branch_id.in_(scope_ids))
         if vehicle_status:
             q = q.filter(Vehicle.status == vehicle_status)
+        if company_id:
+            from app.core.company_resolution import company_filter
+            q = q.filter(company_filter(Vehicle, company_id))
     if date_from:
         try:
             q = q.filter(FuelTransaction.transaction_date
@@ -119,7 +127,8 @@ def list_fuel(api_user):
     pagination = q.paginate(page=page, per_page=page_size, error_out=False)
     # The KPI tiles beside the list must describe exactly the same rows
     # the list itself is scoped to -- never the whole fleet's figures.
-    raw = FuelAnalyticsService().summary(branch_id=scope_ids)
+    raw = FuelAnalyticsService().summary(branch_id=scope_ids,
+                                         company_id=company_id)
     summary = {}
     for k, v in (raw or {}).items():
         if hasattr(v, "quantize"):
@@ -315,12 +324,18 @@ def fuel_export(api_user):
     q = FuelTransaction.query
     scope_ids = fuel_scope_ids(
         api_user, request.args.get("branch_id", type=int))
-    if scope_ids is not None:
+    company_id = request.args.get("company_id", type=int)
+    if scope_ids is not None or company_id:
         # Same rule as the list endpoint: an export must never hand a
         # branch-restricted user a spreadsheet of branches their own
-        # scope doesn't cover.
-        q = q.join(Vehicle, Vehicle.id == FuelTransaction.vehicle_id) \
-             .filter(Vehicle.branch_id.in_(scope_ids))
+        # scope doesn't cover, and company_id (2026-11-02) narrows it
+        # exactly as it narrows the list.
+        q = q.join(Vehicle, Vehicle.id == FuelTransaction.vehicle_id)
+        if scope_ids is not None:
+            q = q.filter(Vehicle.branch_id.in_(scope_ids))
+        if company_id:
+            from app.core.company_resolution import company_filter
+            q = q.filter(company_filter(Vehicle, company_id))
     rows = q.order_by(FuelTransaction.transaction_date.desc()).all()
     return send_file(
         BytesIO(export_fuel(rows)),
@@ -334,6 +349,7 @@ def _analysis_filters():
     return {
         "year": request.args.get("year", type=int),
         "branch_id": request.args.get("branch_id", type=int),
+        "company_id": request.args.get("company_id", type=int),
         "department_id": request.args.get("department_id", type=int),
         "vehicle_type_id": request.args.get("vehicle_type_id", type=int),
         "fuel_type": request.args.get("fuel_type") or None,
