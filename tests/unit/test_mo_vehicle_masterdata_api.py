@@ -125,6 +125,32 @@ def test_create_order_with_vehicle_changes_via_api(client, db, env):
     assert body["vehicle_changes"][0]["status"] == "PENDING"
 
 
+def test_get_single_mo_transaction_type_admin_record(client, db, env):
+    """Reported 2026-11-02 UAT: the MO Transaction Types edit screen
+    showed "Unable to load this record" -- the generic SimpleMasterForm
+    loader does GET /mo-transaction-types/admin/<id> on every edit, but
+    that single-record route never existed for this entity (only the
+    list GET, create POST, and update PUT/PATCH), unlike every other
+    admin master (branches, etc.), which all have it. 405, not 404, so
+    the client was swallowing it as "Unable to load this record" rather
+    than a clean not-found."""
+    hdr = _hdr(client)
+    r = client.get(f"/api/v1/mo-transaction-types/admin/{env['tt'].id}",
+                   headers=hdr)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = json.loads(r.get_data(as_text=True))
+    assert body["id"] == env["tt"].id
+    assert body["code"] == "ADM-CHG-COLOR-API"
+    # Bonus: now carries the same vehicle_mapping as the list/dropdown.
+    assert body["vehicle_mapping"]["target_field"] == "color"
+
+
+def test_get_single_mo_transaction_type_admin_record_404s_for_unknown_id(client, db, env):
+    hdr = _hdr(client)
+    r = client.get("/api/v1/mo-transaction-types/admin/999999", headers=hdr)
+    assert r.status_code == 404
+
+
 def test_create_order_rejects_an_unwhitelisted_target_field_via_api(client, db, env):
     hdr = _hdr(client)
     r = client.post("/api/v1/maintenance-orders", headers=hdr, json={

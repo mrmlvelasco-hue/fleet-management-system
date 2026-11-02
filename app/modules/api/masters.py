@@ -886,6 +886,24 @@ def list_mo_transaction_types_admin(api_user):
     return err if err else jsonify(payload)
 
 
+@bp.route("/mo-transaction-types/admin/<int:tt_id>", methods=["GET"])
+@api_auth_required("motransactiontype.view")
+def get_mo_transaction_type_admin(api_user, tt_id):
+    """Single-record read, matching every other admin master (branches,
+    etc.). Reported 2026-11-02: the edit screen's generic loader
+    (SimpleMasterForm) GETs this path on every edit, but it never
+    existed for this entity -- only the list/create/update routes did
+    -- so every edit 405'd into "Unable to load this record.", even
+    though MoTransactionTypesForm's own bespoke panels loaded fine via
+    their own routes."""
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    tt = TransactionTypeService().get_by_id(tt_id)
+    if tt is None:
+        return _not_found("Transaction type")
+    return jsonify(_mott_json(tt))
+
+
 @bp.route("/mo-transaction-types/admin", methods=["POST"])
 @api_auth_required("motransactiontype.create")
 def create_mo_transaction_type(api_user):
