@@ -129,7 +129,15 @@ def _column_lengths():
     return out
 
 
-def build_template() -> bytes:
+def build_template(company_id: int = None) -> bytes:
+    """Build the fill-in workbook.
+
+    company_id, when given, scopes the "Valid Branch codes" reference
+    list to branches under that Company, matching import_drivers()'s
+    own scoping so the template only ever offers branch codes that
+    will actually be accepted. Omitted, every active Branch is listed
+    (unchanged, pre-existing behaviour).
+    """
     from app.modules.master_data.org.models import Branch, Department
 
     wb = Workbook()
@@ -162,8 +170,11 @@ def build_template() -> bytes:
         "emergency_contact_number": "0918 000 0000", "business_name": "",
         "business_address": "", "business_contact_no": "", "status": "ACTIVE",
     }
-    first_branch = Branch.query.filter_by(is_active=True).order_by(
-        Branch.code).first()
+    first_branch_query = Branch.query.filter_by(is_active=True)
+    if company_id is not None:
+        first_branch_query = first_branch_query.filter_by(
+            company_id=company_id)
+    first_branch = first_branch_query.order_by(Branch.code).first()
     example["branch_code"] = first_branch.code if first_branch else "BR-001"
     ws.append([example.get(h, "") for h in headers])
     for idx in range(1, len(headers) + 1):
@@ -207,7 +218,10 @@ def build_template() -> bytes:
     ref.append([])
     ref.append(["Valid Branch codes:"])
     ref.cell(ref.max_row, 1).font = Font(bold=True)
-    for b in Branch.query.filter_by(is_active=True).order_by(Branch.code).all():
+    branch_query = Branch.query.filter_by(is_active=True)
+    if company_id is not None:
+        branch_query = branch_query.filter_by(company_id=company_id)
+    for b in branch_query.order_by(Branch.code).all():
         ref.append([b.code, b.name])
 
     ref.append([])
@@ -223,8 +237,17 @@ def build_template() -> bytes:
     return buf.getvalue()
 
 
-def import_drivers(file_stream, dry_run: bool = True) -> dict:
+def import_drivers(file_stream, dry_run: bool = True,
+                   company_id: int = None) -> dict:
     """Validate (and optionally save) a filled-in template.
+
+    company_id, when given, restricts which branches a row's
+    branch_code may resolve to: the branch must belong to that
+    Company, or the row is rejected with a distinct "does not belong
+    to the selected Company" message (as opposed to a branch_code
+    that is entirely unknown, which keeps its own "unknown branch
+    code" message). Omitted (the default), behaviour is unchanged --
+    every existing caller/test is unaffected.
 
     Returns {total_rows, created, skipped, errors: [{row, identifier,
     problems}]} -- the vendor/vehicle importers' shape, so the React
@@ -247,7 +270,13 @@ def import_drivers(file_stream, dry_run: bool = True) -> dict:
             f"template.")
     idx = {name: i for i, name in enumerate(header_row) if name}
 
-    branches = {b.code.upper(): b for b in Branch.query.all() if b.code}
+    all_branches = {b.code.upper(): b for b in Branch.query.all() if b.code}
+    if company_id is None:
+        branches = all_branches
+    else:
+        branches = {b.code.upper(): b
+                   for b in Branch.query.filter_by(
+                       company_id=company_id).all() if b.code}
     departments_by_branch = {}
     for d in Department.query.all():
         if d.code:
@@ -347,7 +376,12 @@ def import_drivers(file_stream, dry_run: bool = True) -> dict:
         else:
             branch = branches.get(branch_code.upper())
             if branch is None:
-                errors.append(f"unknown branch code '{branch_code}'")
+                if branch_code.upper() in all_branches:
+                    errors.append(
+                        f"branch_code '{branch_code}' does not belong to "
+                        f"the selected Company")
+                else:
+                    errors.append(f"unknown branch code '{branch_code}'")
 
         department_id = None
         department_code = get("department_code")

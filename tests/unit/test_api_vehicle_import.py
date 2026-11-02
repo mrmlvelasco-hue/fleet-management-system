@@ -21,7 +21,8 @@ from openpyxl import Workbook, load_workbook
 
 from app.core.security.password import hash_password
 from app.core.security.registry import sync_permissions
-from app.modules.master_data.org.service import BranchService
+from app.modules.master_data.org.service import (
+    BranchService, RegionService, AreaDistrictService, OrgCompanyService)
 from app.modules.master_data.reference.service import VehicleTypeService
 from app.modules.master_data.vehicle.import_service import TEMPLATE_COLUMNS
 from app.modules.master_data.vehicle.models import Vehicle
@@ -131,6 +132,78 @@ def test_commit_zero_is_still_a_preview(client, db, env):
     r = _post(client, _sheet([GOOD]), commit="0")
     assert r.get_json()["dry_run"] is True
     assert Vehicle.query.filter_by(conduction_number="VI-001").count() == 0
+
+
+# ── Batch 9: Company-scoped import (API layer) ─────────────────────────
+
+@pytest.fixture()
+def scoped_env(db, env):
+    region = RegionService().create(code="RG-VIAPI", name="Region VI API")
+    area = AreaDistrictService().create(code="AD-VIAPI", name="Area VI API",
+                                        region_id=region.id)
+    company = OrgCompanyService().create(short_name="Co VI-API",
+                                         region_id=region.id,
+                                         area_district_id=area.id)
+    scoped_branch = BranchService().create(code="BR-VIAPI-A", name="Scoped",
+                                           company_id=company.id)
+    db.session.commit()
+    return {"company": company, "scoped_branch": scoped_branch}
+
+
+def test_template_download_accepts_a_company_id_and_scopes_branch_codes(
+        client, db, env, scoped_env):
+    r = client.get(
+        f"/api/v1/vehicles/import/template"
+        f"?company_id={scoped_env['company'].id}",
+        headers=_hdr(client))
+    assert r.status_code == 200
+    wb = load_workbook(BytesIO(r.data))
+    refs = " ".join(str(c.value) for row in wb["Reference"].iter_rows()
+                    for c in row if c.value)
+    assert "BR-VIAPI-A" in refs
+    # "BR-VI" (unscoped, from `env`) is a substring of "BR-VIAPI-A", so
+    # check for it as a whole token rather than a bare substring.
+    assert "BR-VI" not in refs.split()
+
+
+def test_import_with_a_company_id_accepts_a_branch_in_that_company(
+        client, db, env, scoped_env):
+    row = {"conduction_number": "VI-API1", "vehicle_type_code": "LV-VI",
+          "branch_code": "BR-VIAPI-A", "brand": "Toyota", "model": "Vios",
+          "year": 2022}
+    data = {"file": (_sheet([row]), "vehicles.xlsx"), "commit": "1",
+            "company_id": str(scoped_env["company"].id)}
+    r = client.post("/api/v1/vehicles/import", headers=_hdr(client),
+                    data=data, content_type="multipart/form-data")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["created"] == 1 and body["skipped"] == 0
+    assert Vehicle.query.filter_by(conduction_number="VI-API1").count() == 1
+
+
+def test_import_with_a_company_id_rejects_a_branch_outside_that_company(
+        client, db, env, scoped_env):
+    row = {"conduction_number": "VI-API2", "vehicle_type_code": "LV-VI",
+          "branch_code": "BR-VI",  # belongs to no company (from `env`)
+          "brand": "Toyota", "model": "Vios", "year": 2022}
+    data = {"file": (_sheet([row]), "vehicles.xlsx"), "commit": "1",
+            "company_id": str(scoped_env["company"].id)}
+    r = client.post("/api/v1/vehicles/import", headers=_hdr(client),
+                    data=data, content_type="multipart/form-data")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["created"] == 0 and body["skipped"] == 1
+    assert "does not belong to the selected Company" in \
+        body["errors"][0]["problems"][0]
+    assert Vehicle.query.filter_by(conduction_number="VI-API2").count() == 0
+
+
+def test_import_with_a_non_numeric_company_id_is_a_400(client, db, env):
+    data = {"file": (_sheet([GOOD]), "vehicles.xlsx"), "commit": "1",
+            "company_id": "not-a-number"}
+    r = client.post("/api/v1/vehicles/import", headers=_hdr(client),
+                    data=data, content_type="multipart/form-data")
+    assert r.status_code == 400
 
 
 def test_a_bad_row_is_reported_and_the_good_row_still_imports(client, db, env):

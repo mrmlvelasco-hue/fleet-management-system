@@ -31,7 +31,9 @@ from app.core.security.registry import sync_permissions
 from app.modules.master_data.driver.import_service import TEMPLATE_COLUMNS
 from app.modules.master_data.driver.models import Driver
 from app.modules.master_data.driver.service import DriverService
-from app.modules.master_data.org.service import BranchService, DepartmentService
+from app.modules.master_data.org.service import (
+    BranchService, DepartmentService, RegionService, AreaDistrictService,
+    OrgCompanyService)
 from app.modules.system_admin.models import SystemParameter
 from app.modules.user_management.models import Permission, Role, User
 
@@ -300,3 +302,80 @@ def test_import_requires_driver_create(client, db, env):
 def test_a_first_sheet_with_another_name_is_still_read(client, db, env):
     body = _post(client, _sheet([GOOD], title="Sheet1")).get_json()
     assert body["created"] == 1
+
+
+# ── Batch 9: Company-scoped import (API layer) ─────────────────────────
+
+@pytest.fixture()
+def scoped_env(db, env):
+    region = RegionService().create(code="RG-DIAPI", name="Region DI API")
+    area = AreaDistrictService().create(code="AD-DIAPI", name="Area DI API",
+                                        region_id=region.id)
+    company = OrgCompanyService().create(short_name="Co DI-API",
+                                         region_id=region.id,
+                                         area_district_id=area.id)
+    scoped_branch = BranchService().create(code="BR-DIAPI-A", name="Scoped",
+                                           company_id=company.id)
+    db.session.commit()
+    return {"company": company, "scoped_branch": scoped_branch}
+
+
+def test_template_download_accepts_a_company_id_and_scopes_branch_codes(
+        client, db, env, scoped_env):
+    r = client.get(
+        f"/api/v1/drivers/import/template"
+        f"?company_id={scoped_env['company'].id}",
+        headers=_hdr(client))
+    assert r.status_code == 200
+    wb = load_workbook(BytesIO(r.data))
+    refs = " ".join(str(c.value) for row in wb["Reference"].iter_rows()
+                    for c in row if c.value)
+    # Scope the check to the "Valid Branch codes:" section itself --
+    # the separate "Valid Department codes" section intentionally
+    # lists every department together with its own branch's code, for
+    # context, and is not part of this Company-scoping change.
+    branch_section = refs.split("Valid Branch codes:")[1].split(
+        "Valid Department codes")[0]
+    assert "BR-DIAPI-A" in branch_section
+    assert "BR-DIMUN" not in branch_section.split()
+    assert "BR-DILP" not in branch_section.split()
+
+
+def test_import_with_a_company_id_accepts_a_branch_in_that_company(
+        client, db, env, scoped_env):
+    row = {"employee_number": "EMP-API1", "first_name": "Ana",
+          "last_name": "Reyes", "assignee_type": "employee",
+          "branch_code": "BR-DIAPI-A"}
+    data = {"file": (_sheet([row]), "drivers.xlsx"), "commit": "1",
+            "company_id": str(scoped_env["company"].id)}
+    r = client.post("/api/v1/drivers/import", headers=_hdr(client),
+                    data=data, content_type="multipart/form-data")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["created"] == 1 and body["skipped"] == 0
+    assert Driver.query.filter_by(employee_number="EMP-API1").count() == 1
+
+
+def test_import_with_a_company_id_rejects_a_branch_outside_that_company(
+        client, db, env, scoped_env):
+    row = {"employee_number": "EMP-API2", "first_name": "Ana",
+          "last_name": "Reyes", "assignee_type": "employee",
+          "branch_code": "BR-DIMUN"}  # belongs to no company (from `env`)
+    data = {"file": (_sheet([row]), "drivers.xlsx"), "commit": "1",
+            "company_id": str(scoped_env["company"].id)}
+    r = client.post("/api/v1/drivers/import", headers=_hdr(client),
+                    data=data, content_type="multipart/form-data")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["created"] == 0 and body["skipped"] == 1
+    assert "does not belong to the selected Company" in \
+        body["errors"][0]["problems"][0]
+    assert Driver.query.filter_by(employee_number="EMP-API2").count() == 0
+
+
+def test_import_with_a_non_numeric_company_id_is_a_400(client, db, env):
+    data = {"file": (_sheet([GOOD]), "drivers.xlsx"), "commit": "1",
+            "company_id": "not-a-number"}
+    r = client.post("/api/v1/drivers/import", headers=_hdr(client),
+                    data=data, content_type="multipart/form-data")
+    assert r.status_code == 400

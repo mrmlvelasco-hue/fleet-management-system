@@ -77,9 +77,14 @@ TEMPLATE_COLUMNS = [
 REQUIRED_COLUMNS = [c for c, required, _ in TEMPLATE_COLUMNS if required]
 
 
-def build_template() -> bytes:
+def build_template(company_id: int = None) -> bytes:
     """A blank workbook with the expected headers, one example row, and
-    a Reference sheet of valid codes."""
+    a Reference sheet of valid codes.
+
+    company_id, when given, scopes the "Valid Branch codes" reference
+    list to branches under that Company -- so the person filling in
+    the sheet only sees branch codes that will actually be accepted
+    once import_vehicles() is called with the same company_id."""
     from app.modules.master_data.reference.models import VehicleType
     from app.modules.master_data.org.models import Branch
 
@@ -126,7 +131,10 @@ def build_template() -> bytes:
     ref.append([])
     ref.append(["Valid Branch codes:"])
     ref.cell(ref.max_row, 1).font = Font(bold=True)
-    for b in Branch.query.filter_by(is_active=True).all():
+    branch_query = Branch.query.filter_by(is_active=True)
+    if company_id is not None:
+        branch_query = branch_query.filter_by(company_id=company_id)
+    for b in branch_query.all():
         ref.append([b.code, b.name])
 
     buf = BytesIO()
@@ -139,12 +147,21 @@ def _clean(value):
     return _clean_val(value)
 
 
-def import_vehicles(file_stream, dry_run: bool = True) -> dict:
+def import_vehicles(file_stream, dry_run: bool = True,
+                    company_id: int = None) -> dict:
     """Validate (and optionally load) a filled-in template.
 
     Returns a summary with per-row errors so the person can fix the
     sheet and re-upload, rather than being told only that "the import
     failed".
+
+    company_id, when given, restricts which branches a row's
+    branch_code may resolve to: a branch that belongs to a different
+    Company, or to none at all, is rejected as a row error rather
+    than silently accepted (closing the anchorless-import gap) --
+    while a branch_code that matches no Branch anywhere still gets
+    the existing "unknown branch_code" message. Omitted, behaviour is
+    unchanged from before this parameter existed.
     """
     from app.modules.master_data.reference.models import VehicleType
     from app.modules.master_data.org.models import Branch
@@ -164,8 +181,14 @@ def import_vehicles(file_stream, dry_run: bool = True) -> dict:
             f"template.")
     idx = {name: i for i, name in enumerate(header_row) if name}
 
-    branches = {b.code.upper(): b.id
-                for b in Branch.query.all() if b.code}
+    all_branches = {b.code.upper(): b.id
+                    for b in Branch.query.all() if b.code}
+    if company_id is None:
+        branches = all_branches
+    else:
+        branches = {b.code.upper(): b.id
+                    for b in Branch.query.filter_by(company_id=company_id).all()
+                    if b.code}
     vtypes = {v.code.upper(): v.id
               for v in VehicleType.query.all() if v.code}
 
@@ -203,8 +226,12 @@ def import_vehicles(file_stream, dry_run: bool = True) -> dict:
         br_code = (get("branch_code") or "").upper()
         if not br_code:
             errors.append("branch_code is required")
-        elif br_code not in branches:
+        elif br_code not in all_branches:
             errors.append(f"unknown branch_code '{br_code}'")
+        elif br_code not in branches:
+            errors.append(
+                f"branch_code '{br_code}' does not belong to the "
+                f"selected Company")
 
         brand, model, year = get("brand"), get("model"), get("year")
         if not brand:

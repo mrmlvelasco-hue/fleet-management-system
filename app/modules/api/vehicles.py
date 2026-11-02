@@ -212,12 +212,24 @@ def vehicles_export(api_user):
 def vehicle_import_template_api(api_user):
     """The fill-in Excel template, with this install's own Vehicle Type
     and Branch codes on its Reference sheet. Same builder as the Flask
-    page at /master/vehicles/import/template."""
+    page at /master/vehicles/import/template.
+
+    Optional `company_id` query param scopes the Reference sheet's
+    Branch codes to that Company, matching /vehicles/import's own
+    scoping -- so the template offered only lists codes the import
+    will actually accept.
+    """
     from io import BytesIO
     from flask import send_file
     from app.modules.master_data.vehicle.import_service import build_template
+    company_id = request.args.get("company_id")
+    try:
+        company_id = int(company_id) if company_id else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "validation",
+                        "message": "company_id must be a number."}), 400
     return send_file(
-        BytesIO(build_template()), as_attachment=True,
+        BytesIO(build_template(company_id=company_id)), as_attachment=True,
         download_name="Vehicle_Import_Template.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument"
                  ".spreadsheetml.sheet")
@@ -228,9 +240,12 @@ def vehicle_import_template_api(api_user):
 def vehicle_import_api(api_user):
     """Validate (and, only with commit=1, save) a filled-in template.
 
-    Multipart: `file` (.xlsx), `commit` ("1" to save). A preview is the
-    default -- the same safety rule as the Flask page -- so uploading the
-    wrong file by mistake cannot create hundreds of vehicles.
+    Multipart: `file` (.xlsx), `commit` ("1" to save), optional
+    `company_id` -- when given, every row's branch_code must resolve
+    to a Branch under that Company, matching the template's own
+    scoping. A preview is the default -- the same safety rule as the
+    Flask page -- so uploading the wrong file by mistake cannot create
+    hundreds of vehicles.
 
     Returns the importer's own summary plus `dry_run`:
       {dry_run, total_rows, created, skipped,
@@ -245,8 +260,15 @@ def vehicle_import_api(api_user):
                         "message": "Choose a filled-in template file to "
                                    "upload."}), 400
     dry_run = request.form.get("commit") != "1"
+    company_id = request.form.get("company_id")
     try:
-        stats = import_vehicles(uploaded.stream, dry_run=dry_run)
+        company_id = int(company_id) if company_id else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "validation",
+                        "message": "company_id must be a number."}), 400
+    try:
+        stats = import_vehicles(uploaded.stream, dry_run=dry_run,
+                                company_id=company_id)
     except ValueError as exc:          # e.g. missing required columns
         return jsonify({"error": "validation", "message": str(exc)}), 400
     except Exception as exc:           # not an .xlsx, corrupt file, ...
