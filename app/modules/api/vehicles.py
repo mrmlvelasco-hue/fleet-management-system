@@ -1339,8 +1339,25 @@ def vehicle_print(api_user, vehicle_id):
         utilization = {}
         outlet_history = []
 
+    # Handover Checklist diagram, per the vehicle's own body type
+    # (Michael, 2026-11-02: map the checklist diagram to the vehicle
+    # body type, the xlsx reference had one diagram per body type).
+    # Resolved here, once, for every consumer of this payload -- the
+    # same reasoning as company_letterhead() above -- rather than in
+    # the frontend, which would need its own copy of the lookup_type
+    # and would drift from whatever an admin actually assigns.
+    diagram_url = None
+    try:
+        from app.modules.system_admin.services.lookup_service import (
+            LookupService)
+        diagram_url = LookupService().picture_url(
+            "VEHICLE_BODY_TYPE", getattr(vehicle, "vehicle_body_type", None))
+    except Exception:
+        diagram_url = None
+
     return jsonify({
         "vehicle": detail_json(vehicle),
+        "diagram_url": diagram_url,
         # The SHARED helper, not a hand-rolled subset. This endpoint
         # previously returned four fields, so PrintLetterhead's contact
         # line and logo were always blank on anything built from this

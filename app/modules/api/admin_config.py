@@ -105,6 +105,15 @@ def _lookup_json(r):
         "description": r.description,
         "sort_order": r.sort_order,
         "is_active": bool(r.is_active),
+        # Same shape as the Company logo: a URL (with a cache-busting
+        # ?v=<attachment id>) when a picture is configured, null
+        # otherwise, so the admin screen renders a preview or an empty
+        # state without a second request.
+        "picture_url": (f"/api/v1/lookups/{r.id}/picture"
+                        f"?v={r.picture_attachment_id}"
+                        if getattr(r, "picture_attachment_id", None)
+                        else None),
+        "picture_filename": getattr(r, "picture_filename", None),
     }
 
 
@@ -189,6 +198,89 @@ def deactivate_lookup(api_user, lid):
         return _not_found("Lookup")
     LookupService().deactivate(lid)
     return jsonify({"ok": True})
+
+
+@bp.route("/admin/lookups/<int:lid>/picture", methods=["POST"])
+@api_auth_required("lookup.update")
+def admin_lookup_picture_upload(api_user, lid):
+    """Attach a picture to a Lookup row -- e.g. the Handover Checklist
+    diagram for a Vehicle Body Type code.
+
+    Through AttachmentService, exactly like the Company logo: jpg/jpeg/
+    png/gif are already in its default allow-list, so nothing has to be
+    widened.
+    """
+    from app.core.attachments.attachment_service import (
+        AttachmentError, AttachmentService)
+    from app.modules.system_admin.models import Lookup
+
+    row = db.session.get(Lookup, lid)
+    if row is None:
+        return _not_found("Lookup")
+
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        return jsonify({"error": "validation_error",
+                        "message": "Choose an image file."}), 400
+
+    try:
+        att = AttachmentService().upload(file, "lookups", row.id,
+                                         user=api_user)
+    except AttachmentError as e:
+        return jsonify({"error": "validation_error",
+                        "message": str(e)}), 400
+
+    row.picture_attachment_id = att.id
+    row.picture_filename = att.original_filename or att.filename
+    db.session.commit()
+    return jsonify(_lookup_json(row)), 201
+
+
+@bp.route("/admin/lookups/<int:lid>/picture", methods=["DELETE"])
+@api_auth_required("lookup.update")
+def admin_lookup_picture_clear(api_user, lid):
+    from app.modules.system_admin.models import Lookup
+
+    row = db.session.get(Lookup, lid)
+    if row is None:
+        return _not_found("Lookup")
+    row.picture_attachment_id = None
+    row.picture_filename = None
+    db.session.commit()
+    return jsonify(_lookup_json(row))
+
+
+@bp.route("/lookups/<int:lid>/picture", methods=["GET"])
+@api_auth_required()
+def lookup_picture(api_user, lid):
+    """The picture attached to a Lookup row.
+
+    Authenticated but with NO permission code, same reasoning as
+    /company/logo: this is what renders the body-type diagram on a
+    Handover Checklist, and whoever can print that checklist
+    (vehicle.view) must be able to see the diagram without also
+    holding the lookup.view System Administration permission.
+    """
+    from io import BytesIO
+    from flask import send_file
+    from app.core.models.attachment import Attachment
+    from app.core.attachments.attachment_service import AttachmentService
+    from app.modules.system_admin.models import Lookup
+
+    row = db.session.get(Lookup, lid)
+    if row is None or not row.picture_attachment_id:
+        return jsonify({"error": "not_found",
+                        "message": "No picture configured."}), 404
+
+    att = db.session.get(Attachment, row.picture_attachment_id)
+    if att is None or not att.is_active:
+        return jsonify({"error": "not_found",
+                        "message": "No picture configured."}), 404
+
+    data = AttachmentService().get_bytes(att) or b""
+    return send_file(BytesIO(data),
+                     mimetype=att.mime_type or "image/png",
+                     download_name=att.original_filename or "picture.png")
 
 
 # ── System Parameters ───────────────────────────────────────────────────────

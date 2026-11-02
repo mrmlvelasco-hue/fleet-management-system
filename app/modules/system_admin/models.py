@@ -24,6 +24,19 @@ class Lookup(db.Model, BaseModel):
     description = db.Column(db.String(255), nullable=False)
     sort_order = db.Column(db.Integer, default=0, nullable=False)
 
+    #: An optional picture for this code, through AttachmentService --
+    #: same pattern as CompanyProfile.logo_attachment_id (an ID, not a
+    #: blob column, so listing Lookups never drags image bytes into
+    #: memory). Deliberately on the GENERIC Lookup row rather than a
+    #: VEHICLE_BODY_TYPE-specific table: any lookup_type can carry a
+    #: picture this way without a new table or migration, which is the
+    #: point of a generic, reusable component. First use: the Handover
+    #: Checklist's body-diagram, resolved per vehicle from its
+    #: vehicle_body_type against this row's picture (2026-11-02,
+    #: Michael -- map the checklist diagram to the vehicle's body type).
+    picture_attachment_id = db.Column(db.Integer, nullable=True)
+    picture_filename = db.Column(db.String(255), nullable=True)
+
     __table_args__ = (
         db.UniqueConstraint("lookup_type", "code", name="uq_lookup_type_code"),
     )

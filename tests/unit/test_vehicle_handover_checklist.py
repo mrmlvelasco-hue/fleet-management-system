@@ -226,6 +226,40 @@ class TestReportPayload:
         assert isinstance(payload["documents"], list)
         assert isinstance(payload["signatures"], list)
 
+    def test_diagram_url_is_none_without_a_body_type_or_picture(self, rig):
+        """rig's vehicle carries no vehicle_body_type, so there is
+        nothing to resolve -- VehicleChecklistReport falls back to its
+        built-in VehicleBlueprint, same as today."""
+        svc = VehicleHandoverService()
+        doc = svc.create(vehicle_id=rig["vehicle"].id, actor=rig["user"])
+        assert svc.to_report(doc.id)["diagram_url"] is None
+
+    def test_diagram_url_resolves_from_the_vehicles_body_type(self, rig, db):
+        """Michael, on the Handover Checklist: the reference xlsx has a
+        different diagram per body type, and it must be assignable per
+        Vehicle Body Type and shown here depending on the SELECTED
+        vehicle -- not one fixed image for every handover."""
+        import io
+        from werkzeug.datastructures import FileStorage
+        from app.core.attachments.attachment_service import AttachmentService
+        from app.modules.system_admin.models import Lookup
+
+        rig["vehicle"].vehicle_body_type = "SEDAN"
+        lk = Lookup(lookup_type="VEHICLE_BODY_TYPE", code="SEDAN",
+                   description="Sedan", sort_order=1)
+        db.session.add(lk)
+        db.session.flush()
+        att = AttachmentService().upload(
+            FileStorage(stream=io.BytesIO(b"sedan bytes"), filename="s.png"),
+            "lookups", lk.id)
+        lk.picture_attachment_id = att.id
+        db.session.commit()
+
+        svc = VehicleHandoverService()
+        doc = svc.create(vehicle_id=rig["vehicle"].id, actor=rig["user"])
+        assert svc.to_report(doc.id)["diagram_url"] == (
+            f"/api/v1/lookups/{lk.id}/picture?v={att.id}")
+
 
 class TestVisibility:
     def test_restricted_assignee_sees_only_their_own_handover(self, rig, db):

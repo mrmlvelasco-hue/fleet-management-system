@@ -45,6 +45,36 @@ def sync_lookups(reg: LookupRegistry | None = None) -> None:
 
 
 class LookupService:
+    def find(self, lookup_type: str, code: str) -> Lookup | None:
+        """The single row for an exact (lookup_type, code) pair, or None.
+
+        For resolving a value already stored on another record (e.g.
+        Vehicle.vehicle_body_type) back to its Lookup row -- to read a
+        property of the code itself, such as its picture -- rather than
+        listing options for a dropdown (get_by_type/_with_fallback)."""
+        if not lookup_type or not code:
+            return None
+        return Lookup.query.filter_by(lookup_type=lookup_type,
+                                      code=code).first()
+
+    def picture_url(self, lookup_type: str, code: str) -> str | None:
+        """The public URL for this code's picture, or None.
+
+        Centralises the Lookup -> URL resolution (same shape as
+        CompanyProfile's logo_url: /lookups/<id>/picture?v=<attachment
+        id> for cache-busting) so every print payload that needs a
+        lookup-driven diagram -- currently the vehicle print-out and
+        the Handover Checklist, both keyed off vehicle_body_type --
+        builds the same URL the same way rather than each re-deriving
+        it and risking drift.
+        """
+        if not code:
+            return None
+        row = self.find(lookup_type, code)
+        if row is not None and getattr(row, "picture_attachment_id", None):
+            return f"/api/v1/lookups/{row.id}/picture?v={row.picture_attachment_id}"
+        return None
+
     def get_by_type(self, lookup_type: str) -> list:
         return (Lookup.query
                 .filter_by(lookup_type=lookup_type, is_active=True)

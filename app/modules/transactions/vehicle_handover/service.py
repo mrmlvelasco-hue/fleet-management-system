@@ -305,6 +305,24 @@ class VehicleHandoverService:
             } for i in items]}
 
         from app.modules.api.company_letterhead import company_letterhead
+        from app.modules.system_admin.services.lookup_service import (
+            LookupService)
+
+        # The body-damage diagram, per the VEHICLE's own body type
+        # (Michael, 2026-11-02: the reference checklist has a different
+        # diagram per body type -- Sedan/SUV/Pick Up/etc -- and it must
+        # be assignable per Vehicle Body Type and shown here depending
+        # on the selected vehicle). Resolved the same way, and through
+        # the same shared helper, as /vehicles/<id>/print -- omitting
+        # this here would be exactly the kind of drift to_report()'s
+        # own docstring (and the company_letterhead comment above it)
+        # already warns about: two print paths, one only half-fixed.
+        diagram_url = None
+        try:
+            diagram_url = LookupService().picture_url(
+                "VEHICLE_BODY_TYPE", getattr(v, "vehicle_body_type", None))
+        except Exception:
+            diagram_url = None
 
         return {
             # The SHARED letterhead. Omitting it entirely was why the
@@ -314,6 +332,7 @@ class VehicleHandoverService:
             # flask-v257; this second print path was missed because I
             # only looked at the one I had just written.
             "company": company_letterhead(),
+            "diagram_url": diagram_url,
             "assignee_name": doc.assignee_name,
             "position": doc.position,
             "company_bu": doc.company_bu,
