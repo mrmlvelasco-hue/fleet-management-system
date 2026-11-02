@@ -444,3 +444,116 @@ class MaintenanceOrderEquipmentLine(db.Model, BaseModel):
     installed_tire = db.relationship("Tire", foreign_keys=[installed_tire_id])
     installed_battery = db.relationship("Battery",
                                         foreign_keys=[installed_battery_id])
+
+
+class MOTransactionTypeFieldMapping(db.Model, BaseModel):
+    """Configuration: 'completing an MO of this Transaction Type writes
+    its proposed value to this one Vehicle Master Data field.'
+
+    One-to-many from TransactionType (not one-to-one) so a future type
+    can map more than one field without a schema change, even though
+    every mapping configured today is a single field. `target_field`
+    is never free text from the admin UI -- it must be one of the keys
+    in VEHICLE_FIELD_WHITELIST (service.py), checked again at MO
+    completion time, never trusted from a stored row alone (defense in
+    depth against a tampered request or a whitelist that shrank after
+    the mapping was saved).
+
+    `is_active` (from BaseModel) is the "Enable Vehicle Master Data
+    Update" toggle -- an inactive/absent mapping for a Transaction Type
+    means it behaves exactly as it did before this feature existed: no
+    panel on the MO form, nothing written on completion.
+    """
+    __tablename__ = "mo_transaction_type_field_mappings"
+
+    transaction_type_id = db.Column(db.Integer,
+                                    db.ForeignKey("mo_transaction_types.id"),
+                                    nullable=False, index=True)
+    target_module = db.Column(db.String(40), nullable=False,
+                              default="VEHICLE_MASTER_DATA",
+                              server_default="VEHICLE_MASTER_DATA")
+    target_field = db.Column(db.String(60), nullable=False)
+    display_label = db.Column(db.String(120), nullable=False)
+    # TEXT | NUMBER | DATE | SELECT
+    input_type = db.Column(db.String(20), nullable=False, default="TEXT",
+                           server_default="TEXT")
+    # Lookup type code, only meaningful when input_type == SELECT.
+    select_source = db.Column(db.String(60), nullable=True)
+    is_required = db.Column(db.Boolean, nullable=False, default=True,
+                            server_default="1")
+    validation_rule = db.Column(db.String(60), nullable=True)
+
+    transaction_type = db.relationship(
+        "TransactionType",
+        # Plain lazy load, NOT selectin -- TransactionType rows are
+        # loaded in bulk on every Maintenance Order list page (via
+        # order.transaction_type), so an eager default here would add a
+        # query to every such load even though get_vehicle_mapping()
+        # (the only code that needs this) queries directly rather than
+        # through this relationship. See the matching note on
+        # MaintenanceOrderVehicleChange.order's backref.
+        backref=db.backref("vehicle_field_mappings",
+                           cascade="all, delete-orphan"))
+
+
+class MaintenanceOrderVehicleChange(db.Model, BaseModel):
+    """One proposed (and, on completion, applied) Vehicle Master Data
+    change carried by a Maintenance Order.
+
+    Deliberately its own structured table rather than a JSON blob on
+    MaintenanceOrder (per the 2026-11-02 spec): a dedicated row per
+    change queries and statuses cleanly, and `order_id` is itself the
+    traceability answer to "this update came from which MO" -- the
+    same pattern VehicleAssignmentService already uses
+    (source/source_table/source_id) for driver handovers, rather than
+    extending the shared, generic audit_logs table.
+
+    `target_field`/`display_label` are copied from the mapping at
+    PROPOSE time (MO create/update), not read live from the mapping at
+    apply time -- so a mapping edited or deactivated after this MO was
+    created never changes what this specific MO says it will do.
+
+    status: PENDING (proposed, nothing applied yet) -> APPLIED (vehicle
+    field updated on MO completion) or CANCELLED (the MO was cancelled
+    before completion, vehicle untouched) or FAILED (reserved for a
+    future surfaced-but-not-blocking failure mode; not produced by this
+    batch -- a failure today blocks completion outright instead, per
+    the spec's atomicity rule).
+    """
+    __tablename__ = "maintenance_order_vehicle_changes"
+
+    order_id = db.Column(db.Integer, db.ForeignKey("maintenance_orders.id"),
+                         nullable=False, index=True)
+    vehicle_id = db.Column(db.Integer, db.ForeignKey("vehicles.id"),
+                           nullable=False, index=True)
+    transaction_type_id = db.Column(db.Integer,
+                                    db.ForeignKey("mo_transaction_types.id"),
+                                    nullable=True)
+    mapping_id = db.Column(db.Integer,
+                           db.ForeignKey("mo_transaction_type_field_mappings.id"),
+                           nullable=True)
+    target_field = db.Column(db.String(60), nullable=False)
+    display_label = db.Column(db.String(120), nullable=False)
+    old_value = db.Column(db.String(255), nullable=True)
+    new_value = db.Column(db.String(255), nullable=True)
+    # PENDING | APPLIED | CANCELLED | FAILED
+    status = db.Column(db.String(12), nullable=False, default="PENDING",
+                       server_default="PENDING")
+    applied_by = db.Column(db.Integer, db.ForeignKey("users.id"),
+                           nullable=True)
+    applied_at = db.Column(db.DateTime, nullable=True)
+
+    order = db.relationship(
+        "MaintenanceOrder",
+        # Plain lazy load (default), NOT selectin: MaintenanceOrderService
+        # .list() is read on every list page and must not pay for an
+        # extra eager-load query most rows never need. Only the Details
+        # page (_order_json detail=True) ever accesses order.vehicle_changes,
+        # so a lazy per-detail-view query is the right trade-off --
+        # confirmed via tests/unit/test_performance_n_plus_one_and_pool_config.py
+        # ::test_maintenance_order_list_does_not_n_plus_one, which this
+        # eager default originally broke (3 queries instead of <=2).
+        backref=db.backref("vehicle_changes", cascade="all, delete-orphan"))
+    vehicle = db.relationship("Vehicle")
+    transaction_type = db.relationship("TransactionType")
+    mapping = db.relationship("MOTransactionTypeFieldMapping")

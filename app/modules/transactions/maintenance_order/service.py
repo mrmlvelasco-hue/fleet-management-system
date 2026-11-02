@@ -15,9 +15,42 @@ from app.core.numbering.numbering_service import AutoNumberingService
 from app.modules.transactions.base_service import (
     BaseTransactionService, DocumentEditForbiddenError)
 from app.modules.transactions.maintenance_order.models import (
-    MaintenanceOrder, MaintenanceChecklistItem, TransactionType)
+    MaintenanceOrder, MaintenanceChecklistItem, TransactionType,
+    MOTransactionTypeFieldMapping, MaintenanceOrderVehicleChange)
 from app.modules.master_data.reference.models import MaintenanceType
 from app.modules.maintenance_config.models import PMScopeTemplate
+
+
+# Configuration-Driven Vehicle Master Data Updates Through Maintenance
+# Orders (2026-11-02). The ONLY Vehicle Master Data fields an admin may
+# map a Transaction Type to. This is a hard-coded Python constant, not
+# DB-driven, by design: a stored/request value naming an arbitrary
+# column (or a SQL-injection-shaped string) must never reach the ORM --
+# every save and every apply re-checks against this dict (defense in
+# depth, never trust a stored value alone). Keys are Vehicle model
+# attribute names; values are the default display label used when an
+# admin does not override one.
+VEHICLE_FIELD_WHITELIST = {
+    "color": "Vehicle Color",
+    "engine_number": "Engine Number",
+    "chassis_number": "Chassis Number",
+    "vehicle_body_type": "Vehicle Body Type",
+}
+
+
+class InvalidFieldMappingError(Exception):
+    """Raised when a mapping is saved (or re-validated at MO completion
+    time) with a target_field outside VEHICLE_FIELD_WHITELIST."""
+    pass
+
+
+class VehicleMasterDataConflictError(Exception):
+    """Raised at MO completion time when a PENDING vehicle_change's
+    old_value (captured at propose time) no longer matches the
+    vehicle's current value -- someone/something else changed that
+    field in between. Blocks completion atomically rather than silently
+    overwriting a value the approver never saw."""
+    pass
 
 
 class IncompleteChecklistError(Exception):
@@ -242,6 +275,67 @@ class TransactionTypeService:
             tt.is_active = True
             db.session.commit()
 
+    # ── Vehicle Master Data Update Mapping ──────────────────────────────
+    # One active mapping per Transaction Type in this batch (the model
+    # allows one-to-many for a future batch without another migration;
+    # see MOTransactionTypeFieldMapping's docstring).
+
+    def get_vehicle_mapping(self, tt_id):
+        """The active mapping for this Transaction Type, or None when
+        nobody has configured one -- the unmapped case is the default
+        and leaves MO create/complete behaviour entirely unchanged."""
+        return (MOTransactionTypeFieldMapping.query
+                .filter_by(transaction_type_id=tt_id, is_active=True)
+                .order_by(MOTransactionTypeFieldMapping.id.desc())
+                .first())
+
+    def set_vehicle_mapping(self, tt_id, *, target_field, display_label,
+                            input_type="TEXT", select_source=None,
+                            is_required=True, validation_rule=None):
+        """Create or update the one active mapping for this Transaction
+        Type. target_field is validated against VEHICLE_FIELD_WHITELIST
+        here (save time) -- it is re-validated again at MO completion
+        time since the DB value could in principle be changed outside
+        this method (defense in depth, never trust a stored value
+        alone)."""
+        if target_field not in VEHICLE_FIELD_WHITELIST:
+            raise InvalidFieldMappingError(
+                f"'{target_field}' is not an allowed Vehicle Master Data "
+                f"field. Allowed fields: "
+                f"{', '.join(sorted(VEHICLE_FIELD_WHITELIST))}.")
+        label = (display_label or "").strip()
+        if not label:
+            raise InvalidFieldMappingError("display_label is required.")
+        existing = self.get_vehicle_mapping(tt_id)
+        if existing is not None:
+            existing.target_field = target_field
+            existing.display_label = label
+            existing.input_type = input_type or "TEXT"
+            existing.select_source = select_source
+            existing.is_required = bool(is_required)
+            existing.validation_rule = validation_rule
+            db.session.commit()
+            return existing
+        mapping = MOTransactionTypeFieldMapping(
+            transaction_type_id=tt_id, target_field=target_field,
+            display_label=label, input_type=input_type or "TEXT",
+            select_source=select_source, is_required=bool(is_required),
+            validation_rule=validation_rule)
+        db.session.add(mapping)
+        db.session.commit()
+        return mapping
+
+    def deactivate_vehicle_mapping(self, tt_id):
+        """Soft-delete the active mapping. Any already-PENDING
+        MaintenanceOrderVehicleChange rows created while it was active
+        keep their own copied target_field/display_label and are
+        unaffected -- only future MO create/update stop proposing
+        changes for this Transaction Type."""
+        mapping = self.get_vehicle_mapping(tt_id)
+        if mapping is not None:
+            mapping.is_active = False
+            db.session.commit()
+
 
 def _part_line_description(part):
     """One readable PR line from a part, carrying the detail the buyer
@@ -300,8 +394,13 @@ class MaintenanceOrderService(BaseTransactionService):
                driver_id=None, destination_branch_id=None,
                disposal_value=None, disposal_recipient=None,
                assignment_classification=None, scope_items=None,
-               equipment_lines=None):
+               equipment_lines=None, vehicle_changes=None):
         """Create a DRAFT order.
+
+        vehicle_changes -- optional Vehicle Master Data changes this
+        order proposes (see _sync_vehicle_changes); only recorded when
+        the chosen Transaction Type has an active mapping. Applied to
+        the Vehicle only on completion, never here.
 
         equipment_lines -- optional "Tire & Battery Work" rows (see
         equipment.EquipmentWorkService). Validated before anything is
@@ -479,8 +578,173 @@ class MaintenanceOrderService(BaseTransactionService):
             EquipmentWorkService().replace_lines(order.id, equipment_lines,
                                                  commit=False)
 
+        if vehicle_changes is not None:
+            self._sync_vehicle_changes(order, vehicle_changes)
+
         db.session.commit()
         return order
+
+    def _sync_vehicle_changes(self, order, vehicle_changes):
+        """Propose (create() ) or re-propose (update() ) Vehicle Master
+        Data changes carried by this order.
+
+        vehicle_changes -- optional list of {"target_field", "new_value"}.
+        None means "don't touch" (update() callers that aren't editing
+        this panel keep whatever PENDING rows already exist). An empty
+        list clears every PENDING row for this order (the user removed
+        the change in the form).
+
+        Only meaningful when the order's Transaction Type has an active
+        mapping for that target_field -- an order whose type has no
+        mapping records nothing, so this method is a no-op for every
+        order that predates the feature. target_field is re-validated
+        against VEHICLE_FIELD_WHITELIST here too (defense in depth: a
+        mapping row could in principle have been saved before a field
+        was removed from the whitelist).
+
+        old_value is a COPY of the vehicle's current value taken right
+        now -- never re-read live at apply time -- so the approver sees
+        exactly the From/To that existed when the order was raised, and
+        complete() can detect whether that value has since moved out
+        from under it (see VehicleMasterDataConflictError).
+
+        Vehicle Master Data itself is never written here -- only
+        MaintenanceOrderVehicleChange rows, which stay PENDING until
+        complete() applies them atomically with order completion.
+        """
+        if vehicle_changes is None:
+            return
+        existing = {r.target_field: r for r in
+                    MaintenanceOrderVehicleChange.query.filter_by(
+                        order_id=order.id, status="PENDING").all()}
+        kept_fields = set()
+        for change in vehicle_changes:
+            target_field = change.get("target_field")
+            if target_field not in VEHICLE_FIELD_WHITELIST:
+                raise InvalidFieldMappingError(
+                    f"'{target_field}' is not an allowed Vehicle Master "
+                    f"Data field. Allowed fields: "
+                    f"{', '.join(sorted(VEHICLE_FIELD_WHITELIST))}.")
+            mapping = TransactionTypeService().get_vehicle_mapping(
+                order.transaction_type_id)
+            if mapping is None or mapping.target_field != target_field:
+                # This order's Transaction Type has no active mapping for
+                # this field -- never silently record an unrelated change.
+                continue
+            new_value = change.get("new_value")
+            new_value = str(new_value) if new_value is not None else None
+            old_value = getattr(order.vehicle, target_field, None)
+            old_value = str(old_value) if old_value is not None else None
+            kept_fields.add(target_field)
+            row = existing.get(target_field)
+            if row is not None:
+                row.new_value = new_value
+                row.old_value = old_value
+                row.display_label = mapping.display_label
+                row.mapping_id = mapping.id
+                row.transaction_type_id = order.transaction_type_id
+            else:
+                order.vehicle_changes.append(MaintenanceOrderVehicleChange(
+                    vehicle_id=order.vehicle_id,
+                    transaction_type_id=order.transaction_type_id,
+                    mapping_id=mapping.id, target_field=target_field,
+                    display_label=mapping.display_label,
+                    old_value=old_value, new_value=new_value,
+                    status="PENDING"))
+        # A field the caller no longer sends (removed from the form) --
+        # drop its stale PENDING row rather than leaving it to apply on
+        # a later completion with a value nobody confirmed.
+        for field, row in existing.items():
+            if field not in kept_fields:
+                db.session.delete(row)
+
+    def replace_vehicle_changes(self, order_id: int, items, user=None):
+        """Public entry point for the dedicated API route -- same edit-
+        window rule as replace_scope(): allowed only while the order is
+        open (editable_scope FULL)."""
+        order = db.session.get(MaintenanceOrder, order_id)
+        if order is None:
+            raise InvalidOrderStateError("Maintenance Order not found.")
+        if self.editable_scope(order) != "FULL":
+            raise InvalidOrderStateError(
+                f"A {order.status} order can no longer be edited.")
+        self._sync_vehicle_changes(order, items)
+        order.updated_by = user.id if user else None
+        db.session.commit()
+        return order
+
+    def _apply_pending_vehicle_changes(self, order, user=None):
+        """Write every PENDING MaintenanceOrderVehicleChange row for
+        this order onto the Vehicle, as part of the SAME transaction as
+        order completion (called before the completion commit -- see
+        complete()).
+
+        Only acts on rows still PENDING -- an already-APPLIED or
+        CANCELLED row is left untouched, which is what makes this safe
+        to call again if complete() is ever invoked a second time on
+        the same order (no double-completion guard exists today).
+
+        target_field is re-validated against VEHICLE_FIELD_WHITELIST
+        one more time here (defense in depth -- see
+        _sync_vehicle_changes for why this is checked at every stage,
+        never trusted from a stored row alone).
+
+        Raises VehicleMasterDataConflictError, blocking the whole
+        completion, when old_value (captured at propose time) no longer
+        matches the vehicle's current value -- something else changed
+        that field in between, and silently overwriting it would lose a
+        value the approver never saw.
+        """
+        rows = (MaintenanceOrderVehicleChange.query
+                .filter_by(order_id=order.id, status="PENDING").all())
+        if not rows:
+            return
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            if row.target_field not in VEHICLE_FIELD_WHITELIST:
+                # Rollback: order.status="COMPLETED" and every other
+                # change made earlier in this same complete() call are
+                # only flushed, not committed -- without an explicit
+                # rollback here, the pending-row lookup's autoflush
+                # would leave them visible (same connection/transaction)
+                # to any caller that queries again before this session
+                # rolls back on its own.
+                db.session.rollback()
+                raise InvalidFieldMappingError(
+                    f"'{row.target_field}' is no longer an allowed "
+                    f"Vehicle Master Data field; this order's pending "
+                    f"change cannot be applied.")
+            current = getattr(order.vehicle, row.target_field, None)
+            current = str(current) if current is not None else None
+            if current != row.old_value:
+                db.session.rollback()
+                raise VehicleMasterDataConflictError(
+                    f"{row.display_label} on this vehicle has changed "
+                    f"since this order was raised (was "
+                    f"'{row.old_value}', is now '{current}'). Review and "
+                    f"re-propose the change before completing this "
+                    f"order.")
+        for row in rows:
+            setattr(order.vehicle, row.target_field, row.new_value)
+            row.status = "APPLIED"
+            row.applied_by = user.id if user else None
+            row.applied_at = now
+
+    def _cancel_pending_vehicle_changes(self, order):
+        """Called from cancel(): PENDING rows are abandoned, not
+        applied -- the vehicle is never touched by a cancelled order."""
+        rows = (MaintenanceOrderVehicleChange.query
+                .filter_by(order_id=order.id, status="PENDING").all())
+        for row in rows:
+            row.status = "CANCELLED"
+
+    def cancel(self, record_id: int, user, remarks=None):
+        order = db.session.get(self.model, record_id)
+        record = super().cancel(record_id, user, remarks)
+        if order is not None:
+            self._cancel_pending_vehicle_changes(order)
+            db.session.commit()
+        return record
 
     @staticmethod
     def _copy_template_items(order, template) -> None:
@@ -619,11 +883,16 @@ class MaintenanceOrderService(BaseTransactionService):
                 f"what kind of order this is, cancel it and raise a new "
                 f"one.", "transaction_type_id")
 
-    def update(self, order_id: int, *, user=None, **fields):
+    def update(self, order_id: int, *, user=None, vehicle_changes=None,
+               **fields):
         """Update an order within whatever scope its state allows.
 
         Every change is captured by the existing audit listeners, so who
         changed what is recorded without anything extra here.
+
+        vehicle_changes -- see _sync_vehicle_changes. None (the default)
+        leaves existing PENDING rows untouched; pass a list (even an
+        empty one) only when the caller is actually editing that panel.
         """
         order = db.session.get(MaintenanceOrder, order_id)
         if order is None:
@@ -717,6 +986,8 @@ class MaintenanceOrderService(BaseTransactionService):
                 order.checklist_items.remove(item)
             self._copy_template_items(order, reseed_template)
         order.updated_by = user.id if user else None
+        if vehicle_changes is not None:
+            self._sync_vehicle_changes(order, vehicle_changes)
         db.session.commit()
         if reseed_template is not None:
             db.session.expire(order)
@@ -917,6 +1188,15 @@ class MaintenanceOrderService(BaseTransactionService):
                 order.vehicle.current_odometer is None or
                 order.odometer_at_service > order.vehicle.current_odometer):
             order.vehicle.current_odometer = order.odometer_at_service
+        # Vehicle Master Data Update Mapping (2026-11-02): apply BEFORE
+        # this commit, not after like the driver/branch/disposal hooks
+        # below -- a conflict here must block completion atomically
+        # rather than leaving the order COMPLETED with the vehicle write
+        # silently skipped (the KI-07 pattern this deliberately does not
+        # copy). Self-idempotent: only PENDING rows are ever touched, so
+        # re-completing an already-COMPLETED order (no guard exists for
+        # that today) never re-applies or re-conflicts.
+        self._apply_pending_vehicle_changes(order, user)
         db.session.commit()
 
         # "Vehicle Assignment Memo" workflow: an Operational order with a

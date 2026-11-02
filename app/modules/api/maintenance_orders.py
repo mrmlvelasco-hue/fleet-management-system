@@ -495,9 +495,67 @@ def _order_json(o, *, detail=False):
             # Tire & Battery Work (2026-10-15). equipment_kind says
             # whether the form shows the section (TIRE / BATTERY / None).
             **_equipment_json(o),
+            # Vehicle Master Data Update Mapping (2026-11-02). Both the
+            # config (what field, if any, this order's Transaction Type
+            # maps to -- drives whether the form shows the panel at all
+            # and its From/label) and the order's own proposed/applied
+            # rows (drives the Details page status panel).
+            "vehicle_mapping": _order_vehicle_mapping_json(o),
+            "vehicle_changes": _vehicle_changes_json(o),
             "editable": None,  # filled by caller with service
         })
     return data
+
+
+def _order_vehicle_mapping_json(o):
+    """The active mapping, if any, for this order's Transaction Type --
+    None for the overwhelming majority of orders whose type was never
+    configured for this feature."""
+    if not o.transaction_type_id:
+        return None
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    mapping = TransactionTypeService().get_vehicle_mapping(
+        o.transaction_type_id)
+    if mapping is None:
+        return None
+    return {
+        "target_field": mapping.target_field,
+        "display_label": mapping.display_label,
+        "input_type": mapping.input_type,
+        "select_source": mapping.select_source,
+        "is_required": bool(mapping.is_required),
+        "validation_rule": mapping.validation_rule,
+        # The vehicle's CURRENT value -- the "From" shown on a fresh
+        # create/edit form, before any change row exists yet.
+        "current_value": (getattr(o.vehicle, mapping.target_field, None)
+                          if o.vehicle else None),
+    }
+
+
+def _vehicle_changes_json(o):
+    rows = sorted(getattr(o, "vehicle_changes", None) or [],
+                 key=lambda c: c.id)
+    usernames = {}
+    applied_by_ids = {c.applied_by for c in rows if c.applied_by}
+    if applied_by_ids:
+        from app.extensions import db
+        from app.modules.user_management.models import User
+        usernames = {u.id: u.username for u in
+                    User.query.filter(User.id.in_(applied_by_ids)).all()}
+    return [
+        {
+            "id": c.id,
+            "target_field": c.target_field,
+            "display_label": c.display_label,
+            "old_value": c.old_value,
+            "new_value": c.new_value,
+            "status": c.status,
+            "applied_by": usernames.get(c.applied_by),
+            "applied_at": _iso(c.applied_at),
+        }
+        for c in rows
+    ]
 
 
 @bp.route("/maintenance-orders", methods=["GET"])
@@ -651,7 +709,8 @@ def get_maintenance_order(api_user, oid):
 def create_maintenance_order(api_user):
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService, InvalidOrderCategoryError,
-        InvalidOrderStateError, ScopeValidationError)
+        InvalidOrderStateError, ScopeValidationError,
+        InvalidFieldMappingError)
     from app.modules.transactions.maintenance_order.equipment import (
         EquipmentWorkError)
 
@@ -721,11 +780,19 @@ def create_maintenance_order(api_user):
             # order's scope. Any order category.
             scope_items=p.get("scope_items") if "scope_items" in p else None,
             equipment_lines=p.get("equipment_lines") or None,
+            # Vehicle Master Data Update Mapping (2026-11-02). Absent key
+            # -> None -> nothing recorded, exactly as before this
+            # feature existed; present (even []) -> these are the
+            # order's proposed changes.
+            vehicle_changes=(p.get("vehicle_changes")
+                             if "vehicle_changes" in p else None),
         )
     except EquipmentWorkError as e:
         return _equipment_error(e)
     except ScopeValidationError as e:
         return _validation(str(e), "scope_items")
+    except InvalidFieldMappingError as e:
+        return _validation(str(e), "vehicle_changes")
     except InvalidOrderCategoryError as e:
         return _validation(str(e), "order_category")
     except InvalidOrderStateError as e:
@@ -843,6 +910,41 @@ def replace_maintenance_order_scope(api_user, oid):
     return jsonify(data)
 
 
+@bp.route("/maintenance-orders/<int:oid>/vehicle-changes", methods=["PUT"])
+@api_auth_required("maintenanceorder.view")  # real gate: _edit_gate
+def replace_maintenance_order_vehicle_changes(api_user, oid):
+    """Replace the order's proposed Vehicle Master Data changes.
+
+    Body: {"items": [{"target_field": str, "new_value": str}, ...]} --
+    the full list; a field left out is dropped as PENDING. Allowed only
+    while the order is open (editable_scope FULL), same as /scope.
+    Vehicle Master Data itself is never touched here -- only on
+    completion (see /complete).
+    """
+    from app.modules.transactions.maintenance_order.service import (
+        MaintenanceOrderService, InvalidOrderStateError,
+        InvalidFieldMappingError)
+    denied = _edit_gate(api_user, oid)
+    if denied:
+        return denied
+    p = request.get_json(silent=True) or {}
+    items = p.get("items")
+    if items is None:
+        return _validation("items is required.", "vehicle_changes")
+    svc = MaintenanceOrderService()
+    try:
+        order = svc.replace_vehicle_changes(oid, items, user=api_user)
+    except InvalidFieldMappingError as e:
+        return _validation(str(e), "vehicle_changes")
+    except InvalidOrderStateError as e:
+        if "not found" in str(e).lower():
+            return _not_found()
+        return _conflict(str(e))
+    data = _order_json(order, detail=True)
+    data["editable"] = svc.editable_scope(order)
+    return jsonify(data)
+
+
 @bp.route("/maintenance-orders/<int:oid>/submit", methods=["POST"])
 # Flask gates submit on maintenanceorder.update, not a
 # ".submit" action -- no such action is ever registered
@@ -880,7 +982,8 @@ def start_work_maintenance_order(api_user, oid):
 def complete_maintenance_order(api_user, oid):
     from app.modules.transactions.maintenance_order.service import (
         MaintenanceOrderService, IncompleteChecklistError,
-        InvalidOrderStateError)
+        InvalidOrderStateError, VehicleMasterDataConflictError,
+        InvalidFieldMappingError)
     p = request.get_json(silent=True) or {}
     completed_date = p.get("completed_date") or date.today().isoformat()
     try:
@@ -892,6 +995,13 @@ def complete_maintenance_order(api_user, oid):
         MaintenanceOrderService().complete(oid, actual_cost, cd,
                                            user=api_user)
     except IncompleteChecklistError as e:
+        return _conflict(str(e))
+    # Vehicle Master Data Update Mapping (2026-11-02): a stale value or
+    # a since-removed whitelist entry blocks completion outright -- see
+    # MaintenanceOrderService._apply_pending_vehicle_changes.
+    except VehicleMasterDataConflictError as e:
+        return _conflict(str(e))
+    except InvalidFieldMappingError as e:
         return _conflict(str(e))
     except InvalidOrderStateError as e:
         return _conflict(str(e))
@@ -1104,10 +1214,31 @@ def list_mo_transaction_types(api_user):
                 "print_template": resolve_print_template(t),
                 "print_label": PRINT_TEMPLATE_LABELS.get(
                     resolve_print_template(t), "Work Order"),
+                # Vehicle Master Data Update Mapping (2026-11-02): lets
+                # the New MO form know, per transaction type, whether to
+                # show the Vehicle Master Data Change panel -- without a
+                # second round trip once the user picks a type. None for
+                # the overwhelming majority of types that were never
+                # configured for this feature.
+                "vehicle_mapping": _vehicle_mapping_for_dropdown(t),
             }
             for t in rows
         ]
     })
+
+
+def _vehicle_mapping_for_dropdown(t):
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    mapping = TransactionTypeService().get_vehicle_mapping(t.id)
+    if mapping is None:
+        return None
+    return {
+        "target_field": mapping.target_field,
+        "display_label": mapping.display_label,
+        "input_type": mapping.input_type,
+        "is_required": bool(mapping.is_required),
+    }
 
 
 @bp.route("/maintenance-orders/<int:oid>/cost-summary", methods=["GET"])
@@ -1512,6 +1643,8 @@ def maintenance_order_new_prefill(api_user):
     """
     from app.modules.master_data.vehicle.service import VehicleService
     from app.modules.maintenance_config.service import PMScopeTemplateService
+    from app.modules.transactions.maintenance_order.service import (
+        VEHICLE_FIELD_WHITELIST)
 
     vehicle_id = request.args.get("vehicle_id", type=int)
     if not vehicle_id:
@@ -1579,6 +1712,17 @@ def maintenance_order_new_prefill(api_user):
                 vehicle.assigned_driver.job_title
                 if vehicle.assigned_driver else None),
             "current_odometer": vehicle.current_odometer,
+            # Vehicle Master Data Update Mapping (2026-11-02): the
+            # vehicle's CURRENT value for every whitelisted field, keyed
+            # by field name -- the New MO form's Vehicle Master Data
+            # Change panel reads whichever one its chosen transaction
+            # type is mapped to and shows it as the "From" value. Always
+            # sent (cheap getattr calls); the panel itself only appears
+            # when a mapping exists.
+            "vehicle_fields": {
+                field: getattr(vehicle, field, None)
+                for field in VEHICLE_FIELD_WHITELIST
+            },
         },
         "scope_templates": [
             {"id": t.id, "name": t.name,

@@ -838,8 +838,25 @@ def deactivate_registration_template(api_user, tid):
 
 # ── MO Transaction Types (admin master) ─────────────────────────────────────
 
+def _vehicle_mapping_json(m):
+    if m is None:
+        return None
+    return {
+        "id": m.id,
+        "target_field": m.target_field,
+        "display_label": m.display_label,
+        "input_type": m.input_type,
+        "select_source": m.select_source,
+        "is_required": bool(m.is_required),
+        "validation_rule": m.validation_rule,
+    }
+
+
 def _mott_json(t):
     dst = t.default_scope_template
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    mapping = TransactionTypeService().get_vehicle_mapping(t.id)
     return {
         "id": t.id,
         "code": t.code,
@@ -850,6 +867,7 @@ def _mott_json(t):
         "is_active": bool(t.is_active),
         "default_scope_template_id": t.default_scope_template_id,
         "default_scope_template_name": dst.name if dst else None,
+        "vehicle_mapping": _vehicle_mapping_json(mapping),
     }
 
 
@@ -943,6 +961,70 @@ def reactivate_mo_transaction_type(api_user, tt_id):
     from app.modules.transactions.maintenance_order.service import (
         TransactionTypeService)
     TransactionTypeService().reactivate(tt_id)
+    return jsonify({"ok": True})
+
+
+# ── MO Transaction Type -> Vehicle Master Data Update Mapping ──────────────
+# (2026-11-02) Config for "Configuration-Driven Vehicle Master Data Updates
+# Through Maintenance Orders". Gated by the same motransactiontype.*
+# permissions as the type itself -- this is part of configuring the type,
+# not a separate permission group.
+
+@bp.route("/mo-transaction-types/vehicle-field-whitelist", methods=["GET"])
+@api_auth_required("motransactiontype.view")
+def list_vehicle_field_whitelist(api_user):
+    """The fixed set of Vehicle Master Data fields an admin may map a
+    Transaction Type to -- drives the React "target field" dropdown.
+    Never DB-driven, by design (see VEHICLE_FIELD_WHITELIST's docstring)."""
+    from app.modules.transactions.maintenance_order.service import (
+        VEHICLE_FIELD_WHITELIST)
+    return jsonify({"items": [
+        {"value": field, "label": label}
+        for field, label in sorted(VEHICLE_FIELD_WHITELIST.items())
+    ]})
+
+
+@bp.route("/mo-transaction-types/admin/<int:tt_id>/vehicle-mapping",
+          methods=["GET"])
+@api_auth_required("motransactiontype.view")
+def get_mo_transaction_type_vehicle_mapping(api_user, tt_id):
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    mapping = TransactionTypeService().get_vehicle_mapping(tt_id)
+    return jsonify({"vehicle_mapping": _vehicle_mapping_json(mapping)})
+
+
+@bp.route("/mo-transaction-types/admin/<int:tt_id>/vehicle-mapping",
+          methods=["PUT", "PATCH"])
+@api_auth_required("motransactiontype.update")
+def set_mo_transaction_type_vehicle_mapping(api_user, tt_id):
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService, InvalidFieldMappingError)
+    p = request.get_json(silent=True) or {}
+    target_field = (p.get("target_field") or "").strip()
+    display_label = (p.get("display_label") or "").strip()
+    if not target_field or not display_label:
+        return _validation(
+            "target_field and display_label are required.")
+    try:
+        mapping = TransactionTypeService().set_vehicle_mapping(
+            tt_id, target_field=target_field, display_label=display_label,
+            input_type=(p.get("input_type") or "TEXT"),
+            select_source=p.get("select_source") or None,
+            is_required=bool(p.get("is_required", True)),
+            validation_rule=p.get("validation_rule") or None)
+    except InvalidFieldMappingError as e:
+        return _validation(str(e), "target_field")
+    return jsonify({"vehicle_mapping": _vehicle_mapping_json(mapping)})
+
+
+@bp.route("/mo-transaction-types/admin/<int:tt_id>/vehicle-mapping",
+          methods=["DELETE"])
+@api_auth_required("motransactiontype.update")
+def clear_mo_transaction_type_vehicle_mapping(api_user, tt_id):
+    from app.modules.transactions.maintenance_order.service import (
+        TransactionTypeService)
+    TransactionTypeService().deactivate_vehicle_mapping(tt_id)
     return jsonify({"ok": True})
 
 
