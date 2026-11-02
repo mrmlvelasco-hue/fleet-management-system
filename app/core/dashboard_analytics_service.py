@@ -281,13 +281,21 @@ class DashboardAnalyticsService:
                "branch_id": int(branch_id) if branch_id else None}
 
     @request_cached("chart_pm_compliance")
-    def pm_compliance(self, user=None, branch_id=None) -> dict:
+    def pm_compliance(self, user=None, branch_id=None,
+                      company_id=None) -> dict:
         """Reuses the SAME due-calculation the dashboard's due-list and
         KPI already use, so this chart can never disagree with them --
         the exact bug fixed earlier when the KPI and list used two
         different sources. GOOD is derived as (visible fleet) minus
         (vehicles appearing in the due list), since GOOD vehicles are
-        deliberately never materialised by that service."""
+        deliberately never materialised by that service.
+
+        company_id (2026-11-02): this panel ("Maintenance Management")
+        was the one chart left out when Company narrowing was added to
+        its sibling, registration_status -- same shape, same fix,
+        mirrored line for line so the two panels can't drift apart
+        again.
+        """
         from app.core.maintenance.due_calculation_service import (
             PMDueCalculationService)
         from app.modules.master_data.vehicle.models import Vehicle
@@ -301,6 +309,10 @@ class DashboardAnalyticsService:
         # existing user-only path the Jinja dashboard uses is untouched.
         if branch_id is not None:
             due = [d for d in due if d["vehicle"].branch_id == branch_id]
+        if company_id is not None:
+            from app.core.company_resolution import effective_company_id
+            due = [d for d in due
+                   if effective_company_id(d["vehicle"]) == company_id]
         counts = {"OVERDUE": 0, "DUE_SOON": 0, "UPCOMING": 0}
         flagged_vehicle_ids = set()
         for d in due:
@@ -314,6 +326,12 @@ class DashboardAnalyticsService:
         branch_ids = self._scoped_branch_ids(user, branch_id)
         if branch_ids is not None:
             q = q.filter(Vehicle.branch_id.in_(branch_ids))
+        if company_id:
+            # Same reasoning as registration_status: the due list above
+            # and this total must be scoped to the same set, or a
+            # segment can exceed the whole it is drawn against.
+            from app.core.company_resolution import company_filter
+            q = q.filter(company_filter(Vehicle, company_id))
         total_fleet = q.scalar() or 0
         counts["GOOD"] = max(0, total_fleet - len(flagged_vehicle_ids))
 
@@ -415,7 +433,7 @@ class DashboardAnalyticsService:
             "fleet_by_branch": lambda: self.fleet_by_branch(user=user),
             "maintenance_cost_trend": lambda: self.maintenance_cost_trend(user=user),
             "pm_compliance": lambda: self.pm_compliance(
-                user=user, branch_id=branch_id),
+                user=user, branch_id=branch_id, company_id=company_id),
             "mo_by_type": lambda: self.maintenance_orders_by_type(user=user),
             "registration_status": lambda: self.registration_status(
                 user=user, branch_id=branch_id, company_id=company_id),

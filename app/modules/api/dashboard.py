@@ -300,8 +300,17 @@ def dashboard_charts(api_user):
     branch_id, error = _requested_branch_id(api_user)
     if error:
         return error
+    # 2026-11-02: company_id was never read here at all, so no chart
+    # requested through this route -- including pm_compliance, the
+    # dashboard's "Maintenance Management" panel -- could ever be
+    # Company-narrowed, even though the service layer already supported
+    # it for every chart that takes it.
+    company_id, error = _requested_company_id(api_user)
+    if error:
+        return error
     return jsonify(DashboardAnalyticsService().all_charts(
-        user=api_user, only=only, branch_id=branch_id))
+        user=api_user, only=only, branch_id=branch_id,
+        company_id=company_id))
 
 
 @bp.route("/dashboard/fuel", methods=["GET"])
