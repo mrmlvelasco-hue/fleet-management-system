@@ -299,6 +299,7 @@ def test_api_create_with_scope_items(client, db, env, editor):
                     json={"vehicle_id": env["vehicle"].id,
                           "maintenance_type_id": env["mt"].id,
                           "scheduled_date": date.today().isoformat(),
+                          "odometer_at_service": 10500,
                           "scope_items": [
                               {"activity_code": "",
                                "activity_description": "Repaint bumper"}]})
@@ -313,6 +314,7 @@ def test_api_create_rejects_blank_description(client, db, env, editor):
     r = client.post("/api/v1/maintenance-orders", headers=_hdr(client, editor),
                     json={"vehicle_id": env["vehicle"].id,
                           "maintenance_type_id": env["mt"].id,
+                          "odometer_at_service": 10500,
                           "scope_items": [{"activity_description": ""}]})
     assert r.status_code == 400
     assert "scope_items" in r.get_data(as_text=True)

@@ -719,6 +719,19 @@ def create_maintenance_order(api_user):
         vehicle_id = int(p["vehicle_id"])
     except (KeyError, TypeError, ValueError):
         return _validation("vehicle_id is required.", "vehicle_id")
+    # Odometer at Service is required on every MO creation (Michael,
+    # 2026-11-02: "the Odo meter should be required field you cannot
+    # proceed") -- 0 is a real reading (a brand-new vehicle), so this
+    # checks that a NUMBER was supplied, not that the value is truthy.
+    # Enforced here rather than inside MaintenanceOrderService.create()
+    # so the PM auto-generation Celery task and the checklist-triggered
+    # corrective-MO path (both call the service directly, never this
+    # route, and always pass a real int already) are untouched.
+    try:
+        odometer_at_service = int(p["odometer_at_service"])
+    except (KeyError, TypeError, ValueError):
+        return _validation("Odometer at Service is required.",
+                           "odometer_at_service")
     sched = p.get("scheduled_date")
     if not sched:
         # Operational Assignment hides the date on the form but the
@@ -766,7 +779,7 @@ def create_maintenance_order(api_user):
             scope_template_id=_int("scope_template_id"),
             pm_schedule_id=_int("pm_schedule_id"),
             description=p.get("description") or None,
-            odometer_at_service=_int("odometer_at_service"),
+            odometer_at_service=odometer_at_service,
             assigned_mechanic=p.get("assigned_mechanic") or None,
             vendor_id=_int("vendor_id"),
             estimated_cost=_cost("estimated_cost"),

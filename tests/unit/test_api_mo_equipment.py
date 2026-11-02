@@ -117,7 +117,7 @@ def test_create_mo_with_equipment_lines(client, env):
     r = client.post("/api/v1/maintenance-orders", headers=_tok(
         client, "eq_editor"), json={
         "vehicle_id": env["vehicle"].id, "scheduled_date": "2026-10-15",
-        "maintenance_type_id": env["mt"].id,
+        "maintenance_type_id": env["mt"].id, "odometer_at_service": 27000,
         "equipment_lines": [{"kind": "TIRE", "position": "FL",
                              "action": "REPLACE",
                              "current_tire_id": env["fl"].id}]})
@@ -133,7 +133,7 @@ def test_create_mo_with_bad_line_is_a_400_naming_the_field(client, env):
     r = client.post("/api/v1/maintenance-orders", headers=_tok(
         client, "eq_editor"), json={
         "vehicle_id": env["vehicle"].id, "scheduled_date": "2026-10-15",
-        "maintenance_type_id": env["mt"].id,
+        "maintenance_type_id": env["mt"].id, "odometer_at_service": 27000,
         "equipment_lines": [{"kind": "TIRE", "action": "REPLACE"}]})
     assert r.status_code == 400
     b = _body(r)

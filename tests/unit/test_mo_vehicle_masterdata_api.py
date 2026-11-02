@@ -115,6 +115,7 @@ def test_create_order_with_vehicle_changes_via_api(client, db, env):
         "scheduled_date": "2026-11-02",
         "order_category": "OPERATIONAL",
         "transaction_type_id": env["tt"].id,
+        "odometer_at_service": 12000,
         "vehicle_changes": [{"target_field": "color", "new_value": "Red"}],
     })
     assert r.status_code == 201, r.get_data(as_text=True)
@@ -158,6 +159,7 @@ def test_create_order_rejects_an_unwhitelisted_target_field_via_api(client, db, 
         "scheduled_date": "2026-11-02",
         "order_category": "OPERATIONAL",
         "transaction_type_id": env["tt"].id,
+        "odometer_at_service": 12000,
         "vehicle_changes": [{"target_field": "plate_number",
                              "new_value": "ABC-123"}],
     })
