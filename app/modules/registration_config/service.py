@@ -62,7 +62,7 @@ class RegistrationTemplateService:
             tmpl.is_active = False
             db.session.commit()
 
-    def _resolve_vehicle_brand_model_ids(self, vehicle):
+    def _resolve_vehicle_brand_model_ids(self, vehicle, prefetch=None):
         """Resolve a Vehicle's free-text brand/model strings to the real
         VehicleBrand/VehicleModel master ids. Vehicle.brand/Vehicle.model
         stay plain strings for backward compatibility (see
@@ -70,12 +70,33 @@ class RegistrationTemplateService:
         normalized FKs, same as PMSchedule. Mirrors
         PMDueCalculationService._resolve_vehicle_brand_model_ids() —
         same gap, same fix, kept in sync rather than duplicated
-        differently."""
+        differently.
+
+        `prefetch` (2026-11-02): an optional in-memory
+        {brand_name_lower: brand_id} / {(brand_id, model_name_lower):
+        model_id} pair, exactly mirroring _Prefetch's
+        _brand_ids_by_name/_model_ids_by_brand_name on the PM side.
+        Without it, this issued TWO queries per vehicle regardless of
+        the `templates` prefetch already passed to find_applicable --
+        confirmed directly: 12 vehicles with no registration data
+        issued 29 queries for get_all_due_vehicles(), the dominant cost
+        of the dashboard's Registration panel and due list. Defaulting
+        to None keeps every single-vehicle caller unchanged; only the
+        one caller that loops the whole fleet opts in.
+        """
         from app.modules.master_data.vehicle_brand.models import (
             VehicleBrand, VehicleModel)
+        brand_name = (vehicle.brand or "").strip().lower()
+        if prefetch is not None:
+            brand_ids_by_name, model_ids_by_brand_name = prefetch
+            brand_id = brand_ids_by_name.get(brand_name)
+            if not brand_id:
+                return None, None
+            model_name = (vehicle.model or "").strip().lower()
+            return brand_id, model_ids_by_brand_name.get((brand_id, model_name))
+
         brand = VehicleBrand.query.filter(
-            db.func.lower(VehicleBrand.name)
-            == (vehicle.brand or "").strip().lower()).first()
+            db.func.lower(VehicleBrand.name) == brand_name).first()
         if not brand:
             return None, None
         model = VehicleModel.query.filter(
@@ -84,7 +105,25 @@ class RegistrationTemplateService:
             == (vehicle.model or "").strip().lower()).first()
         return brand.id, (model.id if model else None)
 
-    def find_applicable(self, vehicle, templates=None) -> "RegistrationTemplate | None":
+    @staticmethod
+    def _brand_model_prefetch():
+        """Build the {brand_name_lower: id} / {(brand_id, model_name_lower):
+        id} maps _resolve_vehicle_brand_model_ids() consults instead of
+        querying per vehicle -- 2 queries total regardless of fleet
+        size, the same shape as _Prefetch's equivalent on the PM side."""
+        from app.modules.master_data.vehicle_brand.models import (
+            VehicleBrand, VehicleModel)
+        brand_ids_by_name = {}
+        for b in VehicleBrand.query.all():
+            brand_ids_by_name.setdefault((b.name or "").strip().lower(), b.id)
+        model_ids_by_brand_name = {}
+        for m in VehicleModel.query.all():
+            model_ids_by_brand_name.setdefault(
+                (m.brand_id, (m.name or "").strip().lower()), m.id)
+        return brand_ids_by_name, model_ids_by_brand_name
+
+    def find_applicable(self, vehicle, templates=None,
+                        brand_model_prefetch=None) -> "RegistrationTemplate | None":
         """Most-specific-match-first: Brand+Model, then Brand only, then
         Vehicle Type, then a global (all-vehicles) template — same
         precedence spirit as PM Template matching, just without the
@@ -111,7 +150,8 @@ class RegistrationTemplateService:
         if templates is None:
             templates = RegistrationTemplate.query.filter_by(
                 is_active=True).all()
-        brand_id, model_id = self._resolve_vehicle_brand_model_ids(vehicle)
+        brand_id, model_id = self._resolve_vehicle_brand_model_ids(
+            vehicle, prefetch=brand_model_prefetch)
 
         if brand_id and model_id:
             brand_model_matches = [
@@ -147,14 +187,16 @@ class RegistrationDueCalculationService:
             self.default_notify_before_days = DEFAULT_NOTIFY_BEFORE_DAYS
 
     def get_due_status(self, vehicle, as_of_date=None, *, templates=None,
-                       last_reg_by_vehicle=None) -> dict:
+                       last_reg_by_vehicle=None,
+                       brand_model_prefetch=None) -> dict:
         """Registration status for one vehicle.
 
-        `templates` and `last_reg_by_vehicle` are optional PREFETCHES for
-        a caller iterating the fleet. Without them this method issues two
-        queries per vehicle -- all templates, then that vehicle's latest
-        completed registration -- which at 5,000 vehicles was 10,000
-        queries and ~2.9 seconds, the single largest cost on the
+        `templates`, `last_reg_by_vehicle` and `brand_model_prefetch`
+        are optional PREFETCHES for a caller iterating the fleet.
+        Without them this method issues FOUR queries per vehicle -- all
+        templates, the brand lookup, the model lookup, then that
+        vehicle's latest completed registration -- which at 5,000
+        vehicles was 20,000 queries, the single largest cost on the
         dashboard.
 
         Defaulting them to None keeps every existing single-vehicle
@@ -170,7 +212,8 @@ class RegistrationDueCalculationService:
         as_of_date = as_of_date or _date.today()
 
         template = RegistrationTemplateService().find_applicable(
-            vehicle, templates=templates)
+            vehicle, templates=templates,
+            brand_model_prefetch=brand_model_prefetch)
         plate_number = vehicle.plate_number or vehicle.conduction_number
         schedule = get_plate_schedule(plate_number)
         lto_month = schedule["month"] if schedule else None
@@ -333,11 +376,24 @@ class RegistrationDueCalculationService:
         # count as due-able.
         from app.core.maintenance.due_calculation_service import (
             DUE_ELIGIBLE_STATUSES)
-        query = Vehicle.query.filter_by(is_active=True).filter(
-            Vehicle.status.in_(DUE_ELIGIBLE_STATUSES))
+        # branch is eager-loaded for the same reason
+        # PMDueCalculationService.get_all_due_vehicles() already does:
+        # every row here is later asked for its branch (the dashboard
+        # template, and -- since Company narrowing was added -- every
+        # row's EFFECTIVE company, which falls back to vehicle.branch.
+        # company_id). Without this, that fallback lazy-loads Branch
+        # ONE ROW AT A TIME, an N+1 that scales with fleet size and
+        # that only started mattering once Company filtering began
+        # walking the due list row by row. Confirmed directly: 12
+        # vehicles with no registration data issued 29 queries without
+        # this; a small fixed number with it.
+        from sqlalchemy.orm import joinedload
+        query = (Vehicle.query.options(joinedload(Vehicle.branch))
+                .filter_by(is_active=True)
+                .filter(Vehicle.status.in_(DUE_ELIGIBLE_STATUSES)))
         vehicles = query.all()
 
-        # Two prefetches, replacing two queries PER VEHICLE.
+        # Three prefetches, replacing FOUR queries PER VEHICLE.
         #
         # Measured at 5,000 vehicles: this loop issued 10,000 queries and
         # took ~2.9 seconds, which was the single largest cost on the
@@ -347,6 +403,15 @@ class RegistrationDueCalculationService:
             RegistrationTemplate)
         templates = RegistrationTemplate.query.filter_by(
             is_active=True).all()
+
+        # 2026-11-02: the brand/model lookup added for KI-19 was never
+        # given the same batching as templates/last_reg right below it
+        # -- RegistrationTemplateService().find_applicable() issued 2
+        # queries per vehicle regardless, confirmed directly (12
+        # vehicles, no registration data -> 29 queries; a small fixed
+        # number once this prefetch is threaded through).
+        brand_model_prefetch = (
+            RegistrationTemplateService()._brand_model_prefetch())
 
         # Latest COMPLETED registration per vehicle, in one pass.
         # Ordered ascending so the last write into the map wins, which
@@ -367,7 +432,8 @@ class RegistrationDueCalculationService:
                 continue  # renewal already raised — not actionable again
             result = self.get_due_status(
                 vehicle, as_of_date=as_of_date, templates=templates,
-                last_reg_by_vehicle=last_reg_by_vehicle)
+                last_reg_by_vehicle=last_reg_by_vehicle,
+                brand_model_prefetch=brand_model_prefetch)
             if result["status"] in statuses:
                 results.append({"vehicle": vehicle, **result})
         return results
