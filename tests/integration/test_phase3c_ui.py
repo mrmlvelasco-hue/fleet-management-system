@@ -1,5 +1,7 @@
 from datetime import date
 
+from tests.conftest import tiny_jpeg_file
+
 from app.core.security.password import hash_password
 from app.modules.user_management.models import User, Role, Permission
 from app.modules.master_data.org.service import BranchService
@@ -127,9 +129,13 @@ def test_vehicleregistration_full_flow_assigns_plate(client, db):
 
     client.post(f"/transactions/vehicle-registrations/{reg.id}/submit",
                follow_redirects=True)
+    # Completing a registration now requires the CR scan to be on file
+    # (uploaded in this same request).
     client.post(f"/transactions/vehicle-registrations/{reg.id}/complete",
                data={"or_number": "OR-999", "cr_number": "CR-999",
-                     "plate_number": "NEW-001"}, follow_redirects=True)
+                     "plate_number": "NEW-001",
+                     "cr_scan": tiny_jpeg_file("cr.jpg")},
+               content_type="multipart/form-data", follow_redirects=True)
 
     assert db.session.get(VehicleRegistration, reg.id).status == "COMPLETED"
     from app.modules.master_data.vehicle.models import Vehicle

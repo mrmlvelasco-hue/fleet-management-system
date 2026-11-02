@@ -3,6 +3,7 @@ from tests.conftest import tiny_jpeg_file
 
 import pytest
 
+from app.extensions import db as _db
 from app.modules.transactions.trip_ticket.service import (
     TripTicketService, DriverRequiredError)
 from app.modules.transactions.trip_ticket.models import TripTicket
@@ -16,6 +17,33 @@ from app.modules.system_admin.services.system_parameter_service import (
     SystemParameterService)
 from app.modules.system_admin.models import SystemParameter
 from app.modules.user_management.models import User
+
+
+def _add_active_atd(vehicle, driver):
+    """Release now requires an approved, active, in-date ATD for the
+    driver/vehicle pair (test_tripticket_odometer_sync.py established
+    this same fixture pattern for the same new rule)."""
+    from app.core.approval.models import ApprovalInstance
+    from app.modules.document_config.models import DocumentType
+    from app.modules.transactions.atd.models import AuthorityToDrive
+    dt = DocumentType.query.filter_by(code="ATD").first()
+    if dt is None:
+        dt = DocumentTypeService().create(
+            code="ATD", name="Authority To Drive",
+            requires_approval=False, auto_numbering=True)
+    atd = AuthorityToDrive(
+        vehicle_id=vehicle.id, driver_id=driver.id,
+        purpose="Trip Ticket regression fixture", valid_from=date.today(),
+        valid_to=date.today(), status="ACTIVE")
+    _db.session.add(atd)
+    _db.session.flush()
+    approval = ApprovalInstance(
+        document_type_id=dt.id, reference_table="authority_to_drives",
+        reference_id=atd.id, status="APPROVED")
+    _db.session.add(approval)
+    _db.session.flush()
+    atd.approval_instance_id = approval.id
+    _db.session.commit()
 
 
 @pytest.fixture()
@@ -103,6 +131,7 @@ def test_release_and_complete_trip(db, env):
         departure_datetime=datetime(2026, 7, 15, 8, 0),
         odometer_out=1000, user=user)
     svc.submit(tt.id, user=user)
+    _add_active_atd(vehicle, driver)
     svc.release(tt.id)
     assert db.session.get(TripTicket, tt.id).status == "RELEASED"
     svc.complete(tt.id, odometer_in=1150,

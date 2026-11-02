@@ -142,12 +142,19 @@ def test_export_xlsx_is_scoped_and_shaped_like_the_client_workbook(
 
     from io import BytesIO
     from openpyxl import load_workbook
+    from app.modules.transactions.fuel.monthly_analysis import _MONTH_BLOCK
     wb = load_workbook(BytesIO(r.data))
     ws = wb.active
-    header_row = [c.value for c in ws[2]]
-    assert "Jan Begin Odometer" in header_row
-    assert "Jan End Odometer" in header_row
-    assert "Dec Cost/KM" in header_row
 
-    plates = [row[2].value for row in ws.iter_rows(min_row=3, max_row=3)]
+    # Row 2: vehicle identity headers plus one merged month band per
+    # month (JAN..DEC). Row 3: the per-metric sub-headers under each
+    # month band. Data starts row 4.
+    identity_row = [c.value for c in ws[2]]
+    assert "JAN" in identity_row
+    assert "DEC" in identity_row
+    jan_col = identity_row.index("JAN") + 1
+    metric_row = [c.value for c in ws[3]]
+    assert metric_row[jan_col - 1: jan_col - 1 + len(_MONTH_BLOCK)] == _MONTH_BLOCK
+
+    plates = [row[2].value for row in ws.iter_rows(min_row=4, max_row=4)]
     assert plates == ["FAN-A1"]

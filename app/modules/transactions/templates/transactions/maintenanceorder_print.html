@@ -293,6 +293,10 @@
       <td class="label">Branch / Sales Office</td><td>{{ item.vehicle.branch.name if item.vehicle.branch else '—' }}</td>
       <td class="label">Current Assignee</td><td>{{ item.vehicle.assigned_driver.full_name if item.vehicle.assigned_driver else '—' }}</td>
     </tr>
+    <tr>
+      <td class="label">Assignee Position</td>
+      <td colspan="3">{{ item.vehicle.assigned_driver.job_title if item.vehicle.assigned_driver and item.vehicle.assigned_driver.job_title else '—' }}</td>
+    </tr>
   </table>
 
 
@@ -318,13 +322,15 @@
     </tr>
     <tr>
       <td class="label">Odometer Reading</td>
-      <td>{{ '{:,}'.format(item.odometer_at_service|int) if item.odometer_at_service is not none else '—' }} km</td>
+      <td>{{ "{:,}".format(item.vehicle.current_odometer|int) if item.vehicle and item.vehicle.current_odometer else (("{:,}".format(item.odometer_at_service|int)) if item.odometer_at_service is not none else '—') }} km</td>
       <td class="label">Status</td>
       <td><span class="status-pill status-{{ item.status }}">{{ item.status|replace('_', ' ') }}</span></td>
     </tr>
     <tr>
       <td class="label">Vendor / Service Provider</td>
-      <td colspan="3">{{ item.vendor.name if item.vendor else '—' }}</td>
+      <td>{{ item.vendor.name if item.vendor else '—' }}</td>
+      <td class="label">Last Completed WO</td>
+      <td>{{ last_completed.document_number ~ ' (' ~ last_completed.completed_date|string ~ ')' if last_completed else 'None on record' }}</td>
     </tr>
   </table>
 

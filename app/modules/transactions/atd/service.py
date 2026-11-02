@@ -100,12 +100,12 @@ class ATDService(BaseTransactionService):
                 raise ATDValidationError(
                     "Choose either a vehicle type or a specific vehicle.")
             if vehicle_category:
-                from app.modules.system_admin.models import Lookup
-                category = Lookup.query.filter_by(
-                    lookup_type="VEHICLE_CATEGORY",
-                    code=vehicle_category.strip().upper(),
-                    is_active=True).first()
-                if category is None:
+                from app.modules.system_admin.services.lookup_service import (
+                    LookupService)
+                codes = {row.code for row in
+                        LookupService().get_by_type_with_fallback(
+                            "VEHICLE_CATEGORY")}
+                if vehicle_category.strip().upper() not in codes:
                     raise ATDValidationError(
                         "Select an active Vehicle Category from Lookup Maintenance.")
                 if vehicle_type_id:
@@ -157,11 +157,13 @@ class ATDService(BaseTransactionService):
             if atd.vehicle_id is not None:
                 return False
             if atd.vehicle_category:
-                from app.modules.system_admin.models import Lookup
-                category = Lookup.query.filter_by(
-                    lookup_type="VEHICLE_CATEGORY",
-                    code=atd.vehicle_category.upper(), is_active=True).first()
-                return bool(category and vehicle.vehicle_type.category
+                from app.modules.system_admin.services.lookup_service import (
+                    LookupService)
+                codes = {row.code for row in
+                        LookupService().get_by_type_with_fallback(
+                            "VEHICLE_CATEGORY")}
+                return bool(atd.vehicle_category.upper() in codes
+                            and vehicle.vehicle_type.category
                             and vehicle.vehicle_type.category.upper()
                             == atd.vehicle_category.upper())
             return atd.vehicle_type_id == vehicle.vehicle_type_id

@@ -230,30 +230,38 @@ def test_export_mirrors_the_client_workbook_layout_with_a_dynamic_year(
     assert "2027" in title_text
     assert "2026" not in title_text
 
-    header_row = [c.value for c in ws[2]]
-    assert "Branch" in header_row
-    assert "Plate / Conduction No." in header_row
-    assert any(h and "Jan" in str(h) for h in header_row)
-    assert any(h and "Dec" in str(h) for h in header_row)
+    # Row 2: vehicle identity headers, plus one merged month band per
+    # month (JAN..DEC per the client's color-coded layout). Row 3: the
+    # per-metric sub-headers under each month band. Data starts row 4.
+    from app.modules.transactions.fuel.monthly_analysis import _MONTH_BLOCK
+
+    identity_row = [c.value for c in ws[2]]
+    assert "Branch" in identity_row
+    assert "Plate / Conduction No." in identity_row
+    assert "JAN" in identity_row
+    assert "DEC" in identity_row
+
+    jan_col = identity_row.index("JAN") + 1
+    metric_row = [c.value for c in ws[3]]
+    assert metric_row[jan_col - 1: jan_col - 1 + len(_MONTH_BLOCK)] == _MONTH_BLOCK
 
     # The vehicle has zero fuel history for 2027. Litres/cost are
     # genuinely, truthfully zero -- that stays a real 0, not a dash
     # pretending the number is unknown. But every odometer-derived
     # figure (End Odometer, KM Driven, KM/L, Cost/KM) is UNKNOWABLE,
     # not zero, and must show as an explicit dash.
-    header_row = [c.value for c in ws[2]]
-    data_row = [c.value for c in ws[3]]
-    jan_begin_odo_col = header_row.index("Jan Begin Odometer")
-    jan_end_odo_col = header_row.index("Jan End Odometer")
-    jan_km_col = header_row.index("Jan KM Driven")
-    jan_kml_col = header_row.index("Jan KM/L")
-    jan_cost_km_col = header_row.index("Jan Cost/KM")
+    jan_begin_odo_col = jan_col + _MONTH_BLOCK.index("Begin Odometer")
+    jan_end_odo_col = jan_col + _MONTH_BLOCK.index("End Odometer")
+    jan_km_col = jan_col + _MONTH_BLOCK.index("KM Driven")
+    jan_kml_col = jan_col + _MONTH_BLOCK.index("KM/L")
+    jan_cost_km_col = jan_col + _MONTH_BLOCK.index("Cost/KM")
     # Begin Odometer is the FIRST column of the month's block -- the
     # starting point a reviewer reads before anything else in the group.
     assert jan_begin_odo_col == jan_end_odo_col - 1
+    data_row = [c.value for c in ws[4]]
     for col in (jan_begin_odo_col, jan_end_odo_col, jan_km_col,
                jan_kml_col, jan_cost_km_col):
-        assert data_row[col] == "—"
+        assert data_row[col - 1] == "—"
 
 
 def test_export_reconciles_to_the_real_figures_not_the_defects(db, vehicle):
@@ -280,9 +288,9 @@ def test_export_reconciles_to_the_real_figures_not_the_defects(db, vehicle):
     xlsx = export_monthly_analysis_xlsx(rows, year=2026)
     wb = load_workbook(BytesIO(xlsx))
     ws = wb.active
-    header_row = [c.value for c in ws[2]]
-    sept_km_col = next(
-        i for i, h in enumerate(header_row, start=1)
-        if h and "Sep" in str(h) and "KM Driven" in str(h))
-    data_row = [c.value for c in ws[3]]
+    from app.modules.transactions.fuel.monthly_analysis import _MONTH_BLOCK
+    identity_row = [c.value for c in ws[2]]
+    sep_col = identity_row.index("SEP") + 1
+    sept_km_col = sep_col + _MONTH_BLOCK.index("KM Driven")
+    data_row = [c.value for c in ws[4]]
     assert data_row[sept_km_col - 1] == 10500

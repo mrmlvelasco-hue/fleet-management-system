@@ -321,13 +321,38 @@ def test_completed_orders_are_not_open_work(client, env, pms):
 
 # ── ATD ──────────────────────────────────────────────────────────────
 
-def test_an_active_atd_for_this_driver_appears_as_ok(client, env, pms):
-    db.session.add(AuthorityToDrive(
-        document_number="ATD-RDY-1", vehicle_id=env["mine"].id,
-        driver_id=env["juan_driver"].id, purpose="Field visit",
-        valid_from=TODAY, valid_to=TODAY + timedelta(days=5),
-        status="ACTIVE"))
+def _approved_atd(env, *, document_number, vehicle_id, driver_id,
+                  valid_from, valid_to):
+    """An ACTIVE ATD only ever gets there through submit -> approve ->
+    activate (see test_activate_before_approval_raises in test_atd.py),
+    so authorizes_vehicle() correctly insists on a real, APPROVED
+    approval_instance. Build that instance directly here, the same
+    lightweight way _mo() stands in for the approval workflow above,
+    rather than running the full ATD service flow for every test."""
+    if DocumentType.query.filter_by(code="ATD").first() is None:
+        DocumentTypeService().create(code="ATD", name="Authority To Drive",
+                                     requires_approval=True,
+                                     auto_numbering=False)
+    dt = DocumentType.query.filter_by(code="ATD").first()
+    atd = AuthorityToDrive(
+        document_number=document_number, vehicle_id=vehicle_id,
+        driver_id=driver_id, purpose="Field visit",
+        valid_from=valid_from, valid_to=valid_to, status="ACTIVE")
+    db.session.add(atd); db.session.flush()
+    inst = ApprovalInstance(document_type_id=dt.id, approval_path_id=None,
+                            reference_table="authority_to_drives",
+                            reference_id=atd.id, status="APPROVED",
+                            current_level=1, submitted_by=env["juan"].id)
+    db.session.add(inst); db.session.flush()
+    atd.approval_instance_id = inst.id
     db.session.commit()
+    return atd
+
+
+def test_an_active_atd_for_this_driver_appears_as_ok(client, env, pms):
+    _approved_atd(env, document_number="ATD-RDY-1",
+                 vehicle_id=env["mine"].id, driver_id=env["juan_driver"].id,
+                 valid_from=TODAY, valid_to=TODAY + timedelta(days=5))
     item = _check(_get(client, env)[1], "atd")
     assert item["state"] == "ok"
     assert "ATD-RDY-1" in item["detail"]
