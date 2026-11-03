@@ -138,20 +138,68 @@ def get_scope_items(reference_table: str, reference_id: int) -> list:
         return []
 
 
+# reference_table -> the React app's own route for that document
+# (confirmed against fms_fleet_react's src/App.tsx route list). This is
+# deliberately separate from _REGISTRY above: _REGISTRY's url_fn points
+# at Flask's own legacy server-rendered pages, which is a different app
+# on a different origin than the one people actually work in day to day
+# (the React web app and its mobile build) -- the right page for an
+# email link to open, and the only one Flask's url_for() can never
+# resolve on its own (it has no idea the React app even exists).
+_FRONTEND_PATHS = {
+    "maintenance_orders": "/maintenance-orders/{id}",
+    "purchase_requests": "/purchase-requests/{id}",
+    "trip_tickets": "/trip-tickets/{id}",
+    "authority_to_drives": "/atd/{id}",
+    "vehicle_movements": "/vehicle-movements/{id}",
+    "vehicle_registrations": "/vehicle-registrations/{id}",
+    "tire_transactions": "/tire-transactions/{id}",
+    "battery_transactions": "/battery-transactions/{id}",
+}
+
+
 def get_view_url(reference_table: str, reference_id: int) -> str | None:
-    """Absolute-path URL back into the app for this document, for the
-    "Open this document" link in notification emails. Returns None if the
-    table isn't registered (caller should omit the link in that case)."""
-    entry = _REGISTRY.get(reference_table)
-    if entry is None:
-        return None
-    _, _, url_fn = entry
+    """Absolute URL into the React app for this document, for the "Open
+    this document" link in notification emails.
+
+    Built from the APP_PUBLIC_URL System Parameter (System
+    Administration -> System Parameters, group NOTIFICATIONS) plus this
+    document's own frontend route. Returns None -- never a broken link
+    -- whenever that parameter isn't set, or the table has no known
+    frontend page: an email with no link reads fine; one with a dead
+    link does not.
+
+    Previously built with Flask's own url_for(), with two bugs at once:
+    no _external=True (so the href was a bare path, meaningless with no
+    "current page" for an email to resolve it against), and pointing at
+    the old server-rendered Jinja page rather than the React app people
+    actually use (see _FRONTEND_PATHS above).
+
+    maintenance_invoices has no page of its own -- it's a panel on its
+    Maintenance Order's detail page -- so it resolves to its PARENT
+    MO's URL instead.
+    """
     try:
-        from flask import url_for
-        endpoint, kwargs = url_fn(reference_id)
-        return url_for(endpoint, **kwargs)
+        from app.modules.system_admin.services.system_parameter_service import (
+            SystemParameterService)
+        base = (SystemParameterService().get("APP_PUBLIC_URL", "") or "").strip()
     except Exception:
         return None
+    if not base:
+        return None
+    base = base.rstrip("/")
+
+    if reference_table == "maintenance_invoices":
+        record = _load_record(reference_table, reference_id)
+        mo_id = getattr(record, "maintenance_order_id", None)
+        if mo_id is None:
+            return None
+        reference_table, reference_id = "maintenance_orders", mo_id
+
+    path = _FRONTEND_PATHS.get(reference_table)
+    if path is None:
+        return None
+    return base + path.format(id=reference_id)
 
 
 def get_worklist_labels(reference_table: str, reference_id: int) -> dict:

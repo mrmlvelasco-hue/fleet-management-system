@@ -612,6 +612,21 @@ def _seed_system_parameters() -> None:
          "listed. Either way, every row's problems are always shown "
          "before import."),
 
+        # ── Notifications ────────────────────────────────────────────
+        # Michael, 2026-11-03: "the document is not link or click" --
+        # get_view_url() was building a bare relative path with Flask's
+        # own url_for(), which means nothing inside an email (no
+        # "current page" to resolve it against) and pointed at the old
+        # Jinja page rather than the React app people actually use.
+        # Left blank on a fresh install so a misconfigured link is never
+        # sent before someone sets this to the real deployed URL -- see
+        # reference_resolver.get_view_url().
+        ("APP_PUBLIC_URL", "", "STRING", "NOTIFICATIONS",
+         "Public base URL of the React web app (e.g. "
+         "https://fms.excellence.com), with no trailing slash. Used to "
+         "build the 'Open this document' link in notification emails. "
+         "Leave blank to omit that link rather than send a broken one."),
+
         # ── Appearance ────────────────────────────────────────────────
         ("SIDEBAR_SKIN_DEFAULT", "classic", "STRING", "APPEARANCE",
          "House style for the sidebar, used for anyone who hasn't "
@@ -771,9 +786,12 @@ def _seed_email_templates() -> None:
         SCOPE_BLOCK_HTML, SCOPE_BLOCK_TEXT)
 
     def _tmpl(intro, include_comment=False):
-        view_link = (
-            '<p><a href="{{ view_url }}">Open this document</a></p>'
-            if True else "")
+        # Guarded the same way the text version below already is:
+        # get_view_url() now returns None/"" whenever the deployment's
+        # APP_PUBLIC_URL isn't configured or the document has no known
+        # frontend page, and an unconditional <a href=""> would render
+        # a dead, non-clickable link in exactly that case.
+        view_link = '{% if view_url %}<p><a href="{{ view_url }}">Open this document</a></p>{% endif %}'
         comment_block = (
             '{% if comment_body %}'
             '<blockquote style="margin:0 0 1em 0;padding:0.5em 1em;'
@@ -1525,6 +1543,75 @@ def notifications_backfill_document_numbers():
         updated += 1
     db.session.commit()
     print(f"Notifications backfill: {updated} updated, {skipped} skipped.")
+
+
+# The exact unguarded HTML snippet every EmailTemplate seeded before
+# 2026-11-03 carries (see _tmpl() in _seed_notification_templates). An
+# exact match, never a general scan for "view_url" or "<a href", so a
+# template an admin has since customized -- even lightly -- is left
+# alone rather than silently rewritten.
+_UNGUARDED_VIEW_LINK = (
+    '<p><a href="{{ view_url }}">Open this document</a></p>')
+_GUARDED_VIEW_LINK = (
+    '{% if view_url %}<p><a href="{{ view_url }}">Open this document</a>'
+    '</p>{% endif %}')
+
+
+@notifications_cli.command("fix-dead-view-url-link")
+@click.option("--dry-run/--commit", default=True,
+              help="Preview only (default) or actually write the changes.")
+@with_appcontext
+def notifications_fix_dead_view_url_link(dry_run):
+    """One-time fix for Michael's reported bug: "the document is not
+    link or click" in notification emails.
+
+    get_view_url() used to return a bare relative path (no scheme or
+    host), so every seeded template's "Open this document" link was
+    unconditional and, once that URL started resolving correctly
+    (APP_PUBLIC_URL now configured), would still render a dead
+    <a href=""> for any document type get_view_url() can't resolve a
+    page for.
+
+    This updates each EmailTemplate row whose body_html contains the
+    OLD unguarded snippet, EXACTLY, to the new one wrapped in
+    {% if view_url %} -- the same guard the plain-text body already
+    had from day one. A row that doesn't match exactly (because an
+    admin already edited it) is left untouched, printed as skipped.
+
+    Safe to run more than once: a row already fixed no longer matches
+    the old snippet, so a second run finds nothing left to do.
+    """
+    from app.extensions import db
+    from app.modules.system_admin.models import EmailTemplate
+
+    rows = EmailTemplate.query.all()
+    fixed, skipped = [], []
+    for row in rows:
+        body = row.body_html or ""
+        # _UNGUARDED_VIEW_LINK is literally a substring of
+        # _GUARDED_VIEW_LINK (the guard just wraps it), so a plain "in"
+        # check would match -- and re-wrap -- a row this command
+        # already fixed, nesting a second {% if %} around the first
+        # every time it runs. Skip anything already guarded first.
+        if _GUARDED_VIEW_LINK in body:
+            skipped.append(row.event_code)
+            continue
+        if _UNGUARDED_VIEW_LINK in body:
+            if not dry_run:
+                row.body_html = row.body_html.replace(
+                    _UNGUARDED_VIEW_LINK, _GUARDED_VIEW_LINK)
+            fixed.append(row.event_code)
+        else:
+            skipped.append(row.event_code)
+    if not dry_run:
+        db.session.commit()
+
+    verb = "Would fix" if dry_run else "Fixed"
+    click.echo(f"{verb} {len(fixed)} template(s): {', '.join(fixed) or '(none)'}")
+    click.echo(f"Skipped {len(skipped)} template(s) already customized or "
+              f"without the old link: {', '.join(skipped) or '(none)'}")
+    if dry_run and fixed:
+        click.echo("\nRe-run WITH --commit to actually write the changes.")
 
 
 company_cli = AppGroup("company", help="Branch -> Company migration (3D).")
