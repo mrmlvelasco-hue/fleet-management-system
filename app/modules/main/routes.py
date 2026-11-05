@@ -387,20 +387,41 @@ def dashboard_cost_trend_grouped():
 
     group_by = request.args.get("group_by", "BRANCH")
     branch_id = request.args.get("branch_id") or None
+    company_id = request.args.get("company_id") or None
     months = request.args.get("months", 6, type=int)
 
     payload = DashboardAnalyticsService().maintenance_cost_trend_grouped(
         months=months, user=current_user, group_by=group_by,
-        branch_id=branch_id)
+        branch_id=branch_id, company_id=company_id)
 
     # Only branches this person can actually see, so the drill-down
     # can't be used to reach a branch the rest of the dashboard hides.
+    # Kept for the BRANCH grouping, which the service still supports
+    # even though the Dashboard chart no longer offers it as a
+    # selection (2026-11-05).
     visible = DashboardAnalyticsService()._visible_branch_ids(current_user)
     bq = Branch.query.filter_by(is_active=True)
     if visible is not None:
         bq = bq.filter(Branch.id.in_(visible))
     payload["branches"] = [{"id": b.id, "name": b.name}
                           for b in bq.order_by(Branch.name).all()]
+
+    # Companies this person can filter the Department breakdown by
+    # (2026-11-05) -- same scoping rule as the API's own
+    # /dashboard/companies, so the Jinja and bearer-token versions of
+    # this chart can never disagree about who may see what.
+    from app.extensions import db
+    from app.modules.api.reference import _company_label
+    from app.modules.master_data.org.models import OrgCompany
+
+    cq = OrgCompany.query.filter_by(is_active=True)
+    if current_user is not None and current_user.branch_id is not None:
+        branch = db.session.get(Branch, current_user.branch_id)
+        own = getattr(branch, "company_id", None)
+        cq = cq.filter(OrgCompany.id == own) if own else cq.filter(db.false())
+    payload["companies"] = [
+        {"id": c.id, "short_name": c.short_name, "label": _company_label(c)}
+        for c in cq.order_by(OrgCompany.short_name).all()]
     return jsonify(payload)
 
 

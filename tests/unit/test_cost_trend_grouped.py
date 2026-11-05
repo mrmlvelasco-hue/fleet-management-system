@@ -56,6 +56,76 @@ def cost_world(app, db):
 
 
 @pytest.fixture()
+def department_company_world(app, db):
+    """Departments across TWO branches that both roll up to the SAME
+    Company, plus a department under a company-less branch -- proves the
+    Department drill-down can scope by Company (which may span several
+    branches) rather than by a single branch, and that a vehicle outside
+    the chosen Company is excluded regardless of its department.
+
+    Replaces cost_world/company_cost_world for the drill-down tests
+    specifically (2026-11-05, Michael: "for the vehicle view and edit
+    must be remove should be company only ... this branch still visib
+    in the UI" -- the Department breakdown was the one place Branch was
+    still the required anchor; it is now Company)."""
+    from app.modules.master_data.org.service import (
+        BranchService, DepartmentService, OrgCompanyService, RegionService,
+        AreaDistrictService)
+    from app.modules.master_data.reference.service import VehicleTypeService
+    from app.modules.master_data.vehicle.service import VehicleService
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    from app.modules.user_management.models import User
+
+    sync_permissions(); db.session.commit()
+    _seed_admin("Testpass123!")
+    admin = User.query.filter_by(username="admin").first()
+
+    region = RegionService().create(code="RG-DC", name="Region DC")
+    area = AreaDistrictService().create(code="AD-DC", name="Area DC",
+                                        region_id=region.id)
+    company = OrgCompanyService().create(short_name="Excellence",
+                                         region_id=region.id,
+                                         area_district_id=area.id)
+    # Two branches, same Company -- the point of the test.
+    b1 = BranchService().create(code="BR-DC1", name="North Depot",
+                                company_id=company.id)
+    b2 = BranchService().create(code="BR-DC2", name="South Depot",
+                                company_id=company.id)
+    # A third, unmapped branch -- its department must never appear when
+    # filtering by the Company above.
+    b3 = BranchService().create(code="BR-DC3", name="Outside Depot")
+
+    d1 = DepartmentService().create(code="D1", name="Ops North",
+                                    branch_id=b1.id, cost_center="CC1")
+    d2 = DepartmentService().create(code="D2", name="Logistics South",
+                                    branch_id=b2.id, cost_center="CC2")
+    d3 = DepartmentService().create(code="D3", name="Ops Outside",
+                                    branch_id=b3.id, cost_center="CC3")
+
+    vt = VehicleTypeService().create(code="LV-DC", name="Light",
+                                     category="LIGHT")
+    v1 = VehicleService().create(vehicle_type_id=vt.id, brand="T", model="H",
+                                 year=2022, branch_id=b1.id,
+                                 department_id=d1.id, conduction_number="DC1")
+    v2 = VehicleService().create(vehicle_type_id=vt.id, brand="T", model="H",
+                                 year=2022, branch_id=b2.id,
+                                 department_id=d2.id, conduction_number="DC2")
+    v3 = VehicleService().create(vehicle_type_id=vt.id, brand="T", model="H",
+                                 year=2022, branch_id=b3.id,
+                                 department_id=d3.id, conduction_number="DC3")
+    today = date.today()
+    for v, cost in ((v1, 1000), (v2, 2000), (v3, 500)):
+        db.session.add(MaintenanceOrder(
+            vehicle_id=v.id, order_category="MAINTENANCE", status="COMPLETED",
+            scheduled_date=today, completed_date=today,
+            actual_cost=cost, requested_by=admin.id))
+    db.session.commit()
+    return {"company": company, "b1": b1, "b2": b2, "b3": b3,
+           "d1": d1, "d2": d2, "d3": d3}
+
+
+@pytest.fixture()
 def company_cost_world(app, db):
     """Same shape as cost_world, but with Alpha mapped to a Company and
     Beta left unmapped -- the real state of a fleet mid-cutover
@@ -110,31 +180,43 @@ def test_branch_grouping_returns_one_series_per_branch(app, db, cost_world):
     assert labels == {"Alpha", "Beta"}
 
 
-def test_department_grouping_requires_a_branch(app, db, cost_world):
-    """Department codes repeat across branches, so a cross-branch
-    department breakdown would silently merge two different
-    departments. Refused rather than guessed at."""
+def test_department_grouping_requires_a_company(app, db, cost_world):
+    """The Department breakdown needs an anchor -- without one, a
+    cross-company department breakdown would be ambiguous. Refused
+    rather than guessed at (2026-11-05: the anchor is Company, not
+    Branch -- Branch is no longer offered as a selection anywhere on
+    the Dashboard)."""
     r = _svc().maintenance_cost_trend_grouped(group_by="DEPARTMENT")
     assert r["datasets"] == []
     assert "error" in r
 
 
-def test_department_grouping_within_a_branch(app, db, cost_world):
+def test_department_grouping_within_a_company(app, db,
+                                              department_company_world):
+    """A Company can span several branches (North Depot + South Depot,
+    both "Excellence") -- the breakdown must cover departments under
+    EITHER, and exclude the department under the unmapped third
+    branch."""
     r = _svc().maintenance_cost_trend_grouped(
-        group_by="DEPARTMENT", branch_id=cost_world["b1"].id)
+        group_by="DEPARTMENT",
+        company_id=department_company_world["company"].id)
     labels = {ds["label"] for ds in r["datasets"]}
-    assert labels == {"Ops Alpha", "Logistics Alpha"}
+    assert labels == {"Ops North", "Logistics South"}
 
 
-def test_department_totals_sum_to_the_branch_total(app, db, cost_world):
+def test_department_totals_sum_to_the_company_total(app, db,
+                                                     department_company_world):
     """The two views must agree -- a drill-down that doesn't reconcile
     with the level above it is worse than no drill-down."""
-    by_branch = _svc().maintenance_cost_trend_grouped(group_by="BRANCH")
-    alpha = next(ds for ds in by_branch["datasets"] if ds["label"] == "Alpha")
+    by_company = _svc().maintenance_cost_trend_grouped(group_by="COMPANY")
+    from app.core.company_resolution import company_label
+    label = company_label(department_company_world["company"])
+    excellence = next(ds for ds in by_company["datasets"] if ds["label"] == label)
     by_dept = _svc().maintenance_cost_trend_grouped(
-        group_by="DEPARTMENT", branch_id=cost_world["b1"].id)
+        group_by="DEPARTMENT",
+        company_id=department_company_world["company"].id)
     dept_total = sum(sum(ds["data"]) for ds in by_dept["datasets"])
-    assert dept_total == sum(alpha["data"])
+    assert dept_total == sum(excellence["data"])
 
 
 def test_every_series_has_a_value_for_every_month(app, db, cost_world):
@@ -171,17 +253,31 @@ def test_endpoint_returns_branches_the_user_can_see(app, db, cost_world):
     assert "Alpha" in names and "Beta" in names
 
 
-def test_endpoint_supports_the_department_drilldown(app, db, cost_world):
+def test_endpoint_supports_the_department_drilldown(app, db,
+                                                     department_company_world):
     client = app.test_client()
     client.post("/login", data={"username": "admin",
                                 "password": "Testpass123!"},
                 follow_redirects=True)
     payload = client.get(
         f"/dashboard/cost-trend-grouped?group_by=DEPARTMENT"
-        f"&branch_id={cost_world['b1'].id}").get_json()
+        f"&company_id={department_company_world['company'].id}").get_json()
     assert payload["group_by"] == "DEPARTMENT"
     assert {ds["label"] for ds in payload["datasets"]} == {
-        "Ops Alpha", "Logistics Alpha"}
+        "Ops North", "Logistics South"}
+
+
+def test_endpoint_returns_companies_the_user_can_see(app, db,
+                                                      department_company_world):
+    """Powers the Department drill-down's own picker -- a Company list,
+    not a Branch list, matching the grouping it feeds (2026-11-05)."""
+    client = app.test_client()
+    client.post("/login", data={"username": "admin",
+                                "password": "Testpass123!"},
+                follow_redirects=True)
+    payload = client.get("/dashboard/cost-trend-grouped").get_json()
+    labels = {c["label"] for c in payload["companies"]}
+    assert any("Excellence" in label for label in labels)
 
 
 def test_company_grouping_returns_one_series_per_company(

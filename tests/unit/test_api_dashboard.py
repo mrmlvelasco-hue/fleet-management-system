@@ -511,11 +511,11 @@ def test_cost_trend_grouped_carries_the_branch_list_for_drilldown(db, client, da
     assert any(b["name"] for b in body["branches"])
 
 
-def test_cost_trend_grouped_by_department_requires_a_branch(db, client, dash_env):
-    """The service itself refuses this combination -- department codes
-    repeat across branches, and mixing them without a branch to scope
-    to would silently merge two different departments that share a
-    code. The API must surface that refusal, not paper over it."""
+def test_cost_trend_grouped_by_department_requires_a_company(db, client, dash_env):
+    """The service itself refuses this combination (2026-11-05: the
+    Department breakdown's anchor is Company, not Branch -- Branch is
+    no longer offered as a selection anywhere on the Dashboard). The
+    API must surface that refusal, not paper over it."""
     _status, body = _get(
         client,
         "/api/v1/dashboard/maintenance-cost-trend-grouped?group_by=DEPARTMENT",
@@ -524,15 +524,26 @@ def test_cost_trend_grouped_by_department_requires_a_branch(db, client, dash_env
     assert body["datasets"] == []
 
 
-def test_cost_trend_grouped_department_works_with_a_branch(db, client, dash_env):
+def test_cost_trend_grouped_department_works_with_a_company(db, client, dash_env):
+    from app.modules.master_data.org.service import (
+        OrgCompanyService, RegionService, AreaDistrictService)
+
     user, branch = dash_env
+    region = RegionService().create(code="RG-API", name="Region API")
+    area = AreaDistrictService().create(code="AD-API", name="Area API",
+                                        region_id=region.id)
+    company = OrgCompanyService().create(short_name="Dash Co",
+                                         region_id=region.id,
+                                         area_district_id=area.id)
+    BranchService().update(branch.id, company_id=company.id)
+
     _status, body = _get(
         client,
         f"/api/v1/dashboard/maintenance-cost-trend-grouped"
-        f"?group_by=DEPARTMENT&branch_id={branch.id}",
+        f"?group_by=DEPARTMENT&company_id={company.id}",
         _token(client))
     expected = DashboardAnalyticsService().maintenance_cost_trend_grouped(
-        user=user, group_by="DEPARTMENT", branch_id=branch.id)
+        user=user, group_by="DEPARTMENT", company_id=company.id)
     assert body["labels"] == expected["labels"]
     assert body["datasets"] == expected["datasets"]
     assert not body.get("error")

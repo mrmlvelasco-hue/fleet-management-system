@@ -996,20 +996,49 @@ def dashboard_maintenance_cost_trend_grouped(api_user):
     else:
         branch_id = None
 
+    company_id = request.args.get("company_id")
+    if company_id:
+        try:
+            company_id = int(company_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "bad_request",
+                            "message": "company_id must be an integer."}), 400
+    else:
+        company_id = None
+
     group_by = request.args.get("group_by", "BRANCH")
 
     svc = DashboardAnalyticsService()
     payload = svc.maintenance_cost_trend_grouped(
         months=months, user=api_user, group_by=group_by,
-        branch_id=branch_id)
+        branch_id=branch_id, company_id=company_id)
 
     # Only branches this person can actually see, so the drill-down
     # selector cannot be used to reach a branch the rest of the
-    # dashboard hides -- identical to the Jinja route's own guard.
+    # dashboard hides -- identical to the Jinja route's own guard. Kept
+    # for the BRANCH grouping, which the service still supports even
+    # though the Dashboard chart no longer offers it as a selection.
     visible = svc._visible_branch_ids(api_user)
     bq = Branch.query.filter_by(is_active=True)
     if visible is not None:
         bq = bq.filter(Branch.id.in_(visible))
     payload["branches"] = [{"id": b.id, "name": b.name}
                            for b in bq.order_by(Branch.name).all()]
+
+    # Companies this person can filter the Department breakdown by
+    # (2026-11-05) -- same scoping rule as /dashboard/companies, so the
+    # two Company pickers on this page can never disagree about who may
+    # see what.
+    from app.extensions import db
+    from app.modules.api.reference import _company_label
+    from app.modules.master_data.org.models import OrgCompany
+
+    cq = OrgCompany.query.filter_by(is_active=True)
+    if api_user is not None and api_user.branch_id is not None:
+        branch = db.session.get(Branch, api_user.branch_id)
+        own = getattr(branch, "company_id", None)
+        cq = cq.filter(OrgCompany.id == own) if own else cq.filter(db.false())
+    payload["companies"] = [
+        {"id": c.id, "short_name": c.short_name, "label": _company_label(c)}
+        for c in cq.order_by(OrgCompany.short_name).all()]
     return jsonify(payload)

@@ -166,9 +166,10 @@ class DashboardAnalyticsService:
 
     def maintenance_cost_trend_grouped(self, months: int = 6, user=None,
                                       group_by: str = "BRANCH",
-                                      branch_id=None) -> dict:
+                                      branch_id=None,
+                                      company_id=None) -> dict:
         """Maintenance cost per month, split into one series per branch
-        -- or per department when drilling into a single branch.
+        -- or per department when drilling into a single Company.
 
         Deliberately a SEPARATE method from maintenance_cost_trend()
         rather than a parameter on it: that one returns a single series
@@ -177,7 +178,9 @@ class DashboardAnalyticsService:
         would break a working chart to add a new one.
 
         group_by:
-          BRANCH      -- one line per branch (the overview)
+          BRANCH      -- one line per branch (the overview). Kept for
+                        callers other than the Dashboard chart, which no
+                        longer offers it as a selection (2026-11-05).
           COMPANY     -- one line per effective Company (Michael,
                         2026-11-02: "the analysis Maintenance Cost Trend
                         by Branch that should be company"). Uses the
@@ -190,11 +193,19 @@ class DashboardAnalyticsService:
                         mid-cutover) is bucketed into its own "Unmapped"
                         series rather than dropped, so the grand total
                         here always matches the BRANCH total.
-          DEPARTMENT  -- one line per department. Only meaningful within
-                        one branch, since department codes repeat across
-                        branches and mixing them would silently merge
-                        two different departments that share a code.
-                        branch_id is therefore required for this.
+          DEPARTMENT  -- one line per department, scoped to one Company
+                        (2026-11-05, Michael: "...for the vehicle view
+                        and edit must be remove should be company only
+                        ... this branch still visib in the UI" -- Branch
+                        was the last required anchor for this
+                        breakdown; it is now Company). A Company can
+                        span several branches, so this covers every
+                        department under any of them via the same
+                        effective-company rule COMPANY uses --
+                        company_id is therefore required. Grouped by
+                        Department.id (not code), so two departments
+                        that happen to share a code across branches are
+                        never merged.
 
         Cost is attributed through the VEHICLE's branch/department, the
         same chain the Cost Center uses -- so this chart and the cost
@@ -209,6 +220,7 @@ class DashboardAnalyticsService:
             MaintenanceOrder)
         from app.modules.master_data.vehicle.models import Vehicle
         from app.modules.master_data.org.models import Branch, Department
+        from app.core.company_resolution import company_filter
 
         today = date.today()
         month_keys = []
@@ -223,12 +235,12 @@ class DashboardAnalyticsService:
 
         group_by = (group_by or "BRANCH").upper()
         if group_by == "DEPARTMENT":
-            if not branch_id:
-                # Refused rather than silently returning cross-branch
-                # departments merged by code -- that would look like
+            if not company_id:
+                # Refused rather than silently returning cross-company
+                # departments merged together -- that would look like
                 # real data and be wrong.
                 return {"labels": [], "datasets": [], "group_by": "DEPARTMENT",
-                       "error": "Select a branch to break down by department."}
+                       "error": "Select a company to break down by department."}
             group_col = Department.name
             group_id_col = Department.id
         elif group_by == "COMPANY":
@@ -255,7 +267,7 @@ class DashboardAnalyticsService:
 
         if group_by == "DEPARTMENT":
             q = (q.join(Department, Department.id == Vehicle.department_id)
-                .filter(Vehicle.branch_id == int(branch_id)))
+                .filter(company_filter(Vehicle, int(company_id))))
         else:
             # COMPANY also needs the Branch join, for its company_id
             # fallback above.
@@ -316,7 +328,8 @@ class DashboardAnalyticsService:
 
         return {"labels": labels, "datasets": datasets,
                "group_by": group_by,
-               "branch_id": int(branch_id) if branch_id else None}
+               "branch_id": int(branch_id) if branch_id else None,
+               "company_id": int(company_id) if company_id else None}
 
     @request_cached("chart_pm_compliance")
     def pm_compliance(self, user=None, branch_id=None,
