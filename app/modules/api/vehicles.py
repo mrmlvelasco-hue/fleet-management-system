@@ -338,6 +338,8 @@ def vehicles_summary(api_user):
 
 
 def _serialise(v):
+    from app.core.company_resolution import company_label
+
     return {
         "id": v.id,
         "plate_number": v.plate_number,
@@ -352,6 +354,11 @@ def _serialise(v):
         "branch": v.branch.name if v.branch else None,
         "branch_id": v.branch_id,
         "company": v.company.short_name if v.company else None,
+        # Disambiguated for display: per D2 the same short_name
+        # legitimately repeats across different Region/Area-District
+        # Companies, so a list column showing Company needs this, not
+        # the bare short_name above (kept for existing consumers).
+        "company_label": company_label(v.company),
         "company_id": v.company_id,
     }
 
@@ -479,6 +486,7 @@ def detail_json(v):
         PMDueCalculationService)
     from app.modules.registration_config.service import (
         RegistrationDueCalculationService)
+    from app.core.company_resolution import company_label
 
     reg = RegistrationDueCalculationService().get_due_status(v) or {}
     pm = PMDueCalculationService().get_due_status(v) or {}
@@ -582,6 +590,11 @@ def detail_json(v):
         # read them from the Company record itself so they can never
         # drift from it.
         "company": v.company.short_name if v.company else None,
+        # Disambiguated for display (2026-11-05): per D2 the same
+        # short_name legitimately repeats across different Region/
+        # Area-District Companies, so the view/edit screens need this,
+        # not the bare short_name above (kept for existing consumers).
+        "company_label": company_label(v.company),
         "company_id": v.company_id,
         "department": v.department.name if v.department else None,
         "department_id": v.department_id,
