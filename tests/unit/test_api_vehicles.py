@@ -592,9 +592,14 @@ def test_vehicle_types_are_available_for_the_form(db, client, veh_env):
     """The form's Vehicle Type field is REQUIRED. Without this endpoint
     the dropdown is empty and no vehicle can be enrolled -- which unit
     tests did not show, because they never rendered the form against a
-    real server. Found by driving a browser."""
+    real server. Found by driving a browser.
+
+    Path is /vehicle-types/dropdown, not plain /vehicle-types -- that
+    bare path is masters.py's full admin CRUD list now (see
+    test_api_masters_vehicle_type_route_collision.py for why the two
+    used to collide)."""
     token = _token(client)
-    status, body = _get(client, "/api/v1/vehicle-types", token)
+    status, body = _get(client, "/api/v1/vehicle-types/dropdown", token)
     assert status == 200
     assert body["items"]
     assert set(body["items"][0]) >= {"id", "name"}
@@ -608,4 +613,4 @@ def test_vehicle_types_need_only_vehicle_view(db, client, veh_env):
         Permission.code == "vehicletype.view").all()}
     assert codes  # the stricter permission exists...
     token = _token(client)  # ...but this user does not hold it
-    assert _get(client, "/api/v1/vehicle-types", token)[0] == 200
+    assert _get(client, "/api/v1/vehicle-types/dropdown", token)[0] == 200

@@ -1386,7 +1386,7 @@ def vehicle_print(api_user, vehicle_id):
     })
 
 
-@bp.route("/vehicle-types", methods=["GET"])
+@bp.route("/vehicle-types/dropdown", methods=["GET"])
 @api_auth_required("vehicle.view")
 def vehicle_types(api_user):
     """Vehicle types for the form's required dropdown.
@@ -1396,6 +1396,14 @@ def vehicle_types(api_user):
     the master-data permission would leave the dropdown empty for
     exactly the people expected to enrol vehicles -- a required field
     with no options, which is a form that cannot be submitted.
+
+    Lives at /vehicle-types/dropdown rather than plain /vehicle-types
+    because the latter is masters.py's full admin CRUD list (gated on
+    vehicletype.view, carries is_active/description). Both were once
+    registered on the exact same path -- this one, imported first in
+    app/__init__.py, silently won every request, so the Master Data ->
+    Vehicle Types admin screen always rendered every row as INACTIVE
+    with a blank Description, since its JSON never had those fields.
     """
     from app.modules.master_data.reference.service import VehicleTypeService
     rows = VehicleTypeService().list()
