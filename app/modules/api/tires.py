@@ -88,12 +88,13 @@ def _serialise(t):
     }
 
 
-def _filtered(api_user):
-    from app.modules.master_data.tire.service import TireService
-
+def _common_filters():
+    """Shared query-string parsing for list/summary -- status, tire_type,
+    search text and branch/company, independent of pagination. Returns
+    (kwargs, error)."""
     status = (request.args.get("status") or "").strip().upper()
     tire_type = (request.args.get("tire_type") or "").strip().upper()
-    q = (request.args.get("q") or "").strip().lower()
+    q = (request.args.get("q") or "").strip()
     try:
         branch_id = request.args.get("branch_id")
         branch_id = int(branch_id) if branch_id else None
@@ -105,14 +106,32 @@ def _filtered(api_user):
     if status and status not in _TIRE_STATUSES:
         return None, _bad(f"Unknown status '{status}'.")
 
-    rows = TireService().list(
-        include_inactive=True, status=status or None,
-        user=api_user, branch_id=branch_id,
-        company_id=company_id)
+    return dict(status=status or None, tire_type=tire_type or None,
+               search=q or None, branch_id=branch_id,
+               company_id=company_id), None
 
-    if tire_type:
-        rows = [t for t in rows if (t.tire_type or "").upper() == tire_type]
-    if q:
+
+def _filtered(api_user):
+    """Kept for tires_export(), which genuinely needs every matching row
+    rather than one page -- list() is still correct there, just not
+    paginated at the SQL level (out of scope for this fix; see the
+    2026-11-08 performance audit, section 2.2)."""
+    from app.modules.master_data.tire.service import TireService
+
+    filters, error = _common_filters()
+    if error is not None:
+        return None, error
+
+    rows = TireService().list(
+        include_inactive=True, status=filters["status"],
+        user=api_user, branch_id=filters["branch_id"],
+        company_id=filters["company_id"])
+
+    if filters["tire_type"]:
+        rows = [t for t in rows
+               if (t.tire_type or "").upper() == filters["tire_type"]]
+    if filters["search"]:
+        q = filters["search"].lower()
         rows = [t for t in rows if q in " ".join(filter(None, [
             t.serial_number, t.brand, t.size, t.tire_type,
             t.branch.name if t.branch else None,
@@ -123,7 +142,9 @@ def _filtered(api_user):
 @bp.route("/tires", methods=["GET"])
 @api_auth_required("tire.view")
 def list_tires(api_user):
-    rows, error = _filtered(api_user)
+    from app.modules.master_data.tire.service import TireService
+
+    filters, error = _common_filters()
     if error is not None:
         return error
     try:
@@ -134,11 +155,12 @@ def list_tires(api_user):
     if page < 1 or page_size < 1:
         return _bad("page and page_size must be 1 or greater.")
     page_size = min(page_size, 200)
-    total = len(rows)
-    start = (page - 1) * page_size
-    window = rows[start:start + page_size]
+
+    rows, total = TireService().list_page(
+        include_inactive=True, user=api_user, page=page,
+        page_size=page_size, **filters)
     return jsonify({
-        "items": [_serialise(t) for t in window],
+        "items": [_serialise(t) for t in rows],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -149,17 +171,13 @@ def list_tires(api_user):
 @bp.route("/tires/summary", methods=["GET"])
 @api_auth_required("tire.view")
 def tires_summary(api_user):
-    rows, error = _filtered(api_user)
+    from app.modules.master_data.tire.service import TireService
+
+    filters, error = _common_filters()
     if error is not None:
         return error
-    return jsonify({
-        "total": len(rows),
-        "in_stock": sum(1 for t in rows if t.status == "IN_STOCK"),
-        "mounted": sum(1 for t in rows if t.status == "MOUNTED"),
-        "retreaded": sum(1 for t in rows if t.status == "RETREADED"),
-        "disposed": sum(1 for t in rows if t.status == "DISPOSED"),
-        "active": sum(1 for t in rows if t.is_active),
-    })
+    return jsonify(TireService().summary(
+        include_inactive=True, user=api_user, **filters))
 
 
 @bp.route("/tires/export.xlsx", methods=["GET"])

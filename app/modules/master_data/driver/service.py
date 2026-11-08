@@ -272,6 +272,61 @@ class DriverService:
                    # null branch and returns True for every user.
                    company_id=effective_company_id(d))]
 
+    def list_page(self, include_inactive=True, status=None,
+                 assignee_type=None, user=None, branch_id=None,
+                 company_id=None, search=None, expiring_days=None,
+                 page=1, page_size=20):
+        """One page of drivers/assignees, filtered, scoped and sorted
+        IN SQL -- the Driver twin of TireService.list_page() /
+        VehicleService.list_page() (2026-11-08 performance audit,
+        section 2.1): the API's _filtered() loaded every visible
+        driver and filtered status/assignee_type/search/expiring in
+        Python on top, at full-table cost on every request.
+
+        `search` matches employee number, first/last name, or
+        license number -- the same four fields the Python filter in
+        drivers.py checked.
+        """
+        from sqlalchemy import or_
+        from app.modules.user_management.org_scope_service import (
+            UserOrgScopeService)
+
+        query = Driver.query
+        if not include_inactive:
+            query = query.filter_by(is_active=True)
+        if status:
+            query = query.filter_by(status=status)
+        if assignee_type:
+            query = query.filter_by(assignee_type=assignee_type)
+        if branch_id:
+            query = query.filter_by(branch_id=branch_id)
+        if company_id:
+            from app.core.company_resolution import company_filter
+            query = query.filter(company_filter(Driver, company_id))
+        if search:
+            needle = f"%{search}%"
+            query = query.filter(or_(
+                Driver.employee_number.ilike(needle),
+                Driver.first_name.ilike(needle),
+                Driver.last_name.ilike(needle),
+                Driver.license_number.ilike(needle),
+            ))
+        if expiring_days is not None:
+            threshold = date.today() + timedelta(days=expiring_days)
+            query = query.filter(Driver.license_expiry.isnot(None),
+                                 Driver.license_expiry <= threshold)
+
+        if user is not None:
+            clause = UserOrgScopeService().sql_visibility_clause(
+                user.id, Driver)
+            if clause is not None:
+                query = query.filter(clause)
+
+        query = query.order_by(Driver.last_name, Driver.first_name)
+        total = query.order_by(None).count()
+        rows = query.limit(page_size).offset((page - 1) * page_size).all()
+        return rows, total
+
     def get_expiring_licenses(self, days=30):
         """Drivers whose license expires within `days` days."""
         threshold = date.today() + timedelta(days=days)

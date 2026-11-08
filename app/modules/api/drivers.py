@@ -10,17 +10,15 @@ drivers, consultants and third-party delivery personnel, and
 misdescribes what is in it.
 
 Envelope matches the vehicle list exactly, so one frontend scaffold
-drives both. Paging happens in PYTHON for the same reason it does there:
-`DriverService.list()` applies org scoping after `.all()` -- a driver is
-visible if the caller created the record OR their org scope covers its
-branch, and those two halves cannot be expressed in one SQL filter. So
-rows must be materialised before they can be counted or sliced. LIMIT
-would slice rows the user may not see, scoped-out rows would silently
-consume slots on the page, and `total` would disagree with the list.
+drives both.
 
-The fleet's driver roster is a few hundred rows. If it ever approaches
-the vehicle list's scale, scoping needs pushing into SQL first --
-`VehicleService.list_page` is the worked example.
+2026-11-08 performance audit, section 2.1: GET /drivers now pages via
+`DriverService.list_page()`, which pushes org-scoping into SQL through
+the shared `UserOrgScopeService.sql_visibility_clause()` helper --
+the same translation `VehicleService.list_page` proved first, exactly
+as the note below once anticipated. `_filtered()` (Python-side,
+`DriverService.list()`) stays in place for `drivers_export()`, which
+needs every matching row rather than one page.
 """
 from datetime import date
 
@@ -264,10 +262,32 @@ def linkable_users(api_user):
 @bp.route("/drivers", methods=["GET"])
 @api_auth_required("driver.view")
 def list_drivers(api_user):
-    """Filter/sort/page the caller's visible drivers."""
-    rows, error = _filtered(api_user)
-    if error:
-        return error
+    """Filter/sort/page the caller's visible drivers.
+
+    2026-11-08 performance audit, section 2.1: pushed into SQL via
+    DriverService.list_page(), the same translation the module
+    docstring above already pointed to as "the worked example"
+    (VehicleService.list_page) once this roster grows enough to need
+    it. _filtered() (Python-side) stays in place for drivers_export(),
+    which genuinely needs every matching row rather than one page.
+    """
+    from app.modules.master_data.driver.service import DriverService
+
+    q = (request.args.get("q") or "").strip() or None
+    status = (request.args.get("status") or "").strip().upper()
+    assignee_type = (request.args.get("assignee_type") or "").strip().upper()
+    expiring = request.args.get("license_expiring") == "1"
+
+    if status and status not in _DRIVER_STATUSES:
+        return _bad(f"Unknown status '{status}'.")
+
+    try:
+        branch_id = request.args.get("branch_id")
+        branch_id = int(branch_id) if branch_id else None
+        company_id = request.args.get("company_id")
+        company_id = int(company_id) if company_id else None
+    except (TypeError, ValueError):
+        return _bad("branch_id and company_id must be integers.")
 
     try:
         page = int(request.args.get("page", 1))
@@ -278,12 +298,15 @@ def list_drivers(api_user):
         return _bad("page and page_size must be 1 or greater.")
     page_size = min(page_size, 200)
 
-    total = len(rows)
-    start = (page - 1) * page_size
-    window = rows[start:start + page_size]
+    rows, total = DriverService().list_page(
+        include_inactive=True, status=status or None,
+        assignee_type=assignee_type or None, user=api_user,
+        branch_id=branch_id, company_id=company_id, search=q,
+        expiring_days=_EXPIRING_DAYS if expiring else None,
+        page=page, page_size=page_size)
 
     return jsonify({
-        "items": [_serialise(d) for d in window],
+        "items": [_serialise(d) for d in rows],
         "total": total,
         "page": page,
         "page_size": page_size,

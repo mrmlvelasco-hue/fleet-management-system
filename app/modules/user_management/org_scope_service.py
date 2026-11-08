@@ -155,6 +155,53 @@ class UserOrgScopeService:
         return [sc.branch_id for sc in scopes
                if sc.scope_type == "BRANCH" and sc.branch_id is not None]
 
+    def sql_visibility_clause(self, user_id: int, model):
+        """SQL equivalent of the `created_by == me OR covers(branch,
+        company)` predicate that list() applies row-by-row in Python
+        on every master-data module shaped like Vehicle: a single
+        `branch_id` plus a single `company_id` column.
+
+        Extracted from VehicleService.list_page(), which proved this
+        translation (and carries its own parity test against the
+        Python path) -- Tire, Battery and Driver share that exact
+        shape, so this gives them the same fast, SQL-level visibility
+        filter without re-deriving or duplicating the logic.
+
+        Returns a SQLAlchemy clause to AND onto the caller's query, or
+        None when the user is unrestricted (no scope rows at all, or a
+        GLOBAL/COMPANY scope) -- the caller should skip filtering
+        entirely in that case rather than ANDing in an always-true
+        clause, so an unrestricted user's query stays index-friendly.
+
+        Not a fit for Vendor, whose visibility is a many-to-many
+        across branches/business units/companies/regions/area-
+        districts rather than this single-column shape -- that stays
+        on the Python path (_is_visible()) for now.
+        """
+        from sqlalchemy import or_
+        from app.core.company_resolution import companies_in_scope, \
+            company_filter
+
+        scopes = self.list_for_user(user_id)
+        if not scopes:
+            return None
+        if any(sc.scope_type in ("GLOBAL", "COMPANY") for sc in scopes):
+            return None
+
+        allowed = [model.created_by == user_id]
+        ids = [sc.branch_id for sc in scopes
+              if sc.scope_type == "BRANCH" and sc.branch_id]
+        if ids and hasattr(model, "branch_id"):
+            allowed.append(model.branch_id.in_(ids))
+        if hasattr(model, "company_id"):
+            for sc in scopes:
+                if sc.scope_type == "ORG_COMPANY" and sc.company_id:
+                    allowed.append(company_filter(model, sc.company_id))
+                elif sc.scope_type in ("ORG_REGION", "ORG_AREA_DISTRICT"):
+                    for cid in companies_in_scope(sc):
+                        allowed.append(company_filter(model, cid))
+        return or_(*allowed)
+
     @staticmethod
     def _company_org_ids(company_id: int):
         """The (region_id, area_district_id) the given Company is filed

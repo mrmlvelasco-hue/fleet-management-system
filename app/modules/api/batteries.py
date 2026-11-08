@@ -77,11 +77,11 @@ def _serialise(b):
     }
 
 
-def _filtered(api_user):
-    from app.modules.master_data.battery.service import BatteryService
-
+def _common_filters():
+    """Shared query-string parsing for list/summary, independent of
+    pagination. Returns (kwargs, error)."""
     status = (request.args.get("status") or "").strip().upper()
-    q = (request.args.get("q") or "").strip().lower()
+    q = (request.args.get("q") or "").strip()
     try:
         branch_id = request.args.get("branch_id")
         branch_id = int(branch_id) if branch_id else None
@@ -93,12 +93,27 @@ def _filtered(api_user):
     if status and status not in _BATTERY_STATUSES:
         return None, _bad(f"Unknown status '{status}'.")
 
-    rows = BatteryService().list(
-        include_inactive=True, status=status or None,
-        user=api_user, branch_id=branch_id,
-        company_id=company_id)
+    return dict(status=status or None, search=q or None,
+               branch_id=branch_id, company_id=company_id), None
 
-    if q:
+
+def _filtered(api_user):
+    """Kept for batteries_export(), which needs every matching row
+    rather than one page -- out of scope for this fix (see the
+    2026-11-08 performance audit, section 2.2)."""
+    from app.modules.master_data.battery.service import BatteryService
+
+    filters, error = _common_filters()
+    if error is not None:
+        return None, error
+
+    rows = BatteryService().list(
+        include_inactive=True, status=filters["status"],
+        user=api_user, branch_id=filters["branch_id"],
+        company_id=filters["company_id"])
+
+    if filters["search"]:
+        q = filters["search"].lower()
         rows = [b for b in rows if q in " ".join(filter(None, [
             b.serial_number, b.brand,
             str(b.capacity_ah) if b.capacity_ah is not None else None,
@@ -111,7 +126,9 @@ def _filtered(api_user):
 @bp.route("/batteries", methods=["GET"])
 @api_auth_required("battery.view")
 def list_batteries(api_user):
-    rows, error = _filtered(api_user)
+    from app.modules.master_data.battery.service import BatteryService
+
+    filters, error = _common_filters()
     if error is not None:
         return error
     try:
@@ -122,11 +139,12 @@ def list_batteries(api_user):
     if page < 1 or page_size < 1:
         return _bad("page and page_size must be 1 or greater.")
     page_size = min(page_size, 200)
-    total = len(rows)
-    start = (page - 1) * page_size
-    window = rows[start:start + page_size]
+
+    rows, total = BatteryService().list_page(
+        include_inactive=True, user=api_user, page=page,
+        page_size=page_size, **filters)
     return jsonify({
-        "items": [_serialise(b) for b in window],
+        "items": [_serialise(b) for b in rows],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -137,16 +155,13 @@ def list_batteries(api_user):
 @bp.route("/batteries/summary", methods=["GET"])
 @api_auth_required("battery.view")
 def batteries_summary(api_user):
-    rows, error = _filtered(api_user)
+    from app.modules.master_data.battery.service import BatteryService
+
+    filters, error = _common_filters()
     if error is not None:
         return error
-    return jsonify({
-        "total": len(rows),
-        "in_stock": sum(1 for b in rows if b.status == "IN_STOCK"),
-        "mounted": sum(1 for b in rows if b.status == "MOUNTED"),
-        "disposed": sum(1 for b in rows if b.status == "DISPOSED"),
-        "active": sum(1 for b in rows if b.is_active),
-    })
+    return jsonify(BatteryService().summary(
+        include_inactive=True, user=api_user, **filters))
 
 
 @bp.route("/batteries/export.xlsx", methods=["GET"])
