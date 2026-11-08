@@ -8,7 +8,7 @@ the Notification Engine (Phase 1c) subscribes to. No approval logic ever
 lives inside business modules.
 """
 from app.extensions import db
-from app.core.approval.models import ApprovalInstance, ApprovalAction
+from app.core.approval.models import ApprovalInstance, ApprovalAction, ApprovalTask
 from app.core.approval.task_service import ApprovalTaskService
 from app.modules.approval_config.service import ApprovalMatrixService
 from app.modules.document_config.repository import DocumentTypeRepository
@@ -383,3 +383,67 @@ class ApprovalEngine:
         db.session.commit()
         self._emit("cancelled", instance)
         return instance
+
+    def reroute_if_unapproved(self, instance, new_amount, user=None) -> bool:
+        """Re-resolve the Approval Matrix and rebuild the chain from
+        Level 1 when the document's routing amount changes WHILE
+        nothing has been approved yet.
+
+        Narrow, explicitly-confirmed override (2026-11-08, Michael's
+        MO-2026-000050 report) of the document-edit-policy's "approval
+        is not restarted on edit" rule
+        (docs/superpowers/specs/2026-10-12-document-edit-policy-design.md):
+        that rule still governs -- and this is a no-op -- the moment
+        ANY level has acted (APPROVE/REJECT/RETURN), so an approver's
+        decision is never silently invalidated by a later edit. It
+        only fires for a document still sitting untouched at Level 1,
+        e.g. a cost typo (70,000 instead of 7,000) corrected before
+        anyone has approved, which previously left the chain routed to
+        the original, wrong amount's (higher) approval levels forever.
+
+        Returns True when the chain actually changed shape (a
+        different approval_path_id); False otherwise, including
+        "resolved to the same path" (amount is still updated) and "no
+        matrix matches the new amount" (left alone rather than
+        blocking the edit -- the same defensive stance submit() takes
+        elsewhere in this engine).
+        """
+        if instance is None or instance.status != "PENDING":
+            return False
+        if any(a.action in ("APPROVE", "REJECT", "RETURN")
+               for a in instance.actions):
+            return False
+        try:
+            matrix = self.matrices.resolve(
+                instance.document_type_id, amount=new_amount)
+        except Exception:
+            instance.amount = new_amount
+            db.session.commit()
+            return False
+        instance.amount = new_amount
+        if matrix.approval_path_id == instance.approval_path_id:
+            db.session.commit()
+            return False
+        current_task = (ApprovalTask.query
+                        .filter_by(approval_instance_id=instance.id,
+                                  status="PENDING")
+                        .first())
+        document_number = (current_task.document_number
+                           if current_task else None)
+        self.tasks.cancel_remaining(instance)
+        instance.approval_path_id = matrix.approval_path_id
+        instance.current_level = 1
+        db.session.add(ApprovalAction(
+            instance_id=instance.id, level_number=1, action="REROUTE",
+            acted_by=(user.id if user else instance.submitted_by),
+            remarks=f"Amount changed to {new_amount}; re-routed before "
+                    f"any approval."))
+        db.session.flush()
+        db.session.commit()
+        level_1 = self._current_level_def(instance)
+        self.tasks.create_for_level(
+            instance, level_1, document_number=document_number,
+            requested_by=instance.submitted_by)
+        db.session.commit()
+        self._emit("rerouted", instance)
+        return True

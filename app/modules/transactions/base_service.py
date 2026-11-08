@@ -363,6 +363,19 @@ class BaseTransactionService:
         if user is not None and hasattr(record, "updated_by"):
             record.updated_by = user.id
         db.session.commit()
+        # Narrow, explicitly-confirmed override (2026-11-08) of the
+        # edit policy's "approval is not restarted on edit" rule: when
+        # the field the Approval Matrix routes on changes AND nothing
+        # has been approved yet, re-route to the amount's correct
+        # chain instead of leaving it stuck on the original (often
+        # wrong) amount's levels forever. ApprovalEngine itself is the
+        # one place that enforces "nothing approved yet" -- see
+        # reroute_if_unapproved -- so every module sharing this base
+        # class gets the same behavior for free.
+        if changed and any(f in self.APPROVAL_AMOUNT_FIELDS for f in changed):
+            instance = self._latest_instance(record)
+            self.engine.reroute_if_unapproved(
+                instance, self._approval_amount(record), user=user)
         if changed:
             self._notify_edit_after_submission(record)
         return record

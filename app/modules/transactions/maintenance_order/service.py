@@ -991,6 +991,17 @@ class MaintenanceOrderService(BaseTransactionService):
         db.session.commit()
         if reseed_template is not None:
             db.session.expire(order)
+        # Narrow, explicitly-confirmed override (2026-11-08,
+        # MO-2026-000050's report) of the edit policy's "approval is
+        # not restarted on edit" rule: when estimated_cost changes AND
+        # nothing has been approved yet, re-route to the corrected
+        # amount's chain instead of leaving it stuck on the original
+        # (often wrong) amount's levels forever. ApprovalEngine itself
+        # enforces "nothing approved yet" -- see reroute_if_unapproved.
+        if changed and any(f in self.APPROVAL_AMOUNT_FIELDS for f in changed):
+            instance = self._latest_instance(order)
+            self.engine.reroute_if_unapproved(
+                instance, self._approval_amount(order), user=user)
         if changed:
             self._notify_edit_after_submission(order)
         return order

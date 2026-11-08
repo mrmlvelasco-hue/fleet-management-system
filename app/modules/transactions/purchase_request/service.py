@@ -76,6 +76,18 @@ class PurchaseRequestService(BaseTransactionService):
                 "Line items can no longer be changed: this request is "
                 f"{pr.status} or was rejected.")
 
+    def _reroute_amount_if_unapproved(self, pr):
+        """Narrow, explicitly-confirmed override (2026-11-08) of the
+        edit policy's "approval is not restarted on edit" rule: a line
+        change that moves the total AND nothing has been approved yet
+        re-routes to the corrected amount's chain. See
+        ApprovalEngine.reroute_if_unapproved, which enforces "nothing
+        approved yet" -- this is the PR counterpart of
+        BaseTransactionService.update()'s own hook, needed here too
+        because PR's amount only ever changes through the line methods
+        below, never through update()'s EDIT_FIELDS."""
+        self.engine.reroute_if_unapproved(self._latest_instance(pr), pr.amount)
+
     def add_line(self, pr_id: int, *, item_description, quantity, unit_cost):
         pr = db.session.get(PurchaseRequest, pr_id)
         self._require_draft(pr)
@@ -84,6 +96,7 @@ class PurchaseRequestService(BaseTransactionService):
             unit_cost=unit_cost, line_total=quantity * unit_cost))
         _recompute_amount(pr)
         db.session.commit()
+        self._reroute_amount_if_unapproved(pr)
         self._notify_edit_after_submission(pr)
         return pr
 
@@ -100,6 +113,7 @@ class PurchaseRequestService(BaseTransactionService):
         line.line_total = line.quantity * line.unit_cost
         _recompute_amount(line.request)
         db.session.commit()
+        self._reroute_amount_if_unapproved(line.request)
         self._notify_edit_after_submission(line.request)
         return line
 
@@ -111,6 +125,7 @@ class PurchaseRequestService(BaseTransactionService):
         db.session.delete(line)
         _recompute_amount(pr)
         db.session.commit()
+        self._reroute_amount_if_unapproved(pr)
         self._notify_edit_after_submission(pr)
 
     def mark_ordered(self, pr_id: int):
