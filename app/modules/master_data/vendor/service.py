@@ -170,6 +170,264 @@ class VendorService:
                if v.created_by == getattr(user, "id", None)
                or self._is_visible(v, user)]
 
+    def _sql_visibility_clause(self, user_id: int):
+        """SQL equivalent of `_is_visible()`'s many-to-many predicate --
+        the 2026-11-09 audit's deferred item 2.1b, picked back up once
+        Tire/Battery/Driver's simpler single-column shape was shipped.
+
+        Unlike UserOrgScopeService.sql_visibility_clause() (branch_id/
+        company_id columns), a Vendor can be scoped across FIVE
+        independent axes at once (branches, business units, companies,
+        regions, area-districts), each an "OR" alternative, and three
+        of those five have RECIPROCAL coverage rules in
+        UserOrgScopeService.covers_org() that are easy to drop by
+        accident:
+          - an ORG_COMPANY scope also covers that Company's own Region
+            and Area-District (a vendor scoped to either is visible),
+          - an ORG_REGION scope also covers every Company AND every
+            Area-District filed under that Region,
+          - an ORG_AREA_DISTRICT scope also covers that Area's own
+            parent Region, and any Company filed under that Area.
+        Every one of those is exercised by its own test in
+        tests/unit/test_vendor_sql_pagination.py precisely because
+        re-deriving this from covers_org() by reading the code (rather
+        than against that test suite) is where a fix like this goes
+        quietly wrong.
+
+        Returns a SQLAlchemy clause to OR onto `Vendor.created_by ==
+        user_id` (the override that already applies in list()/
+        get_visible()), or None when the user is unrestricted (no
+        scope rows, or a GLOBAL/COMPANY scope) -- the caller should
+        skip filtering entirely in that case.
+        """
+        from sqlalchemy import and_, exists, or_, select
+        from app.modules.master_data.org.models import AreaDistrict, OrgCompany
+        from app.modules.master_data.vendor.models import (
+            vendor_area_districts, vendor_branches, vendor_business_units,
+            vendor_companies, vendor_regions)
+        from app.modules.user_management.org_scope_service import (
+            UserOrgScopeService)
+
+        scope_svc = UserOrgScopeService()
+        scopes = scope_svc.list_for_user(user_id)
+        if not scopes:
+            return None
+        if any(sc.scope_type in ("GLOBAL", "COMPANY") for sc in scopes):
+            return None
+
+        direct_branch_ids = {sc.branch_id for sc in scopes
+                             if sc.scope_type == "BRANCH" and sc.branch_id}
+        direct_bu_ids = {sc.business_unit_id for sc in scopes
+                        if sc.scope_type == "BUSINESS_UNIT"
+                        and sc.business_unit_id}
+        direct_company_ids = {sc.company_id for sc in scopes
+                              if sc.scope_type == "ORG_COMPANY"
+                              and sc.company_id}
+        direct_region_ids = {sc.region_id for sc in scopes
+                             if sc.scope_type == "ORG_REGION"
+                             and sc.region_id}
+        direct_area_ids = {sc.area_district_id for sc in scopes
+                           if sc.scope_type == "ORG_AREA_DISTRICT"
+                           and sc.area_district_id}
+
+        # covers_org()'s reciprocal rules: a Company scope also covers
+        # its OWN Region/Area; an Area scope also covers its OWN parent
+        # Region. Resolved once, from the small scopes list, not per
+        # vendor row.
+        company_regions, company_areas = set(), set()
+        for cid in direct_company_ids:
+            r, a = scope_svc._company_org_ids(cid)
+            if r:
+                company_regions.add(r)
+            if a:
+                company_areas.add(a)
+        area_regions = set()
+        if direct_area_ids:
+            for area in AreaDistrict.query.filter(
+                    AreaDistrict.id.in_(direct_area_ids)).all():
+                if area.region_id:
+                    area_regions.add(area.region_id)
+
+        clauses = [
+            # No assignment on ANY of the five axes = serves everyone,
+            # same "no org context = unrestricted" rule _is_visible()
+            # applies first, before even looking at the user's scope.
+            and_(
+                ~exists(select(vendor_branches.c.vendor_id).where(
+                    vendor_branches.c.vendor_id == Vendor.id)),
+                ~exists(select(vendor_business_units.c.vendor_id).where(
+                    vendor_business_units.c.vendor_id == Vendor.id)),
+                ~exists(select(vendor_companies.c.vendor_id).where(
+                    vendor_companies.c.vendor_id == Vendor.id)),
+                ~exists(select(vendor_regions.c.vendor_id).where(
+                    vendor_regions.c.vendor_id == Vendor.id)),
+                ~exists(select(vendor_area_districts.c.vendor_id).where(
+                    vendor_area_districts.c.vendor_id == Vendor.id)),
+            )
+        ]
+
+        if direct_branch_ids:
+            clauses.append(exists(select(vendor_branches.c.vendor_id).where(
+                vendor_branches.c.vendor_id == Vendor.id,
+                vendor_branches.c.branch_id.in_(direct_branch_ids))))
+
+        if direct_bu_ids:
+            clauses.append(exists(
+                select(vendor_business_units.c.vendor_id).where(
+                    vendor_business_units.c.vendor_id == Vendor.id,
+                    vendor_business_units.c.business_unit_id.in_(
+                        direct_bu_ids))))
+
+        # Company axis: direct ORG_COMPANY match, OR the company's own
+        # Region/Area-District is directly scoped (covers_org(company_id=)).
+        company_or = []
+        if direct_company_ids:
+            company_or.append(OrgCompany.id.in_(direct_company_ids))
+        if direct_region_ids:
+            company_or.append(OrgCompany.region_id.in_(direct_region_ids))
+        if direct_area_ids:
+            company_or.append(
+                OrgCompany.area_district_id.in_(direct_area_ids))
+        if company_or:
+            clauses.append(exists(
+                select(vendor_companies.c.vendor_id)
+                .join(OrgCompany, OrgCompany.id == vendor_companies.c.company_id)
+                .where(vendor_companies.c.vendor_id == Vendor.id,
+                      or_(*company_or))))
+
+        # Region axis: direct ORG_REGION match, OR a directly-scoped
+        # Company's own Region, OR a directly-scoped Area's own parent
+        # Region (covers_org(region_id=)).
+        region_ids_covered = direct_region_ids | company_regions | area_regions
+        if region_ids_covered:
+            clauses.append(exists(select(vendor_regions.c.vendor_id).where(
+                vendor_regions.c.vendor_id == Vendor.id,
+                vendor_regions.c.region_id.in_(region_ids_covered))))
+
+        # Area-District axis: direct ORG_AREA_DISTRICT match, OR a
+        # directly-scoped Company's own Area, OR the area's parent
+        # Region is directly scoped (covers_org(area_district_id=) --
+        # note this one does NOT fold in company_regions/area_regions,
+        # only the user's own direct ORG_REGION scopes, mirroring
+        # covers_org()'s own asymmetry between the region and area
+        # branches).
+        area_ids_covered = direct_area_ids | company_areas
+        area_or = []
+        if area_ids_covered:
+            area_or.append(AreaDistrict.id.in_(area_ids_covered))
+        if direct_region_ids:
+            area_or.append(AreaDistrict.region_id.in_(direct_region_ids))
+        if area_or:
+            clauses.append(exists(
+                select(vendor_area_districts.c.vendor_id)
+                .join(AreaDistrict,
+                     AreaDistrict.id == vendor_area_districts.c.area_district_id)
+                .where(vendor_area_districts.c.vendor_id == Vendor.id,
+                      or_(*area_or))))
+
+        return or_(*clauses)
+
+    def _filtered_query(self, user=None, search=None, vendor_type=None,
+                        active=None):
+        """The filter/scope portion shared by list_page() and
+        summary() -- kept in one place so the paginated list and the
+        KPI chips above it can never disagree about which vendors
+        count, the same reason Fuel's and Tire's summary() reuse their
+        list's own filtering rather than re-deriving it.
+
+        `active` is a tri-state filter, not a plain include_inactive
+        flag, because the existing API (/vendors) supports asking for
+        ONLY inactive rows (active=0) as well as ONLY active (active=1)
+        or both (omitted) -- unlike Tire/Battery/Driver, which never
+        needed that distinction.
+        """
+        from sqlalchemy import func, or_
+
+        query = Vendor.query
+        if active is True:
+            query = query.filter(Vendor.is_active.is_(True))
+        elif active is False:
+            query = query.filter(Vendor.is_active.is_(False))
+        if vendor_type:
+            query = query.filter(Vendor.vendor_type == vendor_type)
+        if search:
+            like = f"%{search.lower()}%"
+            query = query.filter(or_(
+                func.lower(Vendor.code).like(like),
+                func.lower(Vendor.name).like(like),
+                func.lower(Vendor.city).like(like),
+                func.lower(Vendor.phone).like(like),
+                func.lower(Vendor.contact_person).like(like),
+                func.lower(Vendor.vendor_type).like(like),
+            ))
+
+        if user is not None:
+            visibility = self._sql_visibility_clause(
+                getattr(user, "id", None))
+            if visibility is not None:
+                query = query.filter(or_(
+                    Vendor.created_by == user.id, visibility))
+        return query
+
+    def list_page(self, user=None, search=None, vendor_type=None,
+                  active=None, sort="name", direction="asc",
+                  page=1, page_size=20):
+        """One page of vendors, filtered, scoped and sorted IN SQL.
+
+        list() above loads every vendor and filters visibility in
+        Python with _is_visible()'s many-to-many predicate -- which
+        also means `vendor.branches` (and the other four association
+        collections) gets lazy-loaded PER ROW, an N+1 the old /vendors
+        endpoint paid on every single vendor, every request (measured
+        at ~14s for 20,000 vendors). This does the same filtering as a
+        SQL EXISTS against the five vendor_* association tables via
+        _sql_visibility_clause(), so cost stops scaling with the
+        vendor table's size.
+
+        Returns (rows, total), same contract as the Tire/Battery/
+        Driver/Vehicle list_page() methods.
+        """
+        from sqlalchemy import func
+
+        query = self._filtered_query(
+            user=user, search=search, vendor_type=vendor_type, active=active)
+        total = query.with_entities(func.count(Vendor.id)).scalar() or 0
+
+        sort_col = {"name": Vendor.name, "code": Vendor.code,
+                   "city": Vendor.city}.get(sort, Vendor.name)
+        query = query.order_by(
+            sort_col.desc() if direction == "desc" else sort_col.asc())
+
+        rows = (query.offset((page - 1) * page_size).limit(page_size).all())
+        return rows, total
+
+    def summary(self, user=None, search=None, vendor_type=None,
+               active=None):
+        """Status-count KPIs over the filtered (but unpaginated) set,
+        aggregated in SQL -- the same fix shape Tire/Battery/Fuel's
+        summary() received, so the chips above the Vendors table cost
+        one aggregate query instead of materialising (and, worse,
+        N+1-lazy-loading) every matching row to sum in Python."""
+        from sqlalchemy import case, func
+
+        query = self._filtered_query(
+            user=user, search=search, vendor_type=vendor_type, active=active)
+        row = query.with_entities(
+            func.count(Vendor.id),
+            func.sum(case((Vendor.is_active.is_(True), 1), else_=0)),
+            func.sum(case((Vendor.vendor_type == "GOODS", 1), else_=0)),
+            func.sum(case((Vendor.vendor_type == "SERVICES", 1), else_=0)),
+            func.sum(case((Vendor.vendor_type == "BOTH", 1), else_=0)),
+        ).first()
+        total, active_n, goods, services, both = row
+        return {
+            "total": total or 0,
+            "active": active_n or 0,
+            "goods": goods or 0,
+            "services": services or 0,
+            "both": both or 0,
+        }
+
     def deactivate(self, record_id):
         obj = db.session.get(Vendor, record_id)
         if obj:

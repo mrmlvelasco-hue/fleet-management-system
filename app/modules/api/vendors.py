@@ -88,6 +88,13 @@ def _serialise(v, *, detail=False):
 
 
 def _filtered(api_user):
+    """Still used by /vendors/summary and the export -- both genuinely
+    need every matching row (a summary counts across the whole set; an
+    export writes every row to the workbook), same reasoning
+    Tire/Battery/Driver's own exports kept the Python list() path for.
+    The paginated list screen itself (list_vendors(), below) no longer
+    calls this -- see 2026-11-09 audit item 2.1b.
+    """
     from app.modules.master_data.vendor.service import VendorService
 
     vendor_type = (request.args.get("vendor_type") or "").strip().upper()
@@ -115,9 +122,26 @@ def _filtered(api_user):
 @bp.route("/vendors", methods=["GET"])
 @api_auth_required("vendor.view")
 def list_vendors(api_user):
-    rows, error = _filtered(api_user)
-    if error is not None:
-        return error
+    """2026-11-09 audit item 2.1b: was `_filtered()` (loads every
+    vendor, filters/paginates in Python) -- now SQL-level filtering,
+    org-scope visibility (VendorService._sql_visibility_clause(), the
+    many-to-many sibling of Tire/Battery/Driver's shared single-column
+    clause) and pagination via VendorService.list_page(), parity-
+    tested against the previously-trusted list() path in
+    tests/unit/test_vendor_sql_pagination.py.
+    """
+    from app.modules.master_data.vendor.service import VendorService
+
+    vendor_type = (request.args.get("vendor_type") or "").strip().upper()
+    q = (request.args.get("q") or "").strip()
+    active_param = request.args.get("active")
+    if vendor_type and vendor_type not in _VENDOR_TYPES:
+        return _bad(f"Unknown vendor_type '{vendor_type}'.")
+    active = None
+    if active_param == "1":
+        active = True
+    elif active_param == "0":
+        active = False
     try:
         page = int(request.args.get("page", 1))
         page_size = int(request.args.get("page_size", 20))
@@ -126,11 +150,12 @@ def list_vendors(api_user):
     if page < 1 or page_size < 1:
         return _bad("page and page_size must be 1 or greater.")
     page_size = min(page_size, 200)
-    total = len(rows)
-    start = (page - 1) * page_size
-    window = rows[start:start + page_size]
+
+    rows, total = VendorService().list_page(
+        user=api_user, search=q or None, vendor_type=vendor_type or None,
+        active=active, page=page, page_size=page_size)
     return jsonify({
-        "items": [_serialise(v) for v in window],
+        "items": [_serialise(v) for v in rows],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -141,16 +166,27 @@ def list_vendors(api_user):
 @bp.route("/vendors/summary", methods=["GET"])
 @api_auth_required("vendor.view")
 def vendors_summary(api_user):
-    rows, error = _filtered(api_user)
-    if error is not None:
-        return error
-    return jsonify({
-        "total": len(rows),
-        "active": sum(1 for v in rows if v.is_active),
-        "goods": sum(1 for v in rows if v.vendor_type == "GOODS"),
-        "services": sum(1 for v in rows if v.vendor_type == "SERVICES"),
-        "both": sum(1 for v in rows if v.vendor_type == "BOTH"),
-    })
+    """2026-11-09 audit item 2.1b: was `_filtered()` + Python sums over
+    every loaded row -- now one SQL aggregate query via
+    VendorService.summary(), reusing list_vendors()'s own filter
+    parsing so the KPI chips and the list can never disagree about
+    which vendors are being counted.
+    """
+    from app.modules.master_data.vendor.service import VendorService
+
+    vendor_type = (request.args.get("vendor_type") or "").strip().upper()
+    q = (request.args.get("q") or "").strip()
+    active_param = request.args.get("active")
+    if vendor_type and vendor_type not in _VENDOR_TYPES:
+        return _bad(f"Unknown vendor_type '{vendor_type}'.")
+    active = None
+    if active_param == "1":
+        active = True
+    elif active_param == "0":
+        active = False
+    return jsonify(VendorService().summary(
+        user=api_user, search=q or None, vendor_type=vendor_type or None,
+        active=active))
 
 
 @bp.route("/vendors/export.xlsx", methods=["GET"])
