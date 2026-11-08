@@ -15,7 +15,8 @@ from app.modules.transactions.vehicle_checklist.service import (
 _COERCER = Coercer(
     ints={"vehicle_id": "Vehicle", "driver_id": "Driver",
           "template_id": "Template", "odometer": "Odometer",
-          "page": "Page", "per_page": "Per page", "branch_id": "Branch"},
+          "page": "Page", "per_page": "Per page", "branch_id": "Branch",
+          "company_id": "Company"},
     dates={"inspection_date": "Inspection Date",
            "date_from": "From", "date_to": "To"},
 )
@@ -52,6 +53,18 @@ def _row(cl, detail=False):
         "driver_id": cl.driver_id,
         "branch": cl.branch.name if cl.branch else None,
         "branch_id": cl.branch_id,
+        # Named "org_company", not "company": the DETAIL payload
+        # already overwrites "company" below with the print
+        # letterhead object (a different shape entirely -- see "The
+        # real letterhead" comment further down). This mirrors
+        # vehicles.py's own serialiser for DISPLAY (own company_id
+        # only, no branch fallback) -- the list filter above still
+        # resolves through branch for records with no snapshot of
+        # their own, which is right for a query but would be
+        # misleading to show as if it were this document's own
+        # recorded Company.
+        "org_company": cl.company.short_name if cl.company else None,
+        "org_company_id": cl.company_id,
         "template_id": cl.template_id,
         "template_name": cl.template.name if cl.template else None,
         "pass_count": cl.pass_count,
@@ -218,8 +231,8 @@ def checklist_list(api_user):
     try:
         c = _COERCER.fields(request.args, [
             "vehicle_id", "driver_id", "template_id", "odometer",
-            "page", "per_page", "branch_id", "inspection_date",
-            "date_from", "date_to"])
+            "page", "per_page", "branch_id", "company_id",
+            "inspection_date", "date_from", "date_to"])
     except FieldValueError as e:
         return _bad(str(e), e.field)
     page = int(c.get("page") or 1)
@@ -228,7 +241,8 @@ def checklist_list(api_user):
     # wins.
     per_page = resolve_page_size(c.get("per_page"), maximum=100)
     rows, total = VehicleChecklistService().list_checklists(
-        branch_id=c.get("branch_id"), vehicle_id=c.get("vehicle_id"),
+        branch_id=c.get("branch_id"), company_id=c.get("company_id"),
+        vehicle_id=c.get("vehicle_id"),
         result=request.args.get("result") or None,
         status=request.args.get("status") or None,
         date_from=c.get("date_from"), date_to=c.get("date_to"),

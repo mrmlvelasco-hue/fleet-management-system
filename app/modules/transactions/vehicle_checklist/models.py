@@ -98,6 +98,7 @@ class VehicleChecklist(db.Model, BaseModel):
     vehicle = db.relationship("Vehicle")
     driver = db.relationship("Driver")
     branch = db.relationship("Branch")
+    company = db.relationship("OrgCompany")
     lines = db.relationship(
         "VehicleChecklistLine", backref="checklist",
         cascade="all, delete-orphan")

@@ -405,3 +405,24 @@ def test_assignment_says_since_when_and_which_branch(client, env, pms):
     _, body = _get(client, env)
     assert body["assignment"]["branch"] == "Muntinlupa"
     assert body["assignment"]["since"] is not None
+
+
+def test_assignment_shows_company_not_just_branch(client, env, pms):
+    """My Vehicle is driver-facing, so it showed only Branch -- the
+    field the rest of the system has been moving off of since Stage
+    3D. Mirrors vehicles.py's own serialiser (own company_id only, no
+    branch fallback) so this cannot disagree with how the Vehicle
+    detail screen shows the same vehicle's Company.
+    """
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    region = RegionService().create(code="LUZ-RDY", name="Luzon")
+    area = AreaDistrictService().create(code="NCR-RDY", name="Metro Manila",
+                                        region_id=region.id)
+    company = OrgCompanyService().create(
+        short_name="Excellence", region_id=region.id, area_district_id=area.id)
+    env["mine"].company_id = company.id
+    db.session.commit()
+
+    _, body = _get(client, env)
+    assert body["assignment"]["company"] == "Excellence"

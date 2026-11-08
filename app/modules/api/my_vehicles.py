@@ -112,6 +112,11 @@ def _row(v, detail=False):
             "fuel_type": v.fuel_type,
             "transmission": v.transmission,
             "branch": v.branch.name if v.branch else None,
+            # Mirrors vehicles.py's own serialiser exactly (own
+            # company_id only, no branch fallback) so this cannot
+            # disagree with how the Vehicle detail screen shows the
+            # same vehicle's Company.
+            "company": v.company.short_name if v.company else None,
             "vehicle_type": (v.vehicle_type.name
                              if getattr(v, "vehicle_type", None) else None),
         })
@@ -467,6 +472,9 @@ def _assignment_summary(vehicle, api_user):
     return {
         "since": since.isoformat() if since else None,
         "branch": vehicle.branch.name if vehicle.branch else None,
+        # Same own-company-only convention as _row() above and
+        # vehicles.py's own serialiser.
+        "company": vehicle.company.short_name if vehicle.company else None,
         "source": getattr(row, "source", None) if row else None,
     }
 

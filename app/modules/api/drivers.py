@@ -472,7 +472,13 @@ def _assigned_vehicles(driver):
          "plate_number": v.plate_number or v.conduction_number,
          "brand": v.brand,
          "model": v.model,
-         "branch": v.branch.name if v.branch else None}
+         "branch": v.branch.name if v.branch else None,
+         # Mirrors vehicles.py's own serialiser exactly (own company_id
+         # only, no branch fallback) so this cannot disagree with how
+         # the Vehicle list or detail screen shows the same vehicle's
+         # Company.
+         "company": v.company.short_name if v.company else None,
+         "company_id": v.company_id}
         for v in rows]
 
 

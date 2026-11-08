@@ -401,6 +401,30 @@ def test_detail_carries_vehicle_branch_and_driver(db, client, cs_env):
     assert body["vehicle_current_odometer"] == 78450
 
 
+def test_detail_carries_vehicle_company_not_just_branch(db, client, cs_env):
+    """MO Invoices' Vehicle summary card showed only Branch -- the field
+    the rest of the system has been moving off of since Stage 3D.
+    Mirrors vehicles.py's own serialiser (own company_id only, no
+    branch fallback) so this cannot disagree with how the Vehicle
+    detail screen shows the same vehicle's Company."""
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    region = RegionService().create(code="LUZ-VD", name="Luzon")
+    area = AreaDistrictService().create(code="NCR-VD", name="Metro Manila",
+                                        region_id=region.id)
+    company = OrgCompanyService().create(
+        short_name="Excellence", region_id=region.id, area_district_id=area.id)
+
+    v = cs_env["order"].vehicle
+    v.company_id = company.id
+    db.session.commit()
+
+    r = client.get(f"/api/v1/maintenance-orders/{cs_env['order'].id}",
+                   headers={"Authorization": f"Bearer {_token(client)}"})
+    body = json.loads(r.get_data(as_text=True))
+    assert body["vehicle_company"] == "Excellence"
+
+
 def test_detail_vehicle_fields_are_null_when_unset(db, client, cs_env):
     """Absent, not a fabricated placeholder. A vehicle with no branch or
     driver assigned should say so, not show a made-up default."""

@@ -113,7 +113,8 @@ class VehicleChecklistService:
         db.session.commit()
         return it
 
-    def list_checklists(self, *, branch_id=None, vehicle_id=None, result=None,
+    def list_checklists(self, *, branch_id=None, company_id=None,
+                        vehicle_id=None, result=None,
                         status=None, date_from=None, date_to=None,
                         user=None, page=1, per_page=25):
         from sqlalchemy.orm import joinedload, selectinload
@@ -165,6 +166,9 @@ class VehicleChecklistService:
             q = q.filter_by(created_by=user.id)
         if branch_id:
             q = q.filter_by(branch_id=branch_id)
+        if company_id:
+            from app.core.company_resolution import company_filter
+            q = q.filter(company_filter(VehicleChecklist, company_id))
         if vehicle_id:
             q = q.filter_by(vehicle_id=vehicle_id)
         if result:
@@ -269,11 +273,16 @@ class VehicleChecklistService:
         elif not insp_time:
             insp_time = datetime.now().time().replace(second=0, microsecond=0)
 
+        from app.core.company_resolution import effective_company_id
         cl = VehicleChecklist(
             template_id=tmpl.id,
             vehicle_id=vehicle.id,
             driver_id=driver_id or vehicle.assigned_driver_id,
             branch_id=vehicle.branch_id,
+            # SNAPSHOT of the org context at creation (own docstring
+            # above) -- a later reassignment of the vehicle must never
+            # rewrite this document's history.
+            company_id=effective_company_id(vehicle),
             odometer=odometer if odometer is not None else vehicle.current_odometer,
             inspection_date=insp_date,
             inspection_time=insp_time,

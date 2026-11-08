@@ -149,6 +149,26 @@ def test_detail_returns_my_vehicle(app, client, env):
     assert _body(r)["plate_number"] == "MINE-111"
 
 
+def test_detail_shows_company_not_just_branch(app, client, env):
+    """My Vehicle is driver-facing, so the detail screen showed only
+    Branch. Mirrors vehicles.py's own serialiser (own company_id only,
+    no branch fallback) so this cannot disagree with how the Vehicle
+    detail screen shows the same vehicle's Company."""
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    _b, _vt, _ju, _mu, _j, _m, mine, _theirs = env
+    region = RegionService().create(code="LUZ-CAR", name="Luzon")
+    area = AreaDistrictService().create(code="NCR-CAR", name="Metro Manila",
+                                        region_id=region.id)
+    company = OrgCompanyService().create(
+        short_name="Excellence", region_id=region.id, area_district_id=area.id)
+    mine.company_id = company.id
+    db.session.commit()
+
+    r = client.get(f"/api/v1/my/vehicles/{mine.id}", headers=_hdr(client))
+    assert _body(r)["company"] == "Excellence"
+
+
 def test_detail_404s_for_a_branchmates_vehicle(app, client, env):
     """THE J1 test. Juan and Maria share a branch, so org scope covers
     this vehicle for Juan -- and that is correct for a Fleet Officer,

@@ -100,7 +100,7 @@ def drv_env(db):
     _driver(db, "EMP-003", "Pedro", "Reyes", branch_id=manila.id,
             assignee_type="CONSULTANT", status="SUSPENDED",
             business_name="Reyes Consulting")
-    return {"user": user, "manila": manila, "cebu": cebu}
+    return {"user": user, "manila": manila, "cebu": cebu, "company": _company}
 
 
 def _token(client, username="drvuser"):
@@ -575,6 +575,34 @@ def test_assigned_vehicles_are_listed(db, client, drv_env):
     # The id is what makes it a LINK back to vehicle detail, which is
     # the whole value of the section.
     assert "id" in v
+
+
+def test_assigned_vehicles_show_company_not_just_branch(db, client, drv_env):
+    """Driver Detail's "what is this person driving" table showed only
+    Branch, the field the rest of Master Data has been moving off of
+    since Stage 3D -- Vehicle itself has carried its own `company`
+    since 2026-10-30. Mirrors vehicles.py's own serialiser exactly
+    (`v.company.short_name if v.company else None`): own company_id
+    only, no branch fallback, so this cannot disagree with how the
+    Vehicle list or detail screen shows the same vehicle's Company.
+    """
+    from app.modules.master_data.driver.models import Driver
+    from app.modules.master_data.reference.service import VehicleTypeService
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    d = Driver.query.filter_by(employee_number="EMP-001").first()
+    vt = VehicleTypeService().create(code="LV-DRV2", name="Light",
+                                     category="LIGHT")
+    VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2022,
+        branch_id=drv_env["manila"].id, company_id=drv_env["company"].id,
+        plate_number="DRV-2222", assigned_driver_id=d.id)
+    db.session.commit()
+
+    _status, body = _detail(client, d.id, _token(client))
+    v = body["assigned_vehicles"][0]
+    assert v["company"] == "Excellence"
+    assert v["company_id"] == drv_env["company"].id
 
 
 def test_a_driver_with_no_vehicle_returns_an_empty_list(db, client, drv_env):

@@ -159,3 +159,73 @@ def test_total_reflects_the_same_scope_as_items(db, client, env):
     _status, body = _get(client, "/api/v1/checklists",
                          _token(client, "driver_a"))
     assert body["total"] == len(body["items"]) == 1
+
+
+# ── Company (Branch->Company, 2026-11-08) ────────────────────────────
+
+def test_create_snapshots_the_vehicle_s_company(db, client, env):
+    """company_id is documented as a SNAPSHOT of the org context when
+    the document was raised, same rule as ApprovalInstance.company_id
+    -- but create() only ever set branch_id, never company_id, so
+    every checklist's snapshot was silently empty. A reviewer filtering
+    by Company (the field Master Data has been moving to since Stage
+    3D) found nothing, however many checklists existed."""
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    region = RegionService().create(code="LUZ-CHK", name="Luzon")
+    area = AreaDistrictService().create(code="NCR-CHK", name="Metro Manila",
+                                        region_id=region.id)
+    company = OrgCompanyService().create(
+        short_name="Excellence", region_id=region.id, area_district_id=area.id)
+    env["vehicle"].company_id = company.id
+    db.session.commit()
+
+    cl = _make_checklist(env, env["driver_a"])
+    assert cl.company_id == company.id
+
+
+def test_list_filters_by_company_id(db, client, env):
+    """Mirrors company_filter's own-or-branch rule, same as Driver and
+    Vehicle's own company_id filters: the reviewer's Company dropdown
+    must actually narrow the list, not just be accepted and ignored."""
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    region = RegionService().create(code="LUZ-CHK2", name="Luzon")
+    area = AreaDistrictService().create(code="NCR-CHK2", name="Metro Manila",
+                                        region_id=region.id)
+    excellence = OrgCompanyService().create(
+        short_name="Excellence", region_id=region.id, area_district_id=area.id)
+    other = OrgCompanyService().create(
+        short_name="Other Co", region_id=region.id, area_district_id=area.id)
+    env["vehicle"].company_id = excellence.id
+    db.session.commit()
+    mine = _make_checklist(env, env["reviewer"])
+
+    status, body = _get(
+        client, f"/api/v1/checklists?company_id={excellence.id}",
+        _token(client, "reviewer"))
+    assert status == 200
+    assert {item["id"] for item in body["items"]} == {mine.id}
+
+    _status, body = _get(
+        client, f"/api/v1/checklists?company_id={other.id}",
+        _token(client, "reviewer"))
+    assert body["items"] == []
+
+
+def test_row_carries_company_not_just_branch(db, client, env):
+    from app.modules.master_data.org.service import (
+        RegionService, AreaDistrictService, OrgCompanyService)
+    region = RegionService().create(code="LUZ-CHK3", name="Luzon")
+    area = AreaDistrictService().create(code="NCR-CHK3", name="Metro Manila",
+                                        region_id=region.id)
+    company = OrgCompanyService().create(
+        short_name="Excellence", region_id=region.id, area_district_id=area.id)
+    env["vehicle"].company_id = company.id
+    db.session.commit()
+    cl = _make_checklist(env, env["reviewer"])
+
+    _status, body = _get(client, "/api/v1/checklists",
+                         _token(client, "reviewer"))
+    row = next(item for item in body["items"] if item["id"] == cl.id)
+    assert row["org_company"] == "Excellence"

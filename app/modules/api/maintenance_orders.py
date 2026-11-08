@@ -344,6 +344,11 @@ def _order_json(o, *, detail=False):
         # should say so, not show a made-up default.
         "vehicle_branch": (o.vehicle.branch.name
                            if o.vehicle and o.vehicle.branch else None),
+        # Mirrors vehicles.py's own serialiser exactly (own company_id
+        # only, no branch fallback) so this cannot disagree with how
+        # the Vehicle detail screen shows the same vehicle's Company.
+        "vehicle_company": (o.vehicle.company.short_name
+                            if o.vehicle and o.vehicle.company else None),
         "vehicle_assigned_driver": (
             o.vehicle.assigned_driver.full_name
             if o.vehicle and o.vehicle.assigned_driver else None),
