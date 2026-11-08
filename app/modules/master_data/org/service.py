@@ -81,12 +81,13 @@ class BranchService(_BaseMasterService):
 class DepartmentService(_BaseMasterService):
     model = Department
 
-    def create(self, code, name, branch_id, **kwargs):
+    def create(self, code, name, company_id=None, branch_id=None, **kwargs):
         if Department.query.filter_by(
-                code=code, branch_id=branch_id).first():
+                code=code, company_id=company_id).first():
             raise DuplicateCodeError(
-                f"Department code '{code}' already exists in this branch.")
-        obj = Department(code=code, name=name, branch_id=branch_id, **kwargs)
+                f"Department code '{code}' already exists in this company.")
+        obj = Department(code=code, name=name, company_id=company_id,
+                         branch_id=branch_id, **kwargs)
         db.session.add(obj)
         db.session.commit()
         return obj

@@ -43,13 +43,19 @@ class Department(db.Model, BaseModel):
     __tablename__ = "departments"
     code = db.Column(db.String(20), nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
+    # 2026-11-08: nullable, mirroring Vehicle/Driver (Stage 3D,
+    # 2026-10-30) -- Branch removed from the Department form, Company
+    # required in its place. Kept on the model for legacy departments
+    # and history; a department created today has a Company and no
+    # Branch. Michael confirmed with
+    # check_department_company_collision.py (0 unmapped, 0 collisions
+    # under (code, effective company)) before this was re-keyed.
     branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"),
-                          nullable=False)
-    # Stage 3D: organisational owner, carried here so it survives
-    # Branch's retirement. NOTE the uniqueness constraint below is still
-    # (code, branch_id) -- retiring Branch means re-keying it to
-    # (code, company_id), which can collide in existing data and is
-    # therefore a deliberate later step, not part of this additive one.
+                          nullable=True)
+    # The organisational owner going forward. Nullable until a legacy
+    # department's branch is mapped to a Company -- same rule as
+    # Vehicle/Driver's company_id (effective_company_id() resolves it
+    # through branch.company_id when this is NULL).
     company_id = db.Column(db.Integer,
                            db.ForeignKey("org_companies.id"),
                            nullable=True, index=True)
@@ -60,9 +66,10 @@ class Department(db.Model, BaseModel):
     cost_center = db.Column(db.String(40), nullable=True, index=True)
     description = db.Column(db.String(255))
     branch = db.relationship("Branch", backref="departments")
+    company = db.relationship("OrgCompany")
 
     __table_args__ = (
-        db.UniqueConstraint("code", "branch_id", name="uq_dept_code_branch"),
+        db.UniqueConstraint("code", "company_id", name="uq_dept_code_company"),
     )
 
 

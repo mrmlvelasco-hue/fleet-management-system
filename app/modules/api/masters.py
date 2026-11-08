@@ -160,12 +160,15 @@ def deactivate_branch(api_user, branch_id):
 # ── Departments ─────────────────────────────────────────────────────────────
 
 def _dept_json(d):
+    co = d.company
     return {
         "id": d.id,
         "code": d.code,
         "name": d.name,
         "branch_id": d.branch_id,
         "branch": d.branch.name if d.branch else None,
+        "company_id": d.company_id,
+        "company": co.short_name if co else None,
         "cost_center": d.cost_center,
         "description": d.description,
         "is_active": bool(d.is_active),
@@ -215,15 +218,19 @@ def create_department(api_user):
         branch_id = int(p["branch_id"]) if p.get("branch_id") not in (None, "") else None
     except (TypeError, ValueError):
         return _validation("branch_id must be an integer.", "branch_id")
+    try:
+        company_id = int(p["company_id"]) if p.get("company_id") not in (None, "") else None
+    except (TypeError, ValueError):
+        return _validation("company_id must be an integer.", "company_id")
     if not code:
         return _validation("code is required.", "code")
     if not name:
         return _validation("name is required.", "name")
-    if not branch_id:
-        return _validation("branch_id is required.", "branch_id")
+    if not company_id:
+        return _validation("company_id is required.", "company_id")
     try:
         d = DepartmentService().create(
-            code=code, name=name, branch_id=branch_id,
+            code=code, name=name, company_id=company_id, branch_id=branch_id,
             cost_center=(p.get("cost_center") or None),
             description=(p.get("description") or None))
     except DuplicateCodeError as e:
@@ -245,6 +252,13 @@ def update_department(api_user, dept_id):
             fields["branch_id"] = int(p["branch_id"])
         except (TypeError, ValueError):
             return _validation("branch_id must be an integer.", "branch_id")
+    if "company_id" in p:
+        if p["company_id"] in (None, ""):
+            return _validation("company_id is required.", "company_id")
+        try:
+            fields["company_id"] = int(p["company_id"])
+        except (TypeError, ValueError):
+            return _validation("company_id must be an integer.", "company_id")
     d = DepartmentService().update(dept_id, **fields)
     if d is None:
         return _not_found("Department")
