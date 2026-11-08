@@ -98,6 +98,19 @@ class FuelTransaction(db.Model, BaseModel):
     # Flags raised by anomaly detection (comma-separated codes).
     anomaly_flags = db.Column(db.String(255), nullable=True)
 
+    # Derived, indexed boolean -- kept in sync by the before_insert /
+    # before_update event below, never set directly by callers. Exists
+    # so the Exceptions view and its badge count can filter on ONE
+    # indexed column instead of an OR across anomaly_flags and
+    # odometer_status, which neither column's own index can serve
+    # (confirmed via EXPLAIN QUERY PLAN: that OR falls back to a full
+    # table scan, and that scan is paid on every call regardless of how
+    # many rows match). A single ORM event means this can never drift
+    # from anomaly_flags/odometer_status the way a value copied at each
+    # of their several call sites eventually would.
+    needs_review = db.Column(db.Boolean, default=False, nullable=False,
+                            index=True)
+
     reference_number = db.Column(db.String(60), nullable=True)
     source = db.Column(db.String(20), default="MANUAL", nullable=False)
     remarks = db.Column(db.String(255), nullable=True)
@@ -124,3 +137,14 @@ class FuelTransaction(db.Model, BaseModel):
                            "reference_number",
                            name="uq_fuel_txn_vehicle_date_ref"),
     )
+
+
+def _recompute_needs_review(mapper, connection, target):
+    target.needs_review = bool(target.anomaly_flags) or (
+        target.odometer_status in ("SUSPECT", "MISSING"))
+
+
+from sqlalchemy import event as _event  # noqa: E402
+
+_event.listen(FuelTransaction, "before_insert", _recompute_needs_review)
+_event.listen(FuelTransaction, "before_update", _recompute_needs_review)

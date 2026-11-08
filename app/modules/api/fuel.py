@@ -81,9 +81,11 @@ def list_fuel(api_user):
     view = request.args.get("view") or "all"
     q = FuelTransaction.query
     if view == "flagged":
-        q = q.filter(db.or_(
-            FuelTransaction.anomaly_flags.isnot(None),
-            FuelTransaction.odometer_status.in_(("SUSPECT", "MISSING"))))
+        # needs_review is a derived, indexed boolean kept in sync by a
+        # model-level event -- querying it directly avoids an
+        # OR-across-two-columns scan that neither column's own index
+        # can serve (see FuelTransaction.needs_review).
+        q = q.filter(FuelTransaction.needs_review.is_(True))
     branch_id = request.args.get("branch_id", type=int)
     company_id = request.args.get("company_id", type=int)
     vehicle_status = request.args.get("vehicle_status") or ""
