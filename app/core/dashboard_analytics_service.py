@@ -15,6 +15,22 @@ from sqlalchemy import func, case, extract
 
 from app.extensions import db
 from app.core.request_cache import request_cached
+from app.core.ttl_cache import ttl_cached
+
+# 2026-11-09 performance audit: pm_compliance() and registration_status()
+# each independently re-ran the full due-vehicle calculation on every
+# call, with @request_cached only deduping calls *within* one request --
+# two separate dashboard loads a few seconds apart got no benefit at
+# all. A short TTL here, one layer above the due-calc service (whose own
+# docstring says it must not be cached across requests -- see
+# app/core/ttl_cache.py's module docstring for why this boundary is kept
+# intact), mirrors the already-accepted precedent in
+# app/modules/api/dashboard.py's _shared_due_rows().
+_WIDGET_CACHE_TTL = 12
+
+
+def _scope_key(self, user=None, branch_id=None, company_id=None):
+    return (getattr(user, "id", None), branch_id, company_id)
 
 # A fixed, deliberately small palette shared by every chart so status
 # meanings stay visually consistent across the dashboard and the
@@ -331,6 +347,7 @@ class DashboardAnalyticsService:
                "branch_id": int(branch_id) if branch_id else None,
                "company_id": int(company_id) if company_id else None}
 
+    @ttl_cached(ttl_seconds=_WIDGET_CACHE_TTL, key_func=_scope_key)
     @request_cached("chart_pm_compliance")
     def pm_compliance(self, user=None, branch_id=None,
                       company_id=None) -> dict:
@@ -645,6 +662,7 @@ class DashboardAnalyticsService:
         _spark("MAINTENANCE", MaintenanceOrder)
         return trends
 
+    @ttl_cached(ttl_seconds=_WIDGET_CACHE_TTL, key_func=_scope_key)
     @request_cached("chart_registration_status")
     def registration_status(self, user=None, branch_id=None,
                             company_id=None) -> dict:

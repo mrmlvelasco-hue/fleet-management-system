@@ -7,6 +7,18 @@ from app.modules.master_data.vehicle.service import VehicleService
 from app.modules.master_data.tire.service import TireService
 from app.modules.master_data.battery.service import BatteryService
 from app.core.approval.task_service import ApprovalTaskService
+from app.core.ttl_cache import ttl_cached
+
+# 2026-11-09 performance audit: unlike the chart widgets in
+# dashboard_analytics_service.py, this count has no @request_cached at
+# all, so it re-ran the full due-vehicle calculation on every single
+# call -- including the two back-to-back calls dashboard_bootstrap()
+# makes (this method, then its own separate due_reg block) within one
+# request. The TTL cache below covers both the within-request and
+# across-request cases in one place; see ttl_cache.py's module
+# docstring for why this lives here and not inside the due-calc service
+# itself.
+_REGISTRATIONS_EXPIRING_TTL = 12
 
 
 def _company_of(vehicle, mapped=None):
@@ -35,27 +47,34 @@ class DashboardService:
     """
 
     def fleet_count(self, user=None, branch_id=None, company_id=None) -> int:
-        # Stage 3C: company_id narrows by EFFECTIVE Company (the
-        # vehicle's own, else its branch's). It composes with branch_id
-        # rather than replacing it -- during the Branch->Company
-        # transition both filters are offered, and asking for a branch
-        # outside the chosen Company must narrow to nothing, not
-        # silently drop one of the two.
-        return len(VehicleService().list(include_inactive=False, user=user,
-                                         branch_id=branch_id,
-                                         company_id=company_id))
+        # 2026-11-09 performance audit: was len(VehicleService().list(...)),
+        # which loads and org-scope-filters EVERY visible vehicle just to
+        # count them -- measured at 130-220ms against a 5,000-vehicle
+        # fleet, every time this KPI tile is drawn. list_page() already
+        # does the same filtering (including Stage 3C's effective-
+        # Company narrowing) as a SQL COUNT; page_size=1 asks for the
+        # smallest page so at most one row is ever hydrated.
+        _, total = VehicleService().list_page(
+            user=user, branch_id=branch_id, company_id=company_id,
+            page=1, page_size=1)
+        return total
 
     def tire_stock_count(self, user=None, branch_id=None,
                          company_id=None) -> int:
-        return len(TireService().list(status="IN_STOCK", user=user,
-                                      branch_id=branch_id,
-                                      company_id=company_id))
+        # Same fix as fleet_count() above. include_inactive=False matches
+        # the previous TireService().list()'s own default exactly --
+        # list_page() defaults to True, so it must be passed explicitly.
+        _, total = TireService().list_page(
+            include_inactive=False, status="IN_STOCK", user=user,
+            branch_id=branch_id, company_id=company_id, page=1, page_size=1)
+        return total
 
     def battery_stock_count(self, user=None, branch_id=None,
                             company_id=None) -> int:
-        return len(BatteryService().list(status="IN_STOCK", user=user,
-                                         branch_id=branch_id,
-                                         company_id=company_id))
+        _, total = BatteryService().list_page(
+            include_inactive=False, status="IN_STOCK", user=user,
+            branch_id=branch_id, company_id=company_id, page=1, page_size=1)
+        return total
 
     def maintenance_due_count(self, user=None, branch_id=None,
                               company_id=None) -> int:
@@ -108,6 +127,11 @@ class DashboardService:
                      if getattr(t, "company_id", None) == company_id]
         return len(tasks)
 
+    @ttl_cached(
+        ttl_seconds=_REGISTRATIONS_EXPIRING_TTL,
+        key_func=lambda self, user=None, days_ahead=30, branch_id=None,
+        company_id=None: (getattr(user, "id", None), days_ahead,
+                          branch_id, company_id))
     def registrations_expiring_count(self, user=None, days_ahead: int = 30,
                                      branch_id=None,
                                      company_id=None) -> int:

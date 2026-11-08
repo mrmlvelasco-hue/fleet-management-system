@@ -48,6 +48,21 @@ def app():
     from app.modules.system_admin.services import notification_engine as _ne
     _ne._HOOKS_REGISTERED = False
 
+    # Same class of problem as the two resets above: the dashboard
+    # widget TTL caches (2026-11-09 performance fix) are module-level,
+    # so without this a value cached by an earlier test's fleet data
+    # leaks into a later test in the same process that calls the same
+    # widget with the same (user, branch, company) key -- e.g. an
+    # "empty fleet" test run right after a test that seeded vehicles
+    # under the default None/None/None key. A live app process is fine
+    # with a 12s TTL; a test process running hundreds of tests a second
+    # is not.
+    from app.core import dashboard_analytics_service as _das
+    from app.core import dashboard_service as _ds
+    _das.DashboardAnalyticsService.pm_compliance.cache.invalidate()
+    _das.DashboardAnalyticsService.registration_status.cache.invalidate()
+    _ds.DashboardService.registrations_expiring_count.cache.invalidate()
+
 
 @pytest.fixture()
 def client(app):
