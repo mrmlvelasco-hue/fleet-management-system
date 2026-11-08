@@ -30,6 +30,27 @@ services:
       # 128MB is MySQL's default and is small for this workload. Raise
       # it via .env once you know how much RAM the host can spare.
       - --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL:-512M}
+      # 2026-11-09 performance audit (3.3): MySQL 8.4's own default
+      # (151) was never verified against this stack's actual worst-case
+      # connection count, so it was relying on a default rather than a
+      # deliberate budget. The math: `web` runs
+      # GUNICORN_WORKERS(default 3) processes, each opening its OWN
+      # SQLAlchemy pool (threads share one process's pool; see
+      # docker/entrypoint.sh's comment on why workers, not threads,
+      # multiply pools) of up to DB_POOL_SIZE + DB_MAX_OVERFLOW
+      # (default 10 + 20 = 30) connections -- 3 x 30 = 90 at peak.
+      # `scheduler` runs short-lived `flask ...` CLI invocations on the
+      # same 10/20 defaults, so budget another 30 for a worst-case
+      # overlap with its own retry loop, even though in practice it is
+      # transient, not sustained. 200 leaves comfortable headroom over
+      # that ~120 worst case for the MySQL CLI, migrations
+      # (`flask db upgrade` on web's startup), and any ad-hoc admin
+      # connection, without being large enough to let a runaway client
+      # exhaust server memory (each connection reserves its own
+      # per-thread buffers). Raise via .env if GUNICORN_WORKERS,
+      # DB_POOL_SIZE or DB_MAX_OVERFLOW are ever raised from these
+      # defaults -- the two are not kept in sync automatically.
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-200}
     volumes:
       - fms_db_data:/var/lib/mysql
     healthcheck:
