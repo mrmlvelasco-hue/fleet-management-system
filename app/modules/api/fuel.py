@@ -8,6 +8,30 @@ from app.extensions import db
 from app.modules.api.auth import api_auth_required
 from app.modules.api.routes import bp
 
+# 2026-11-09 performance audit (2.4): fuel_export() ran an unbounded
+# `.query...all()` with no date filter at all, unlike the list, which
+# at least accepts date_from/date_to. At the audit's stated scale
+# (1,000,000 rows) that is a full in-memory .xlsx build on every
+# request -- the same shape of risk already fixed for the KPI summary
+# and the Exceptions view on 2026-11-08.
+#
+# _EXPORT_DEFAULT_DAYS: when the caller gives neither date_from nor
+# date_to and does not explicitly ask for everything (?all=1), the
+# export is scoped to the trailing N days -- same window the list
+# screen itself defaults a fresh visit to, so "export what I'm
+# looking at" stays the common, fast path without a surprise
+# narrowing for anyone who DID ask for a specific range.
+_EXPORT_DEFAULT_DAYS = 90
+
+# _EXPORT_ROW_CAP: even an explicit `all=1` must not be allowed to
+# build a truly unbounded workbook -- this is the backstop for that
+# one escape hatch. A date-bound request (default or explicit) is
+# NEVER subject to this cap: the cap exists to stop "everything",
+# not to second-guess a range the caller already narrowed. Module-
+# level (not a function default) so a test can lower it without
+# seeding 50,000 real rows.
+_EXPORT_ROW_CAP = 50_000
+
 
 def _iso(v):
     return v.isoformat() if v else None
@@ -318,6 +342,8 @@ def fuel_template(api_user):
 @bp.route("/fuel/export.xlsx", methods=["GET"])
 @api_auth_required("fuel.view")
 def fuel_export(api_user):
+    from datetime import datetime, timedelta
+
     from app.modules.transactions.fuel.models import FuelTransaction
     from app.modules.transactions.fuel.import_export import export_fuel
     from app.modules.transactions.fuel.analytics import fuel_scope_ids
@@ -338,6 +364,52 @@ def fuel_export(api_user):
         if company_id:
             from app.core.company_resolution import company_filter
             q = q.filter(company_filter(Vehicle, company_id))
+
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
+    want_all = request.args.get("all") == "1"
+    date_bound = bool(date_from or date_to)
+
+    if date_from:
+        try:
+            q = q.filter(FuelTransaction.transaction_date
+                         >= datetime.strptime(date_from, "%Y-%m-%d"))
+        except ValueError:
+            return _bad_fuel_date("date_from")
+    if date_to:
+        try:
+            q = q.filter(FuelTransaction.transaction_date
+                         < datetime.strptime(date_to, "%Y-%m-%d")
+                         + timedelta(days=1))
+        except ValueError:
+            return _bad_fuel_date("date_to")
+    if not date_bound and not want_all:
+        # Neither bound given and "export everything" wasn't asked
+        # for -- scope to the trailing window rather than the whole
+        # table, matching the list screen's own default and the Fuel
+        # KPI/Exceptions fixes' "don't scan full history by accident"
+        # rule.
+        q = q.filter(FuelTransaction.transaction_date
+                     >= datetime.utcnow() - timedelta(days=_EXPORT_DEFAULT_DAYS))
+
+    if not date_bound and want_all:
+        # The one escape hatch that can still touch the whole table --
+        # guarded by a hard row-count cap so "everything" on a true
+        # million-row table fails fast with a clear message instead of
+        # building a huge workbook. A caller who gave an explicit
+        # range is never subject to this: they already narrowed it
+        # themselves.
+        total = q.with_entities(db.func.count(FuelTransaction.id)).scalar() or 0
+        if total > _EXPORT_ROW_CAP:
+            return jsonify({
+                "error": "validation",
+                "message": (
+                    f"This export would include {total:,} transactions, "
+                    f"over the {_EXPORT_ROW_CAP:,}-row limit for "
+                    f"'export everything'. Narrow it with a date range "
+                    f"(date_from/date_to) instead."),
+            }), 400
+
     rows = q.order_by(FuelTransaction.transaction_date.desc()).all()
     return send_file(
         BytesIO(export_fuel(rows)),
@@ -345,6 +417,13 @@ def fuel_export(api_user):
         download_name="Fuel_Transactions.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+def _bad_fuel_date(field):
+    return jsonify({
+        "error": "validation",
+        "message": f"{field} must be a date in YYYY-MM-DD format.",
+    }), 400
 
 
 def _analysis_filters():

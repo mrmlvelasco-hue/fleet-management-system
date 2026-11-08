@@ -2272,11 +2272,20 @@ def fuel_template():
 @login_required
 @require_permission("fuel.view")
 def fuel_export():
+    """2026-11-09 performance audit (2.4): this ran an unbounded
+    `.query...all()` with no date filter at all, same as its API
+    sibling (app/modules/api/fuel.py's fuel_export) -- see that
+    function's own comment for the full reasoning. Same fix here:
+    defaults to the trailing _EXPORT_DEFAULT_DAYS days unless the
+    caller gave an explicit date_from/date_to or asked for everything
+    (?all=1), with ?all=1 guarded by _EXPORT_ROW_CAP."""
     from io import BytesIO
     from flask import send_file
     from app.modules.transactions.fuel.models import FuelTransaction
     from app.modules.transactions.fuel.import_export import export_fuel
     from app.modules.transactions.fuel.analytics import fuel_scope_ids
+    from app.modules.api.fuel import _EXPORT_DEFAULT_DAYS, _EXPORT_ROW_CAP
+
     query = FuelTransaction.query
     scope_ids = fuel_scope_ids(
         current_user, request.args.get("branch_id", type=int))
@@ -2284,6 +2293,40 @@ def fuel_export():
         from app.modules.master_data.vehicle.models import Vehicle
         query = query.join(Vehicle, Vehicle.id == FuelTransaction.vehicle_id) \
                     .filter(Vehicle.branch_id.in_(scope_ids))
+
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
+    want_all = request.args.get("all") == "1"
+    date_bound = bool(date_from or date_to)
+
+    if date_from:
+        try:
+            query = query.filter(FuelTransaction.transaction_date
+                                >= datetime.strptime(date_from, "%Y-%m-%d"))
+        except ValueError:
+            date_from = ""
+    if date_to:
+        try:
+            query = query.filter(
+                FuelTransaction.transaction_date
+                < datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1))
+        except ValueError:
+            date_to = ""
+    date_bound = bool(date_from or date_to)
+    if not date_bound and not want_all:
+        query = query.filter(
+            FuelTransaction.transaction_date
+            >= datetime.utcnow() - timedelta(days=_EXPORT_DEFAULT_DAYS))
+    if not date_bound and want_all:
+        total = query.with_entities(db.func.count(FuelTransaction.id)).scalar() or 0
+        if total > _EXPORT_ROW_CAP:
+            flash(
+                f"This export would include {total:,} transactions, over "
+                f"the {_EXPORT_ROW_CAP:,}-row limit for 'export "
+                f"everything'. Narrow it with a date range first.",
+                "warning")
+            return redirect(url_for("transactions.fuel_list"))
+
     rows = query.order_by(FuelTransaction.transaction_date.desc()).all()
     return send_file(BytesIO(export_fuel(rows)), as_attachment=True,
                      download_name="Fuel_Transactions.xlsx",
