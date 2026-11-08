@@ -159,14 +159,38 @@ def deactivate_branch(api_user, branch_id):
 
 # ── Departments ─────────────────────────────────────────────────────────────
 
+def _dept_effective_company(d):
+    """Effective Company of a department, or None.
+
+    Mirrors drivers.py/tires.py/batteries.py's own `_effective_company`:
+    uses the one shared resolution rule (the record's own company_id,
+    else its branch's) so a legacy department -- branch_id set,
+    company_id never directly mapped -- still shows the Company its
+    branch belongs to instead of a blank, the same as Vehicle, Driver,
+    Tire and Battery already do. Department's own `_dept_json` was
+    never updated to do this when Branch->Company replaced the field
+    (2026-11-08), which is why the Departments list showed "--" in the
+    Company column for every legacy row even after its branch was
+    mapped to a Company."""
+    from app.extensions import db
+    from app.core.company_resolution import effective_company_id
+    from app.modules.master_data.org.models import OrgCompany
+    cid = effective_company_id(d)
+    return db.session.get(OrgCompany, cid) if cid else None
+
+
 def _dept_json(d):
-    co = d.company
+    co = _dept_effective_company(d)
     return {
         "id": d.id,
         "code": d.code,
         "name": d.name,
         "branch_id": d.branch_id,
         "branch": d.branch.name if d.branch else None,
+        # Raw, not resolved: the Edit form's Company dropdown must keep
+        # showing "-- Not mapped --" for a legacy record rather than
+        # silently pretending it was directly mapped (same contract as
+        # Driver's d.company_id above).
         "company_id": d.company_id,
         "company": co.short_name if co else None,
         "cost_center": d.cost_center,

@@ -123,3 +123,108 @@ def test_update_department_route_rejects_blanking_out_company_id(db, client):
                    json={"company_id": ""},
                    headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 400
+
+
+def test_update_department_route_sets_and_returns_company(db, client):
+    """Repro for the bug report: user edits a Department's Company in
+    the UI, save reports success, but the Departments list still shows
+    '--' in the Company column. Exercise the full PUT -> GET round trip
+    the UI relies on (not just the service layer) to see whether the
+    route itself ever returns the updated company."""
+    _authed_user(db)
+    co = _company("7")
+    token = _token(client, "deptadmin")
+    create = client.post("/api/v1/departments",
+                         json={"code": "MKT", "name": "Marketing",
+                               "company_id": co.id},
+                         headers={"Authorization": f"Bearer {token}"})
+    dept_id = json.loads(create.get_data(as_text=True))["id"]
+
+    co2 = _company("8")
+    r = client.put(f"/api/v1/departments/{dept_id}",
+                   json={"company_id": co2.id},
+                   headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    body = json.loads(r.get_data(as_text=True))
+    assert body["company_id"] == co2.id
+    assert body["company"] == co2.short_name
+
+    # What the Departments list table actually reads after save.
+    listing = client.get("/api/v1/departments",
+                         headers={"Authorization": f"Bearer {token}"})
+    rows = json.loads(listing.get_data(as_text=True))["items"]
+    row = next(x for x in rows if x["id"] == dept_id)
+    assert row["company_id"] == co2.id
+    assert row["company"] == co2.short_name
+
+
+def test_update_legacy_branch_only_department_to_set_company(db, client):
+    """The real data in the bug report: pre-existing departments created
+    BEFORE this cutover, with only branch_id set and company_id NULL.
+    Confirm assigning a company to one of those (not a freshly-created,
+    already-company-mapped department) round-trips correctly too."""
+    _authed_user(db)
+    branch = BranchService().create(code="LEGACYB", name="Legacy Branch B")
+    legacy = DepartmentService().create(
+        code="HR-01", name="Human Resources", branch_id=branch.id)
+    assert legacy.company_id is None
+
+    co = _company("9")
+    token = _token(client, "deptadmin")
+    r = client.put(f"/api/v1/departments/{legacy.id}",
+                   json={"company_id": co.id},
+                   headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    body = json.loads(r.get_data(as_text=True))
+    assert body["company_id"] == co.id
+    assert body["company"] == co.short_name
+
+    listing = client.get("/api/v1/departments",
+                         headers={"Authorization": f"Bearer {token}"})
+    rows = json.loads(listing.get_data(as_text=True))["items"]
+    row = next(x for x in rows if x["id"] == legacy.id)
+    assert row["company"] == co.short_name
+
+
+def test_legacy_department_company_display_falls_back_through_branch(db, client):
+    """The actual bug report: Michael's 4 live departments are legacy
+    rows (branch_id set, company_id still NULL -- never directly
+    mapped) and the Departments list showed '--' in the Company column
+    for every one of them. Every other converted module (Vehicle,
+    Driver, Tire, Battery) resolves the Company for display through
+    effective_company_id() -- the record's own company_id, else its
+    branch's -- so a legacy record whose BRANCH is mapped to a Company
+    still shows that Company instead of a blank. _dept_json() was
+    never updated to do the same: it only looks at d.company_id/
+    d.company directly, so a legacy, branch-only department shows '--'
+    even when its branch has a Company. This currently fails, proving
+    the gap.
+    """
+    _authed_user(db)
+    co = _company("10")
+    branch = BranchService().create(
+        code="LEGACYC", name="Legacy Branch C", company_id=co.id)
+    legacy = DepartmentService().create(
+        code="RH-01", name="Research", branch_id=branch.id)
+    assert legacy.company_id is None  # never directly mapped
+
+    token = _token(client, "deptadmin")
+    get_resp = client.get(f"/api/v1/departments/{legacy.id}",
+                          headers={"Authorization": f"Bearer {token}"})
+    body = json.loads(get_resp.get_data(as_text=True))
+    assert body["company"] == co.short_name, (
+        "Expected the Company column to fall back through the "
+        "department's branch, like Vehicle/Driver/Tire/Battery do, "
+        "instead of showing '--' for a legacy record."
+    )
+
+    listing = client.get("/api/v1/departments",
+                         headers={"Authorization": f"Bearer {token}"})
+    rows = json.loads(listing.get_data(as_text=True))["items"]
+    row = next(x for x in rows if x["id"] == legacy.id)
+    assert row["company"] == co.short_name
+    # The raw company_id stays None -- the Edit form must keep showing
+    # "-- Not mapped --" rather than silently pretending this
+    # department was directly mapped, matching Driver's own contract
+    # (d.company_id stays raw; only the *display* field resolves).
+    assert row["company_id"] is None
