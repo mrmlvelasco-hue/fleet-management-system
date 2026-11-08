@@ -1724,6 +1724,13 @@ def maintenance_order_new_prefill(api_user):
             "brand": vehicle.brand,
             "model": vehicle.model,
             "branch": vehicle.branch.name if vehicle.branch else None,
+            # Mirrors vehicles.py's own serialiser and this module's
+            # own maintenance_order_json "vehicle_company" (own
+            # company_id only, no branch fallback) so the New MO form's
+            # Vehicle Information Summary can show Company instead of
+            # Branch, consistent with every other Branch->Company
+            # screen -- it never carried this field at all before.
+            "company": vehicle.company.short_name if vehicle.company else None,
             "assigned_driver": (vehicle.assigned_driver.full_name
                                if vehicle.assigned_driver else None),
             "assigned_driver_position": (
