@@ -493,6 +493,10 @@ def fuel_analysis(api_user):
     })
 
 
+def _row_year_total_cost(row):
+    return sum((m["total_cost"] or 0) for m in row["months"])
+
+
 @bp.route("/fuel/analysis/export.xlsx", methods=["GET"])
 @api_auth_required("fuel.view")
 def fuel_analysis_export(api_user):
@@ -504,6 +508,17 @@ def fuel_analysis_export(api_user):
     rows = svc.monthly_rows(user=api_user, **filters)
     year = filters.pop("year", None)
     summary = svc.fleet_summary(year=year, user=api_user, **filters)
+    if request.args.get("exclude_zero_cost") in ("1", "true"):
+        # 2026-11-09: the on-screen "Exclude vehicles with P0 fuel
+        # cost" checkbox was display-only -- hid rows in the browser
+        # but the export always had every vehicle. Mirrors the same
+        # on-screen rule (sum of the year's 12 months of total_cost)
+        # so checking the box before exporting actually narrows the
+        # file too. Fleet summary totals are intentionally left
+        # unfiltered, same as the on-screen KPI tiles/record count --
+        # excluded vehicles contribute 0 to every summary figure
+        # anyway, so this only changes which vehicle rows appear.
+        rows = [r for r in rows if _row_year_total_cost(r) != 0]
     xlsx = export_monthly_analysis_xlsx(rows, year=year, fleet_summary=summary)
     return send_file(
         BytesIO(xlsx),

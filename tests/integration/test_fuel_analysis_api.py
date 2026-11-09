@@ -172,3 +172,41 @@ def test_export_xlsx_is_scoped_and_shaped_like_the_client_workbook(
 
     plates = [row[2].value for row in ws.iter_rows(min_row=4, max_row=4)]
     assert plates == ["FAN-A1"]
+
+
+def test_export_can_exclude_vehicles_with_zero_fuel_cost_for_the_year(
+        db, client, env):
+    """UAT request (2026-11-09): the on-screen 'Exclude vehicles with
+    P0 fuel cost in <year>' checkbox was display-only -- the exported
+    workbook always included every vehicle regardless of the checkbox,
+    which is surprising when you check the box specifically so you
+    don't have to clean the zero-cost rows out of the export by hand.
+    `exclude_zero_cost=1` makes the export honor the same rule."""
+    # Zero-fuel-cost vehicle, same branch as the scoped test user so it
+    # is included in the unfiltered export (no transactions at all).
+    v_zero = VehicleService().create(
+        vehicle_type_id=env["v_a"].vehicle_type_id,
+        brand="Toyota", model="Vios", year=2023,
+        branch_id=env["branch_a"].id, conduction_number="FAN-A-ZERO",
+        plate_number="FAN-A-ZERO")
+
+    token = _token(client)
+    from io import BytesIO
+    from openpyxl import load_workbook
+
+    # Without the flag: both vehicles are in the export.
+    r = client.get("/api/v1/fuel/analysis/export.xlsx?year=2026",
+                   headers={"Authorization": f"Bearer {token}"})
+    wb = load_workbook(BytesIO(r.data))
+    plates = [row[2].value for row in
+             wb.active.iter_rows(min_row=4, max_row=5)]
+    assert sorted(p for p in plates if p) == ["FAN-A-ZERO", "FAN-A1"]
+
+    # With the flag: the zero-cost vehicle is dropped from the export.
+    r = client.get(
+        "/api/v1/fuel/analysis/export.xlsx?year=2026&exclude_zero_cost=1",
+        headers={"Authorization": f"Bearer {token}"})
+    wb = load_workbook(BytesIO(r.data))
+    plates = [row[2].value for row in
+             wb.active.iter_rows(min_row=4, max_row=5) if row[2].value]
+    assert plates == ["FAN-A1"]
