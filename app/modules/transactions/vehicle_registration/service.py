@@ -11,6 +11,7 @@ from app.modules.transactions.base_service import (
 from app.modules.transactions.vehicle_registration.models import (
     VehicleRegistration)
 from app.modules.master_data.vehicle.service import VehicleService
+from app.core.extraction.or_number_match import match_or_number
 
 DEFAULT_VALIDITY_YEARS = {"NEW": 3, "RENEWAL": 1}
 
@@ -47,6 +48,38 @@ class DuplicateORNumberError(Exception):
 
 class DuplicateCRNumberError(Exception):
     pass
+
+
+class MissingORNumberError(Exception):
+    """OR Number is required to complete ANY registration -- every LTO
+    registration transaction (NEW or RENEWAL) issues an Official
+    Receipt."""
+
+
+class MissingCRNumberError(Exception):
+    """CR Number is required only for a NEW registration. A RENEWAL
+    re-issues the OR but, per LTO practice, does not normally reissue
+    the Certificate of Registration -- the vehicle keeps its original
+    CR number."""
+
+
+class MissingORScanError(Exception):
+    """At least one active attachment tagged as the OR document is
+    required to complete a registration -- the typed number alone is
+    not evidence the document was actually received."""
+
+
+class MissingCRScanError(Exception):
+    """At least one active attachment tagged as the CR document is
+    required to complete a NEW registration, mirroring
+    MissingCRNumberError's NEW-only scope."""
+
+
+class ORNumberOCRMismatchError(Exception):
+    """Raised only when OR_NUMBER_OCR_MISMATCH_BLOCKS_COMPLETION is on
+    and the OR number read off the uploaded scan does not match what
+    was typed. Off by default -- see app/cli.py's seeding comment for
+    why OCR mismatches warn rather than block out of the box."""
 
 
 class VehicleRegistrationService(BaseTransactionService):
@@ -268,6 +301,13 @@ class VehicleRegistrationService(BaseTransactionService):
             code="VEHICLEREGISTRATION").first()
         return bool(dt and dt.requires_approval)
 
+    #: Lookup codes (ATTACHMENT_DOC_TYPE) identifying the OR and CR scans
+    #: among a registration's attachments. The existing, already-seeded
+    #: codes are reused rather than inventing a combined one -- client
+    #: decision, 2026-11-09.
+    OR_SCAN_DOCUMENT_TYPE = "OR"
+    CR_SCAN_DOCUMENT_TYPE = "CR"
+
     def complete(self, registration_id: int, *, or_number, cr_number,
                 plate_number=None):
         reg = db.session.get(VehicleRegistration, registration_id)
@@ -305,6 +345,21 @@ class VehicleRegistrationService(BaseTransactionService):
                 f"Registration date ({reg.registration_date}) cannot be "
                 f"after the expiry date ({reg.expiry_date}).")
 
+        # Rule: OR Number is required to complete ANY registration -- an
+        # Official Receipt is always issued. CR Number is required only
+        # for a NEW registration: LTO practice re-issues the OR on a
+        # RENEWAL but does not normally re-issue the CR, so requiring it
+        # on every renewal would block a legitimate completion (client
+        # correction to the original spec, 2026-11-09).
+        or_number = (or_number or "").strip() or None
+        cr_number = (cr_number or "").strip() or None
+        if not or_number:
+            raise MissingORNumberError("OR Number is required to complete "
+                                       "this registration.")
+        if reg.registration_type == "NEW" and not cr_number:
+            raise MissingCRNumberError("CR Number is required to complete "
+                                       "a NEW registration.")
+
         # Rule: OR/CR numbers must be unique across all registrations —
         # each is a real, physically-issued government document number,
         # so a duplicate almost always means the same document was
@@ -331,6 +386,48 @@ class VehicleRegistrationService(BaseTransactionService):
                     f"registration {dup.document_number or dup.id} "
                     f"(vehicle: {dup.vehicle.plate_number or dup.vehicle.conduction_number if dup.vehicle else '—'}).")
 
+        # Rule: the typed number alone is not evidence the document was
+        # actually received -- at least one active attachment tagged as
+        # the OR scan is required (and the CR scan, only for NEW),
+        # mirroring the number requirements above.
+        from app.core.attachments.attachment_service import (
+            AttachmentService)
+        attachments = AttachmentService().list_for(
+            self.reference_table, registration_id)
+        or_scan = next((a for a in attachments
+                       if a.document_type == self.OR_SCAN_DOCUMENT_TYPE),
+                      None)
+        if or_scan is None:
+            raise MissingORScanError(
+                "An uploaded OR scan is required to complete this "
+                "registration. Attach it and tag it as 'OR'.")
+        if reg.registration_type == "NEW" and not any(
+                a.document_type == self.CR_SCAN_DOCUMENT_TYPE
+                for a in attachments):
+            raise MissingCRScanError(
+                "An uploaded CR scan is required to complete a NEW "
+                "registration. Attach it and tag it as 'CR'.")
+
+        # OR-number OCR check (client request, 2026-11-09): does the
+        # typed OR number appear anywhere on the uploaded OR scan?
+        # Whether a mismatch BLOCKS completion or only WARNS is a client
+        # policy choice, not hardcoded -- see app/cli.py's seeding of
+        # OR_NUMBER_OCR_MISMATCH_BLOCKS_COMPLETION (default: warn only).
+        # An unreadable scan (ORMatchResult.matched is None) is never
+        # treated as a mismatch either way.
+        or_number_ocr_warning = None
+        content = AttachmentService().get_bytes(or_scan)
+        if content:
+            result = match_or_number(content, or_scan.mime_type, or_number)
+            if result.matched is False:
+                from app.modules.system_admin.services.system_parameter_service import (
+                    SystemParameterService)
+                blocks = SystemParameterService().get(
+                    "OR_NUMBER_OCR_MISMATCH_BLOCKS_COMPLETION", False)
+                if blocks:
+                    raise ORNumberOCRMismatchError(result.note)
+                or_number_ocr_warning = result.note
+
         reg.or_number = or_number
         reg.cr_number = cr_number
         if plate_number:
@@ -346,13 +443,28 @@ class VehicleRegistrationService(BaseTransactionService):
         # registration becoming the vehicle's newest completed one
         # must keep both current, the same as a manual data-migration
         # entry would.
+        #
+        # Only overwritten when the new value is non-blank -- found
+        # alongside this feature: a RENEWAL legitimately has no new CR
+        # number, and the old unconditional assignment wiped the
+        # vehicle's real, previously-recorded CR number to blank on
+        # every renewal.
         from app.modules.master_data.vehicle.models import Vehicle
         vehicle = db.session.get(Vehicle, reg.vehicle_id)
         if vehicle is not None:
-            vehicle.cr_number = cr_number
+            if or_number:
+                vehicle.or_number = or_number
+            if cr_number:
+                vehicle.cr_number = cr_number
             vehicle.last_known_registration_expiry = reg.expiry_date
 
         db.session.commit()
+        if or_number_ocr_warning:
+            # Transient, not persisted -- same pattern as
+            # Attachment.scan_quality in attachment_service.py. Read via
+            # getattr(..., None) by callers, since it is absent whenever
+            # there was nothing to warn about.
+            reg.or_number_ocr_warning = or_number_ocr_warning
         return reg
 
     def get_expiring_registrations(self, days_ahead: int = 30,

@@ -9,6 +9,18 @@ from app.modules.master_data.reference.service import VehicleTypeService
 from app.modules.master_data.org.service import BranchService
 from app.modules.transactions.vehicle_registration.service import (
     VehicleRegistrationService, InvalidRegistrationStateError)
+from app.core.models.attachment import Attachment
+from app.extensions import db as _db
+
+
+def _attach_or_cr_scans(reg):
+    for doc_type in ("OR", "CR"):
+        _db.session.add(Attachment(
+            reference_table="vehicle_registrations", reference_id=reg.id,
+            filename=f"{doc_type}.png", original_filename=f"{doc_type}.png",
+            file_size=10, mime_type="image/png", document_type=doc_type,
+            file_data=b"fake-bytes", is_active=True))
+    _db.session.commit()
 
 
 @pytest.fixture()
@@ -149,6 +161,7 @@ def test_cannot_toggle_checklist_after_completion(db, env):
         vehicle_id=vehicle.id, registration_type="NEW",
         registration_date=date.today(), user=None)
     item = reg.checklist_items[0]
+    _attach_or_cr_scans(reg)
     VehicleRegistrationService().complete(reg.id, or_number="OR-1", cr_number="CR-1",
                                           plate_number="ABC 123")
 

@@ -458,6 +458,30 @@ def _iso(value):
     return value.isoformat() if value else None
 
 
+def _registration_scan_ids(registration):
+    """registration_id and the OR/CR scan attachment ids for the
+    Vehicle Detail panel's "Latest OR / CR No." link.
+
+    Reuses the existing /vehicle-registrations attachment list rather
+    than adding a new route: the panel already has the download route
+    for a known attachment id, it just never had the id to use.
+    """
+    out = {"registration_id": None, "or_scan_attachment_id": None,
+          "cr_scan_attachment_id": None}
+    if registration is None:
+        return out
+    out["registration_id"] = registration.id
+    from app.core.attachments.attachment_service import AttachmentService
+    attachments = AttachmentService().list_for(
+        "vehicle_registrations", registration.id)
+    for att in attachments:
+        if att.document_type == "OR" and out["or_scan_attachment_id"] is None:
+            out["or_scan_attachment_id"] = att.id
+        elif att.document_type == "CR" and out["cr_scan_attachment_id"] is None:
+            out["cr_scan_attachment_id"] = att.id
+    return out
+
+
 _COVERS = [
     ("CTPL", "CTPL", "has_ctpl", "ctpl_from_date", "ctpl_to_date"),
     ("OD_THEFT_AON", "OD / Theft / AON", "has_od_theft_aon",
@@ -623,6 +647,12 @@ def detail_json(v):
             # registration record, or the last-known fallback). Dropping
             # it leaves the reader unable to judge how much to trust it.
             "source": reg.get("source"),
+            # Vehicle Detail panel (2026-11-09): lets the screen link
+            # "Latest OR / CR No." to the actual uploaded scan via the
+            # existing attachment download route, rather than just
+            # showing text. No new route, no file-byte duplication --
+            # see _registration_scan_ids below.
+            **_registration_scan_ids(reg.get("last_registration")),
         },
 
         # ── PM status (kept: predates the React screen) ───────────────

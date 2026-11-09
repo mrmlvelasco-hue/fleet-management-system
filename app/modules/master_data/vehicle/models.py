@@ -57,6 +57,10 @@ class Vehicle(db.Model, BaseModel):
 
     # ── Vehicle Master enhancement (identifiers) ──────────────────────
     far_number = db.Column(db.String(60), nullable=True)
+    # OR (Official Receipt) and CR (Certificate of Registration) are
+    # separate LTO documents with separate numbers. Synced from
+    # VehicleRegistration on completion, the same way cr_number is.
+    or_number = db.Column(db.String(60), nullable=True)
     cr_number = db.Column(db.String(60), nullable=True)
     mv_file_number = db.Column(db.String(60), nullable=True)
     remarks = db.Column(db.Text, nullable=True)

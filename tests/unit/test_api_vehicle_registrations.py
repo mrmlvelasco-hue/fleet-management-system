@@ -30,6 +30,21 @@ from app.modules.master_data.org.service import BranchService
 from app.modules.master_data.reference.service import VehicleTypeService
 from app.modules.master_data.vehicle.service import VehicleService
 from app.modules.user_management.models import Permission, Role, User
+from app.core.models.attachment import Attachment
+from app.extensions import db
+
+
+def _attach_scans(reg_id, document_types=("OR", "CR")):
+    """Completion now requires evidence the OR (and, for a NEW
+    registration, the CR) was actually received -- not just a typed
+    number. See MissingORScanError / MissingCRScanError, 2026-11-09."""
+    for doc_type in document_types:
+        db.session.add(Attachment(
+            reference_table="vehicle_registrations", reference_id=reg_id,
+            filename=f"{doc_type}.png", original_filename=f"{doc_type}.png",
+            file_size=10, mime_type="image/png", document_type=doc_type,
+            file_data=b"fake-bytes", is_active=True))
+    db.session.commit()
 
 
 def _ensure_doc_type(code):
@@ -157,6 +172,7 @@ def test_a_renewal_is_valid_for_one_year(db, client, vr_env):
     t = _token(client)
     _status, first = _post(client, "/api/v1/vehicle-registrations", t,
                            _payload(vr_env))
+    _attach_scans(first["id"])
     _post(client, f"/api/v1/vehicle-registrations/{first['id']}/complete", t,
           {"or_number": "OR-1", "cr_number": "CR-1"})
 
@@ -199,6 +215,7 @@ def test_completing_a_registration_assigns_the_plate_to_the_vehicle(
     t = _token(client)
     _status, reg = _post(client, "/api/v1/vehicle-registrations", t,
                          _payload(vr_env))
+    _attach_scans(reg["id"])
     status, body = _post(
         client, f"/api/v1/vehicle-registrations/{reg['id']}/complete", t,
         {"or_number": "OR-100", "cr_number": "CR-100",
@@ -219,6 +236,7 @@ def test_a_duplicate_or_number_is_refused(db, client, vr_env):
     t = _token(client)
     _status, first = _post(client, "/api/v1/vehicle-registrations", t,
                            _payload(vr_env))
+    _attach_scans(first["id"])
     _post(client, f"/api/v1/vehicle-registrations/{first['id']}/complete", t,
           {"or_number": "OR-DUP", "cr_number": "CR-A"})
 
@@ -242,6 +260,7 @@ def test_a_duplicate_cr_number_is_refused(db, client, vr_env):
     t = _token(client)
     _status, first = _post(client, "/api/v1/vehicle-registrations", t,
                            _payload(vr_env))
+    _attach_scans(first["id"])
     _post(client, f"/api/v1/vehicle-registrations/{first['id']}/complete", t,
           {"or_number": "OR-X", "cr_number": "CR-DUP"})
 
@@ -292,6 +311,7 @@ def test_expiring_returns_registrations_inside_the_window(db, client,
     t = _token(client)
     _status, reg = _post(client, "/api/v1/vehicle-registrations", t,
                          _payload(vr_env))
+    _attach_scans(reg["id"])
     _post(client, f"/api/v1/vehicle-registrations/{reg['id']}/complete", t,
           {"or_number": "OR-EXP", "cr_number": "CR-EXP"})
 
@@ -313,6 +333,7 @@ def test_expiring_excludes_registrations_far_in_the_future(db, client,
     t = _token(client)
     _status, reg = _post(client, "/api/v1/vehicle-registrations", t,
                          _payload(vr_env))
+    _attach_scans(reg["id"])
     _post(client, f"/api/v1/vehicle-registrations/{reg['id']}/complete", t,
           {"or_number": "OR-FAR", "cr_number": "CR-FAR"})
 
@@ -536,3 +557,43 @@ def test_full_return_and_resubmit_cycle(db, client, vr_approval_env):
         client, f"/api/v1/vehicle-registrations/{rid}/resubmit", req_token)
     assert status == 200, body
     assert body["approval_instance_status"] == "PENDING"
+
+
+# ── OR/CR completion requirements (2026-11-09 client request) ──────────────
+
+def test_completing_without_an_or_scan_is_a_409_not_a_500(db, client, vr_env):
+    """MissingORScanError must be mapped to a normal 409 business-rule
+    response, the same as DuplicateORNumberError etc. -- not left to
+    the generic except Exception to turn into an opaque crash."""
+    t = _token(client)
+    _status, reg = _post(client, "/api/v1/vehicle-registrations", t,
+                         _payload(vr_env))
+    status, body = _post(
+        client, f"/api/v1/vehicle-registrations/{reg['id']}/complete", t,
+        {"or_number": "OR-NOSCAN", "cr_number": "CR-NOSCAN"})
+    assert status == 409, body
+
+
+def test_completing_without_a_cr_number_on_a_new_registration_is_409(
+        db, client, vr_env):
+    t = _token(client)
+    _status, reg = _post(client, "/api/v1/vehicle-registrations", t,
+                         _payload(vr_env))
+    _attach_scans(reg["id"], document_types=("OR",))
+    status, body = _post(
+        client, f"/api/v1/vehicle-registrations/{reg['id']}/complete", t,
+        {"or_number": "OR-NOCR"})
+    assert status == 409, body
+
+
+def test_detail_response_carries_no_ocr_warning_by_default(db, client,
+                                                            vr_env):
+    t = _token(client)
+    _status, reg = _post(client, "/api/v1/vehicle-registrations", t,
+                         _payload(vr_env))
+    _attach_scans(reg["id"])
+    status, body = _post(
+        client, f"/api/v1/vehicle-registrations/{reg['id']}/complete", t,
+        {"or_number": "OR-NOWARN", "cr_number": "CR-NOWARN"})
+    assert status == 200, body
+    assert body["or_number_ocr_warning"] is None

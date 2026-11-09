@@ -632,6 +632,23 @@ def _seed_system_parameters() -> None:
          "House style for the sidebar, used for anyone who hasn't "
          "chosen their own. One of: classic, soft-dark, soft-light, "
          "soft-crimson. An unrecognised value falls back to classic."),
+
+        # ── Vehicle Registration (OR/CR completion, 2026-11-09) ────────
+        # Client decision: when the OR number typed at completion
+        # doesn't match what OCR reads off the uploaded OR scan, whether
+        # that BLOCKS completion or merely WARNS is the client's own
+        # policy choice -- not something to hardcode either way. Seeded
+        # OFF (warn-only) so no existing install starts blocking
+        # completions it never used to block the day this ships. OCR
+        # itself is unreliable (see app/core/extraction/cr_parser.py's
+        # measured accuracy notes), which is exactly why the default is
+        # the lenient one.
+        ("OR_NUMBER_OCR_MISMATCH_BLOCKS_COMPLETION", "false", "BOOLEAN",
+         "VEHICLE_REGISTRATION",
+         "YES/true = block Completion when OCR on the OR scan doesn't "
+         "match the typed OR Number. NO/false (default) = complete "
+         "with a warning instead. An unreadable scan is never a "
+         "mismatch."),
     ]
     for code, value, data_type, group, desc in defaults:
         if not SystemParameter.query.filter_by(code=code).first():

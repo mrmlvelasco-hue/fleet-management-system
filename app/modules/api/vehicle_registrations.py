@@ -85,6 +85,11 @@ def _reg_json(r, *, detail=False, api_user=None):
         "status": r.status,
         "is_historical": r.is_historical,
         "requested_by": r.requester.username if r.requester else None,
+        # Transient, non-persisted: set by complete() only when an
+        # OR-number OCR mismatch was detected but
+        # OR_NUMBER_OCR_MISMATCH_BLOCKS_COMPLETION is off (warn-only,
+        # the default). Absent on every other response.
+        "or_number_ocr_warning": getattr(r, "or_number_ocr_warning", None),
     }
     if detail:
         from app.modules.api.company_letterhead import company_letterhead
@@ -320,7 +325,9 @@ def complete_vehicle_registration(api_user, rid):
         VehicleRegistration)
     from app.modules.transactions.vehicle_registration.service import (
         DuplicateCRNumberError, DuplicateORNumberError,
-        RegistrationDateOrderError, VehicleRegistrationService)
+        RegistrationDateOrderError, MissingORNumberError,
+        MissingCRNumberError, MissingORScanError, MissingCRScanError,
+        ORNumberOCRMismatchError, VehicleRegistrationService)
 
     if VehicleRegistration.query.filter_by(id=rid).first() is None:
         return _not_found()
@@ -333,7 +340,9 @@ def complete_vehicle_registration(api_user, rid):
             cr_number=(payload.get("cr_number") or "").strip() or None,
             plate_number=(payload.get("plate_number") or "").strip() or None)
     except (DuplicateORNumberError, DuplicateCRNumberError,
-            RegistrationDateOrderError) as exc:
+            RegistrationDateOrderError, MissingORNumberError,
+            MissingCRNumberError, MissingORScanError, MissingCRScanError,
+            ORNumberOCRMismatchError) as exc:
         return _conflict(str(exc))
     except Exception as exc:
         return _conflict(str(exc))

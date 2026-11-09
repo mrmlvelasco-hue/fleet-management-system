@@ -1822,7 +1822,8 @@ def vehicleregistration_checklist_toggle(rid, item_id):
 def vehicleregistration_complete(rid):
     from app.modules.transactions.vehicle_registration.service import (
         RegistrationDateOrderError, DuplicateORNumberError,
-        DuplicateCRNumberError)
+        DuplicateCRNumberError, MissingORNumberError, MissingCRNumberError,
+        MissingORScanError, MissingCRScanError, ORNumberOCRMismatchError)
     f = request.form
     try:
         from app.core.attachments.attachment_service import (
@@ -1834,7 +1835,10 @@ def vehicleregistration_complete(rid):
             abort(404)
 
         # Upload the scans against the registration transaction before
-        # completing it. CR is mandatory; OR scan is optional.
+        # completing it. Whether OR/CR are themselves mandatory -- and
+        # CR only for a NEW registration -- is enforced by
+        # VehicleRegistrationService.complete() itself (see
+        # MissingORScanError / MissingCRScanError), not duplicated here.
         cr_file = request.files.get("cr_scan")
         if cr_file and cr_file.filename:
             AttachmentService().upload(
@@ -1845,21 +1849,18 @@ def vehicleregistration_complete(rid):
             AttachmentService().upload(
                 or_file, "vehicle_registrations", rid, user=current_user,
                 document_type="OR")
-        cr_scans = [
-            a for a in AttachmentService().list_for(
-                "vehicle_registrations", rid)
-            if (getattr(a, "document_type", None) or "").upper() == "CR"
-        ]
-        if not cr_scans:
-            raise ValueError(
-                "Upload the Certificate of Registration (CR) scan before completing this registration.")
 
-        VehicleRegistrationService().complete(
+        result = VehicleRegistrationService().complete(
             rid, or_number=f["or_number"], cr_number=f["cr_number"],
             plate_number=f.get("plate_number") or None)
+        ocr_warning = getattr(result, "or_number_ocr_warning", None)
+        if ocr_warning:
+            flash(ocr_warning, "warning")
         flash("Vehicle Registration completed.", "success")
     except (RegistrationDateOrderError, DuplicateORNumberError,
-           DuplicateCRNumberError, ValueError) as e:
+           DuplicateCRNumberError, MissingORNumberError,
+           MissingCRNumberError, MissingORScanError, MissingCRScanError,
+           ORNumberOCRMismatchError, ValueError) as e:
         flash(str(e), "danger")
     except AttachmentError as e:
         flash(str(e), "danger")

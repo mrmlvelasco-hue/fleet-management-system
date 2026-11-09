@@ -13,6 +13,18 @@ from app.modules.master_data.org.service import BranchService
 from app.modules.document_config.service import (
     DocumentTypeService, NumberingSchemeService)
 from app.modules.user_management.models import User
+from app.core.models.attachment import Attachment
+from app.extensions import db
+
+
+def _attach_or_cr_scans(reg):
+    for doc_type in ("OR", "CR"):
+        db.session.add(Attachment(
+            reference_table="vehicle_registrations", reference_id=reg.id,
+            filename=f"{doc_type}.png", original_filename=f"{doc_type}.png",
+            file_size=10, mime_type="image/png", document_type=doc_type,
+            file_data=b"fake-bytes", is_active=True))
+    db.session.commit()
 
 
 @pytest.fixture()
@@ -69,6 +81,7 @@ def test_renewal_defaults_1_year_validity(db, env):
     first = svc.create(vehicle_id=vehicle.id, registration_type="NEW",
                        registration_date=date(2026, 1, 1), user=user)
     svc.submit(first.id, user=user)
+    _attach_or_cr_scans(first)
     svc.complete(first.id, or_number="OR-1", cr_number="CR-1",
                 plate_number="ABC-123")
     renewal = svc.create(vehicle_id=vehicle.id, registration_type="RENEWAL",
@@ -83,6 +96,7 @@ def test_complete_new_registration_assigns_plate_to_vehicle(db, env):
     reg = svc.create(vehicle_id=vehicle.id, registration_type="NEW",
                      registration_date=date(2026, 1, 1), user=user)
     svc.submit(reg.id, user=user)
+    _attach_or_cr_scans(reg)
     svc.complete(reg.id, or_number="OR-100", cr_number="CR-100",
                 plate_number="XYZ-789")
     completed = db.session.get(VehicleRegistration, reg.id)
@@ -100,6 +114,7 @@ def test_get_expiring_registrations(db, env):
     reg = svc.create(vehicle_id=vehicle.id, registration_type="NEW",
                      registration_date=date(2026, 1, 1), user=user)
     svc.submit(reg.id, user=user)
+    _attach_or_cr_scans(reg)
     svc.complete(reg.id, or_number="OR-1", cr_number="CR-1",
                 plate_number="AAA-111")
     expiring = svc.get_expiring_registrations(

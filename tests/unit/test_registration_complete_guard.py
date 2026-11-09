@@ -20,6 +20,7 @@ import json
 import pytest
 
 from app.core.security.password import hash_password
+from app.core.models.attachment import Attachment
 from app.extensions import db
 from app.modules.document_config.models import DocumentType
 from app.modules.master_data.org.models import Branch
@@ -88,6 +89,19 @@ def _draft(v, u):
     return reg
 
 
+def _attach_or_cr_scans(reg):
+    """Completion now requires evidence the OR (and, for NEW, the CR)
+    was actually received -- not just a typed number. See
+    MissingORScanError / MissingCRScanError, 2026-11-09."""
+    for doc_type in ("OR", "CR"):
+        db.session.add(Attachment(
+            reference_table="vehicle_registrations", reference_id=reg.id,
+            filename=f"{doc_type}.png", original_filename=f"{doc_type}.png",
+            file_size=10, mime_type="image/png", document_type=doc_type,
+            file_data=b"fake-bytes", is_active=True))
+    db.session.commit()
+
+
 def test_a_draft_cannot_be_completed_when_approval_is_required(app, env):
     """THE bug. The client completed a DRAFT that had never been
     submitted -- recording the OR/CR is the last step, after someone has
@@ -122,6 +136,7 @@ def test_completion_works_once_approved(app, env):
     # Stand in for the engine having approved it.
     reg.status = "APPROVED"
     db.session.commit()
+    _attach_or_cr_scans(reg)
 
     VehicleRegistrationService().complete(reg.id, or_number="OR-3",
                                           cr_number="CR-3")
@@ -136,6 +151,7 @@ def test_a_document_type_that_needs_no_approval_still_completes(app, env):
     v, u = env
     _doc_type(False)
     reg = _draft(v, u)
+    _attach_or_cr_scans(reg)
 
     VehicleRegistrationService().complete(reg.id, or_number="OR-4",
                                           cr_number="CR-4")
@@ -161,6 +177,7 @@ def test_completing_twice_is_refused(app, env):
     v, u = env
     _doc_type(False)
     reg = _draft(v, u)
+    _attach_or_cr_scans(reg)
     VehicleRegistrationService().complete(reg.id, or_number="OR-6",
                                           cr_number="CR-6")
 

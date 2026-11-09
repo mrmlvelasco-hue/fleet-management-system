@@ -129,11 +129,12 @@ def test_vehicleregistration_full_flow_assigns_plate(client, db):
 
     client.post(f"/transactions/vehicle-registrations/{reg.id}/submit",
                follow_redirects=True)
-    # Completing a registration now requires the CR scan to be on file
-    # (uploaded in this same request).
+    # Completing a NEW registration now requires both the OR and CR
+    # scans to be on file (uploaded in this same request).
     client.post(f"/transactions/vehicle-registrations/{reg.id}/complete",
                data={"or_number": "OR-999", "cr_number": "CR-999",
                      "plate_number": "NEW-001",
+                     "or_scan": tiny_jpeg_file("or.jpg"),
                      "cr_scan": tiny_jpeg_file("cr.jpg")},
                content_type="multipart/form-data", follow_redirects=True)
 

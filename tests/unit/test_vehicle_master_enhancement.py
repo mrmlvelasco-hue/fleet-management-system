@@ -42,6 +42,20 @@ def test_create_with_new_fields(db, env):
     assert v.assignment == "PRIMARY"
 
 
+def test_or_number_persists_alongside_cr_number(db, env):
+    """OR (Official Receipt) and CR (Certificate of Registration) are
+    separate LTO documents with separate numbers -- the Vehicle master
+    already carries cr_number; or_number must exist the same way so
+    VehicleRegistration completion can sync it (see Task #41)."""
+    branch, vt = env
+    v = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux", year=2024,
+        branch_id=branch.id, conduction_number="VMENH-OR1",
+        or_number="OR-12345", cr_number="CR-67890")
+    assert v.or_number == "OR-12345"
+    assert v.cr_number == "CR-67890"
+
+
 def test_engine_number_must_be_unique(db, env):
     branch, vt = env
     VehicleService().create(

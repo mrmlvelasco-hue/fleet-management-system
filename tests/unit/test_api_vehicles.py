@@ -481,6 +481,58 @@ def test_detail_registration_status_shows_the_or_cr_of_a_completed_registration(
     assert body["registration_status"]["or_cr_number"] == "OR-9988 / CR-7766"
 
 
+def test_detail_registration_status_links_to_the_or_cr_scans(
+        db, client, veh_env):
+    """Vehicle Detail panel (2026-11-09): the OR/CR number text alone
+    isn't enough to let someone open the actual scan -- the panel needs
+    the registration id and the attachment id of each scan so it can
+    link to the existing attachment download route (no new route, no
+    file-byte duplication)."""
+    from app.modules.master_data.vehicle.models import Vehicle
+    from app.modules.transactions.vehicle_registration.models import (
+        VehicleRegistration)
+    from app.core.models.attachment import Attachment
+    from datetime import date
+
+    vid = Vehicle.query.first().id
+    reg = VehicleRegistration(
+        vehicle_id=vid, registration_type="RENEWAL", status="COMPLETED",
+        registration_date=date(2026, 6, 1), expiry_date=date(2027, 6, 1),
+        or_number="OR-SCAN-1", cr_number="CR-SCAN-1")
+    db.session.add(reg)
+    db.session.commit()
+    or_att = Attachment(
+        reference_table="vehicle_registrations", reference_id=reg.id,
+        filename="or.png", original_filename="or.png", file_size=10,
+        mime_type="image/png", document_type="OR", file_data=b"x",
+        is_active=True)
+    cr_att = Attachment(
+        reference_table="vehicle_registrations", reference_id=reg.id,
+        filename="cr.png", original_filename="cr.png", file_size=10,
+        mime_type="image/png", document_type="CR", file_data=b"x",
+        is_active=True)
+    db.session.add_all([or_att, cr_att])
+    db.session.commit()
+
+    token = _token(client)
+    _, body = _get(client, f"/api/v1/vehicles/{vid}", token)
+    rs = body["registration_status"]
+    assert rs["registration_id"] == reg.id
+    assert rs["or_scan_attachment_id"] == or_att.id
+    assert rs["cr_scan_attachment_id"] == cr_att.id
+
+
+def test_detail_registration_status_scan_ids_are_none_without_scans(
+        db, client, veh_env):
+    from app.modules.master_data.vehicle.models import Vehicle
+    vid = Vehicle.query.first().id
+    token = _token(client)
+    _, body = _get(client, f"/api/v1/vehicles/{vid}", token)
+    rs = body["registration_status"]
+    assert rs.get("or_scan_attachment_id") is None
+    assert rs.get("cr_scan_attachment_id") is None
+
+
 def test_detail_registration_status_plate_schedule_is_a_readable_string(
         db, client, veh_env):
     """Same payload, the companion field: `plate_schedule` must carry

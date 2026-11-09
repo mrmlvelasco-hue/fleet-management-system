@@ -18,13 +18,27 @@ from app.modules.registration_config.service import (
     RegistrationDueCalculationService)
 from app.modules.transactions.vehicle_registration.service import (
     VehicleRegistrationService, RegistrationDateOrderError,
-    DuplicateORNumberError, DuplicateCRNumberError)
+    DuplicateORNumberError, DuplicateCRNumberError,
+    MissingORNumberError, MissingCRNumberError, MissingORScanError,
+    MissingCRScanError, ORNumberOCRMismatchError)
 from app.modules.transactions.vehicle_registration.models import (
     VehicleRegistration)
 from app.modules.master_data.vehicle.service import VehicleService
 from app.modules.master_data.reference.service import VehicleTypeService
 from app.modules.master_data.org.service import BranchService
+from app.core.models.attachment import Attachment
 from app.extensions import db
+
+
+def _attach(reg, document_type):
+    att = Attachment(
+        reference_table="vehicle_registrations", reference_id=reg.id,
+        filename=f"{document_type}.png", original_filename=f"{document_type}.png",
+        file_size=10, mime_type="image/png", document_type=document_type,
+        file_data=b"fake-bytes", is_active=True)
+    db.session.add(att)
+    db.session.commit()
+    return att
 
 
 # ── Pure plate-schedule math (no DB needed) ─────────────────────────────────
@@ -216,6 +230,16 @@ def draft_registration(db, vehicle):
         registration_date=date(2026, 1, 1), expiry_date=date(2027, 1, 1))
 
 
+@pytest.fixture()
+def new_draft_registration(db, vehicle):
+    reg = VehicleRegistration(
+        vehicle_id=vehicle.id, registration_type="NEW", status="DRAFT",
+        registration_date=date(2026, 1, 1), expiry_date=date(2029, 1, 1))
+    db.session.add(reg)
+    db.session.commit()
+    return reg
+
+
 def test_complete_rejects_registration_date_after_expiry_date(db, vehicle):
     reg = VehicleRegistration(
         vehicle_id=vehicle.id, registration_type="RENEWAL", status="DRAFT",
@@ -256,10 +280,28 @@ def test_complete_rejects_duplicate_cr_number(db, vehicle, draft_registration):
 def test_complete_succeeds_with_valid_unique_data(db, draft_registration):
     db.session.add(draft_registration)
     db.session.commit()
+    _attach(draft_registration, "OR")
     result = VehicleRegistrationService().complete(
         draft_registration.id, or_number="OR-VALID", cr_number="CR-VALID")
     assert result.status == "COMPLETED"
     assert result.or_number == "OR-VALID"
+
+
+def test_or_number_ocr_mismatch_param_is_seeded_warn_only_by_default(db):
+    """Client decision (2026-11-09): whether an OCR mismatch on the OR
+    scan blocks completion or merely warns is the client's own policy
+    choice, not a hardcoded behavior -- so it is a System Parameter,
+    defaulting to warn-only (false) so no existing install starts
+    blocking completions it never used to block."""
+    from app.cli import _seed_system_parameters
+    from app.modules.system_admin.models import SystemParameter
+    _seed_system_parameters()
+    db.session.commit()
+    row = SystemParameter.query.filter_by(
+        code="OR_NUMBER_OCR_MISMATCH_BLOCKS_COMPLETION").first()
+    assert row is not None
+    assert row.value == "false"
+    assert row.data_type == "BOOLEAN"
 
 
 def test_complete_syncs_the_vehicles_own_cr_number_and_known_expiry(
@@ -275,10 +317,185 @@ def test_complete_syncs_the_vehicles_own_cr_number_and_known_expiry(
     """
     db.session.add(draft_registration)
     db.session.commit()
+    _attach(draft_registration, "OR")
 
     VehicleRegistrationService().complete(
         draft_registration.id, or_number="OR-SYNC", cr_number="CR-SYNC")
 
     db.session.refresh(vehicle)
     assert vehicle.cr_number == "CR-SYNC"
+    assert vehicle.or_number == "OR-SYNC"
     assert vehicle.last_known_registration_expiry == draft_registration.expiry_date
+
+
+# ── New completion requirements (2026-11-09 client request) ────────────────
+
+def test_complete_requires_a_non_blank_or_number(db, draft_registration):
+    """OR Number is required to complete ANY registration, regardless of
+    NEW vs RENEWAL."""
+    db.session.add(draft_registration)
+    db.session.commit()
+    _attach(draft_registration, "OR")
+    with pytest.raises(MissingORNumberError):
+        VehicleRegistrationService().complete(
+            draft_registration.id, or_number="", cr_number="CR-X")
+
+
+def test_complete_requires_cr_number_only_for_new_registration(
+        db, new_draft_registration):
+    """CR is re-issued on a NEW registration, not on every RENEWAL --
+    the client's own correction to the original spec."""
+    _attach(new_draft_registration, "OR")
+    _attach(new_draft_registration, "CR")
+    with pytest.raises(MissingCRNumberError):
+        VehicleRegistrationService().complete(
+            new_draft_registration.id, or_number="OR-NEW-1", cr_number="")
+
+
+def test_renewal_does_not_require_a_cr_number(db, draft_registration):
+    db.session.add(draft_registration)
+    db.session.commit()
+    _attach(draft_registration, "OR")
+    result = VehicleRegistrationService().complete(
+        draft_registration.id, or_number="OR-REN-1", cr_number="")
+    assert result.status == "COMPLETED"
+
+
+def test_complete_requires_an_or_scan_attachment(db, draft_registration):
+    """The typed number alone is not evidence the document was actually
+    received -- at least one active OR-tagged attachment is required."""
+    db.session.add(draft_registration)
+    db.session.commit()
+    with pytest.raises(MissingORScanError):
+        VehicleRegistrationService().complete(
+            draft_registration.id, or_number="OR-NOSCAN", cr_number="")
+
+
+def test_complete_requires_a_cr_scan_attachment_only_for_new_registration(
+        db, new_draft_registration):
+    _attach(new_draft_registration, "OR")
+    with pytest.raises(MissingCRScanError):
+        VehicleRegistrationService().complete(
+            new_draft_registration.id, or_number="OR-NEW-2",
+            cr_number="CR-NEW-2")
+
+
+def test_renewal_does_not_require_a_cr_scan_attachment(db, draft_registration):
+    db.session.add(draft_registration)
+    db.session.commit()
+    _attach(draft_registration, "OR")
+    result = VehicleRegistrationService().complete(
+        draft_registration.id, or_number="OR-REN-2", cr_number="")
+    assert result.status == "COMPLETED"
+
+
+def test_renewal_with_blank_cr_number_does_not_wipe_the_vehicles_cr_number(
+        db, vehicle, draft_registration):
+    """The bug found alongside this feature: complete() used to write
+    vehicle.cr_number = cr_number UNCONDITIONALLY, so a RENEWAL (which
+    legitimately has no new CR number) wiped the vehicle's real,
+    previously-recorded CR number to blank."""
+    vehicle.cr_number = "CR-ORIGINAL"
+    db.session.add(draft_registration)
+    db.session.commit()
+    _attach(draft_registration, "OR")
+
+    VehicleRegistrationService().complete(
+        draft_registration.id, or_number="OR-REN-3", cr_number="")
+
+    db.session.refresh(vehicle)
+    assert vehicle.cr_number == "CR-ORIGINAL"
+    assert vehicle.or_number == "OR-REN-3"
+
+
+def test_new_registration_completes_with_or_and_cr_scans_present(
+        db, vehicle, new_draft_registration):
+    _attach(new_draft_registration, "OR")
+    _attach(new_draft_registration, "CR")
+    result = VehicleRegistrationService().complete(
+        new_draft_registration.id, or_number="OR-NEW-3", cr_number="CR-NEW-3")
+    assert result.status == "COMPLETED"
+    db.session.refresh(vehicle)
+    assert vehicle.or_number == "OR-NEW-3"
+    assert vehicle.cr_number == "CR-NEW-3"
+
+
+# ── OR-number OCR match at completion (2026-11-09 client request) ──────────
+
+def test_ocr_mismatch_warns_but_does_not_block_by_default(
+        db, draft_registration, monkeypatch):
+    """Client decision: warn-only is the DEFAULT -- the system parameter
+    is seeded false/off (see app/cli.py), so completion must still
+    succeed even on a detected mismatch unless the client has
+    explicitly turned blocking on."""
+    db.session.add(draft_registration)
+    db.session.commit()
+    _attach(draft_registration, "OR")
+    from app.core.extraction.or_number_match import ORMatchResult
+    monkeypatch.setattr(
+        "app.modules.transactions.vehicle_registration.service."
+        "match_or_number",
+        lambda content, mime_type, typed: ORMatchResult(
+            matched=False, note="mismatch note"))
+
+    result = VehicleRegistrationService().complete(
+        draft_registration.id, or_number="OR-MISMATCH", cr_number="")
+    assert result.status == "COMPLETED"
+    assert result.or_number_ocr_warning == "mismatch note"
+
+
+def test_ocr_mismatch_blocks_when_the_parameter_is_turned_on(
+        db, draft_registration, monkeypatch):
+    from app.modules.system_admin.models import SystemParameter
+    db.session.add(SystemParameter(
+        code="OR_NUMBER_OCR_MISMATCH_BLOCKS_COMPLETION", value="true",
+        data_type="BOOLEAN", group_name="VEHICLE_REGISTRATION",
+        description="test override"))
+    db.session.add(draft_registration)
+    db.session.commit()
+    _attach(draft_registration, "OR")
+    from app.core.extraction.or_number_match import ORMatchResult
+    monkeypatch.setattr(
+        "app.modules.transactions.vehicle_registration.service."
+        "match_or_number",
+        lambda content, mime_type, typed: ORMatchResult(
+            matched=False, note="mismatch note"))
+
+    with pytest.raises(ORNumberOCRMismatchError):
+        VehicleRegistrationService().complete(
+            draft_registration.id, or_number="OR-MISMATCH2", cr_number="")
+
+
+def test_a_matching_or_number_carries_no_warning(
+        db, draft_registration, monkeypatch):
+    db.session.add(draft_registration)
+    db.session.commit()
+    _attach(draft_registration, "OR")
+    from app.core.extraction.or_number_match import ORMatchResult
+    monkeypatch.setattr(
+        "app.modules.transactions.vehicle_registration.service."
+        "match_or_number",
+        lambda content, mime_type, typed: ORMatchResult(matched=True))
+
+    result = VehicleRegistrationService().complete(
+        draft_registration.id, or_number="OR-GOOD", cr_number="")
+    assert getattr(result, "or_number_ocr_warning", None) is None
+
+
+def test_an_unreadable_scan_is_never_treated_as_a_mismatch(
+        db, draft_registration, monkeypatch):
+    """matched=None (no extractable text) must never warn or block --
+    the client's explicit decision."""
+    db.session.add(draft_registration)
+    db.session.commit()
+    _attach(draft_registration, "OR")
+    from app.core.extraction.or_number_match import ORMatchResult
+    monkeypatch.setattr(
+        "app.modules.transactions.vehicle_registration.service."
+        "match_or_number",
+        lambda content, mime_type, typed: ORMatchResult(matched=None))
+
+    result = VehicleRegistrationService().complete(
+        draft_registration.id, or_number="OR-UNREADABLE", cr_number="")
+    assert result.status == "COMPLETED"
+    assert getattr(result, "or_number_ocr_warning", None) is None
