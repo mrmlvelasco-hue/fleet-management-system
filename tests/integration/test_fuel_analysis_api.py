@@ -96,6 +96,20 @@ def test_analysis_returns_rows_and_fleet_summary_for_the_year(
     assert body["summary"]["year"] == 2026
 
 
+def test_analysis_row_carries_company_id_and_name(db, client, env):
+    """2026-11-09: the report's only org filter is Company, so each
+    row must expose company_id/company_name -- null here since neither
+    fixture branch is mapped to a Company (the normal, unmapped
+    starting state), not because the fields are missing."""
+    status, body = _get(client, "/api/v1/fuel/analysis?year=2026",
+                        _token(client))
+    assert status == 200
+    row = body["rows"][0]
+    assert "company_id" in row and "company_name" in row
+    assert row["company_id"] is None
+    assert row["company_name"] is None
+
+
 def test_analysis_is_scoped_the_same_way_as_the_list(db, client, env):
     """A branch-scoped user never sees another branch's vehicle, even
     when they pass no branch_id filter at all."""

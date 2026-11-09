@@ -37,6 +37,21 @@ def effective_company_id(record):
     return getattr(branch, "company_id", None) if branch is not None else None
 
 
+def effective_company(record):
+    """The OrgCompany object this record belongs to, or None -- the
+    same rule as `effective_company_id()`, but returning the object
+    itself (via the already-loaded relationships, no extra query) so a
+    caller that needs the label, not just the id, doesn't have to
+    re-fetch by id. Used wherever a report groups/displays by Company
+    rather than only filtering by it (e.g. the Fuel Analysis report's
+    per-vehicle identity column)."""
+    own = getattr(record, "company", None)
+    if own is not None:
+        return own
+    branch = getattr(record, "branch", None)
+    return getattr(branch, "company", None) if branch is not None else None
+
+
 def company_label(company):
     """One Company rendered for display: short name plus the Region and
     Area/District that make it unique (D2's own uniqueness key) --

@@ -236,7 +236,7 @@ def test_export_mirrors_the_client_workbook_layout_with_a_dynamic_year(
     from app.modules.transactions.fuel.monthly_analysis import _MONTH_BLOCK
 
     identity_row = [c.value for c in ws[2]]
-    assert "Branch" in identity_row
+    assert "Company" in identity_row
     assert "Plate / Conduction No." in identity_row
     assert "JAN" in identity_row
     assert "DEC" in identity_row
@@ -294,3 +294,67 @@ def test_export_reconciles_to_the_real_figures_not_the_defects(db, vehicle):
     sept_km_col = sep_col + _MONTH_BLOCK.index("KM Driven")
     data_row = [c.value for c in ws[4]]
     assert data_row[sept_km_col - 1] == 10500
+
+
+def test_monthly_rows_resolves_company_through_the_vehicles_branch(db):
+    """Michael's UAT report (2026-11-09): the on-screen/export identity
+    column showed 'Branch' even though this report's only org filter is
+    Company (no Branch filter exists on this screen at all) -- so a
+    reader had no way to see which Company a row belonged to, only a
+    Branch, which this report doesn't let them filter or search by.
+
+    The vehicle itself has no company_id of its own here -- only its
+    Branch is mapped to a Company -- exercising the EFFECTIVE-company
+    fallback (app.core.company_resolution), the same rule every other
+    Company-aware report/filter in the system already uses."""
+    from app.modules.master_data.reference.service import VehicleTypeService
+    from app.modules.master_data.org.service import (
+        BranchService, RegionService, AreaDistrictService,
+        OrgCompanyService)
+    from app.modules.master_data.vehicle.service import VehicleService
+
+    region = RegionService().create(code="RG-FMA", name="Region FMA")
+    area = AreaDistrictService().create(
+        code="AR-FMA", name="Area FMA", region_id=region.id)
+    company = OrgCompanyService().create(
+        short_name="Acme", region_id=region.id, area_district_id=area.id)
+    branch = BranchService().create(
+        code="BR-FMA3", name="Branch FMA3", company_id=company.id)
+    vt = VehicleTypeService().create(code="LV-FMA3", name="Light",
+                                     category="LIGHT")
+    vehicle = VehicleService().create(
+        vehicle_type_id=vt.id, brand="Toyota", model="Hilux",
+        year=2023, branch_id=branch.id, conduction_number="FMA-3",
+        plate_number="FMA-003")
+
+    result = FuelMonthlyAnalysisService().monthly_rows(year=2026)
+    row = next(r for r in result if r["vehicle_id"] == vehicle.id)
+
+    assert row["company_id"] == company.id
+    assert row["company_name"] == "Acme (Region FMA / Area FMA)"
+
+
+def test_monthly_rows_company_is_none_when_branch_is_unmapped(db, vehicle):
+    """A legacy, not-yet-mapped Branch is the normal starting state
+    (per the Branch->Company migration docs) -- must render as a clean
+    None/'-', never raise or silently default to something else."""
+    result = FuelMonthlyAnalysisService().monthly_rows(year=2026)
+    row = next(r for r in result if r["vehicle_id"] == vehicle.id)
+    assert row["company_id"] is None
+    assert row["company_name"] is None
+
+
+def test_xlsx_export_identity_column_is_company_not_branch(db):
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from app.modules.transactions.fuel.monthly_analysis import (
+        export_monthly_analysis_xlsx)
+
+    rows = FuelMonthlyAnalysisService().monthly_rows(year=2027)
+    xlsx = export_monthly_analysis_xlsx(rows, year=2027)
+    wb = load_workbook(BytesIO(xlsx))
+    ws = wb.active
+
+    identity_row = [c.value for c in ws[2]]
+    assert "Company" in identity_row
+    assert "Branch" not in identity_row

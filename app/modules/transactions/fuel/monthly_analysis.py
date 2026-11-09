@@ -192,16 +192,29 @@ class FuelMonthlyAnalysisService:
             department_id=department_id,
             vehicle_type_id=vehicle_type_id, plate=plate, user=user).all()
 
+        from app.core.company_resolution import (
+            company_label, effective_company)
+
         rows = []
         for v in vehicles:
             months = self._vehicle_series(
                 v.id, year, fuel_type=fuel_type, station=station)
+            # 2026-11-09: this report's only org filter is Company (it
+            # has no Branch filter at all), but the identity column was
+            # still rendering Branch -- resolved through the vehicle's
+            # EFFECTIVE Company (own company_id, else its branch's),
+            # the same rule every other Company-aware report/filter
+            # uses (app.core.company_resolution). Branch is kept
+            # alongside for any existing consumer that still reads it.
+            company = effective_company(v)
             rows.append({
                 "vehicle_id": v.id,
                 "plate_number": v.plate_number or v.conduction_number,
                 "vehicle_label": f"{v.brand} {v.model}".strip(),
                 "branch_id": v.branch_id,
                 "branch_name": v.branch.name if v.branch else None,
+                "company_id": company.id if company else None,
+                "company_name": company_label(company),
                 "department_id": v.department_id,
                 "department_name": (v.department.name
                                     if v.department else None),
@@ -247,7 +260,7 @@ REASON_LABELS = {
 
 MISSING = "—"   # "-" -- never 0, and never a bare blank cell.
 
-_EXPORT_HEADER = ["Branch", "Department", "Plate / Conduction No.",
+_EXPORT_HEADER = ["Company", "Department", "Plate / Conduction No.",
                   "Vehicle"]
 # Begin Odometer leads the block -- the starting point of the month,
 # read before End Odometer or anything derived from it.
@@ -341,7 +354,7 @@ def export_monthly_analysis_xlsx(rows, year=None, fleet_summary=None) -> bytes:
 
     # Data values are unchanged; only formatting is applied to the emitted cells.
     for row in rows:
-        out = [row.get("branch_name") or MISSING,
+        out = [row.get("company_name") or MISSING,
                row.get("department_name") or MISSING,
                row.get("plate_number") or MISSING,
                row.get("vehicle_label") or MISSING]

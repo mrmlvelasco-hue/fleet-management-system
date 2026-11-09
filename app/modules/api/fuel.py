@@ -461,6 +461,8 @@ def _analysis_row_json(row):
         "vehicle_label": row["vehicle_label"],
         "branch_id": row["branch_id"],
         "branch_name": row["branch_name"],
+        "company_id": row["company_id"],
+        "company_name": row["company_name"],
         "department_id": row["department_id"],
         "department_name": row["department_name"],
         "months": [_month_json(m) for m in row["months"]],
