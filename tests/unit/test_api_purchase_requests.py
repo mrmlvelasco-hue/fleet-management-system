@@ -312,6 +312,28 @@ def test_submit_and_approve(db, client, pr_env):
     assert status == 200, body
 
 
+def test_display_status_shows_approved_not_draft_before_ordering(
+        db, client, pr_env):
+    """PR-WL's own `status` column stays "DRAFT" through submission AND
+    through approval -- only mark-ordered()/mark-received() ever move
+    it (ORDERED/RECEIVED). Without the shared resolver, an approved PR
+    still awaiting ordering was indistinguishable here from one nobody
+    had even submitted ("Draft" either way), the exact gap this fixes."""
+    _status, pr_body = _post(client, "/api/v1/purchase-requests",
+                             _token(client), _pr_payload(pr_env))
+    status, body = _post(
+        client, f"/api/v1/purchase-requests/{pr_body['id']}/submit",
+        _token(client))
+    assert status == 200, body
+    # _ensure_doc_type("PR") sets requires_approval=False, so submit()
+    # auto-approves the instance immediately -- no separate approve
+    # step needed to reach "approved, not yet ordered".
+    _status, detail = _get(
+        client, f"/api/v1/purchase-requests/{pr_body['id']}", _token(client))
+    assert detail["status"] == "DRAFT"
+    assert detail["display_status"] == "Approved"
+
+
 def test_approval_actions_are_not_404_placeholders(db, client, pr_env):
     _status, pr_body = _post(client, "/api/v1/purchase-requests",
                              _token(client), _pr_payload(pr_env))

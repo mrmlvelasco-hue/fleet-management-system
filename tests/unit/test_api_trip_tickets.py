@@ -562,3 +562,47 @@ def test_a_non_requester_is_not_offered_the_decision(db, client, tt_approval_env
     _status, req_view = _get(
         client, f"/api/v1/trip-tickets/{trip['id']}", req_token)
     assert req_view["can_act"] is False
+
+
+# ── display_status ──────────────────────────────────────────────────────────
+
+def test_display_status_is_draft_before_submission(db, client, tt_env):
+    """The stored `status` stays "DRAFT" from creation all the way
+    through approval -- only release() ever moves it. The shared
+    display_status resolver is what tells these apart."""
+    _set_param(db, "REQUIRE_DRIVER_FROM_MASTER", "NO")
+    cstatus, trip = _post(client, "/api/v1/trip-tickets", _token(client),
+                          _payload(tt_env, driver_name_manual="Ad Hoc Driver"))
+    assert cstatus == 201, trip
+
+    _status, body = _get(
+        client, f"/api/v1/trip-tickets/{trip['id']}", _token(client))
+
+    assert body["status"] == "DRAFT"
+    assert body["display_status"] == "Draft"
+
+
+def test_display_status_shows_approved_not_draft_before_release(
+        db, client, tt_approval_env):
+    """An approved trip ticket not yet released for the trip must not
+    read as indistinguishable from one nobody has submitted."""
+    _set_param(db, "REQUIRE_DRIVER_FROM_MASTER", "NO")
+    req_token = _token(client, "tt_requester")
+    appr_token = _token(client, "tt_approver")
+
+    _status, trip = _post(client, "/api/v1/trip-tickets", req_token,
+                          _tt_approval_payload(tt_approval_env))
+    tid = trip["id"]
+
+    status, body = _post(
+        client, f"/api/v1/trip-tickets/{tid}/submit", req_token)
+    assert status == 200, body
+
+    status, body = _post(
+        client, f"/api/v1/trip-tickets/{tid}/approve", appr_token)
+    assert status == 200, body
+
+    _status, detail = _get(
+        client, f"/api/v1/trip-tickets/{tid}", req_token)
+    assert detail["status"] == "DRAFT"
+    assert detail["display_status"] == "Approved"

@@ -16,6 +16,7 @@ its own validity could silently record a non-compliant registration.
 """
 from flask import jsonify, request
 
+from app.core.approval.display_status import resolve_display_status
 from app.modules.api.approval_eligibility import can_act_on
 from app.modules.api.auth import api_auth_required
 from app.modules.api.coercion import Coercer, FieldValueError
@@ -83,6 +84,8 @@ def _reg_json(r, *, detail=False, api_user=None):
         "or_cr_cost": _money(r.or_cr_cost),
         "odometer_at_registration": r.odometer_at_registration,
         "status": r.status,
+        "display_status": resolve_display_status(
+            r.status, getattr(r, "approval_instance", None)),
         "is_historical": r.is_historical,
         "requested_by": r.requester.username if r.requester else None,
         # Transient, non-persisted: set by complete() only when an

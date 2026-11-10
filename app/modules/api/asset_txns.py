@@ -172,6 +172,8 @@ def _txn_json(txn, *, asset_attr, serial_key, detail=False,
     "battery"; the serial is surfaced under its own key because that
     is what identifies the item to a storeman -- an id alone would send
     them back to Master Data to look it up."""
+    from app.core.approval.display_status import resolve_display_status
+
     asset = getattr(txn, asset_attr, None)
     removed = getattr(txn, f"removed_{asset_attr}", None)
     data = {
@@ -189,6 +191,8 @@ def _txn_json(txn, *, asset_attr, serial_key, detail=False,
         "odometer_at_service": getattr(txn, "odometer_at_service", None),
         "remarks": txn.remarks,
         "status": txn.status,
+        "display_status": resolve_display_status(
+            txn.status, getattr(txn, "approval_instance", None)),
         "requested_by": txn.requester.username if txn.requester else None,
         # 2026-10-15: where it came from (MANUAL | MO | CHECKLIST), the
         # order that generated it, the wheel, and the readings.

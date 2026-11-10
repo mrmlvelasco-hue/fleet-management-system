@@ -14,6 +14,7 @@ actually be accepted.
 """
 from flask import jsonify, request
 
+from app.core.approval.display_status import resolve_display_status
 from app.modules.api.approval_eligibility import can_act_on
 from app.modules.api.auth import api_auth_required
 from app.modules.api.coercion import Coercer, FieldValueError
@@ -96,6 +97,8 @@ def _mv_json(mv, *, detail=False, api_user=None):
         "movement_end_datetime": _iso(mv.movement_end_datetime),
         "remarks": mv.remarks,
         "status": mv.status,
+        "display_status": resolve_display_status(
+            mv.status, getattr(mv, "approval_instance", None)),
         "requested_by": mv.requester.username if mv.requester else None,
     }
     if detail:

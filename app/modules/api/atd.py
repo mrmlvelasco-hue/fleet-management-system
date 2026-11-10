@@ -59,10 +59,17 @@ def _atd_json(a, *, detail=False):
     if a.driver:
         driver_name = getattr(a.driver, "full_name", None) or getattr(
             a.driver, "name", None)
+    from app.core.approval.display_status import resolve_display_status
     data = {
         "id": a.id,
         "document_number": a.document_number,
         "status": a.status,
+        # Same shared resolver the desktop MO list uses: `status` alone
+        # stays "DRAFT" through both submission and approval, so an
+        # approved-but-not-yet-activated ATD needs this to read as
+        # "Approved" rather than indistinguishable from "Draft".
+        "display_status": resolve_display_status(
+            a.status, getattr(a, "approval_instance", None)),
         "vehicle_id": a.vehicle_id,
         "authorization_type": getattr(a, "authorization_type", None) or "SPECIFIC_VEHICLE",
         "vehicle_type_id": a.vehicle_type_id,

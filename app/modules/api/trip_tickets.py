@@ -8,6 +8,7 @@ validates, coerces and serialises, and computes nothing of its own.
 """
 from flask import jsonify, request
 
+from app.core.approval.display_status import resolve_display_status
 from app.modules.api.approval_eligibility import can_act_on
 from app.modules.api.auth import api_auth_required
 from app.modules.api.coercion import Coercer, FieldValueError
@@ -100,6 +101,8 @@ def _trip_json(t, *, detail=False, api_user=None):
         "odometer_in": t.odometer_in,
         "passengers": t.passengers,
         "status": t.status,
+        "display_status": resolve_display_status(
+            t.status, getattr(t, "approval_instance", None)),
         "requested_by": t.requester.username if t.requester else None,
     }
     if detail:

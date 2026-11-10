@@ -439,3 +439,45 @@ def test_full_return_and_resubmit_cycle(db, client, vm_approval_env):
         client, f"/api/v1/vehicle-movements/{mid}/resubmit", req_token)
     assert status == 200, body
     assert body["approval_instance_status"] == "PENDING"
+
+
+# ── display_status ──────────────────────────────────────────────────────────
+
+def test_display_status_is_draft_before_submission(db, client, vm_env):
+    """The stored `status` stays "DRAFT" from creation through
+    approval -- only start_movement() (to IN_TRANSIT) ever moves it.
+    The shared display_status resolver is what tells these apart."""
+    cstatus, mv = _post(client, "/api/v1/vehicle-movements", _token(client),
+                        _payload(vm_env))
+    assert cstatus == 201, mv
+
+    _status, body = _get(
+        client, f"/api/v1/vehicle-movements/{mv['id']}", _token(client))
+
+    assert body["status"] == "DRAFT"
+    assert body["display_status"] == "Draft"
+
+
+def test_display_status_shows_approved_not_draft_before_movement_starts(
+        db, client, vm_approval_env):
+    """An approved movement not yet started must not read as
+    indistinguishable from one nobody has submitted."""
+    req_token = _token(client, "vm_requester")
+    appr_token = _token(client, "vm_approver")
+
+    _status, mv = _post(client, "/api/v1/vehicle-movements", req_token,
+                        _payload(vm_approval_env))
+    mid = mv["id"]
+
+    status, body = _post(
+        client, f"/api/v1/vehicle-movements/{mid}/submit", req_token)
+    assert status == 200, body
+
+    status, body = _post(
+        client, f"/api/v1/vehicle-movements/{mid}/approve", appr_token)
+    assert status == 200, body
+
+    _status, detail = _get(
+        client, f"/api/v1/vehicle-movements/{mid}", req_token)
+    assert detail["status"] == "DRAFT"
+    assert detail["display_status"] == "Approved"

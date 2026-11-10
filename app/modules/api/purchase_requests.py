@@ -88,6 +88,7 @@ def _linked_mo(pr_id):
 
 
 def _pr_json(pr, *, detail=False):
+    from app.core.approval.display_status import resolve_display_status
     data = {
         "id": pr.id,
         "document_number": pr.document_number,
@@ -101,6 +102,12 @@ def _pr_json(pr, *, detail=False):
                            if pr.needed_by_date else None),
         "amount": _money(pr.amount),
         "status": pr.status,
+        # Same shared resolver the desktop MO list uses: `status` alone
+        # stays "DRAFT" through both submission and approval here too,
+        # so an approved PR still awaiting ordering needs this to read
+        # as "Approved" rather than indistinguishable from "Draft".
+        "display_status": resolve_display_status(
+            pr.status, getattr(pr, "approval_instance", None)),
         "requested_by": pr.requester.username if pr.requester else None,
         # Lines lock once the PR is closed (RECEIVED/CANCELLED) or
         # rejected -- the edit policy's own rule (editable_scope), so

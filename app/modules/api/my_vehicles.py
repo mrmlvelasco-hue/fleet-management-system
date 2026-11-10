@@ -562,13 +562,19 @@ def _mo_type_label(mo):
 
 
 def _pr_display_status(pr):
-    """Mirrors the Purchase Request list labels -- Draft / Pending /
-    Approved / Rejected / Ordered / Received / Cancelled."""
-    phys = (pr.status or "").upper()
-    labels = {"DRAFT": "Draft", "PENDING": "Pending", "APPROVED": "Approved",
-              "REJECTED": "Rejected", "ORDERED": "Ordered",
-              "RECEIVED": "Received", "CANCELLED": "Cancelled"}
-    return labels.get(phys, phys.title() if phys else "Draft")
+    """The same shared resolver the desktop MO list uses (_display_status
+    in maintenance_orders.py), applied to a Purchase Request.
+
+    Was its own title-cased copy of `pr.status` with no reference to
+    the linked ApprovalInstance at all -- but PurchaseRequestService
+    never actually writes "PENDING"/"APPROVED"/"REJECTED" to that
+    column (only ORDERED/RECEIVED/CANCELLED; see base_service.py's
+    `submit()`), so a PR genuinely sitting with an approver showed as
+    "Draft" here, indistinguishable from one nobody had even submitted
+    yet (2026-11-10)."""
+    from app.core.approval.display_status import resolve_display_status
+    return resolve_display_status(
+        pr.status, getattr(pr, "approval_instance", None))
 
 
 _CLOSED_MO_STATUSES = ("COMPLETED", "CANCELLED")

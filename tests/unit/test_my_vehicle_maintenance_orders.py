@@ -258,6 +258,33 @@ def test_a_linked_purchase_request_is_nested_under_its_mo(client, env):
     assert item["purchase_request"]["display_status"] == "Approved"
 
 
+def test_a_pending_pr_reads_as_awaiting_approval_not_draft(client, env):
+    """A Purchase Request's own `status` column never actually becomes
+    "PENDING"/"APPROVED" in this codebase (only ORDERED/RECEIVED/
+    CANCELLED are ever written to it by PurchaseRequestService) -- it
+    stays "DRAFT" while an approver has it. _pr_display_status used to
+    title-case `pr.status` directly and never looked at the linked
+    ApprovalInstance at all, so a PR actually sitting with an approver
+    showed as "Draft" on this very card -- indistinguishable from one
+    nobody has even submitted yet."""
+    mo = _mo(env, status="DRAFT", number="MO-WITH-PENDING-PR",
+             description="Transmission")
+    pr = _pr(env, mo, number="PR-2026-00199", status="DRAFT")
+    inst = ApprovalInstance(
+        document_type_id=env["dt"].id, approval_path_id=env["path"].id,
+        reference_table="purchase_requests", reference_id=pr.id,
+        status="PENDING", current_level=1, submitted_by=env["juan"].id)
+    db.session.add(inst); db.session.flush()
+    pr.approval_instance_id = inst.id
+    db.session.commit()
+
+    item = _body(client.get(
+        f"/api/v1/my/vehicles/{env['mine'].id}/maintenance-orders",
+        headers=_hdr(client)))["items"][0]
+    assert item["purchase_request"]["status"] == "DRAFT"
+    assert item["purchase_request"]["display_status"] == "Awaiting Approval"
+
+
 def test_a_mo_without_a_pr_has_no_purchase_request_key_value(client, env):
     _mo(env, status="DRAFT", number="MO-NO-PR", description="Inspection")
     item = _body(client.get(

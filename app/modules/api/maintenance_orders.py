@@ -111,27 +111,17 @@ def _attachment_count(order_id):
 
 
 def _display_status(order):
-    """User-facing status combining physical + approval state."""
-    phys = (order.status or "").upper()
-    inst = getattr(order, "approval_instance", None)
-    appr = (inst.status if inst is not None else None)
-    if phys == "CANCELLED":
-        return "Cancelled"
-    if phys == "COMPLETED":
-        return "Completed"
-    if phys == "IN_PROGRESS":
-        return "In Progress"
-    if appr == "PENDING":
-        return "Awaiting Approval"
-    if appr == "RETURNED":
-        return "Returned for Revision"
-    if appr == "REJECTED":
-        return "Rejected"
-    if appr == "APPROVED" and phys == "DRAFT":
-        return "Approved"
-    if phys == "DRAFT":
-        return "Draft"
-    return phys.title() if phys else "Draft"
+    """User-facing status combining physical + approval state.
+
+    Delegates to the shared resolver (app/core/approval/display_status.py,
+    2026-11-10) -- this was the one module that already had the
+    combination right; the others are being brought up to match, not
+    the other way round. Kept as a thin wrapper rather than inlined at
+    every call site: my_vehicles.py imports this exact name directly.
+    """
+    from app.core.approval.display_status import resolve_display_status
+    return resolve_display_status(
+        order.status, getattr(order, "approval_instance", None))
 
 
 def _approval_audit(order):

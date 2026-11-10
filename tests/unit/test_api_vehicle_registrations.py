@@ -597,3 +597,47 @@ def test_detail_response_carries_no_ocr_warning_by_default(db, client,
         {"or_number": "OR-NOWARN", "cr_number": "CR-NOWARN"})
     assert status == 200, body
     assert body["or_number_ocr_warning"] is None
+
+
+# ── display_status ──────────────────────────────────────────────────────────
+
+def test_display_status_is_draft_before_submission(db, client, vr_env):
+    """The stored `status` stays "DRAFT" from creation through
+    approval -- only complete() (recording the OR/CR) ever moves it.
+    The shared display_status resolver is what tells these apart."""
+    cstatus, reg = _post(client, "/api/v1/vehicle-registrations",
+                         _token(client), _payload(vr_env))
+    assert cstatus == 201, reg
+
+    _status, body = _get(
+        client, f"/api/v1/vehicle-registrations/{reg['id']}", _token(client))
+
+    assert body["status"] == "DRAFT"
+    assert body["display_status"] == "Draft"
+
+
+def test_display_status_shows_approved_not_draft_before_or_cr_completion(
+        db, client, vr_approval_env):
+    """An approved registration still missing its OR/CR must not read
+    as indistinguishable from one nobody has submitted -- the exact
+    gap this project's OR/CR-completion work was built to surface, not
+    to hide behind a bare "DRAFT"."""
+    req_token = _token(client, "vr_requester")
+    appr_token = _token(client, "vr_approver")
+
+    _status, reg = _post(client, "/api/v1/vehicle-registrations", req_token,
+                         _payload(vr_approval_env))
+    rid = reg["id"]
+
+    status, body = _post(
+        client, f"/api/v1/vehicle-registrations/{rid}/submit", req_token)
+    assert status == 200, body
+
+    status, body = _post(
+        client, f"/api/v1/vehicle-registrations/{rid}/approve", appr_token)
+    assert status == 200, body
+
+    _status, detail = _get(
+        client, f"/api/v1/vehicle-registrations/{rid}", req_token)
+    assert detail["status"] == "DRAFT"
+    assert detail["display_status"] == "Approved"

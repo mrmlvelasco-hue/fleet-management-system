@@ -224,6 +224,17 @@ class BaseTransactionService:
             document_number=getattr(record, "document_number", None))
         record.approval_instance_id = instance.id
         db.session.commit()
+        # If this record's `approval_instance` relationship was already
+        # read (and so cached, e.g. as None) earlier in this same
+        # session -- such as when the create response serialized it --
+        # that cache does not silently re-resolve just because the FK
+        # above was set and committed. Same fix as the
+        # `purchase_request` relationship below in purchase_requests.py:
+        # force the next access to re-query so callers that inspect
+        # record.approval_instance right after submit() (e.g. a
+        # display-status computation) see the real, just-created
+        # instance rather than a stale cached value.
+        db.session.expire(record, ["approval_instance"])
         return record
 
     def approve(self, record_id: int, user, remarks=None):
