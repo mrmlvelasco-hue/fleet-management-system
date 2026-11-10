@@ -244,3 +244,196 @@ def test_bad_branch_id_is_a_clean_400(db, client, wl_env):
     status, _ = _get(
         client, "/api/v1/dashboard/awaiting-approval?branch_id=abc", token)
     assert status == 400
+
+
+# ── "Needs to complete" -- the initiator's own unfinished documents ──────
+#
+# Requested: the initiator shouldn't have to open every module to find out
+# which of their own documents still need something from them. A document's
+# own `status` column stays "DRAFT" through submission AND through
+# approval -- it only moves to the module's next physical status (COMPLETED
+# / RELEASED / ORDERED / ACTIVE / IN_TRANSIT / MOUNTED / IN_PROGRESS) once
+# the initiator takes that module's own closing action. So "status == DRAFT"
+# alone covers three different situations, only two of which belong here:
+#   - never submitted (approval_instance_id is still empty)            -> draft
+#   - submitted, approval instance PENDING                             -> skip
+#     (not the initiator's move -- it's an approver's decision)
+#   - submitted, approval instance RETURNED                            -> skip
+#     (already surfaced as kind="returned" above -- would double-list it)
+#   - submitted, approval instance APPROVED, closing action not taken  -> draft
+# Both "draft" situations are configurable (client's own call, default ON
+# for both) via two System Parameters, mirroring the OR/CR completion
+# feature's own OR_NUMBER_OCR_MISMATCH_BLOCKS_COMPLETION precedent.
+
+def _pr(db, user, **over):
+    from app.modules.transactions.purchase_request.models import PurchaseRequest
+    kw = dict(requested_by=user.id, status="DRAFT")
+    kw.update(over)
+    pr = PurchaseRequest(**kw)
+    db.session.add(pr)
+    db.session.commit()
+    return pr
+
+
+def _approved_instance(db):
+    from app.core.approval.models import ApprovalInstance
+    from app.modules.document_config.models import DocumentType
+    dt = DocumentType.query.filter_by(code="PR-WL").first()
+    if dt is None:
+        dt = DocumentType(code="PR-WL", name="Purchase Request")
+        db.session.add(dt)
+        db.session.flush()
+    inst = ApprovalInstance(document_type_id=dt.id,
+                            reference_table="purchase_requests",
+                            reference_id=1, status="APPROVED")
+    db.session.add(inst)
+    db.session.commit()
+    return inst
+
+
+def test_includes_an_unsubmitted_draft_of_the_signed_in_user(db, client, wl_env):
+    approver, _ = wl_env
+    pr = _pr(db, approver, document_number="PR-2026-UNSUB")
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/awaiting-approval", token)
+    drafts = [i for i in body["items"] if i["kind"] == "draft"]
+    assert len(drafts) == 1
+    assert drafts[0]["reference_id"] == pr.id
+    assert drafts[0]["reference_table"] == "purchase_requests"
+    assert drafts[0]["draft_state"] == "unsubmitted"
+
+
+def test_includes_an_approved_but_unfinished_document(db, client, wl_env):
+    approver, _ = wl_env
+    inst = _approved_instance(db)
+    pr = _pr(db, approver, document_number="PR-2026-APPR",
+            approval_instance_id=inst.id)
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/awaiting-approval", token)
+    drafts = [i for i in body["items"]
+             if i["kind"] == "draft" and i["reference_id"] == pr.id]
+    assert len(drafts) == 1
+    assert drafts[0]["draft_state"] == "approved_unfinished"
+
+
+def test_excludes_a_document_pending_approval(db, client, wl_env):
+    """Not the initiator's move right now -- it's an approver's decision,
+    already covered by kind="approval" on THEIR list, not this one."""
+    from app.core.approval.models import ApprovalInstance
+    from app.modules.document_config.models import DocumentType
+    approver, _ = wl_env
+    dt = DocumentType.query.filter_by(code="PR-WL").first()
+    if dt is None:
+        dt = DocumentType(code="PR-WL", name="Purchase Request")
+        db.session.add(dt)
+        db.session.flush()
+    inst = ApprovalInstance(document_type_id=dt.id,
+                            reference_table="purchase_requests",
+                            reference_id=1, status="PENDING")
+    db.session.add(inst)
+    db.session.commit()
+    pr = _pr(db, approver, approval_instance_id=inst.id)
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/awaiting-approval", token)
+    drafts = [i for i in body["items"]
+             if i["kind"] == "draft" and i["reference_id"] == pr.id]
+    assert drafts == []
+
+
+def test_excludes_a_returned_document_from_the_draft_list(db, client, wl_env):
+    """Already shown as kind="returned" -- listing it again as kind="draft"
+    would double-count the same document on the same panel."""
+    from app.core.approval.models import ApprovalInstance
+    from app.modules.document_config.models import DocumentType
+    approver, _ = wl_env
+    dt = DocumentType.query.filter_by(code="PR-WL").first()
+    if dt is None:
+        dt = DocumentType(code="PR-WL", name="Purchase Request")
+        db.session.add(dt)
+        db.session.flush()
+    inst = ApprovalInstance(document_type_id=dt.id,
+                            reference_table="purchase_requests",
+                            reference_id=1, status="RETURNED",
+                            submitted_by=approver.id, current_level=1)
+    db.session.add(inst)
+    db.session.commit()
+    pr = _pr(db, approver, approval_instance_id=inst.id)
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/awaiting-approval", token)
+    drafts = [i for i in body["items"]
+             if i["kind"] == "draft" and i["reference_id"] == pr.id]
+    assert drafts == []
+    returned = [i for i in body["items"]
+               if i["kind"] == "returned" and i["reference_id"] == pr.id]
+    assert len(returned) == 1
+
+
+def test_excludes_another_users_drafts(db, client, wl_env):
+    approver, other = wl_env
+    pr = _pr(db, other, document_number="PR-OTHER")
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/awaiting-approval", token)
+    numbers = [i["document_number"] for i in body["items"]]
+    assert "PR-OTHER" not in numbers
+
+
+def test_draft_items_count_toward_total(db, client, wl_env):
+    approver, _ = wl_env
+    _pr(db, approver, document_number="PR-2026-COUNT")
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/awaiting-approval", token)
+    assert body["total"] >= 1
+
+
+def test_system_parameter_can_disable_unsubmitted_drafts(db, client, app, wl_env):
+    from app.cli import _seed_system_parameters
+    from app.modules.system_admin.models import SystemParameter
+    approver, _ = wl_env
+    _pr(db, approver, document_number="PR-2026-OFF")
+    _seed_system_parameters()
+    db.session.commit()
+    param = SystemParameter.query.filter_by(
+        code="DASHBOARD_ACTION_LIST_INCLUDES_UNSUBMITTED_DRAFTS").first()
+    assert param is not None, "expected this param to be seeded"
+    param.value = "false"
+    db.session.commit()
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/awaiting-approval", token)
+    numbers = [i["document_number"] for i in body["items"]]
+    assert "PR-2026-OFF" not in numbers
+
+
+def test_system_parameter_can_disable_approved_unfinished(db, client, app, wl_env):
+    from app.cli import _seed_system_parameters
+    from app.modules.system_admin.models import SystemParameter
+    approver, _ = wl_env
+    inst = _approved_instance(db)
+    _pr(db, approver, document_number="PR-2026-APPROFF",
+       approval_instance_id=inst.id)
+    _seed_system_parameters()
+    db.session.commit()
+    param = SystemParameter.query.filter_by(
+        code="DASHBOARD_ACTION_LIST_INCLUDES_APPROVED_UNFINISHED").first()
+    assert param is not None, "expected this param to be seeded"
+    param.value = "false"
+    db.session.commit()
+    token = _token(client)
+    _, body = _get(client, "/api/v1/dashboard/awaiting-approval", token)
+    numbers = [i["document_number"] for i in body["items"]]
+    assert "PR-2026-APPROFF" not in numbers
+
+
+def test_draft_queue_table_registry_resolves_every_module():
+    """Only PurchaseRequest is exercised end-to-end above (cheapest to
+    build). This statically catches a typo'd module path or class name,
+    or a module quietly dropping one of the shared columns the loop
+    relies on, for the other 7 without needing a full fixture each."""
+    from app.modules.api.dashboard import _DRAFT_QUEUE_TABLES
+    import importlib
+
+    assert len(_DRAFT_QUEUE_TABLES) == 8
+    for table, (module_path, class_name) in _DRAFT_QUEUE_TABLES.items():
+        model = getattr(importlib.import_module(module_path), class_name)
+        for col in ("status", "requested_by", "approval_instance_id",
+                   "document_number", "created_at", "id"):
+            assert hasattr(model, col), f"{table}: missing {col}"

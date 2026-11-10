@@ -429,6 +429,18 @@ def _seed_system_parameters() -> None:
          "How many years of Maintenance Orders the dashboard's "
          "'Orders by Type' chart covers. 1 = current year only. Raise to "
          "include prior years; 0 = no year limit (slowest, whole history)."),
+        ("DASHBOARD_ACTION_LIST_INCLUDES_UNSUBMITTED_DRAFTS", "true",
+         "BOOLEAN", "DASHBOARD",
+         "YES/true (default) = 'Awaiting your decision' also lists the "
+         "signed-in user's own documents never yet submitted for "
+         "approval, so they don't have to open every module to find "
+         "them. NO/false = only approvals and returned documents show."),
+        ("DASHBOARD_ACTION_LIST_INCLUDES_APPROVED_UNFINISHED", "true",
+         "BOOLEAN", "DASHBOARD",
+         "YES/true (default) = 'Awaiting your decision' also lists the "
+         "signed-in user's own documents that are fully approved but "
+         "still need that module's closing action (e.g. an approved "
+         "Vehicle Registration missing its OR/CR). NO/false = hide them."),
 
         # ── Security / session (FMS) ──────────────────────────────────
         ("SESSION_TIMEOUT_MINUTES", "30", "INTEGER", "SECURITY",

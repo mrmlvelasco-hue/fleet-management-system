@@ -628,11 +628,135 @@ def dashboard_awaiting_approval(api_user):
             "kind": "returned",
         })
 
-    combined = approval_items + returned_items
+    draft_items = _draft_queue_items(api_user)
+
+    combined = approval_items + returned_items + draft_items
     total = len(combined)
     items = combined[offset:offset + limit]
 
     return jsonify({"items": items, "total": total, "offset": offset})
+
+
+#: The modules that follow the shared BaseTransactionService recipe: a
+#: `status` that stays "DRAFT" through submission AND through approval
+#: (it only advances once the initiator takes that module's own closing
+#: action -- COMPLETED/RELEASED/ORDERED/ACTIVE/IN_TRANSIT/MOUNTED/
+#: IN_PROGRESS), a `requested_by`, and an `approval_instance_id`. Table
+#: name matches _REACT_ROUTE_MAP in worklist.py -- reused for the link.
+#: maintenance_invoices and vehicle_handovers are deliberately absent:
+#: neither is separately initiated by a person picking "create" (an
+#: invoice is generated from its MO; a handover checklist is a step
+#: inside Movement/Trip completion), so neither belongs on an
+#: initiator's OWN action list the same way the other 8 do.
+_DRAFT_QUEUE_TABLES = {
+    "authority_to_drives": (
+        "app.modules.transactions.atd.models", "AuthorityToDrive"),
+    "maintenance_orders": (
+        "app.modules.transactions.maintenance_order.models", "MaintenanceOrder"),
+    "tire_transactions": (
+        "app.modules.transactions.tire_txn.models", "TireTransaction"),
+    "battery_transactions": (
+        "app.modules.transactions.battery_txn.models", "BatteryTransaction"),
+    "purchase_requests": (
+        "app.modules.transactions.purchase_request.models", "PurchaseRequest"),
+    "trip_tickets": (
+        "app.modules.transactions.trip_ticket.models", "TripTicket"),
+    "vehicle_movements": (
+        "app.modules.transactions.vehicle_movement.models", "VehicleMovement"),
+    "vehicle_registrations": (
+        "app.modules.transactions.vehicle_registration.models",
+        "VehicleRegistration"),
+}
+
+
+def _draft_queue_items(api_user):
+    """The signed-in user's OWN documents that still need something from
+    THEM, across every module that follows the shared draft/submit/
+    approve recipe -- so they don't have to open each module in turn to
+    find out. Two situations, each independently switchable by System
+    Parameter (client policy, default both ON):
+
+      - "unsubmitted": created, never sent for approval at all.
+      - "approved_unfinished": approval instance APPROVED, but the
+        module's own closing action (completing a Vehicle Registration,
+        releasing a Trip Ticket, ordering a Purchase Request, mounting a
+        Tire/Battery, activating an ATD, ...) hasn't happened yet.
+
+    A document still PENDING approval, or RETURNED (already listed as
+    kind="returned" above -- re-listing it here would double-count it),
+    is deliberately excluded: neither is this person's move right now.
+
+    Not branch-filtered, for the same reason returned_items isn't: this
+    is the person's OWN submission regardless of which branch the
+    dashboard header happens to be scoped to.
+    """
+    import importlib
+
+    from app.core.approval.models import ApprovalInstance
+    from app.extensions import db
+    from app.modules.system_admin.services.system_parameter_service import (
+        SystemParameterService)
+
+    params = SystemParameterService()
+    include_unsubmitted = params.get(
+        "DASHBOARD_ACTION_LIST_INCLUDES_UNSUBMITTED_DRAFTS", True)
+    include_approved_unfinished = params.get(
+        "DASHBOARD_ACTION_LIST_INCLUDES_APPROVED_UNFINISHED", True)
+    if not include_unsubmitted and not include_approved_unfinished:
+        return []
+
+    items = []
+    for table, (module_path, class_name) in _DRAFT_QUEUE_TABLES.items():
+        model = getattr(importlib.import_module(module_path), class_name)
+        rows = (model.query
+                .filter_by(requested_by=api_user.id, status="DRAFT")
+                .order_by(model.id.asc())
+                .all())
+        for row in rows:
+            instance = (db.session.get(ApprovalInstance,
+                                       row.approval_instance_id)
+                       if row.approval_instance_id else None)
+            if row.approval_instance_id is None:
+                if not include_unsubmitted:
+                    continue
+                draft_state = "unsubmitted"
+            elif instance is not None and instance.status == "APPROVED":
+                if not include_approved_unfinished:
+                    continue
+                draft_state = "approved_unfinished"
+            else:
+                # PENDING, RETURNED (already surfaced as kind="returned"
+                # above), REJECTED, or an instance that went missing --
+                # none of these are this person's move right now.
+                continue
+
+            number = getattr(row, "document_number", None)
+            items.append({
+                "task_id": None,
+                "document_number": number,
+                "document_type": None,
+                "plate_number": getattr(
+                    getattr(row, "vehicle", None), "plate_number", None),
+                "type_label": None,
+                "level_number": 0,
+                "assigned_to": None,
+                "requested_by": None,
+                "created_at": row.created_at.isoformat()
+                    if getattr(row, "created_at", None) else None,
+                "reference_table": table,
+                "reference_id": row.id,
+                "url": _draft_url(table, row.id),
+                "kind": "draft",
+                "draft_state": draft_state,
+            })
+    items.sort(key=lambda it: it["created_at"] or "")
+    return items
+
+
+def _draft_url(table, reference_id):
+    from app.modules.api.worklist import _REACT_ROUTE_MAP
+    template = _REACT_ROUTE_MAP.get(table)
+    return template.format(id=reference_id) if template else None
 
 
 def db_session_get(model, pk):
