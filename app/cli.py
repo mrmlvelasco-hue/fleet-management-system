@@ -1375,6 +1375,260 @@ def reset_transactions(yes):
               f"Master data and configuration untouched.")
 
 
+# Child-first additional tables wiped by `reset uat-baseline` ON TOP OF
+# everything `_reset_transactions()` already clears. These are either:
+#   - transaction-instance tables that the original transactions list
+#     missed (vehicle_handover_*, vehicle_checklist instances, and the
+#     fuel module -- fuel_cards/fuel_transactions, which carry FKs to
+#     vehicles/vendors/drivers and are NOT in
+#     `_TRANSACTION_TABLES_CHILD_FIRST` either), or
+#   - master-data records that only make sense tied to a specific
+#     vehicle/vendor/driver about to be deleted (Tire/Battery master
+#     inventory, vehicle assignment/odometer history, a vendor's
+#     contacts and branch/company/BU/region/area-district links, a
+#     driver's emergency contacts).
+# `checklist_templates` / `checklist_categories` / `checklist_items` are
+# deliberately NOT here: they're the reusable TEMPLATE definitions
+# (configuration), not instances, and must survive.
+_UAT_DEPENDENT_TABLES_CHILD_FIRST = [
+    "vehicle_handover_damage_marks",
+    "vehicle_handover_items",
+    "vehicle_handover_checklists",
+    "checklist_defects",
+    "vehicle_checklist_lines",
+    "vehicle_checklists",
+    "fuel_transactions",
+    "fuel_cards",
+    "tires",
+    "batteries",
+    "vehicle_assignments",
+    "vehicle_odometer_logs",
+    "vendor_contacts",
+    "vendor_branches",
+    "vendor_companies",
+    "vendor_business_units",
+    "vendor_regions",
+    "vendor_area_districts",
+    "person_emergency_contacts",
+]
+
+
+def _uat_baseline_blocking_config_ref(user_id: int):
+    """Return (table_name, description) if `user_id` is still named by
+    LIVE configuration that would otherwise silently break if the user
+    disappeared out from under it -- an Approval Level routed to that
+    SPECIFIC user (not a role), a Notification Rule whose recipient IS
+    that specific user, or a Branch whose manager_user_id is that user.
+    None if no such reference exists, meaning the user is safe to
+    delete (any remaining references are per-user DATA, not
+    configuration, and are cleaned up by `_uat_baseline_detach_user`).
+    """
+    from app.modules.approval_config.models import ApprovalLevel
+    from app.modules.system_admin.models import NotificationRule
+    from app.modules.master_data.org.models import Branch
+
+    level = ApprovalLevel.query.filter_by(
+        approver_type="USER", user_id=user_id).first()
+    if level is not None:
+        return ("approval_levels",
+                f"Approval Level #{level.id} (path_id={level.path_id}, "
+                f"level_number={level.level_number}) is configured to "
+                f"require approval from this specific user")
+
+    rule = NotificationRule.query.filter_by(
+        recipient_type="SPECIFIC_USER", user_id=user_id).first()
+    if rule is not None:
+        return ("notification_rules",
+                f"Notification Rule #{rule.id} (event_code="
+                f"{rule.event_code!r}) targets this specific user as "
+                f"its recipient")
+
+    branch = Branch.query.filter_by(manager_user_id=user_id).first()
+    if branch is not None:
+        return ("branches",
+                f"Branch '{branch.code}' names this user as its manager")
+
+    broadcast = None
+    try:
+        from app.modules.system_admin.models import FleetBroadcast
+        broadcast = FleetBroadcast.query.filter_by(
+            created_by=user_id).first()
+    except Exception:
+        broadcast = None
+    if broadcast is not None:
+        return ("fleet_broadcasts",
+                f"Fleet Broadcast '{broadcast.broadcast_no}' records this "
+                f"user as its creator (created_by is NOT NULL, so it "
+                f"cannot simply be detached)")
+
+    return None
+
+
+def _uat_baseline_detach_user(user_id: int) -> None:
+    """Remove/detach every PER-USER data row (not configuration) that
+    would otherwise block deleting this user: role assignments, org
+    scopes, password/preference history, dashboard config, and the
+    nullable attribution columns left on historical/communication
+    records. Called only after `_uat_baseline_blocking_config_ref`
+    confirms nothing CONFIGURED still depends on this user.
+    """
+    from sqlalchemy import text
+    for table in ("user_roles", "user_org_scopes", "password_histories",
+                  "user_preferences", "user_dashboard_configs",
+                  "fleet_broadcast_acknowledgements"):
+        try:
+            db.session.execute(
+                text(f"DELETE FROM {table} WHERE user_id = :uid"),
+                {"uid": user_id})
+        except Exception:
+            pass  # table absent in this install
+    for table, column in (
+            ("fleet_broadcast_recipients", "user_id"),
+            ("fleet_broadcasts", "published_by"),
+            ("historical_import_batches", "imported_by"),
+            ("email_outbox", "to_user_id")):
+        try:
+            db.session.execute(
+                text(f"UPDATE {table} SET {column} = NULL "
+                    f"WHERE {column} = :uid"),
+                {"uid": user_id})
+        except Exception:
+            pass
+
+
+def _reset_uat_baseline() -> dict:
+    """Wipe transactions AND master data (vehicles, vendors, drivers)
+    plus the login accounts linked to deleted drivers, for a UAT or
+    production go-live cutover starting from zero dummy data.
+
+    Everything `_reset_transactions()` clears is cleared first (reused,
+    not duplicated). Then every vehicle/vendor/driver-dependent child
+    table is cleared, then Vehicles and Vendors themselves, then —
+    after confirming no live configuration (an Approval Level routed to
+    a specific user, a Notification Rule targeting a specific user, a
+    Branch naming a specific manager) still depends on it — each
+    driver's linked User login, then the Driver itself.
+
+    All System Administration configuration, roles/permissions,
+    branches, the PM/checklist catalogue and every non-driver-linked
+    user login are left untouched. Counts are captured before deletion;
+    on any failure everything rolls back -- NOTHING is partially
+    deleted, not even the transactions step.
+    """
+    from sqlalchemy import text
+    from app.modules.master_data.vehicle.models import Vehicle
+    from app.modules.master_data.driver.models import Driver
+
+    deleted = _reset_transactions()
+
+    counts = {}
+    for table in _UAT_DEPENDENT_TABLES_CHILD_FIRST:
+        try:
+            counts[table] = db.session.execute(
+                text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0
+        except Exception:
+            counts[table] = 0
+    counts["vehicles"] = Vehicle.query.count()
+    counts["vendors"] = db.session.execute(
+        text("SELECT COUNT(*) FROM vendors")).scalar() or 0
+    counts["drivers"] = Driver.query.count()
+    driver_user_ids = [
+        row[0] for row in db.session.execute(
+            text("SELECT user_id FROM drivers WHERE user_id IS NOT NULL"))]
+    counts["driver-linked user accounts"] = len(driver_user_ids)
+
+    # Refuse up front, before touching anything, if any driver-linked
+    # user is still named by live configuration -- same discipline as
+    # _reset_transactions itself: nothing partially deleted.
+    for user_id in driver_user_ids:
+        blocker = _uat_baseline_blocking_config_ref(user_id)
+        if blocker is not None:
+            table, why = blocker
+            db.session.rollback()
+            raise RuntimeError(
+                f"Cannot delete user id={user_id}: {why} (table "
+                f"'{table}'). Reassign that configuration to a role or "
+                f"a different user first. Nothing was deleted -- not "
+                f"even the transactions step.")
+
+    try:
+        for table in _UAT_DEPENDENT_TABLES_CHILD_FIRST:
+            db.session.execute(text(f"DELETE FROM {table}"))
+
+        # FK-safe: detach the pointer INTO drivers before deleting
+        # either side.
+        Vehicle.query.filter(
+            Vehicle.assigned_driver_id.isnot(None)).update(
+            {Vehicle.assigned_driver_id: None})
+        db.session.execute(text("DELETE FROM vehicles"))
+        db.session.execute(text("DELETE FROM vendors"))
+
+        for user_id in driver_user_ids:
+            _uat_baseline_detach_user(user_id)
+        db.session.execute(text("DELETE FROM drivers"))
+        if driver_user_ids:
+            db.session.execute(
+                text("DELETE FROM users WHERE id IN :ids").bindparams(
+                    db.bindparam("ids", expanding=True)),
+                {"ids": driver_user_ids})
+    except Exception as exc:
+        db.session.rollback()
+        raise RuntimeError(
+            f"Could not complete the UAT baseline reset: {exc}. "
+            f"Rolled back -- nothing from this step was left partially "
+            f"deleted (the transactions already cleared by "
+            f"_reset_transactions() above remain cleared).") from exc
+    db.session.commit()
+
+    deleted.update(counts)
+    return deleted
+
+
+@reset_cli.command("uat-baseline")
+@click.option("--yes", is_flag=True,
+              help="Skip the confirmation prompt (for scripted use).")
+def reset_uat_baseline(yes):
+    """Reset a database to a clean UAT/production baseline.
+
+    MORE DESTRUCTIVE than `reset transactions`: in addition to every
+    transaction record it clears (Maintenance Orders, Registrations,
+    Trip Tickets, ATDs, Purchase Requests, Invoices, approvals,
+    comments, notifications, the audit log, and the fuel/handover/
+    checklist instances it also covers), this ALSO permanently deletes
+    every Vehicle, Vendor, and Driver/Assignee record -- and the login
+    account of any Driver that had one -- leaving a fully-configured
+    system with zero dummy master data for testers/users to populate
+    themselves.
+
+    All System Administration configuration (roles, permissions,
+    branches, document types, numbering schemes, approval paths/
+    matrices, lookups, system parameters, PM/checklist templates,
+    print templates, company profile) and every login NOT linked to a
+    deleted Driver are KEPT.
+
+    Intended for seeding a fresh UAT environment from a copy of a dev
+    database, and later reused as the actual production go-live/
+    cutover script against a freshly-cloned production copy.
+    """
+    if not yes:
+        click.confirm(
+            "This permanently deletes EVERYTHING `reset transactions` "
+            "deletes, PLUS all Vehicles, Vendors, and Drivers/"
+            "Assignees -- and the login account of any Driver that had "
+            "one.\n"
+            "System Administration configuration and all other logins "
+            "are kept.\nThis is MORE DESTRUCTIVE than `reset "
+            "transactions`.\nContinue?",
+            abort=True)
+    deleted = _reset_uat_baseline()
+    total = sum(v for v in deleted.values() if isinstance(v, int))
+    for table, n in deleted.items():
+        if n:
+            click.echo(f"  {table}: {n} row(s) deleted")
+    click.echo(f"Done. {total} row(s) deleted. System Administration "
+              f"configuration and non-driver logins untouched.")
+
+
 email_cli = AppGroup("email", help="Outbound email queue operations.")
 
 
