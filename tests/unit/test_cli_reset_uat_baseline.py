@@ -349,6 +349,32 @@ def test_reset_transactions_respects_foreign_keys(db, env, fk_enforced):
     assert PurchaseRequest.query.count() == 0
 
 
+def test_reset_transactions_respects_driver_photo_attachment_fk(
+        db, env, fk_enforced):
+    """Driver.photo_attachment_id is a REAL DB-level FK into
+    `attachments`, which _reset_transactions() deletes itself (last in
+    its own list). A driver keeping their photo must not block that --
+    Drivers are master data this function never touches."""
+    from app.core.models.attachment import Attachment
+
+    vt, branch = env
+    driver = _driver(branch)
+    photo = Attachment(reference_table="drivers", reference_id=driver.id,
+                       filename="a.jpg", original_filename="a.jpg")
+    db.session.add(photo)
+    db.session.flush()
+    driver.photo_attachment_id = photo.id
+    db.session.commit()
+
+    _reset_transactions()
+
+    assert Attachment.query.count() == 0
+    # The driver survives (reset transactions never deletes master
+    # data) with its pointer cleared, not a dangling FK.
+    assert Driver.query.get(driver.id) is not None
+    assert Driver.query.get(driver.id).photo_attachment_id is None
+
+
 def test_reset_uat_baseline_respects_checklist_defect_fk(db, env, fk_enforced):
     """checklist_defects.maintenance_order_id is a nullable FK straight
     into maintenance_orders, which `_reset_transactions()` (called from

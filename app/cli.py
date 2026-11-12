@@ -1352,6 +1352,25 @@ def _reset_transactions() -> dict:
             Vehicle.query.filter(
                 getattr(Vehicle, column).isnot(None)).update(
                 {column: None})
+
+    # Same pattern, same reason: `attachments` is itself in this table
+    # list (last, per the comment below it), and Driver.photo_attachment_id
+    # is a REAL DB-level FK into it (the other *_attachment_id columns
+    # across the app -- company_profiles.logo_attachment_id,
+    # vehicle_checklists' own photo_attachment_id, etc. -- are plain
+    # integer columns with no FK constraint, "omitted to avoid circular
+    # deps" like created_by/updated_by, so they never block this).
+    # Drivers themselves are master data this function never touches
+    # (only `_reset_uat_baseline()` deletes them, afterwards, in its own
+    # separate phase) -- only the pointer is cleared here, same as the
+    # Vehicle columns above. 2026-11-12: this was a pre-existing gap,
+    # not something the uat-baseline reordering introduced -- a real
+    # driver photo breaks plain `reset transactions` the same way.
+    from app.modules.master_data.driver.models import Driver
+    if hasattr(Driver, "photo_attachment_id"):
+        Driver.query.filter(
+            Driver.photo_attachment_id.isnot(None)).update(
+            {"photo_attachment_id": None})
     db.session.commit()
 
     deleted = {}
