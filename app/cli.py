@@ -1278,20 +1278,41 @@ reset_cli = AppGroup("reset", help="Clear data for a clean test cycle.")
 # deliberately NOT in this list — this wipes the transactional history
 # only, so a fresh round of testing starts from the same configured
 # system rather than a bare database.
+# 2026-11-12: this list had `purchase_requests` BEFORE `maintenance_orders`,
+# even though maintenance_orders.purchase_request_id is a (nullable) FK
+# INTO purchase_requests -- maintenance_orders is the CHILD there, so it
+# must be deleted first. Only surfaced now, against real restored UAT
+# data, because the test suite runs on SQLite in-memory with no
+# `PRAGMA foreign_keys=ON` anywhere (confirmed: no such listener exists
+# in app/extensions.py or app/__init__.py), so SQLite never enforced any
+# of these FKs during any prior test run. Three more maintenance_orders
+# child tables (maintenance_order_parts, maintenance_order_equipment_
+# lines, maintenance_order_vehicle_changes) and two more scope-item
+# tables (tire_transaction_scope_items, battery_transaction_scope_items)
+# were ALSO missing entirely -- same bug class, not yet triggered only
+# because no restored dataset had exercised those tables. See
+# test_reset_tables_respect_foreign_keys in
+# tests/unit/test_cli_reset_uat_baseline.py, which turns SQLite's FK
+# enforcement on explicitly so this class of bug can't go unnoticed again.
 _TRANSACTION_TABLES_CHILD_FIRST = [
     "maintenance_invoice_lines",
     "maintenance_invoices",
     "maintenance_checklist_items",
+    "maintenance_order_parts",
+    "maintenance_order_equipment_lines",
+    "maintenance_order_vehicle_changes",
+    "tire_transaction_scope_items",
+    "tire_transactions",
+    "battery_transaction_scope_items",
+    "battery_transactions",
+    "authority_to_drives",
+    "maintenance_orders",
     "purchase_request_lines",
     "purchase_requests",
     "registration_transaction_checklist_items",
-    "tire_transactions",
-    "battery_transactions",
     "trip_tickets",
-    "authority_to_drives",
     "vehicle_movements",
     "vehicle_registrations",
-    "maintenance_orders",
     # Approval + collaboration records belong to the transactions above.
     "approval_tasks",
     "approval_actions",
@@ -1390,11 +1411,16 @@ def reset_transactions(yes):
 # `checklist_templates` / `checklist_categories` / `checklist_items` are
 # deliberately NOT here: they're the reusable TEMPLATE definitions
 # (configuration), not instances, and must survive.
+# `checklist_defects` is deliberately NOT in this list -- see
+# `_reset_uat_baseline()`, which must clear it BEFORE calling
+# `_reset_transactions()`, not after: it carries a nullable FK straight
+# into `maintenance_orders`, which `_reset_transactions()` deletes
+# itself. Left here, it would reproduce the exact 1451 FK error that
+# `purchase_requests` hit (2026-11-12), just one table later.
 _UAT_DEPENDENT_TABLES_CHILD_FIRST = [
     "vehicle_handover_damage_marks",
     "vehicle_handover_items",
     "vehicle_handover_checklists",
-    "checklist_defects",
     "vehicle_checklist_lines",
     "vehicle_checklists",
     "fuel_transactions",
@@ -1519,9 +1545,20 @@ def _reset_uat_baseline() -> dict:
     from app.modules.master_data.vehicle.models import Vehicle
     from app.modules.master_data.driver.models import Driver
 
+    # Must run BEFORE _reset_transactions(): checklist_defects.
+    # maintenance_order_id is a nullable FK into maintenance_orders,
+    # which _reset_transactions() deletes itself. Left for later (as it
+    # was until 2026-11-12), any defect row still naming a maintenance
+    # order makes that DELETE FROM maintenance_orders fail with the same
+    # 1451 foreign-key error purchase_requests hit.
+    checklist_defects_count = db.session.execute(
+        text("SELECT COUNT(*) FROM checklist_defects")).scalar() or 0
+    db.session.execute(text("DELETE FROM checklist_defects"))
+    db.session.commit()
+
     deleted = _reset_transactions()
 
-    counts = {}
+    counts = {"checklist_defects": checklist_defects_count}
     for table in _UAT_DEPENDENT_TABLES_CHILD_FIRST:
         try:
             counts[table] = db.session.execute(

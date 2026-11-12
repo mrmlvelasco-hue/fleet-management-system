@@ -261,3 +261,122 @@ def test_non_driver_linked_user_never_blocks_or_deletes(db, env):
     _user("staffuser")
     _reset_uat_baseline()
     assert User.query.filter_by(username="staffuser").first() is not None
+
+
+# ── Real FK enforcement (2026-11-12 incident) ────────────────────────────
+#
+# SQLite (the test DB everywhere else in this file) never enforces
+# foreign keys unless a connection explicitly turns it on -- no
+# `PRAGMA foreign_keys=ON` listener exists anywhere in this app. That is
+# exactly how `_TRANSACTION_TABLES_CHILD_FIRST` shipped with
+# `purchase_requests` ordered BEFORE `maintenance_orders` (the reverse
+# of what maintenance_orders.purchase_request_id requires) and three
+# maintenance_orders child tables, two tire/battery scope-item tables,
+# and checklist_defects missing from either list entirely -- every test
+# in this file passed anyway, right up until it ran against real
+# restored data in MySQL, which does enforce these constraints.
+#
+# These tests turn SQLite's own enforcement on for themselves (it's
+# off by default, so nothing else in this suite is affected) and build
+# the exact chain of child rows that exposed each gap, so this class of
+# ordering/missing-table bug can't silently reappear.
+#
+# Scoped to ON only for the test body, then explicitly turned back OFF:
+# left ON, it survives into the `app` fixture's own `db.drop_all()`
+# teardown and trips over a pre-existing, otherwise-harmless circular
+# FK (branches/departments/org_companies/users) that SQLite can only
+# ignore when enforcement is off (it has no ALTER-based cycle-breaking,
+# unlike a real backend).
+@pytest.fixture()
+def fk_enforced(db):
+    from sqlalchemy import text
+    db.session.execute(text("PRAGMA foreign_keys=ON"))
+    yield
+    db.session.execute(text("PRAGMA foreign_keys=OFF"))
+
+
+def test_reset_transactions_respects_foreign_keys(db, env, fk_enforced):
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder, MaintenanceOrderPart, MaintenanceOrderEquipmentLine)
+    from app.modules.transactions.purchase_request.models import (
+        PurchaseRequest)
+    from app.modules.transactions.tire_txn.models import (
+        TireTransaction, TireTransactionScopeItem)
+    from app.modules.transactions.battery_txn.models import (
+        BatteryTransaction, BatteryTransactionScopeItem)
+
+    vt, branch = env
+    vehicle = _vehicle(vt, branch)
+
+    pr = PurchaseRequest(amount=0)
+    db.session.add(pr)
+    db.session.flush()
+
+    mo = MaintenanceOrder(vehicle_id=vehicle.id,
+                          scheduled_date=date.today(),
+                          purchase_request_id=pr.id)
+    db.session.add(mo)
+    db.session.flush()
+
+    db.session.add(MaintenanceOrderPart(
+        order_id=mo.id, part_description="Brake pads"))
+    db.session.add(MaintenanceOrderEquipmentLine(
+        order_id=mo.id, kind="TIRE", action="REPLACE"))
+
+    tire_txn = TireTransaction(vehicle_id=vehicle.id, action="MOUNT",
+                              transaction_date=date.today(),
+                              maintenance_order_id=mo.id)
+    db.session.add(tire_txn)
+    db.session.flush()
+    db.session.add(TireTransactionScopeItem(
+        transaction_id=tire_txn.id, activity_description="Check tread"))
+
+    battery_txn = BatteryTransaction(vehicle_id=vehicle.id, action="MOUNT",
+                                     transaction_date=date.today(),
+                                     maintenance_order_id=mo.id)
+    db.session.add(battery_txn)
+    db.session.flush()
+    db.session.add(BatteryTransactionScopeItem(
+        transaction_id=battery_txn.id, activity_description="Load test"))
+
+    db.session.commit()
+
+    # Must not raise -- every child table above must be cleared, in the
+    # right order, before its parent.
+    _reset_transactions()
+
+    assert MaintenanceOrder.query.count() == 0
+    assert PurchaseRequest.query.count() == 0
+
+
+def test_reset_uat_baseline_respects_checklist_defect_fk(db, env, fk_enforced):
+    """checklist_defects.maintenance_order_id is a nullable FK straight
+    into maintenance_orders, which `_reset_transactions()` (called from
+    inside `_reset_uat_baseline()`) deletes itself. A defect row still
+    naming an order must not block that delete."""
+    from app.modules.transactions.maintenance_order.models import (
+        MaintenanceOrder)
+    from app.modules.transactions.vehicle_checklist.models import (
+        ChecklistDefect)
+
+    vt, branch = env
+    vehicle = _vehicle(vt, branch)
+    mo = MaintenanceOrder(vehicle_id=vehicle.id, scheduled_date=date.today())
+    db.session.add(mo)
+    db.session.flush()
+
+    template = ChecklistTemplate(name="Daily Inspection")
+    db.session.add(template)
+    db.session.flush()
+    checklist = VehicleChecklist(template_id=template.id,
+                                 vehicle_id=vehicle.id)
+    db.session.add(checklist)
+    db.session.flush()
+    db.session.add(ChecklistDefect(
+        checklist_id=checklist.id, item_name="Worn wiper blade",
+        maintenance_order_id=mo.id))
+    db.session.commit()
+
+    _reset_uat_baseline()
+
+    assert MaintenanceOrder.query.count() == 0
