@@ -10,8 +10,13 @@ class Driver(db.Model, BaseModel):
     # Assignee Master module — same auto-numbering pattern as every
     # transaction document, just for a master data record instead.
     person_id = db.Column(db.String(30), unique=True, nullable=True, index=True)
+    # Nullable since 2026-11-13: DriverService.create() enforces this as
+    # required by default (System Parameter REQUIRE_EMPLOYEE_NUMBER),
+    # mirroring the license_number/REQUIRE_DRIVER_LICENSE pattern below
+    # -- a legacy roster often has no HR employee number on file for
+    # some assignees, and the migration import cannot leave them out.
     employee_number = db.Column(db.String(30), unique=True,
-                                nullable=False, index=True)
+                                nullable=True, index=True)
     first_name = db.Column(db.String(80), nullable=False)
     last_name = db.Column(db.String(80), nullable=False)
     middle_name = db.Column(db.String(80))

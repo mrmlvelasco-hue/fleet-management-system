@@ -49,7 +49,7 @@ class EmergencyContactService:
 
 
 class DriverService:
-    def create(self, employee_number, first_name, last_name,
+    def create(self, employee_number=None, first_name=None, last_name=None,
                branch_id=None, assignee_type="DRIVER", license_number=None,
                license_expiry=None, license_type=None, photo_file=None,
                user=None, **kwargs):
@@ -100,11 +100,26 @@ class DriverService:
                 raise InvalidAssigneeError(
                     "A photo is required when creating a new driver or "
                     "assignee record.")
+
+        # Same migration rationale as the two checks above: a legacy
+        # roster often has no HR employee number on file for some
+        # assignees, and employee_number is UNIQUE + NOT NULL at the DB
+        # level otherwise. Default stays strict, like the other two.
+        if params.get("REQUIRE_EMPLOYEE_NUMBER", default=True):
+            if not employee_number:
+                raise InvalidAssigneeError(
+                    "Employee Number is required.")
+
         if license_number and Driver.query.filter_by(
                 license_number=license_number).first():
             raise DuplicateDriverError(
                 f"License number '{license_number}' already exists.")
-        if Driver.query.filter_by(
+        # Guarded on employee_number being given: with the requirement
+        # waived, employee_number may legitimately be None/blank for
+        # more than one record. NULL vs NULL is not a duplicate in SQL,
+        # but filter_by(employee_number=None) would otherwise still
+        # match every row that has no employee number.
+        if employee_number and Driver.query.filter_by(
                 employee_number=employee_number).first():
             raise DuplicateDriverError(
                 f"Employee number '{employee_number}' already exists.")

@@ -56,9 +56,12 @@ STATUSES = ("ACTIVE", "INACTIVE", "SUSPENDED")
 
 # (column header, required?, human-readable note for the Reference sheet)
 TEMPLATE_COLUMNS = [
-    ("employee_number", True, "Unique employee number, e.g. EMP-0001. An "
-                              "employee number already in the system is "
-                              "skipped, never overwritten."),
+    ("employee_number", False, "Unique employee number, e.g. EMP-0001. An "
+                               "employee number already in the system is "
+                               "skipped, never overwritten. Required "
+                               "unless System Parameter "
+                               "REQUIRE_EMPLOYEE_NUMBER has been switched "
+                               "off for this import."),
     ("first_name", True, "Given name."),
     ("last_name", True, "Surname."),
     ("middle_name", False, "Shown as a middle initial on printed forms."),
@@ -270,6 +273,16 @@ def import_drivers(file_stream, dry_run: bool = True,
             f"template.")
     idx = {name: i for i, name in enumerate(header_row) if name}
 
+    from app.modules.system_admin.services.system_parameter_service import (
+        SystemParameterService)
+    # Read ONCE per import call, not per row -- the file is a single
+    # batch processed under one setting, and re-querying per row would
+    # be pointless cost for a value that cannot change mid-upload.
+    # Default stays strict, matching every other System Parameter this
+    # importer depends on (REQUIRE_ASSIGNEE_PHOTO, REQUIRE_DRIVER_LICENSE).
+    require_employee_number = SystemParameterService().get(
+        "REQUIRE_EMPLOYEE_NUMBER", default=True)
+
     all_branches = {b.code.upper(): b for b in Branch.query.all() if b.code}
     if company_id is None:
         branches = all_branches
@@ -318,7 +331,8 @@ def import_drivers(file_stream, dry_run: bool = True,
                      "(blank)")
 
         if not employee_number:
-            errors.append("employee_number is required")
+            if require_employee_number:
+                errors.append("employee_number is required")
         if not first_name:
             errors.append("first_name is required")
         if not last_name:
@@ -432,7 +446,10 @@ def import_drivers(file_stream, dry_run: bool = True,
                 license_expiry=license_expiry,
                 license_type=values["license_type"],
                 photo_file=None, **optional)
-            existing_employee_numbers.add(employee_number.upper())
+            # Guarded: with REQUIRE_EMPLOYEE_NUMBER off, employee_number
+            # may legitimately be None for this row.
+            if employee_number:
+                existing_employee_numbers.add(employee_number.upper())
             if license_number:
                 existing_license_numbers.add(license_number.upper())
             stats["created"] += 1

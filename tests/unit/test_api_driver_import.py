@@ -250,6 +250,47 @@ def test_each_bad_row_names_its_own_problems(client, db, env):
     assert Driver.query.filter_by(employee_number="EMP-101").count() == 1
 
 
+# ── employee_number requirement is configurable (2026-11-14) ────────────────
+# Same migration rationale as REQUIRE_ASSIGNEE_PHOTO/REQUIRE_DRIVER_LICENSE
+# above: a legacy roster often has no HR employee number on file for some
+# people, and the default-strict rule otherwise blocks the whole row.
+
+def test_blank_employee_number_is_rejected_by_default(client, db, env):
+    row = {"first_name": "No", "last_name": "Code",
+          "branch_code": "BR-DIMUN"}
+    body = _post(client, _sheet([row]), commit="1").get_json()
+    assert body["created"] == 0 and body["skipped"] == 1
+    assert "employee_number is required" in _problems(body)["No Code"]
+
+
+def test_blank_employee_number_is_accepted_when_the_parameter_is_off(
+        client, db, env):
+    _param(db, "REQUIRE_EMPLOYEE_NUMBER", "NO")
+    row = {"first_name": "No", "last_name": "Code",
+          "branch_code": "BR-DIMUN"}
+    body = _post(client, _sheet([row]), commit="1").get_json()
+    assert body["created"] == 1 and body["skipped"] == 0
+    d = Driver.query.filter_by(first_name="No", last_name="Code").one()
+    assert d.employee_number is None
+
+
+def test_two_blank_employee_numbers_in_one_file_both_import(
+        client, db, env):
+    """employee_number is UNIQUE at the DB level. With the requirement
+    waived, two rows with no employee number must not collide as a
+    false 'duplicate in this file' the way two matching real numbers
+    would."""
+    _param(db, "REQUIRE_EMPLOYEE_NUMBER", "NO")
+    rows = [
+        {"first_name": "First", "last_name": "NoNum",
+         "branch_code": "BR-DIMUN"},
+        {"first_name": "Second", "last_name": "NoNum",
+         "branch_code": "BR-DIMUN"},
+    ]
+    body = _post(client, _sheet(rows), commit="1").get_json()
+    assert body["created"] == 2 and body["skipped"] == 0
+
+
 def test_preview_reports_the_same_problems_a_commit_would(client, db, env):
     rows = [GOOD, {"employee_number": "EMP-202", "first_name": "X",
                    "last_name": "Y", "branch_code": "BR-DIMUN",

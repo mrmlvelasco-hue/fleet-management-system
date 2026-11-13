@@ -201,6 +201,70 @@ def test_the_two_parameters_are_independent(db, branch):
             assignee_type="DRIVER")
 
 
+# ── Employee number requirement (2026-11-13) ────────────────────────────────
+# Same shape as the licence/photo switches above: a legacy roster often has
+# no HR employee number on file for some assignees, and `employee_number`
+# is NOT NULL + unique at the DB level, so an unconditional requirement
+# blocks the same migration import the other two parameters exist to
+# unblock. Default stays strict (every other parameter here does) --
+# Michael's own install sets it to NO for the duration of this import.
+
+def test_employee_number_is_required_by_default_when_the_parameter_is_on(
+        db, branch):
+    _param(db, "REQUIRE_EMPLOYEE_NUMBER", "YES")
+    with pytest.raises(InvalidAssigneeError):
+        DriverService().create(
+            first_name="No", last_name="EmployeeNumber",
+            branch_id=branch.id, assignee_type="EMPLOYEE",
+            photo_file=_photo())
+
+
+def test_employee_number_can_be_waived_for_migration(db, branch):
+    _param(db, "REQUIRE_EMPLOYEE_NUMBER", "NO")
+    driver = DriverService().create(
+        first_name="Legacy", last_name="NoEmpNum",
+        branch_id=branch.id, assignee_type="EMPLOYEE", photo_file=_photo())
+    assert driver.employee_number is None
+
+
+def test_employee_number_still_required_when_blank_string(db, branch):
+    """An empty string from a form/import row must not slip past the
+    falsy check differently than None."""
+    _param(db, "REQUIRE_EMPLOYEE_NUMBER", "YES")
+    with pytest.raises(InvalidAssigneeError):
+        DriverService().create(
+            employee_number="", first_name="Blank", last_name="String",
+            branch_id=branch.id, assignee_type="EMPLOYEE",
+            photo_file=_photo())
+
+
+def test_two_waived_employee_numbers_do_not_collide_on_uniqueness(
+        db, branch):
+    """employee_number is UNIQUE at the DB level. Waiving the requirement
+    must not make the second waived record blow up on a false 'duplicate'
+    -- NULL vs NULL is not a duplicate, and the uniqueness check must not
+    treat it as one."""
+    _param(db, "REQUIRE_EMPLOYEE_NUMBER", "NO")
+    svc = DriverService()
+    svc.create(first_name="First", last_name="NoNum", branch_id=branch.id,
+               assignee_type="EMPLOYEE", photo_file=_photo())
+    second = svc.create(first_name="Second", last_name="NoNum",
+                        branch_id=branch.id, assignee_type="EMPLOYEE",
+                        photo_file=_photo())
+    assert second.employee_number is None
+
+
+def test_an_absent_employee_number_parameter_keeps_original_behaviour(
+        db, branch):
+    SystemParameter.query.filter_by(code="REQUIRE_EMPLOYEE_NUMBER").delete()
+    db.session.commit()
+    with pytest.raises(InvalidAssigneeError):
+        DriverService().create(
+            first_name="No", last_name="Param",
+            branch_id=branch.id, assignee_type="EMPLOYEE",
+            photo_file=_photo())
+
+
 # ── Seeding ─────────────────────────────────────────────────────────────────
 
 def test_both_parameters_are_seeded(db):
@@ -219,14 +283,15 @@ def test_both_parameters_are_seeded(db):
     from app.cli import _seed_system_parameters
 
     SystemParameter.query.filter(SystemParameter.code.in_([
-        "REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO"])).delete(
+        "REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO",
+        "REQUIRE_EMPLOYEE_NUMBER"])).delete(
             synchronize_session=False)
     db.session.commit()
 
     _seed_system_parameters()
     db.session.commit()
 
-    for code in ("REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO"):
+    for code in ("REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO", "REQUIRE_EMPLOYEE_NUMBER"):
         row = SystemParameter.query.filter_by(code=code).first()
         assert row is not None, f"{code} was not seeded"
         assert row.data_type == "BOOLEAN"
@@ -242,13 +307,14 @@ def test_seeded_defaults_are_strict(db):
     from app.cli import _seed_system_parameters
 
     SystemParameter.query.filter(SystemParameter.code.in_([
-        "REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO"])).delete(
+        "REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO",
+        "REQUIRE_EMPLOYEE_NUMBER"])).delete(
             synchronize_session=False)
     db.session.commit()
     _seed_system_parameters()
     db.session.commit()
 
-    for code in ("REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO"):
+    for code in ("REQUIRE_DRIVER_LICENSE", "REQUIRE_ASSIGNEE_PHOTO", "REQUIRE_EMPLOYEE_NUMBER"):
         assert SystemParameterService().get(code) is True
 
 

@@ -597,6 +597,10 @@ def _seed_system_parameters() -> None:
          "prints on the Vehicle Assignment Memo and the Issuance / "
          "Receiving Checklist. Switch OFF while migrating legacy "
          "records, then ON again."),
+        ("REQUIRE_EMPLOYEE_NUMBER", "true", "BOOLEAN", "DRIVER",
+         "Require an HR employee number when enrolling ANY assignee. "
+         "Switch OFF while migrating legacy records whose employee "
+         "number is not on file, then ON again."),
 
         # ── Tire & battery condition (2026-10-15) ─────────────────────
         # Read by EquipmentConditionService, which colours every tire and
