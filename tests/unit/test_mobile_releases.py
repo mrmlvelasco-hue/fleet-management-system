@@ -382,3 +382,46 @@ def test_upload_still_works_on_sqlite_where_there_is_no_packet_limit(app):
     r = _upload(code=500, name="5.0.0")
     assert r.status == "DRAFT"
     assert MobileReleaseService().bytes_for(r.id) == APK
+
+
+def test_packet_probe_accounts_for_pymysql_s_escaping_inflation(app, monkeypatch):
+    """Found 2026-11-14 debugging a real dropped-connection crash on a
+    57.5MB APK against MySQL 8's own 64MB max_allowed_packet default.
+
+    PyMySQL's Cursor.execute() does CLIENT-SIDE parameter substitution
+    for this driver -- there is no true binary-protocol prepared
+    statement for the BLOB parameter here, just cursor._mogrify()
+    interpolating an escaped string literal into the SQL text. Its
+    escape_bytes() turns high-entropy binary data (a compressed APK is
+    essentially all of it) into roughly DOUBLE the bytes on the wire,
+    not a handful of escaped characters -- measured directly against
+    the installed pymysql: escape_bytes() on 2,000,000 random bytes
+    produced 4,000,011 bytes out.
+
+    The probe compared the RAW file size against 90% of the server's
+    reported max_allowed_packet, so a 57.5MB file against a 64MB limit
+    passed clean (57.5 < 57.6) -- while the real, escaped statement
+    was close to 115MB and blew straight through the actual limit, and
+    the connection was aborted mid-write instead of this function ever
+    raising its own readable error.
+    """
+    from app.modules.system_admin.mobile_release_service import (
+        MobileReleaseError, _check_packet_size)
+
+    class FakeDialect:
+        name = "mysql"
+
+    class FakeBind:
+        dialect = FakeDialect()
+
+    class FakeResult:
+        def scalar(self):
+            return 64 * 1024 * 1024  # MySQL 8's own default.
+
+    monkeypatch.setattr(db.session, "bind", FakeBind())
+    monkeypatch.setattr(db.session, "execute", lambda *a, **k: FakeResult())
+
+    # Raw size alone clears the old 90%-of-raw check (57.5 < 57.6), but
+    # its ~2x escaped size on the wire does not.
+    with pytest.raises(MobileReleaseError, match="max_allowed_packet"):
+        _check_packet_size(int(57.5 * 1024 * 1024))

@@ -26,6 +26,22 @@ class MobileReleaseError(Exception):
     """Something an administrator can read and act on."""
 
 
+#: Found 2026-11-14: PyMySQL's Cursor.execute() does CLIENT-SIDE parameter
+#: substitution for this driver -- cursor._mogrify() interpolates an
+#: escaped string literal into the SQL text itself, rather than sending
+#: the BLOB through a true binary-protocol prepared statement. Its
+#: escape_bytes() turns high-entropy binary data (a compressed APK is
+#: essentially all of it) into roughly DOUBLE the bytes on the wire, not
+#: a handful of escaped characters -- measured directly against the
+#: installed pymysql: escape_bytes() on 2,000,000 random bytes produced
+#: 4,000,011 bytes out. A real 57.5MB APK against MySQL 8's own 64MB
+#: max_allowed_packet default passed a raw-byte comparison clean (57.5 <
+#: 90% of 64) while the actual ~115MB escaped statement blew straight
+#: through the server's real limit, and the connection was aborted
+#: mid-write instead of this check ever firing.
+_ESCAPED_WIRE_INFLATION = 2.0
+
+
 def _check_packet_size(size_bytes):
     """Refuse early if MySQL cannot accept a row this large.
 
@@ -52,15 +68,21 @@ def _check_packet_size(size_bytes):
         # real INSERT will still report a problem if there is one.
         return
 
+    # Compare the size the file will actually be ON THE WIRE (see
+    # _ESCAPED_WIRE_INFLATION above), not the raw file size -- the raw
+    # size is not what risks exceeding max_allowed_packet.
+    wire_bytes = size_bytes * _ESCAPED_WIRE_INFLATION
     # Headroom for the rest of the statement and protocol overhead.
-    if size_bytes > limit * 0.9:
+    if wire_bytes > limit * 0.9:
         raise MobileReleaseError(
-            f"This APK is {size_bytes // (1024 * 1024)} MB, but the MySQL "
-            f"server accepts at most {limit // (1024 * 1024)} MB in a "
-            f"single statement (max_allowed_packet). Raise "
-            f"max_allowed_packet on the database server to at least "
-            f"{max(64, (size_bytes // (1024 * 1024)) * 2)}M and restart "
-            f"it, then upload again.")
+            f"This APK is {size_bytes // (1024 * 1024)} MB, and MySQL's "
+            f"own driver needs roughly {int(wire_bytes) // (1024 * 1024)} "
+            f"MB to send it in a single statement -- more than the "
+            f"server accepts (max_allowed_packet is "
+            f"{limit // (1024 * 1024)} MB). Raise max_allowed_packet on "
+            f"the database server to at least "
+            f"{max(64, int(wire_bytes // (1024 * 1024)) + 16)}M and "
+            f"restart it, then upload again.")
 
 
 class MobileReleaseService:
