@@ -17,6 +17,7 @@ python-dateutil>=2.9
 openpyxl
 PyJWT>=2.7
 gunicorn>=21.2
+beautifulsoup4>=4.12
 
 # Text extraction from scanned vehicle documents (Certificate of
 # Registration). pytesseract is a thin wrapper around the tesseract
