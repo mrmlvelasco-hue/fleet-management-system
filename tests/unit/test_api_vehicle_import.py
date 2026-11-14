@@ -259,3 +259,121 @@ def test_import_requires_vehicle_create(client, db, env):
     r = _post(client, _sheet([GOOD]), commit="1", user="viewer")
     assert r.status_code == 403
     assert Vehicle.query.count() == 0
+
+
+# ── Review/commit parity: catching duplicates the preview used to miss ──
+#
+# Found 2026-11-14 from a real 391-row import: a preview said 2% of rows
+# would fail, the actual commit skipped 16 for reasons the preview never
+# showed. Two distinct gaps, both fixed the same way -- track every
+# conduction/plate/engine/chassis number ALREADY ACCEPTED earlier in
+# THIS SAME PASS, dry-run or not, and check new rows against it exactly
+# like the per-row duplicate check already does against the database:
+#
+#   1. Two rows in the SAME file sharing a conduction/plate number: the
+#      preview never persists anything, so row 2's "does this already
+#      exist?" database query never sees row 1 -- only a REAL commit
+#      does, because row 1 is actually saved (committed) before row 2 is
+#      checked. Preview and commit disagreed on these rows.
+#   2. engine_number / chassis_number duplicates (against an EXISTING
+#      vehicle, not just another row in the file) weren't checked in the
+#      preview/validation loop AT ALL -- only inside the real
+#      VehicleService.create() call the preview never reaches. A
+#      chassis_number collision had no explicit check anywhere and only
+#      surfaced as the database's generic unique-constraint message.
+
+def test_preview_catches_an_intra_file_conduction_number_duplicate(client, db, env):
+    row1 = {**GOOD, "conduction_number": "VI-DUPE"}
+    row2 = {"conduction_number": "VI-DUPE", "vehicle_type_code": "LV-VI",
+           "branch_code": "BR-VI", "brand": "Toyota", "model": "Wigo",
+           "year": 2021}
+    r = _post(client, _sheet([row1, row2]))
+    body = r.get_json()
+    assert body["created"] == 1 and body["skipped"] == 1
+    assert body["errors"][0]["row"] == 3
+    assert "VI-DUPE" in body["errors"][0]["problems"][0]
+    assert "more than once in" in body["errors"][0]["problems"][0]
+
+
+def test_preview_catches_an_intra_file_plate_number_duplicate(client, db, env):
+    row1 = {"plate_number": "PL-DUPE", "vehicle_type_code": "LV-VI",
+           "branch_code": "BR-VI", "brand": "Toyota", "model": "Vios",
+           "year": 2022}
+    row2 = {"plate_number": "PL-DUPE", "vehicle_type_code": "LV-VI",
+           "branch_code": "BR-VI", "brand": "Honda", "model": "City",
+           "year": 2021}
+    body = _post(client, _sheet([row1, row2])).get_json()
+    assert body["created"] == 1 and body["skipped"] == 1
+    assert "PL-DUPE" in body["errors"][0]["problems"][0]
+
+
+def test_preview_catches_an_engine_number_duplicate_against_an_existing_vehicle(
+        client, db, env):
+    _commit_and_wait(client, _sheet(
+        [{**GOOD, "conduction_number": "VI-EXIST", "engine_number": "ENG-1"}]))
+    row = {"conduction_number": "VI-NEW", "vehicle_type_code": "LV-VI",
+          "branch_code": "BR-VI", "brand": "Toyota", "model": "Vios",
+          "year": 2022, "engine_number": "ENG-1"}
+    body = _post(client, _sheet([row])).get_json()
+    assert body["created"] == 0 and body["skipped"] == 1
+    assert "ENG-1" in body["errors"][0]["problems"][0]
+
+
+def test_preview_catches_an_intra_file_engine_number_duplicate(client, db, env):
+    row1 = {**GOOD, "conduction_number": "VI-E1", "engine_number": "ENG-DUPE"}
+    row2 = {"conduction_number": "VI-E2", "vehicle_type_code": "LV-VI",
+           "branch_code": "BR-VI", "brand": "Honda", "model": "City",
+           "year": 2021, "engine_number": "ENG-DUPE"}
+    body = _post(client, _sheet([row1, row2])).get_json()
+    assert body["created"] == 1 and body["skipped"] == 1
+    assert "ENG-DUPE" in body["errors"][0]["problems"][0]
+
+
+def test_preview_catches_a_chassis_number_duplicate_against_an_existing_vehicle(
+        client, db, env):
+    _commit_and_wait(client, _sheet(
+        [{**GOOD, "conduction_number": "VI-EXIST2", "chassis_number": "CHS-1"}]))
+    row = {"conduction_number": "VI-NEW2", "vehicle_type_code": "LV-VI",
+          "branch_code": "BR-VI", "brand": "Toyota", "model": "Vios",
+          "year": 2022, "chassis_number": "CHS-1"}
+    body = _post(client, _sheet([row])).get_json()
+    assert body["created"] == 0 and body["skipped"] == 1
+    assert "CHS-1" in body["errors"][0]["problems"][0]
+
+
+def test_preview_and_real_commit_now_agree_on_a_file_with_intra_file_duplicates(
+        client, db, env):
+    """The actual regression: what Review shows must be what commit does."""
+    rows = [
+        {**GOOD, "conduction_number": "VI-P1"},
+        {"conduction_number": "VI-P1", "vehicle_type_code": "LV-VI",
+         "branch_code": "BR-VI", "brand": "Honda", "model": "City", "year": 2021},
+        {"conduction_number": "VI-P3", "vehicle_type_code": "LV-VI",
+         "branch_code": "BR-VI", "brand": "Toyota", "model": "Wigo", "year": 2020,
+         "engine_number": "ENG-P"},
+        {"conduction_number": "VI-P4", "vehicle_type_code": "LV-VI",
+         "branch_code": "BR-VI", "brand": "Toyota", "model": "Wigo", "year": 2020,
+         "engine_number": "ENG-P"},
+    ]
+    preview = _post(client, _sheet(rows)).get_json()
+    commit = _commit_and_wait(client, _sheet(rows))
+    assert preview["created"] == commit["created"] == 2
+    assert preview["skipped"] == commit["skipped"] == 2
+    assert {e["row"] for e in preview["errors"]} == {e["row"] for e in commit["errors"]}
+
+
+def test_a_row_that_fails_for_an_unrelated_reason_does_not_poison_a_later_duplicate(
+        client, db, env):
+    """A row that fails (e.g. bad vehicle type) is never actually saved --
+    real commit never writes its engine_number either -- so a LATER row
+    reusing that same engine_number must still succeed, in both preview
+    and real commit."""
+    row1 = {**BAD, "conduction_number": "VI-BAD", "engine_number": "ENG-SHARED"}
+    row2 = {"conduction_number": "VI-GOOD", "vehicle_type_code": "LV-VI",
+             "branch_code": "BR-VI", "brand": "Honda", "model": "City",
+             "year": 2021, "engine_number": "ENG-SHARED"}
+    preview = _post(client, _sheet([row1, row2])).get_json()
+    commit = _commit_and_wait(client, _sheet([row1, row2]))
+    assert preview["created"] == commit["created"] == 1
+    assert preview["skipped"] == commit["skipped"] == 1
+    assert {e["row"] for e in preview["errors"]} == {e["row"] for e in commit["errors"]} == {2}

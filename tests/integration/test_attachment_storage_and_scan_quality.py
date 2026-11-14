@@ -150,6 +150,31 @@ def test_flask_rejects_an_oversized_body_before_it_reaches_the_service(app):
     assert limit >= 25 * 1024 * 1024
 
 
+def test_flask_does_not_block_an_apk_the_mobile_release_policy_allows(app):
+    """Found 2026-11-14: an administrator uploading a real 57.5MB APK got
+    a bare 413 and a hung "Uploading..." button. MobileReleaseService's
+    own policy (MAX_APK_MB = 150) was written as if it were the only
+    gate, but this Werkzeug ceiling sits in front of it and was sized
+    only for attachments (10MB) when it was introduced -- nobody raised
+    it when the 150MB mobile-release feature was added, so it silently
+    rejects any APK over 32MB before the service ever sees it.
+
+    multipart/form-data adds a few hundred bytes of overhead (boundaries,
+    field names, the version/notes fields) on top of the raw file, so the
+    ceiling must clear MAX_APK_MB with real headroom, not sit exactly on
+    it.
+    """
+    from app.modules.system_admin.mobile_release_service import MAX_APK_MB
+
+    limit = app.config.get("MAX_CONTENT_LENGTH")
+    assert limit, "MAX_CONTENT_LENGTH is not set"
+    assert limit >= (MAX_APK_MB + 5) * 1024 * 1024, (
+        f"MAX_CONTENT_LENGTH ({limit // (1024 * 1024)} MB) is lower than "
+        f"the mobile release policy ({MAX_APK_MB} MB) -- a legitimate APK "
+        f"upload would be rejected by Werkzeug before MobileReleaseService "
+        f"ever runs its own, friendlier check.")
+
+
 def test_the_service_limit_still_produces_the_readable_error(app, db, admin,
                                                              vehicle):
     from app.core.attachments.attachment_service import (

@@ -199,6 +199,26 @@ def import_vehicles(file_stream, dry_run: bool = True,
     stats = {"total_rows": 0, "created": 0, "skipped": 0, "errors": []}
     svc = VehicleService()
 
+    # Found 2026-11-14: a 391-row import's preview (dry_run) reported far
+    # fewer problems than the real commit hit. Two rows in the SAME file
+    # sharing a conduction/plate/engine/chassis number is invisible to a
+    # preview that persists nothing -- the duplicate check below is a
+    # live database query, and during dry_run neither row is ever saved,
+    # so row 2 never finds row 1. During a REAL commit each accepted row
+    # IS saved immediately, so row 2 finds row 1 already in the database
+    # and gets skipped -- a problem Review never showed.
+    #
+    # These four sets simulate exactly that: a value is added only once
+    # its row has passed every other check (so a row skipped for some
+    # OTHER reason never "exists" for a later row to collide with, the
+    # same as a real commit, which never saves such a row either). This
+    # also closes the separate gap where engine_number/chassis_number
+    # duplicates against an EXISTING vehicle were never checked until
+    # the real create() call -- Review now runs the identical check, so
+    # what Review shows is exactly what commit will do.
+    seen_conduction, seen_plate = set(), set()
+    seen_engine, seen_chassis = set(), set()
+
     for row_number, row in enumerate(ws.iter_rows(min_row=2, values_only=True),
                                      start=2):
         if row is None or all(_clean(v) is None for v in row):
@@ -208,6 +228,8 @@ def import_vehicles(file_stream, dry_run: bool = True,
 
         conduction = get("conduction_number")
         plate = get("plate_number")
+        engine_number = get("engine_number")
+        chassis_number = get("chassis_number")
         # Skip the template's own example row rather than trying to
         # import it -- people routinely forget to delete it.
         if conduction == "EXAMPLE-001":
@@ -253,11 +275,30 @@ def import_vehicles(file_stream, dry_run: bool = True,
             except (TypeError, ValueError):
                 errors.append(f"year '{year}' is not a number")
 
-        if conduction and Vehicle.query.filter_by(
-                conduction_number=conduction).first():
-            errors.append(f"conduction_number '{conduction}' already exists")
-        if plate and Vehicle.query.filter_by(plate_number=plate).first():
-            errors.append(f"plate_number '{plate}' already exists")
+        if conduction:
+            if Vehicle.query.filter_by(conduction_number=conduction).first():
+                errors.append(f"conduction_number '{conduction}' already exists")
+            elif conduction in seen_conduction:
+                errors.append(f"conduction_number '{conduction}' appears "
+                             f"more than once in this file")
+        if plate:
+            if Vehicle.query.filter_by(plate_number=plate).first():
+                errors.append(f"plate_number '{plate}' already exists")
+            elif plate in seen_plate:
+                errors.append(f"plate_number '{plate}' appears more than "
+                             f"once in this file")
+        if engine_number:
+            if Vehicle.query.filter_by(engine_number=engine_number).first():
+                errors.append(f"engine_number '{engine_number}' already exists")
+            elif engine_number in seen_engine:
+                errors.append(f"engine_number '{engine_number}' appears "
+                             f"more than once in this file")
+        if chassis_number:
+            if Vehicle.query.filter_by(chassis_number=chassis_number).first():
+                errors.append(f"chassis_number '{chassis_number}' already exists")
+            elif chassis_number in seen_chassis:
+                errors.append(f"chassis_number '{chassis_number}' appears "
+                             f"more than once in this file")
 
         # Build the full optional field set BEFORE the dry-run gate, so the
         # preview shows exactly what a real import would save. (Pre-v48 this
@@ -332,6 +373,18 @@ def import_vehicles(file_stream, dry_run: bool = True,
                                    "identifier": plate or conduction or "(blank)",
                                    "problems": errors})
             continue
+
+        # This row would really be saved now (dry_run or not) -- record
+        # its identifiers so a LATER row in this same file sees them,
+        # exactly as a real commit would (see the comment above the loop).
+        if conduction:
+            seen_conduction.add(conduction)
+        if plate:
+            seen_plate.add(plate)
+        if engine_number:
+            seen_engine.add(engine_number)
+        if chassis_number:
+            seen_chassis.add(chassis_number)
 
         if dry_run:
             stats["created"] += 1

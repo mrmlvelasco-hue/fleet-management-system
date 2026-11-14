@@ -175,10 +175,19 @@ class BaseConfig:
     # received and held in memory before anything rejected it. This
     # stops it at the door.
     #
-    # Set well above the per-file attachment cap so the service's own
-    # message, which names the real limit, is what people normally see;
-    # this is the backstop, not the policy.
-    MAX_CONTENT_LENGTH = 32 * 1024 * 1024
+    # MobileReleaseService has its own, larger policy -- MAX_APK_MB = 150
+    # -- for the same reason: an administrator's real APK can be tens of
+    # MB. This ceiling must clear the LARGEST of the app's upload
+    # policies, not just the attachment one, or the biggest legitimate
+    # upload gets a bare Werkzeug 413 before the service's own friendlier
+    # message ever runs. Found 2026-11-14 when a real 57.5MB APK upload
+    # was rejected at 32MB.
+    #
+    # Set well above that largest policy (150MB + headroom for multipart
+    # overhead) so each service's own message, which names the real
+    # limit, is what people normally see; this is the backstop, not the
+    # policy. Raise this again if a future upload policy needs more.
+    MAX_CONTENT_LENGTH = 160 * 1024 * 1024
 
     SQLALCHEMY_DATABASE_URI = _build_database_uri()
     # Without this, SQLAlchemy uses its bare defaults (pool_size=5,
