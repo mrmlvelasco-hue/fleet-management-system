@@ -133,12 +133,17 @@ def build_template() -> bytes:
     return buf.getvalue()
 
 
-def import_vendors(file_stream, dry_run: bool = True) -> dict:
+def import_vendors(file_stream, dry_run: bool = True,
+                   progress_callback=None) -> dict:
     """Validate (and optionally save) a filled-in template.
 
     Returns {total_rows, created, skipped, errors: [{row, identifier,
     problems}]} -- the vehicle importer's shape, so the React page and
     its result table are shared.
+
+    progress_callback, when given, is called with stats["total_rows"]
+    after every data row is counted -- see import_drivers' docstring
+    for why (only the async commit=1 path passes one).
     """
     from app.modules.master_data.org.models import Branch
     from app.modules.master_data.vendor.models import Vendor
@@ -179,6 +184,8 @@ def import_vendors(file_stream, dry_run: bool = True) -> dict:
             continue
 
         stats["total_rows"] += 1
+        if progress_callback is not None:
+            progress_callback(stats["total_rows"])
         errors = []
         name = get("name")
         identifier = code or name or "(blank)"

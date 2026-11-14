@@ -14,6 +14,7 @@ validation:
 Both require vehicle.create, as the Flask page does.
 """
 import json
+import time
 from io import BytesIO
 
 import pytest
@@ -89,6 +90,31 @@ def _post(client, buf, commit=None, user="importer", name="vehicles.xlsx"):
                        data=data, content_type="multipart/form-data")
 
 
+def _commit_and_wait(client, buf, user="importer", name="vehicles.xlsx",
+                     **extra_form):
+    """commit=1 now starts an async job (202 + job_id) instead of
+    blocking -- poll it to completion and translate the final status
+    back into the old synchronous response shape."""
+    data = {"file": (buf, name), "commit": "1", **extra_form}
+    r = client.post("/api/v1/vehicles/import", headers=_hdr(client, user),
+                    data=data, content_type="multipart/form-data")
+    if r.status_code != 202:
+        return r
+    job_id = r.get_json()["job_id"]
+    status = None
+    for _ in range(100):
+        status = client.get(f"/api/v1/import-jobs/{job_id}",
+                            headers=_hdr(client, user)).get_json()
+        if status["status"] in ("done", "failed"):
+            break
+        time.sleep(0.02)
+    assert status["status"] == "done", status
+    return {"dry_run": False, "total_rows": status["total_rows"],
+            "created": status["created_count"],
+            "skipped": status["skipped_count"],
+            "errors": status["errors"]}
+
+
 # ── template ────────────────────────────────────────────────────────────
 
 def test_template_download_is_a_workbook_with_a_reference_sheet(client, db, env):
@@ -121,9 +147,7 @@ def test_preview_is_the_default_and_saves_nothing(client, db, env):
 
 
 def test_commit_saves_the_vehicles(client, db, env):
-    r = _post(client, _sheet([GOOD]), commit="1")
-    assert r.status_code == 200, r.get_data(as_text=True)
-    body = r.get_json()
+    body = _commit_and_wait(client, _sheet([GOOD]))
     assert body["dry_run"] is False and body["created"] == 1
     assert Vehicle.query.filter_by(conduction_number="VI-001").count() == 1
 
@@ -171,12 +195,8 @@ def test_import_with_a_company_id_accepts_a_branch_in_that_company(
     row = {"conduction_number": "VI-API1", "vehicle_type_code": "LV-VI",
           "branch_code": "BR-VIAPI-A", "brand": "Toyota", "model": "Vios",
           "year": 2022}
-    data = {"file": (_sheet([row]), "vehicles.xlsx"), "commit": "1",
-            "company_id": str(scoped_env["company"].id)}
-    r = client.post("/api/v1/vehicles/import", headers=_hdr(client),
-                    data=data, content_type="multipart/form-data")
-    assert r.status_code == 200, r.get_data(as_text=True)
-    body = r.get_json()
+    body = _commit_and_wait(client, _sheet([row]),
+                            company_id=str(scoped_env["company"].id))
     assert body["created"] == 1 and body["skipped"] == 0
     assert Vehicle.query.filter_by(conduction_number="VI-API1").count() == 1
 
@@ -186,12 +206,8 @@ def test_import_with_a_company_id_rejects_a_branch_outside_that_company(
     row = {"conduction_number": "VI-API2", "vehicle_type_code": "LV-VI",
           "branch_code": "BR-VI",  # belongs to no company (from `env`)
           "brand": "Toyota", "model": "Vios", "year": 2022}
-    data = {"file": (_sheet([row]), "vehicles.xlsx"), "commit": "1",
-            "company_id": str(scoped_env["company"].id)}
-    r = client.post("/api/v1/vehicles/import", headers=_hdr(client),
-                    data=data, content_type="multipart/form-data")
-    assert r.status_code == 200, r.get_data(as_text=True)
-    body = r.get_json()
+    body = _commit_and_wait(client, _sheet([row]),
+                            company_id=str(scoped_env["company"].id))
     assert body["created"] == 0 and body["skipped"] == 1
     assert "does not belong to the selected Company" in \
         body["errors"][0]["problems"][0]
@@ -207,8 +223,7 @@ def test_import_with_a_non_numeric_company_id_is_a_400(client, db, env):
 
 
 def test_a_bad_row_is_reported_and_the_good_row_still_imports(client, db, env):
-    r = _post(client, _sheet([GOOD, BAD]), commit="1")
-    body = r.get_json()
+    body = _commit_and_wait(client, _sheet([GOOD, BAD]))
     assert body["created"] == 1 and body["skipped"] == 1
     assert body["errors"][0]["row"] == 3
     assert "NOPE" in " ".join(body["errors"][0]["problems"])

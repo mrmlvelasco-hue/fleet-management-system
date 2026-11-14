@@ -14,6 +14,7 @@ validation is skipped; the rest still import (the vehicle importer's
 partial-import rule). Gated on vendor.create, as creating one vendor is.
 """
 import json
+import time
 from io import BytesIO
 
 import pytest
@@ -92,6 +93,32 @@ def _problems(body):
     return {e["identifier"]: " | ".join(e["problems"]) for e in body["errors"]}
 
 
+def _commit_and_wait(client, buf, user="vimporter", name="vendors.xlsx"):
+    """commit=1 now starts an async job (202 + job_id) instead of
+    blocking -- poll it to completion and translate the final status
+    back into the old synchronous response shape, so every existing
+    assertion below (body["created"], body["dry_run"], ...) still
+    reads the same way a real caller experiences it: dry-run stays
+    one blocking call, commit doesn't.
+    """
+    r = _post(client, buf, commit="1", user=user, name=name)
+    if r.status_code != 202:
+        return r
+    job_id = r.get_json()["job_id"]
+    status = None
+    for _ in range(100):
+        status = client.get(f"/api/v1/import-jobs/{job_id}",
+                            headers=_hdr(client, user)).get_json()
+        if status["status"] in ("done", "failed"):
+            break
+        time.sleep(0.02)
+    assert status["status"] == "done", status
+    return {"dry_run": False, "total_rows": status["total_rows"],
+            "created": status["created_count"],
+            "skipped": status["skipped_count"],
+            "errors": status["errors"]}
+
+
 # ── template ────────────────────────────────────────────────────────────
 
 def test_template_is_a_workbook_with_this_installs_branch_codes(client, db, env):
@@ -119,8 +146,7 @@ def test_the_templates_own_example_row_is_never_imported(client, db, env):
     """People forget to delete it -- uploading the untouched template
     must import nothing, not a vendor called EXAMPLE."""
     tmpl = client.get("/api/v1/vendors/import/template", headers=_hdr(client)).data
-    r = _post(client, BytesIO(tmpl), commit="1")
-    body = r.get_json()
+    body = _commit_and_wait(client, BytesIO(tmpl))
     assert body["total_rows"] == 0 and body["created"] == 0
     assert Vendor.query.filter(Vendor.code.like("EXAMPLE%")).count() == 0
 
@@ -142,8 +168,7 @@ def test_commit_zero_is_still_a_preview(client, db, env):
 
 
 def test_commit_saves_every_field_and_the_branches(client, db, env):
-    r = _post(client, _sheet([GOOD]), commit="1")
-    body = r.get_json()
+    body = _commit_and_wait(client, _sheet([GOOD]))
     assert body["dry_run"] is False and body["created"] == 1
     v = Vendor.query.filter_by(code="VEN-101").one()
     assert v.name == "Alabang Toyota"
@@ -156,8 +181,7 @@ def test_commit_saves_every_field_and_the_branches(client, db, env):
 
 def test_blank_type_defaults_to_goods_and_blank_branches_serve_everyone(
         client, db, env):
-    _post(client, _sheet([{"code": "VEN-102", "name": "Plain Supplier"}]),
-          commit="1")
+    _commit_and_wait(client, _sheet([{"code": "VEN-102", "name": "Plain Supplier"}]))
     v = Vendor.query.filter_by(code="VEN-102").one()
     assert v.vendor_type == "GOODS"
     assert v.branches == []
@@ -167,10 +191,9 @@ def test_blank_type_defaults_to_goods_and_blank_branches_serve_everyone(
 
 def test_an_existing_code_is_skipped_and_the_existing_vendor_untouched(
         client, db, env):
-    r = _post(client, _sheet([{"code": "ven-old", "name": "Overwrite Attempt",
-                               "contact_person": "Someone Else"}, GOOD]),
-              commit="1")
-    body = r.get_json()
+    body = _commit_and_wait(client, _sheet(
+        [{"code": "ven-old", "name": "Overwrite Attempt",
+          "contact_person": "Someone Else"}, GOOD]))
     assert body["created"] == 1 and body["skipped"] == 1
     # Reported as written in the file, so it can be found in the sheet;
     # matched case-insensitively, so "ven-old" is still VEN-OLD.
@@ -180,9 +203,8 @@ def test_an_existing_code_is_skipped_and_the_existing_vendor_untouched(
 
 
 def test_a_code_repeated_in_the_same_file_imports_once(client, db, env):
-    r = _post(client, _sheet([GOOD, {**GOOD, "name": "Second Copy"}]),
-              commit="1")
-    body = r.get_json()
+    body = _commit_and_wait(
+        client, _sheet([GOOD, {**GOOD, "name": "Second Copy"}]))
     assert body["created"] == 1 and body["skipped"] == 1
     assert "appears more than once" in _problems(body)["VEN-101"]
     assert Vendor.query.filter_by(code="VEN-101").one().name == "Alabang Toyota"
@@ -198,7 +220,7 @@ def test_each_bad_row_names_its_own_problems(client, db, env):
         {"code": "V" * 21, "name": "X"},                           # > 20 chars
         GOOD,
     ]
-    body = _post(client, _sheet(rows), commit="1").get_json()
+    body = _commit_and_wait(client, _sheet(rows))
     assert body["total_rows"] == 7
     assert body["created"] == 1 and body["skipped"] == 6
     p = _problems(body)

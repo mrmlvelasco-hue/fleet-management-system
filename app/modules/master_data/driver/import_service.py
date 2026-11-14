@@ -241,7 +241,7 @@ def build_template(company_id: int = None) -> bytes:
 
 
 def import_drivers(file_stream, dry_run: bool = True,
-                   company_id: int = None) -> dict:
+                   company_id: int = None, progress_callback=None) -> dict:
     """Validate (and optionally save) a filled-in template.
 
     company_id, when given, restricts which branches a row's
@@ -251,6 +251,13 @@ def import_drivers(file_stream, dry_run: bool = True,
     that is entirely unknown, which keeps its own "unknown branch
     code" message). Omitted (the default), behaviour is unchanged --
     every existing caller/test is unaffected.
+
+    progress_callback, when given, is called as progress_callback(n)
+    after every data row is counted -- n is stats["total_rows"] so
+    far, i.e. "rows processed", not a percentage. Only the background
+    async-import path (commit=1) passes one; the synchronous dry-run
+    preview has no caller that needs it and omitting it changes
+    nothing for every existing test/caller.
 
     Returns {total_rows, created, skipped, errors: [{row, identifier,
     problems}]} -- the vendor/vehicle importers' shape, so the React
@@ -323,6 +330,8 @@ def import_drivers(file_stream, dry_run: bool = True,
             continue
 
         stats["total_rows"] += 1
+        if progress_callback is not None:
+            progress_callback(stats["total_rows"])
         errors = []
         first_name = get("first_name")
         last_name = get("last_name")

@@ -21,6 +21,7 @@ Administration for the duration of the bulk import, exactly like the
 existing JSON path on POST /api/v1/drivers already assumes.
 """
 import json
+import time
 from io import BytesIO
 
 import pytest
@@ -125,6 +126,31 @@ def _problems(body):
     return {e["identifier"]: " | ".join(e["problems"]) for e in body["errors"]}
 
 
+def _commit_and_wait(client, buf, user="dimporter", name="drivers.xlsx",
+                     **extra_form):
+    """commit=1 now starts an async job (202 + job_id) instead of
+    blocking -- poll it to completion and translate the final status
+    back into the old synchronous response shape."""
+    data = {"file": (buf, name), "commit": "1", **extra_form}
+    r = client.post("/api/v1/drivers/import", headers=_hdr(client, user),
+                    data=data, content_type="multipart/form-data")
+    if r.status_code != 202:
+        return r
+    job_id = r.get_json()["job_id"]
+    status = None
+    for _ in range(100):
+        status = client.get(f"/api/v1/import-jobs/{job_id}",
+                            headers=_hdr(client, user)).get_json()
+        if status["status"] in ("done", "failed"):
+            break
+        time.sleep(0.02)
+    assert status["status"] == "done", status
+    return {"dry_run": False, "total_rows": status["total_rows"],
+            "created": status["created_count"],
+            "skipped": status["skipped_count"],
+            "errors": status["errors"]}
+
+
 # ── template ────────────────────────────────────────────────────────────
 
 def test_template_is_a_workbook_with_this_installs_codes(client, db, env):
@@ -152,8 +178,7 @@ def test_template_requires_driver_create(client, db, env):
 
 def test_the_templates_own_example_row_is_never_imported(client, db, env):
     tmpl = client.get("/api/v1/drivers/import/template", headers=_hdr(client)).data
-    r = _post(client, BytesIO(tmpl), commit="1")
-    body = r.get_json()
+    body = _commit_and_wait(client, BytesIO(tmpl))
     assert body["total_rows"] == 0 and body["created"] == 0
     assert Driver.query.filter(
         Driver.employee_number.like("EXAMPLE%")).count() == 0
@@ -176,8 +201,7 @@ def test_commit_zero_is_still_a_preview(client, db, env):
 
 
 def test_commit_saves_every_field_without_a_photo(client, db, env):
-    r = _post(client, _sheet([GOOD]), commit="1")
-    body = r.get_json()
+    body = _commit_and_wait(client, _sheet([GOOD]))
     assert body["dry_run"] is False and body["created"] == 1
     d = Driver.query.filter_by(employee_number="EMP-101").one()
     assert (d.first_name, d.last_name) == ("Juan", "Dela Cruz")
@@ -189,9 +213,9 @@ def test_commit_saves_every_field_without_a_photo(client, db, env):
 
 def test_blank_type_defaults_to_driver_and_blank_status_to_active(
         client, db, env):
-    _post(client, _sheet([{"employee_number": "EMP-102",
+    _commit_and_wait(client, _sheet([{"employee_number": "EMP-102",
                            "first_name": "Plain", "last_name": "Person",
-                           "branch_code": "BR-DIMUN"}]), commit="1")
+                           "branch_code": "BR-DIMUN"}]))
     d = Driver.query.filter_by(employee_number="EMP-102").one()
     assert d.assignee_type == "DRIVER"
     assert d.status == "ACTIVE"
@@ -200,10 +224,9 @@ def test_blank_type_defaults_to_driver_and_blank_status_to_active(
 # ── row validation: skipped and reported, the rest still import ─────────
 
 def test_an_existing_employee_number_is_skipped_and_untouched(client, db, env):
-    r = _post(client, _sheet([{"employee_number": "emp-old",
+    body = _commit_and_wait(client, _sheet([{"employee_number": "emp-old",
                                "first_name": "Overwrite", "last_name": "Attempt",
-                               "branch_code": "BR-DIMUN"}, GOOD]), commit="1")
-    body = r.get_json()
+                               "branch_code": "BR-DIMUN"}, GOOD]))
     assert body["created"] == 1 and body["skipped"] == 1
     assert "already exists" in _problems(body)["emp-old"]
     old = Driver.query.filter_by(employee_number="EMP-OLD").one()
@@ -212,9 +235,8 @@ def test_an_existing_employee_number_is_skipped_and_untouched(client, db, env):
 
 def test_an_employee_number_repeated_in_the_same_file_imports_once(
         client, db, env):
-    r = _post(client, _sheet(
-        [GOOD, {**GOOD, "first_name": "Second"}]), commit="1")
-    body = r.get_json()
+    body = _commit_and_wait(client, _sheet(
+        [GOOD, {**GOOD, "first_name": "Second"}]))
     assert body["created"] == 1 and body["skipped"] == 1
     assert "appears more than once" in _problems(body)["EMP-101"]
     assert Driver.query.filter_by(
@@ -235,7 +257,7 @@ def test_each_bad_row_names_its_own_problems(client, db, env):
          "branch_code": "BR-DIMUN", "license_expiry": "not-a-date"},
         GOOD,
     ]
-    body = _post(client, _sheet(rows), commit="1").get_json()
+    body = _commit_and_wait(client, _sheet(rows))
     assert body["total_rows"] == 7
     assert body["created"] == 1 and body["skipped"] == 6
     p = _problems(body)
@@ -258,7 +280,7 @@ def test_each_bad_row_names_its_own_problems(client, db, env):
 def test_blank_employee_number_is_rejected_by_default(client, db, env):
     row = {"first_name": "No", "last_name": "Code",
           "branch_code": "BR-DIMUN"}
-    body = _post(client, _sheet([row]), commit="1").get_json()
+    body = _commit_and_wait(client, _sheet([row]))
     assert body["created"] == 0 and body["skipped"] == 1
     assert "employee_number is required" in _problems(body)["No Code"]
 
@@ -268,7 +290,7 @@ def test_blank_employee_number_is_accepted_when_the_parameter_is_off(
     _param(db, "REQUIRE_EMPLOYEE_NUMBER", "NO")
     row = {"first_name": "No", "last_name": "Code",
           "branch_code": "BR-DIMUN"}
-    body = _post(client, _sheet([row]), commit="1").get_json()
+    body = _commit_and_wait(client, _sheet([row]))
     assert body["created"] == 1 and body["skipped"] == 0
     d = Driver.query.filter_by(first_name="No", last_name="Code").one()
     assert d.employee_number is None
@@ -287,7 +309,7 @@ def test_two_blank_employee_numbers_in_one_file_both_import(
         {"first_name": "Second", "last_name": "NoNum",
          "branch_code": "BR-DIMUN"},
     ]
-    body = _post(client, _sheet(rows), commit="1").get_json()
+    body = _commit_and_wait(client, _sheet(rows))
     assert body["created"] == 2 and body["skipped"] == 0
 
 
@@ -306,9 +328,8 @@ def test_blank_rows_are_ignored(client, db, env):
 
 
 def test_unknown_department_code_for_the_branch_is_reported(client, db, env):
-    r = _post(client, _sheet([{**GOOD, "employee_number": "EMP-206",
-                               "department_code": "NOPE"}]), commit="1")
-    body = r.get_json()
+    body = _commit_and_wait(client, _sheet([{**GOOD, "employee_number": "EMP-206",
+                               "department_code": "NOPE"}]))
     assert body["skipped"] == 1
     assert "unknown department code" in _problems(body)["EMP-206"]
 
@@ -387,12 +408,8 @@ def test_import_with_a_company_id_accepts_a_branch_in_that_company(
     row = {"employee_number": "EMP-API1", "first_name": "Ana",
           "last_name": "Reyes", "assignee_type": "employee",
           "branch_code": "BR-DIAPI-A"}
-    data = {"file": (_sheet([row]), "drivers.xlsx"), "commit": "1",
-            "company_id": str(scoped_env["company"].id)}
-    r = client.post("/api/v1/drivers/import", headers=_hdr(client),
-                    data=data, content_type="multipart/form-data")
-    assert r.status_code == 200, r.get_data(as_text=True)
-    body = r.get_json()
+    body = _commit_and_wait(client, _sheet([row]),
+                            company_id=str(scoped_env["company"].id))
     assert body["created"] == 1 and body["skipped"] == 0
     assert Driver.query.filter_by(employee_number="EMP-API1").count() == 1
 
@@ -402,12 +419,8 @@ def test_import_with_a_company_id_rejects_a_branch_outside_that_company(
     row = {"employee_number": "EMP-API2", "first_name": "Ana",
           "last_name": "Reyes", "assignee_type": "employee",
           "branch_code": "BR-DIMUN"}  # belongs to no company (from `env`)
-    data = {"file": (_sheet([row]), "drivers.xlsx"), "commit": "1",
-            "company_id": str(scoped_env["company"].id)}
-    r = client.post("/api/v1/drivers/import", headers=_hdr(client),
-                    data=data, content_type="multipart/form-data")
-    assert r.status_code == 200, r.get_data(as_text=True)
-    body = r.get_json()
+    body = _commit_and_wait(client, _sheet([row]),
+                            company_id=str(scoped_env["company"].id))
     assert body["created"] == 0 and body["skipped"] == 1
     assert "does not belong to the selected Company" in \
         body["errors"][0]["problems"][0]

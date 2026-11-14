@@ -33,6 +33,7 @@ def create_app(config_name: str | None = None) -> Flask:
     # Import all model modules so SQLAlchemy metadata is complete.
     from app.core.models import audit_log        # noqa: F401
     from app.core.models import attachment        # noqa: F401
+    from app.core.models import import_job        # noqa: F401
     from app.core.approval import models as _apm  # noqa: F401
     from app.modules.user_management import models as _um  # noqa: F401
     from app.modules.document_config import models as _dc  # noqa: F401
@@ -128,6 +129,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.api import mobile_releases as _api_rel  # noqa: F401
     from app.modules.api import comments as _api_comments  # noqa: F401
     from app.modules.api import admin_ops as _api_admin_ops  # noqa: F401
+    from app.modules.api import import_jobs as _api_import_jobs  # noqa: F401
     app.register_blueprint(api_v1_bp)
     # CSRF protects COOKIE-authenticated form posts: the browser attaches
     # the session automatically, so a third-party page could otherwise

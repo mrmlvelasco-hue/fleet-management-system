@@ -251,6 +251,13 @@ def vendor_import_api(api_user):
     Registered BEFORE /vendors/<int:vendor_id>: "import" is not an int,
     so the order is not load-bearing today, but keeping the literal
     routes first means a future <vendor_code> route cannot capture it.
+
+    commit=1 does not save synchronously -- it starts the real import
+    on a background thread and returns {job_id} (202) immediately, so
+    the Review screen's own prior dry-run has already told the caller
+    everything a blocking response would (see import_jobs.py for how
+    progress/result is polled afterward). commit=0 (the default,
+    dry-run preview) is unchanged, still synchronous.
     """
     from app.modules.master_data.vendor.import_service import import_vendors
     uploaded = request.files.get("file")
@@ -259,14 +266,32 @@ def vendor_import_api(api_user):
                         "message": "Choose a filled-in template file to "
                                    "upload."}), 400
     dry_run = request.form.get("commit") != "1"
+    if dry_run:
+        try:
+            stats = import_vendors(uploaded.stream, dry_run=True)
+        except ValueError as exc:      # e.g. missing required columns
+            return jsonify({"error": "validation", "message": str(exc)}), 400
+        except Exception as exc:       # not an .xlsx, corrupt file, ...
+            return jsonify({"error": "validation",
+                            "message": f"Could not read the file: {exc}"}), 400
+        return jsonify({"dry_run": True, **stats})
+
+    from flask import current_app
+    from app.core.import_jobs.import_job_service import ImportJobService
+    from app.core.import_jobs.async_runner import start_import_job
     try:
-        stats = import_vendors(uploaded.stream, dry_run=dry_run)
-    except ValueError as exc:          # e.g. missing required columns
-        return jsonify({"error": "validation", "message": str(exc)}), 400
-    except Exception as exc:           # not an .xlsx, corrupt file, ...
+        total_rows = int(request.form.get("total_rows") or 0)
+    except (TypeError, ValueError):
         return jsonify({"error": "validation",
-                        "message": f"Could not read the file: {exc}"}), 400
-    return jsonify({"dry_run": dry_run, **stats})
+                        "message": "total_rows must be a number."}), 400
+    file_bytes = uploaded.stream.read()
+    job = ImportJobService.create(job_type="vendor", total_rows=total_rows,
+                                  created_by=api_user.id)
+    from app.extensions import db
+    db.session.commit()
+    start_import_job(current_app._get_current_object(), job.id,
+                     import_vendors, file_bytes)
+    return jsonify({"job_id": job.id}), 202
 
 
 @bp.route("/vendors/<int:vendor_id>", methods=["GET"])

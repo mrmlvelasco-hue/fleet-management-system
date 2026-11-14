@@ -148,7 +148,7 @@ def _clean(value):
 
 
 def import_vehicles(file_stream, dry_run: bool = True,
-                    company_id: int = None) -> dict:
+                    company_id: int = None, progress_callback=None) -> dict:
     """Validate (and optionally load) a filled-in template.
 
     Returns a summary with per-row errors so the person can fix the
@@ -162,6 +162,10 @@ def import_vehicles(file_stream, dry_run: bool = True,
     while a branch_code that matches no Branch anywhere still gets
     the existing "unknown branch_code" message. Omitted, behaviour is
     unchanged from before this parameter existed.
+
+    progress_callback, when given, is called with stats["total_rows"]
+    after every data row is counted -- see import_drivers' docstring
+    for why (only the async commit=1 path passes one).
     """
     from app.modules.master_data.reference.models import VehicleType
     from app.modules.master_data.org.models import Branch
@@ -212,6 +216,8 @@ def import_vehicles(file_stream, dry_run: bool = True,
             continue
 
         stats["total_rows"] += 1
+        if progress_callback is not None:
+            progress_callback(stats["total_rows"])
         errors = []
 
         if not conduction and not plate:
