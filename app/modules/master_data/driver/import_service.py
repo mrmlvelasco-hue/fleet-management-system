@@ -240,6 +240,32 @@ def build_template(company_id: int = None) -> bytes:
     return buf.getvalue()
 
 
+def import_blockers() -> list:
+    """Reasons this install cannot import ANY driver row right now.
+
+    Distinct from a row's own problems: nothing in the file can fix
+    these, so reporting them once per row (313 identical lines, as UAT
+    saw on 2026-11-14) hides the one thing the administrator has to do.
+    The preview returns them as `blockers`, and the commit route refuses
+    outright while any exist -- Review said "184 ready", the import then
+    created 0, because only DriverService.create() knew about the rule.
+
+    Read per call, like the service does: flipping the parameter has to
+    take effect on the very next upload.
+    """
+    from app.modules.system_admin.services.system_parameter_service import (
+        SystemParameterService)
+    if SystemParameterService().get("REQUIRE_ASSIGNEE_PHOTO", default=True):
+        return [
+            "Nothing can be imported while the System Parameter "
+            "REQUIRE_ASSIGNEE_PHOTO is on: every new driver or assignee "
+            "must have a photo, and an Excel file cannot carry one. An "
+            "administrator can switch it off in System Administration > "
+            "System Parameters for this import and back on afterwards; "
+            "each person's photo is then added from Edit Driver."]
+    return []
+
+
 def import_drivers(file_stream, dry_run: bool = True,
                    company_id: int = None, progress_callback=None) -> dict:
     """Validate (and optionally save) a filled-in template.
@@ -289,6 +315,10 @@ def import_drivers(file_stream, dry_run: bool = True,
     # importer depends on (REQUIRE_ASSIGNEE_PHOTO, REQUIRE_DRIVER_LICENSE).
     require_employee_number = SystemParameterService().get(
         "REQUIRE_EMPLOYEE_NUMBER", default=True)
+    # The same rule DriverService.create() enforces, applied here so the
+    # preview refuses exactly the rows a commit would.
+    require_driver_license = SystemParameterService().get(
+        "REQUIRE_DRIVER_LICENSE", default=True)
 
     all_branches = {b.code.upper(): b for b in Branch.query.all() if b.code}
     if company_id is None:
@@ -312,7 +342,8 @@ def import_drivers(file_stream, dry_run: bool = True,
     seen_employee_numbers = set()
     seen_license_numbers = set()
 
-    stats = {"total_rows": 0, "created": 0, "skipped": 0, "errors": []}
+    stats = {"total_rows": 0, "created": 0, "skipped": 0, "errors": [],
+             "blockers": import_blockers()}
     svc = DriverService()
 
     for row_number, row in enumerate(ws.iter_rows(min_row=2, values_only=True),
@@ -427,6 +458,14 @@ def import_drivers(file_stream, dry_run: bool = True,
                                          "license_expiry")
         except CoercionError as exc:
             errors.append(str(exc))
+
+        if (require_driver_license and assignee_type == "DRIVER"
+                and not (license_number and license_expiry
+                         and values["license_type"])):
+            errors.append(
+                "license_number, license_expiry and license_type are "
+                "required for a DRIVER-type assignee (a blank "
+                "assignee_type means DRIVER)")
 
         if errors:
             stats["skipped"] += 1

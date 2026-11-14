@@ -433,3 +433,60 @@ def test_import_with_a_non_numeric_company_id_is_a_400(client, db, env):
     r = client.post("/api/v1/drivers/import", headers=_hdr(client),
                     data=data, content_type="multipart/form-data")
     assert r.status_code == 400
+
+
+# ── Review must not promise what commit cannot deliver ──────────────────
+#
+# Reported from UAT 2026-11-14: Review said 184 rows were ready, the
+# import then created 0 and skipped all 313 -- every otherwise-valid row
+# refused by DriverService.create() with "A photo is required...". The
+# preview never looked at the two creation rules the service enforces.
+
+NO_LICENSE = {"employee_number": "EMP-301", "first_name": "No",
+              "last_name": "License", "branch_code": "BR-DIMUN"}
+
+
+def test_preview_says_up_front_when_the_photo_rule_blocks_the_whole_import(
+        client, db, env):
+    _param(db, "REQUIRE_ASSIGNEE_PHOTO", "YES")
+    preview = _post(client, _sheet([GOOD])).get_json()
+    assert len(preview["blockers"]) == 1
+    assert "REQUIRE_ASSIGNEE_PHOTO" in preview["blockers"][0]
+    # The row itself is fine -- the file is not what needs fixing.
+    assert preview["errors"] == []
+
+
+def test_there_is_no_blocker_when_the_photo_rule_is_off(client, db, env):
+    preview = _post(client, _sheet([GOOD])).get_json()
+    assert preview["blockers"] == []
+
+
+def test_a_blocked_import_is_refused_instead_of_skipping_every_row(
+        client, db, env):
+    _param(db, "REQUIRE_ASSIGNEE_PHOTO", "YES")
+    r = _commit_and_wait(client, _sheet([GOOD]))
+    assert r.status_code == 400
+    assert "REQUIRE_ASSIGNEE_PHOTO" in r.get_json()["message"]
+    assert Driver.query.filter_by(employee_number="EMP-101").first() is None
+
+
+def test_preview_applies_the_driver_license_rule_exactly_as_commit_does(
+        client, db, env):
+    _param(db, "REQUIRE_DRIVER_LICENSE", "YES")
+    rows = [GOOD,                                   # DRIVER, full licence
+            NO_LICENSE,                             # blank type -> DRIVER
+            {**NO_LICENSE, "employee_number": "EMP-302",
+             "assignee_type": "EMPLOYEE"}]          # rule does not apply
+    preview = _post(client, _sheet(rows)).get_json()
+    commit = _commit_and_wait(client, _sheet(rows))
+    assert preview["created"] == commit["created"] == 2
+    assert preview["skipped"] == commit["skipped"] == 1
+    assert "license" in _problems(preview)["EMP-301"].lower()
+    assert ({e["row"] for e in preview["errors"]}
+            == {e["row"] for e in commit["errors"]} == {3})
+
+
+def test_the_license_rule_is_not_applied_when_its_parameter_is_off(
+        client, db, env):
+    preview = _post(client, _sheet([NO_LICENSE])).get_json()
+    assert (preview["created"], preview["skipped"]) == (1, 0)

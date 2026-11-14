@@ -397,6 +397,15 @@ def driver_import_api(api_user):
                             "message": f"Could not read the file: {exc}"}), 400
         return jsonify({"dry_run": True, **stats})
 
+    # Refused here rather than started: with a blocker in force the job
+    # would run to the end and skip every row for the same reason.
+    from app.modules.master_data.driver.import_service import (
+        import_blockers)
+    blockers = import_blockers()
+    if blockers:
+        return jsonify({"error": "validation",
+                        "message": " ".join(blockers)}), 400
+
     from flask import current_app
     from app.core.import_jobs.import_job_service import ImportJobService
     from app.core.import_jobs.async_runner import start_import_job
