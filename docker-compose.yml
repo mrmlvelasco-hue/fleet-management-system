@@ -51,6 +51,14 @@ services:
       # DB_POOL_SIZE or DB_MAX_OVERFLOW are ever raised from these
       # defaults -- the two are not kept in sync automatically.
       - --max-connections=${MYSQL_MAX_CONNECTIONS:-200}
+      # Found 2026-11-14: MySQL 8's own default (64MB) silently aborted
+      # a real 57.5MB APK upload mid-write -- PyMySQL's client-side
+      # escaping for a BLOB parameter roughly DOUBLES high-entropy
+      # binary data on the wire (see mobile_release_service.py's
+      # _ESCAPED_WIRE_INFLATION), so even a file well under
+      # MAX_APK_MB (150MB) can need ~300MB on the wire. 400M covers
+      # that with headroom; raise via .env if MAX_APK_MB ever rises.
+      - --max_allowed_packet=${MYSQL_MAX_ALLOWED_PACKET:-400M}
     volumes:
       - fms_db_data:/var/lib/mysql
     healthcheck:
