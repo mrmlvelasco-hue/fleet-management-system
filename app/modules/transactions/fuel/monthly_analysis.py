@@ -127,6 +127,12 @@ class FuelMonthlyAnalysisService:
             end_odometer = None
             km_driven = None
             reason = None
+            # Opening month (2026-11-16): the vehicle's first month of
+            # fuel data. See _opening() below.
+            begin_odometer = baseline
+            opening_month = False
+            opening_litres = Decimal("0")
+            opening_cost = Decimal("0")
 
             if not month_txns:
                 reason = "NO_ACTIVITY"
@@ -135,7 +141,18 @@ class FuelMonthlyAnalysisService:
             else:
                 end_odometer = trusted_this_month[-1].odometer_used
                 if baseline is None:
-                    reason = "NO_BASELINE"
+                    opening = self._opening(month_txns)
+                    if (opening is None or end_odometer is None
+                            or opening[0] is None
+                            or end_odometer <= opening[0]):
+                        # One reading, every reading the same, or a
+                        # reading with no value recorded: still no
+                        # distance to measure.
+                        reason = "NO_BASELINE"
+                    else:
+                        begin_odometer, opening_litres, opening_cost = opening
+                        opening_month = True
+                        km_driven = end_odometer - begin_odometer
                 elif end_odometer < baseline:
                     # Should not happen -- OdometerValidationService
                     # already vets each reading against the vehicle's
@@ -151,9 +168,14 @@ class FuelMonthlyAnalysisService:
             km_per_litre = None
             cost_per_km = None
             if km_driven is not None and km_driven > 0:
-                if litres > 0:
-                    km_per_litre = round(Decimal(km_driven) / litres, 2)
-                cost_per_km = round(cost / Decimal(km_driven), 2)
+                # Outside an opening month these are simply the month's
+                # totals (opening_* are zero).
+                ratio_litres = litres - opening_litres
+                ratio_cost = cost - opening_cost
+                if ratio_litres > 0:
+                    km_per_litre = round(
+                        Decimal(km_driven) / ratio_litres, 2)
+                cost_per_km = round(ratio_cost / Decimal(km_driven), 2)
 
             months.append({
                 "month": month, "label": MONTH_LABELS[month - 1],
@@ -165,14 +187,65 @@ class FuelMonthlyAnalysisService:
                 # (exactly when someone most wants to see what the
                 # vehicle's last known reading was); only a vehicle
                 # with no trustworthy reading at all, ever, shows None.
-                "begin_odometer": baseline,
+                # In an opening month it is the month's own first
+                # trusted reading instead.
+                "begin_odometer": begin_odometer,
                 "end_odometer": end_odometer, "km_driven": km_driven,
                 "litres": litres, "total_cost": cost,
                 "km_per_litre": km_per_litre, "cost_per_km": cost_per_km,
                 "reason": reason,
+                # True only for a vehicle's first month of fuel data
+                # when a distance could be measured inside it; the
+                # litres/cost left out of the two ratios are reported
+                # so a reader (and fleet_summary) can reconcile them.
+                "opening_month": opening_month,
+                "opening_litres": opening_litres,
+                "opening_cost": opening_cost,
             })
 
         return months
+
+    @staticmethod
+    def _opening(month_txns):
+        """For a vehicle's FIRST month of fuel data (no earlier trusted
+        reading exists): `(opening odometer, litres, cost)` of the fuel
+        bought at or before the opening reading, or None if the month
+        has no trusted reading.
+
+        Client decision, 2026-11-16 (DCF8365, whose whole history was
+        October 2026 and so showed "-" for KM Driven, KM/L and
+        Cost/KM): measure the first month from its own first trusted
+        reading, and leave the opening fill out of KM/L and Cost/KM.
+        That fuel was bought BEFORE the measured distance was driven --
+        the same fill-to-fill logic every later month already follows,
+        where a month's litres are set against the distance since the
+        previous month's last reading. Counting it would understate the
+        first month's efficiency.
+
+        "Opening fill" is every transaction up to and including the
+        first trusted reading, plus any trusted fill straight after it
+        at the SAME odometer -- fleet cards commonly split one refuel
+        into two slips a few seconds apart, and no distance separates
+        them.
+        """
+        first = next(
+            (i for i, t in enumerate(month_txns)
+             if t.odometer_status in TRUSTED_ODOMETER_STATUSES), None)
+        if first is None:
+            return None
+        opening_odometer = month_txns[first].odometer_used
+        last = first
+        while (last + 1 < len(month_txns)
+               and month_txns[last + 1].odometer_status
+               in TRUSTED_ODOMETER_STATUSES
+               and month_txns[last + 1].odometer_used == opening_odometer):
+            last += 1
+        opening = month_txns[:last + 1]
+        litres = sum((Decimal(str(t.litres or 0)) for t in opening),
+                     Decimal("0"))
+        cost = sum((Decimal(str(t.total_amount or 0)) for t in opening),
+                   Decimal("0"))
+        return opening_odometer, litres, cost
 
     def monthly_rows(self, year=None, *, branch_id=None, company_id=None,
                      department_id=None,
@@ -231,12 +304,21 @@ class FuelMonthlyAnalysisService:
         total_litres = Decimal("0")
         total_cost = Decimal("0")
         total_km = 0
+        # Fuel bought at a vehicle's opening reading (see _opening):
+        # shown in the totals, left out of the two ratios -- so the
+        # fleet figures use the same basis as the rows beneath them.
+        opening_litres = Decimal("0")
+        opening_cost = Decimal("0")
         for row in rows:
             for m in row["months"]:
                 total_litres += m["litres"]
                 total_cost += m["total_cost"]
+                opening_litres += m["opening_litres"]
+                opening_cost += m["opening_cost"]
                 if m["km_driven"]:
                     total_km += m["km_driven"]
+        ratio_litres = total_litres - opening_litres
+        ratio_cost = total_cost - opening_cost
 
         return {
             "year": year or datetime.now().year,
@@ -244,9 +326,9 @@ class FuelMonthlyAnalysisService:
             "total_litres": total_litres,
             "total_cost": total_cost,
             "total_km": total_km,
-            "km_per_litre": (round(Decimal(total_km) / total_litres, 2)
-                            if total_litres > 0 and total_km > 0 else None),
-            "cost_per_km": (round(total_cost / Decimal(total_km), 2)
+            "km_per_litre": (round(Decimal(total_km) / ratio_litres, 2)
+                            if ratio_litres > 0 and total_km > 0 else None),
+            "cost_per_km": (round(ratio_cost / Decimal(total_km), 2)
                            if total_km > 0 else None),
         }
 

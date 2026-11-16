@@ -358,3 +358,174 @@ def test_xlsx_export_identity_column_is_company_not_branch(db):
     identity_row = [c.value for c in ws[2]]
     assert "Company" in identity_row
     assert "Branch" not in identity_row
+
+
+# ---------------------------------------------------------------------
+# Opening month (2026-11-16) -- a vehicle's first month of fuel data.
+#
+# Michael's UAT: DCF8365's whole fuel history is October 2026, so the
+# report showed "-" for KM Driven, KM/L and Cost/KM (NO_BASELINE).
+# Client decision: measure the first month from its OWN first reading,
+# and leave the fill(s) taken at that reading out of the two ratios --
+# that fuel was bought before the measured distance was driven. Total
+# Fuel and Total Cost still show everything that was bought.
+# ---------------------------------------------------------------------
+
+_DCF8365_OCTOBER = [
+    # (day, hh, mm, ss, litres, amount, odometer) -- the client's own
+    # October card statement for DCF8365, in date order.
+    (1, 11, 31, 24, 21.30, 2000.00, 25363),
+    (1, 11, 31, 51, 21.29, 1999.41, 25363),
+    (3, 11, 19, 32, 20.45, 2000.00, 25932),
+    (3, 11, 19, 56, 20.45, 2000.00, 25932),
+    (5, 12, 51, 26, 21.30, 2000.00, 26478),
+    (5, 12, 53, 51, 21.30, 2000.00, 26478),
+    (8, 14, 49, 44, 21.39, 2000.00, 26891),
+    (8, 14, 51, 50, 21.39, 2000.00, 26891),
+    (10, 14, 35, 44, 21.60, 2000.00, 27121),
+    (19, 8, 39, 43, 22.32, 2000.00, 27295),
+    (19, 8, 42, 42, 14.58, 1306.19, 27295),
+    (23, 8, 52, 41, 11.72, 1080.58, 27867),
+    (23, 10, 0, 51, 21.58, 2000.00, 27905),
+    (24, 12, 46, 41, 21.53, 2000.00, 28177),
+    (24, 12, 47, 2, 21.53, 2000.00, 28177),
+    (30, 8, 40, 35, 21.41, 2000.00, 28893),
+    (30, 8, 43, 24, 21.41, 2000.00, 28893),
+]
+
+
+def _add_dcf8365_october(vehicle_id):
+    from app.extensions import db as _db
+    for day, hh, mm, ss, litres, amount, odo in _DCF8365_OCTOBER:
+        _db.session.add(_txn(vehicle_id, datetime(2026, 10, day, hh, mm, ss),
+                             litres, amount, odo, "OK"))
+    _db.session.commit()
+
+
+def test_opening_month_measures_from_its_own_first_reading(db, vehicle):
+    _add_dcf8365_october(vehicle.id)
+
+    octo = FuelMonthlyAnalysisService().monthly_rows(year=2026)[0]["months"][9]
+
+    assert octo["begin_odometer"] == 25363
+    assert octo["end_odometer"] == 28893
+    assert octo["km_driven"] == 3530
+    assert octo["reason"] is None
+    assert octo["opening_month"] is True
+    # Everything bought in the month is still totalled.
+    assert round(float(octo["litres"]), 2) == 346.55
+    assert round(float(octo["total_cost"]), 2) == 32386.18
+    # The two fills at the opening reading (42.59 L, 3,999.41) are left
+    # out of the ratios: 3530 / 303.96 and 28,386.77 / 3530.
+    assert round(float(octo["opening_litres"]), 2) == 42.59
+    assert round(float(octo["opening_cost"]), 2) == 3999.41
+    assert float(octo["km_per_litre"]) == 11.61
+    assert float(octo["cost_per_km"]) == 8.04
+
+
+def test_month_after_the_opening_month_is_calculated_as_before(db, vehicle):
+    from app.extensions import db as _db
+    _add_dcf8365_october(vehicle.id)
+    _db.session.add(_txn(vehicle.id, datetime(2026, 11, 5), 40, 3600,
+                         29293, "OK"))
+    _db.session.commit()
+
+    nov = FuelMonthlyAnalysisService().monthly_rows(year=2026)[0]["months"][10]
+
+    assert nov["begin_odometer"] == 28893
+    assert nov["km_driven"] == 400
+    assert nov["opening_month"] is False
+    assert float(nov["opening_litres"]) == 0
+    assert float(nov["km_per_litre"]) == 10.0
+    assert float(nov["cost_per_km"]) == 9.0
+
+
+def test_a_month_with_an_earlier_baseline_is_never_an_opening_month(
+        db, vehicle):
+    """The opening rule applies ONLY when no earlier trustworthy reading
+    exists. A normal month keeps every litre in its ratios."""
+    from app.extensions import db as _db
+    _db.session.add(_txn(vehicle.id, datetime(2025, 12, 20), 40, 2400,
+                         1000, "OK"))
+    _db.session.add(_txn(vehicle.id, datetime(2026, 1, 5), 20, 1200,
+                         1100, "OK"))
+    _db.session.add(_txn(vehicle.id, datetime(2026, 1, 15), 30, 1800,
+                         1200, "OK"))
+    _db.session.commit()
+
+    jan = FuelMonthlyAnalysisService().monthly_rows(year=2026)[0]["months"][0]
+
+    assert jan["opening_month"] is False
+    assert jan["begin_odometer"] == 1000
+    assert jan["km_driven"] == 200
+    assert float(jan["km_per_litre"]) == 4.0      # 200 / (20 + 30)
+
+
+def test_opening_month_ignores_untrusted_readings(db, vehicle):
+    """The opening reading is the first TRUSTED one. Fuel bought before
+    it (here on an unreadable odometer) is opening fuel too."""
+    from app.extensions import db as _db
+    _db.session.add(_txn(vehicle.id, datetime(2026, 3, 1), 10, 900,
+                         5, "SUSPECT"))
+    _db.session.add(_txn(vehicle.id, datetime(2026, 3, 2), 20, 1800,
+                         5000, "OK"))
+    _db.session.add(_txn(vehicle.id, datetime(2026, 3, 20), 25, 2500,
+                         5300, "OK"))
+    _db.session.commit()
+
+    mar = FuelMonthlyAnalysisService().monthly_rows(year=2026)[0]["months"][2]
+
+    assert mar["begin_odometer"] == 5000
+    assert mar["km_driven"] == 300
+    assert float(mar["opening_litres"]) == 30     # 10 + 20
+    assert float(mar["km_per_litre"]) == 12.0     # 300 / 25
+    assert float(mar["cost_per_km"]) == round(2500 / 300, 2)
+
+
+def test_opening_month_with_no_distance_yet_stays_not_computable(db, vehicle):
+    """Every fill of the first month at the same reading: there is still
+    no distance to measure, so it stays a dash with its reason."""
+    from app.extensions import db as _db
+    _db.session.add(_txn(vehicle.id, datetime(2026, 1, 10, 9, 0), 20, 1000,
+                         900, "OK"))
+    _db.session.add(_txn(vehicle.id, datetime(2026, 1, 10, 9, 2), 20, 1000,
+                         900, "OK"))
+    _db.session.commit()
+
+    jan = FuelMonthlyAnalysisService().monthly_rows(year=2026)[0]["months"][0]
+
+    assert jan["km_driven"] is None
+    assert jan["km_per_litre"] is None
+    assert jan["reason"] == "NO_BASELINE"
+    assert jan["opening_month"] is False
+
+
+def test_fleet_summary_ratios_leave_out_opening_fuel(db, vehicle):
+    """The header cards must agree with the row beneath them: for a
+    one-vehicle fleet they are the same numbers."""
+    _add_dcf8365_october(vehicle.id)
+
+    summary = FuelMonthlyAnalysisService().fleet_summary(year=2026)
+
+    assert summary["total_km"] == 3530
+    assert round(float(summary["total_litres"]), 2) == 346.55
+    assert round(float(summary["total_cost"]), 2) == 32386.18
+    assert float(summary["km_per_litre"]) == 11.61
+    assert float(summary["cost_per_km"]) == 8.04
+
+
+def test_opening_month_with_a_blank_reading_does_not_crash(db, vehicle):
+    """A fill marked OK but carrying no odometer value must degrade to
+    'not computable', never raise."""
+    from app.extensions import db as _db
+    _db.session.add(_txn(vehicle.id, datetime(2026, 2, 3), 20, 1000,
+                         None, "OK"))
+    _db.session.add(_txn(vehicle.id, datetime(2026, 2, 9), 20, 1000,
+                         None, "OK"))
+    _db.session.commit()
+
+    feb = FuelMonthlyAnalysisService().monthly_rows(year=2026)[0]["months"][1]
+
+    assert feb["km_driven"] is None
+    assert feb["reason"] == "NO_BASELINE"
+    assert float(feb["litres"]) == 40
