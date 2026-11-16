@@ -158,9 +158,12 @@ def _shared_due_rows(api_user, branch_id=None, company_id=None):
     if branch_id is not None:
         due = [d for d in due if d["vehicle"].branch_id == branch_id]
     if company_id is not None:
-        from app.core.company_resolution import effective_company_id
+        # Whole company: every Region/Area row of the one chosen.
+        from app.core.company_resolution import (
+            company_group_ids, effective_company_id)
+        _co_ids = company_group_ids(company_id)
         due = [d for d in due
-               if effective_company_id(d["vehicle"]) == company_id]
+               if effective_company_id(d["vehicle"]) in _co_ids]
     scope_svc = UserOrgScopeService()
     due = [d for d in due
            if scope_svc.covers(api_user.id, branch_id=d["vehicle"].branch_id)]
@@ -455,14 +458,16 @@ def dashboard_companies(api_user):
     here, never from a list in the React source, so a Company added in
     Master Data appears in the filter with no frontend deploy.
 
-    The label carries short name + Region + Area/District because per D2
-    the short_name repeats across Regions/Areas -- the picker is where
-    that ambiguity would otherwise surface as several identical options.
+    2026-11-16 (client decision): each company is listed ONCE, labelled
+    "Short Name - Company Name" -- no Region/Area, although per D2 a
+    company is still stored once per Region + Area/District. Choosing
+    it filters by all of its rows (company_resolution.company_filter).
+    This list also feeds the mobile app's dashboard dropdown.
     A branch-scoped user is offered only the Company their own branch
     rolls up to, so the filter can never suggest data they may not see.
     """
     from app.extensions import db
-    from app.modules.api.reference import _company_label
+    from app.core.company_resolution import company_options
     from app.modules.master_data.org.models import Branch, OrgCompany
 
     q = OrgCompany.query.filter_by(is_active=True)
@@ -473,10 +478,7 @@ def dashboard_companies(api_user):
         # not every Company in the system.
         q = q.filter(OrgCompany.id == own) if own else q.filter(db.false())
     companies = q.order_by(OrgCompany.short_name).all()
-    return jsonify({
-        "items": [{"id": c.id, "short_name": c.short_name,
-                   "label": _company_label(c)} for c in companies],
-    })
+    return jsonify({"items": company_options(companies)})
 
 
 @bp.route("/dashboard/awaiting-approval", methods=["GET"])
@@ -838,16 +840,19 @@ def dashboard_bootstrap(api_user):
     # Companies ride along in the same one-shot payload as branches, so
     # the Company filter costs no extra round trip during the
     # Branch->Company transition when both filters are on screen.
-    from app.modules.api.reference import _company_label
+    # `db` was never imported in this function, so a branch-scoped user
+    # whose branch has no Company mapped hit a NameError (HTTP 500) on
+    # the db.false() below. Found and fixed 2026-11-16.
+    from app.extensions import db
     from app.modules.master_data.org.models import OrgCompany
     _coq = OrgCompany.query.filter_by(is_active=True)
     if api_user.branch_id is not None:
         _own = next((b.company_id for b in branch_rows), None)
         _coq = _coq.filter(OrgCompany.id == _own) if _own else _coq.filter(
             db.false())
-    companies = [{"id": c.id, "short_name": c.short_name,
-                  "label": _company_label(c)}
-                 for c in _coq.order_by(OrgCompany.short_name).all()]
+    # 2026-11-16: one entry per company, "Short Name - Company Name".
+    from app.core.company_resolution import company_options
+    companies = company_options(_coq.order_by(OrgCompany.short_name).all())
 
     awaiting = {"items": [], "total": 0}
     tasks = []
@@ -1154,7 +1159,6 @@ def dashboard_maintenance_cost_trend_grouped(api_user):
     # two Company pickers on this page can never disagree about who may
     # see what.
     from app.extensions import db
-    from app.modules.api.reference import _company_label
     from app.modules.master_data.org.models import OrgCompany
 
     cq = OrgCompany.query.filter_by(is_active=True)
@@ -1162,7 +1166,7 @@ def dashboard_maintenance_cost_trend_grouped(api_user):
         branch = db.session.get(Branch, api_user.branch_id)
         own = getattr(branch, "company_id", None)
         cq = cq.filter(OrgCompany.id == own) if own else cq.filter(db.false())
-    payload["companies"] = [
-        {"id": c.id, "short_name": c.short_name, "label": _company_label(c)}
-        for c in cq.order_by(OrgCompany.short_name).all()]
+    from app.core.company_resolution import company_options
+    payload["companies"] = company_options(
+        cq.order_by(OrgCompany.short_name).all())
     return jsonify(payload)

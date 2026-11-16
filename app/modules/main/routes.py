@@ -411,7 +411,6 @@ def dashboard_cost_trend_grouped():
     # /dashboard/companies, so the Jinja and bearer-token versions of
     # this chart can never disagree about who may see what.
     from app.extensions import db
-    from app.modules.api.reference import _company_label
     from app.modules.master_data.org.models import OrgCompany
 
     cq = OrgCompany.query.filter_by(is_active=True)
@@ -419,9 +418,9 @@ def dashboard_cost_trend_grouped():
         branch = db.session.get(Branch, current_user.branch_id)
         own = getattr(branch, "company_id", None)
         cq = cq.filter(OrgCompany.id == own) if own else cq.filter(db.false())
-    payload["companies"] = [
-        {"id": c.id, "short_name": c.short_name, "label": _company_label(c)}
-        for c in cq.order_by(OrgCompany.short_name).all()]
+    from app.core.company_resolution import company_options
+    payload["companies"] = company_options(
+        cq.order_by(OrgCompany.short_name).all())
     return jsonify(payload)
 
 

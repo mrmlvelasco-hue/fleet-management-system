@@ -583,12 +583,14 @@ class FleetBroadcastService:
                 # Same effective-Company predicate as the Vehicle/
                 # Vendor Company filters -- own company_id if set,
                 # else inherited via Branch.
-                from app.core.company_resolution import company_filter
+                # An audience is the exact Company row the sender picked.
+                from app.core.company_resolution import (
+                    exact_company_filter)
                 matches = (
                     User.query
                     .filter(
                         User.is_active.is_(True),
-                        company_filter(User, recipient.company_id),
+                        exact_company_filter(User, recipient.company_id),
                     )
                     .with_entities(User.id)
                     .all()

@@ -589,7 +589,20 @@ def _company_label(c):
 @bp.route("/reference/org-companies", methods=["GET"])
 @api_auth_required()
 def reference_org_companies(api_user):
-    """Company picker for the Vehicle form (Stage 3A).
+    """Company picker.
+
+    Two shapes, chosen by the caller:
+
+    * default -- one item per Company ROW, labelled "short name (Region
+      / Area-District)". For the forms that file a record under one
+      row (Vehicle, Driver, Tire, Branch, Department, Vendor) and for
+      the Vehicle Register report. Unchanged.
+    * `?grouped=1` -- one item per COMPANY, labelled "Short Name -
+      Company Name" (client decision, 2026-11-16). For FILTERS: list
+      screens and reports. A filter by any of a company's row ids
+      covers all of that company (company_resolution.company_filter).
+
+    Both list active rows only.
 
     Gated on auth only, matching /reference/branches: the person
     enrolling or editing a vehicle needs the list to be fillable, and
@@ -604,6 +617,15 @@ def reference_org_companies(api_user):
         rows = [c for c in rows
                if q in (c.short_name or "").lower()
                or q in (c.company_name or "").lower()]
+    if (request.args.get("grouped") or "").strip().lower() in (
+            "1", "true", "yes"):
+        from app.core.company_resolution import company_options
+        options = company_options(rows)
+        return jsonify({
+            "items": options[:_PICKER_LIMIT],
+            "has_more": len(options) > _PICKER_LIMIT,
+            "total": len(options),
+        })
     return jsonify({
         "items": [{
             "id": c.id, "short_name": c.short_name,

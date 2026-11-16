@@ -808,11 +808,15 @@ class BaseTransactionService:
         instead of 2.
         """
         from sqlalchemy import or_
-        from app.core.company_resolution import company_filter
+        from app.core.company_resolution import (
+            company_group_subquery, company_filter)
 
+        # 2026-11-16: "Company X" is the whole company -- every
+        # Region/Area row of it -- matching company_filter below.
+        ids = company_group_subquery(company_id)
         parts = []
         if hasattr(self.model, "company_id"):
-            parts.append(self.model.company_id == company_id)
+            parts.append(self.model.company_id.in_(ids))
         if hasattr(self.model, "vehicle_id"):
             from app.modules.master_data.vehicle.models import Vehicle
             parts.append(self.model.vehicle_id.in_(
@@ -822,7 +826,7 @@ class BaseTransactionService:
             from app.modules.master_data.org.models import Department
             parts.append(self.model.department_id.in_(
                 db.session.query(Department.id)
-                .filter(Department.company_id == company_id)))
+                .filter(Department.company_id.in_(ids))))
         if not parts:
             return None
         return or_(*parts)

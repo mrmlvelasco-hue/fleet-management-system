@@ -41,8 +41,12 @@ def _vehicle_matches(vehicle, filters: dict) -> bool:
         # the dashboard can never disagree about what belongs to a
         # Company. This single check covers both report screens AND
         # both Excel exports, which all route through here.
-        from app.core.company_resolution import effective_company_id
-        if effective_company_id(vehicle) != int(filters["company_id"]):
+        # 2026-11-16: the filter names a COMPANY (listed once), so any
+        # of its Region/Area rows matches.
+        from app.core.company_resolution import (
+            company_group_ids, effective_company_id)
+        if (effective_company_id(vehicle)
+                not in company_group_ids(int(filters["company_id"]))):
             return False
     if filters.get("vehicle_type_id"):
         if vehicle.vehicle_type_id != int(filters["vehicle_type_id"]):

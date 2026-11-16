@@ -38,10 +38,17 @@ def env(db):
                                        region_id=north.id)
     sl = AreaDistrictService().create(code="SL-LF2", name="South Luzon",
                                       region_id=south.id)
+    # 2026-11-16: a filter by Company now covers every Region/Area row of
+    # the SAME company (same short name AND company name). These two are
+    # deliberately two DIFFERENT companies that share a short name, so
+    # the tests below still prove one company's records are kept apart
+    # from another's.
     nl2_co = OrgCompanyService().create(short_name="Excellence",
+                                        company_name="Excellence Farms Inc",
                                         region_id=north.id,
                                         area_district_id=nl2.id)
     sl_co = OrgCompanyService().create(short_name="Excellence",
+                                       company_name="Excellence Trading Corp",
                                        region_id=south.id,
                                        area_district_id=sl.id)
     eali = BranchService().create(code="EALI-LF", name="East Asia Labs",
@@ -154,3 +161,33 @@ def test_the_other_companys_records_are_excluded_not_merely_reordered(
         token)
     plates = {v["plate_number"] for v in body["items"]}
     assert plates == {"LFN-000", "LFN-001"}
+
+
+def test_list_filter_covers_every_area_of_the_same_company(db, client, env):
+    """2026-11-16: the filter lists each company once, so choosing it has
+    to bring back the records of ALL its Region/Area rows -- here a
+    second area of "Excellence Farms Inc" holding one more vehicle."""
+    north = env["nl2_co"].region
+    nl3 = AreaDistrictService().create(code="NL3-LF", name="NORTH LUZON 3",
+                                       region_id=north.id)
+    second_area = OrgCompanyService().create(
+        short_name="Excellence", company_name="Excellence Farms Inc",
+        region_id=north.id, area_district_id=nl3.id)
+    vt = VehicleType.query.filter_by(code="CAR-LF").one()
+    VehicleService().create(vehicle_type_id=vt.id, brand="Toyota",
+                            model="Hilux", year=2024, branch_id=env["eali"].id,
+                            company_id=second_area.id, plate_number="LFN-900")
+
+    token = _token(client)
+    for cid in (env["nl2_co"].id, second_area.id):
+        _r, body = _get(
+            client, f"/api/v1/vehicles?page_size=100&company_id={cid}", token)
+        assert body["total"] == 3            # LFN-000, LFN-001, LFN-900
+        assert {v["plate_number"] for v in body["items"]} == {
+            "LFN-000", "LFN-001", "LFN-900"}
+
+    # The other company is still kept apart.
+    _r, other = _get(
+        client,
+        f"/api/v1/vehicles?page_size=100&company_id={env['sl_co'].id}", token)
+    assert other["total"] == 5

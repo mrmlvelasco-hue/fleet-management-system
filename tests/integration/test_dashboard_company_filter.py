@@ -32,10 +32,17 @@ def env(db):
                                        region_id=south.id)
     sl3 = AreaDistrictService().create(code="SL3-DF", name="SOUTH LUZON 3",
                                        region_id=south.id)
+    # 2026-11-16: a filter by Company now covers every Region/Area row of
+    # the SAME company (same short name AND company name). These two are
+    # deliberately two DIFFERENT companies that share a short name, so
+    # the tests below still prove one company's records are kept apart
+    # from another's.
     cav_co = OrgCompanyService().create(short_name="Excellence",
+                                        company_name="Excellence Farms Inc",
                                         region_id=south.id,
                                         area_district_id=cav.id)
     sl3_co = OrgCompanyService().create(short_name="Excellence",
+                                        company_name="Excellence Trading Corp",
                                         region_id=south.id,
                                         area_district_id=sl3.id)
     cav_br = BranchService().create(code="BR-CAV-DF", name="Cavite Branch",
@@ -123,15 +130,60 @@ def test_non_integer_company_is_rejected(db, client, env):
     assert status == 400
 
 
-def test_companies_endpoint_feeds_the_filter_with_distinguishable_labels(
+def test_companies_endpoint_lists_each_company_once_without_region_or_area(
         db, client, env):
-    """Same rule as every other Company picker: per D2 the short_name
-    repeats, so the label must carry Region and Area/District."""
+    """2026-11-16 (client decision): "Short Name - Company Name", one
+    entry per company. Region and Area/District are no longer shown."""
     status, body = _get(client, "/api/v1/dashboard/companies", _token(client))
     assert status == 200
     labels = sorted(c["label"] for c in body["items"])
-    assert labels == ["Excellence (South Luzon / CAVITE 2)",
-                      "Excellence (South Luzon / SOUTH LUZON 3)"]
+    assert labels == ["Excellence - Excellence Farms Inc",
+                      "Excellence - Excellence Trading Corp"]
+
+
+def test_a_company_stored_under_several_areas_is_one_dashboard_option(
+        db, client, env):
+    """The client's real shape: the SAME company filed under a second
+    Area. It must not appear twice, and choosing it counts the vehicles
+    of all its areas."""
+    sl4 = AreaDistrictService().create(
+        code="SL4-DF", name="SOUTH LUZON 4",
+        region_id=env["cav_co"].region_id)
+    second_area = OrgCompanyService().create(
+        short_name="Excellence", company_name="Excellence Farms Inc",
+        region_id=sl4.region_id, area_district_id=sl4.id)
+    BranchService().update(env["legacy"].id, company_id=second_area.id)
+
+    token = _token(client)
+    status, body = _get(client, "/api/v1/dashboard/companies", token)
+    farms = [c for c in body["items"]
+             if c["label"] == "Excellence - Excellence Farms Inc"]
+    assert len(farms) == 1
+    assert farms[0]["id"] == env["cav_co"].id      # lowest row id
+
+    # CAV-001, CAV-002 (CAVITE 2 row) + LEG-001 (the second area's row),
+    # whichever of the company's two row ids is sent.
+    for cid in (env["cav_co"].id, second_area.id):
+        status, body = _get(
+            client, f"/api/v1/dashboard/summary?company_id={cid}", token)
+        assert status == 200
+        assert body["fleet_count"] == 3
+
+
+def test_deactivated_company_is_not_offered(db, client, env):
+    OrgCompanyService().deactivate(env["sl3_co"].id)
+    status, body = _get(client, "/api/v1/dashboard/companies", _token(client))
+    assert [c["label"] for c in body["items"]] == [
+        "Excellence - Excellence Farms Inc"]
+
+
+def test_bootstrap_carries_the_same_grouped_company_list(db, client, env):
+    """The React and mobile dashboards read their dropdown from here."""
+    status, body = _get(client, "/api/v1/dashboard/bootstrap", _token(client))
+    assert status == 200
+    assert sorted(c["label"] for c in body["companies"]["items"]) == [
+        "Excellence - Excellence Farms Inc",
+        "Excellence - Excellence Trading Corp"]
 
 
 def test_fleet_status_honours_the_company_filter(db, client, env):
@@ -143,3 +195,46 @@ def test_fleet_status_honours_the_company_filter(db, client, env):
     # {labels, data, colors} -- the shape the Jinja dashboard's Chart.js
     # already consumes, kept identical for the React one.
     assert sum(body["data"]) == 2
+
+
+def test_bootstrap_for_a_branch_user_without_a_mapped_company(db, client, env):
+    """A branch-scoped user whose branch has no Company mapped is offered
+    no companies. This used to be a NameError (HTTP 500): the bootstrap
+    route called db.false() without ever importing db."""
+    user = User.query.filter_by(username="dashuser").one()
+    user.branch_id = env["legacy"].id
+    _db.session.commit()
+
+    status, body = _get(client, "/api/v1/dashboard/bootstrap", _token(client))
+    assert status == 200
+    assert body["companies"]["items"] == []
+
+
+def test_reference_picker_is_grouped_only_when_asked(db, client, env):
+    """Filters ask for ?grouped=1. Without it the picker is unchanged --
+    one item per Region/Area row -- which is what the Vehicle form and
+    the Vehicle Register report still use."""
+    token = _token(client)
+    sl4 = AreaDistrictService().create(
+        code="SL4-DF", name="SOUTH LUZON 4",
+        region_id=env["cav_co"].region_id)
+    second_area_of_farms = OrgCompanyService().create(
+        short_name="Excellence", company_name="Excellence Farms Inc",
+        region_id=sl4.region_id, area_district_id=sl4.id)
+
+    status, rows = _get(client, "/api/v1/reference/org-companies", token)
+    assert status == 200
+    assert sorted(c["label"] for c in rows["items"]) == [
+        "Excellence (South Luzon / CAVITE 2)",
+        "Excellence (South Luzon / SOUTH LUZON 3)",
+        "Excellence (South Luzon / SOUTH LUZON 4)"]
+    assert rows["total"] == 3
+
+    status, grouped = _get(
+        client, "/api/v1/reference/org-companies?grouped=1", token)
+    assert status == 200
+    assert [c["label"] for c in grouped["items"]] == [
+        "Excellence - Excellence Farms Inc",
+        "Excellence - Excellence Trading Corp"]
+    assert grouped["total"] == 2
+    assert second_area_of_farms.id not in [c["id"] for c in grouped["items"]]

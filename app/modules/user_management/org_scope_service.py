@@ -179,8 +179,10 @@ class UserOrgScopeService:
         on the Python path (_is_visible()) for now.
         """
         from sqlalchemy import or_
+        # An access boundary is ONE Company row -- exact_company_filter,
+        # never the whole-company company_filter the list filters use.
         from app.core.company_resolution import companies_in_scope, \
-            company_filter
+            exact_company_filter
 
         scopes = self.list_for_user(user_id)
         if not scopes:
@@ -196,10 +198,11 @@ class UserOrgScopeService:
         if hasattr(model, "company_id"):
             for sc in scopes:
                 if sc.scope_type == "ORG_COMPANY" and sc.company_id:
-                    allowed.append(company_filter(model, sc.company_id))
+                    allowed.append(
+                        exact_company_filter(model, sc.company_id))
                 elif sc.scope_type in ("ORG_REGION", "ORG_AREA_DISTRICT"):
                     for cid in companies_in_scope(sc):
-                        allowed.append(company_filter(model, cid))
+                        allowed.append(exact_company_filter(model, cid))
         return or_(*allowed)
 
     @staticmethod

@@ -378,9 +378,11 @@ class DashboardAnalyticsService:
         if branch_id is not None:
             due = [d for d in due if d["vehicle"].branch_id == branch_id]
         if company_id is not None:
-            from app.core.company_resolution import effective_company_id
+            from app.core.company_resolution import (
+                company_group_ids, effective_company_id)
+            _co_ids = company_group_ids(company_id)
             due = [d for d in due
-                   if effective_company_id(d["vehicle"]) == company_id]
+                   if effective_company_id(d["vehicle"]) in _co_ids]
         counts = {"OVERDUE": 0, "DUE_SOON": 0, "UPCOMING": 0}
         flagged_vehicle_ids = set()
         for d in due:
@@ -691,9 +693,11 @@ class DashboardAnalyticsService:
         if branch_id is not None:
             due = [d for d in due if d["vehicle"].branch_id == branch_id]
         if company_id is not None:
-            from app.core.company_resolution import effective_company_id
+            from app.core.company_resolution import (
+                company_group_ids, effective_company_id)
+            _co_ids = company_group_ids(company_id)
             due = [d for d in due
-                   if effective_company_id(d["vehicle"]) == company_id]
+                   if effective_company_id(d["vehicle"]) in _co_ids]
         overdue = sum(1 for d in due if d["status"] == "OVERDUE")
         soon = sum(1 for d in due if d["status"] == "DUE_SOON")
         flagged = {d["vehicle"].id for d in due}

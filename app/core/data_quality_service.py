@@ -382,8 +382,13 @@ class DataQualityService:
             # Company-scoped list uses, so this screen's Company filter
             # can never disagree with the Vehicle Master list about
             # what belongs to a Company.
-            from app.core.company_resolution import company_filter
-            query = query.filter(company_filter(Vehicle, company_id))
+            #
+            # 2026-11-16: this scorecard lists and scores one Company
+            # ROW per line (Region / Area included) and its own picker
+            # still offers rows, so it filters by the exact row -- not
+            # the whole-company filter the list screens now use.
+            from app.core.company_resolution import exact_company_filter
+            query = query.filter(exact_company_filter(Vehicle, company_id))
         return query.all()
 
     @request_cached("dq_company_scorecard")

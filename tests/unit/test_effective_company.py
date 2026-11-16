@@ -34,10 +34,17 @@ def env(db):
                                        region_id=south.id)
     sl3 = AreaDistrictService().create(code="SL3-EC", name="SOUTH LUZON 3",
                                        region_id=south.id)
+    # 2026-11-16: a filter by Company now covers every Region/Area row of
+    # the SAME company (same short name AND company name). These two are
+    # deliberately two DIFFERENT companies that share a short name, so
+    # the tests below still prove one company's records are kept apart
+    # from another's.
     cav_co = OrgCompanyService().create(short_name="Excellence",
+                                        company_name="Excellence Farms Inc",
                                         region_id=south.id,
                                         area_district_id=cav.id)
     sl3_co = OrgCompanyService().create(short_name="Excellence",
+                                        company_name="Excellence Trading Corp",
                                         region_id=south.id,
                                         area_district_id=sl3.id)
     mapped = BranchService().create(code="BR-CAV", name="Cavite Branch",

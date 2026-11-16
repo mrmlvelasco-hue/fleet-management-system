@@ -448,15 +448,19 @@ class VehicleService:
                     # the paged screen while list() showed them their
                     # fleet -- the two disagreeing about the same
                     # question, which a test now pins.
-                    from app.core.company_resolution import company_filter
+                    # Access boundary: exactly the granted Company row(s),
+                    # never widened to the whole company.
+                    from app.core.company_resolution import (
+                        exact_company_filter)
                     for sc in scopes:
                         if sc.scope_type == "ORG_COMPANY" and sc.company_id:
                             allowed.append(
-                                company_filter(Vehicle, sc.company_id))
+                                exact_company_filter(Vehicle, sc.company_id))
                         elif (sc.scope_type in ("ORG_REGION",
                                                 "ORG_AREA_DISTRICT")):
                             for cid in self._companies_in_scope(sc):
-                                allowed.append(company_filter(Vehicle, cid))
+                                allowed.append(
+                                    exact_company_filter(Vehicle, cid))
                     query = query.filter(or_(*allowed))
 
             # Assignment scope, applied AFTER org scope and as a further

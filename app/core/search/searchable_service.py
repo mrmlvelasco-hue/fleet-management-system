@@ -77,14 +77,17 @@ class SearchableService:
             if bu_ids:
                 conditions.append(self.model.business_unit_id.in_(bu_ids))
         if hasattr(self.model, "company_id"):
+            # Access boundary: exact rows, never the whole company.
             from app.core.company_resolution import (
-                company_filter, companies_in_scope)
+                exact_company_filter, companies_in_scope)
             for s in scopes:
                 if s.scope_type == "ORG_COMPANY" and s.company_id:
-                    conditions.append(company_filter(self.model, s.company_id))
+                    conditions.append(
+                        exact_company_filter(self.model, s.company_id))
                 elif s.scope_type in ("ORG_REGION", "ORG_AREA_DISTRICT"):
                     for cid in companies_in_scope(s):
-                        conditions.append(company_filter(self.model, cid))
+                        conditions.append(
+                            exact_company_filter(self.model, cid))
         if not conditions:
             # No BRANCH/BUSINESS_UNIT/ORG_* scope rows matched anything
             # this model can be filtered by -- the user's only scopes

@@ -32,6 +32,13 @@ def _company_of(vehicle, mapped=None):
     return effective_company_id(vehicle)
 
 
+def _company_ids(company_id):
+    """Every Region/Area row of the company the filter names -- the
+    dashboard lists each company once, so one choice covers them all."""
+    from app.core.company_resolution import company_group_ids
+    return company_group_ids(company_id)
+
+
 class DashboardService:
     """Every method takes an optional `branch_id` so a caller can narrow
     to a single branch WITHOUT bypassing org-scoping: `user` is still
@@ -84,8 +91,9 @@ class DashboardService:
         if branch_id is not None:
             due = [d for d in due if d["vehicle"].branch_id == branch_id]
         if company_id is not None:
+            _co_ids = _company_ids(company_id)
             due = [d for d in due
-                   if _company_of(d["vehicle"]) == company_id]
+                   if _company_of(d["vehicle"]) in _co_ids]
         if user is None:
             return len(due)
         from app.modules.user_management.org_scope_service import (
@@ -123,8 +131,9 @@ class DashboardService:
             # company_id is the snapshot taken at submission (D7); a
             # task raised before that column existed carries None and is
             # correctly excluded from a Company-filtered view.
+            _co_ids = _company_ids(company_id)
             tasks = [t for t in tasks
-                     if getattr(t, "company_id", None) == company_id]
+                     if getattr(t, "company_id", None) in _co_ids]
         return len(tasks)
 
     @ttl_cached(
@@ -152,8 +161,9 @@ class DashboardService:
         if branch_id is not None:
             due = [d for d in due if d["vehicle"].branch_id == branch_id]
         if company_id is not None:
+            _co_ids = _company_ids(company_id)
             due = [d for d in due
-                   if _company_of(d["vehicle"]) == company_id]
+                   if _company_of(d["vehicle"]) in _co_ids]
         if user is None:
             return len(due)
         from app.modules.user_management.org_scope_service import (
