@@ -968,6 +968,28 @@ def maintenanceorder_print_vam(oid):
 
     company = CompanyProfileService().get()
 
+    # Classification checkboxes must reflect Lookup Maintenance
+    # (System Administration -> Lookups -> ASSIGNMENT_CLASSIFICATION)
+    # rather than a hardcoded list, so a client-renamed or newly added
+    # entitlement category shows up on the printed memo without a code
+    # release. A classification already recorded on THIS order but
+    # since deactivated is appended so the historical memo still
+    # prints correctly -- deactivating a lookup must not blank out a
+    # box that was already checked on an older document.
+    from app.modules.system_admin.services.lookup_service import LookupService
+    assignment_classifications = list(
+        LookupService().get_by_type_with_fallback("ASSIGNMENT_CLASSIFICATION"))
+    if item.assignment_classification and not any(
+            lk.code == item.assignment_classification
+            for lk in assignment_classifications):
+        from app.modules.system_admin.models import Lookup
+        legacy = (Lookup.query
+                 .filter_by(lookup_type="ASSIGNMENT_CLASSIFICATION",
+                           code=item.assignment_classification)
+                 .first())
+        if legacy:
+            assignment_classifications.append(legacy)
+
     # Endorsed By = the person who INITIATED the memo (the MO's requester)
     # with the CREATED date. Approved By = the actual final approver from
     # the approval trail with the APPROVAL date. These are two different
@@ -1056,6 +1078,7 @@ def maintenanceorder_print_vam(oid):
 
     return render_template("transactions/maintenanceorder_print_vam.html",
                            item=item, company=company,
+                           assignment_classifications=assignment_classifications,
                            endorsed_by=endorsed_by, approved_by=approved_by,
                            latest_reg=latest_reg,
                            oath_template=oath_tpl, oath_body=oath_body,

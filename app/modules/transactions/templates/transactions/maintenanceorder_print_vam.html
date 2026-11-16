@@ -289,30 +289,19 @@
 
   <div class="checkbox-row">
     <div class="checkbox-list">
+      {# Classification options come from Lookup Maintenance
+         (ASSIGNMENT_CLASSIFICATION) -- never hardcode a label or
+         description here. A code release should not be needed to
+         rename, reorder, add, or retire an entitlement category. #}
+      {% for lk in assignment_classifications %}
+      {% set _parts = lk.description.split('(', 1) %}
       <div class="checkbox-item">
-        <div class="checkbox-box {{ 'checked' if item.assignment_classification == 'PERK' else '' }}">
-          {{ '✓' if item.assignment_classification == 'PERK' else '' }}
+        <div class="checkbox-box {{ 'checked' if item.assignment_classification == lk.code else '' }}">
+          {{ '✓' if item.assignment_classification == lk.code else '' }}
         </div>
-        <div><strong>PERK</strong> (Officer, Director, GM, GSM, Senior Manager)</div>
+        <div><strong>{{ _parts[0].strip() }}</strong>{% if _parts|length > 1 %} ({{ _parts[1] }}{% endif %}</div>
       </div>
-      <div class="checkbox-item">
-        <div class="checkbox-box {{ 'checked' if item.assignment_classification == 'TOOL_OF_THE_TRADE' else '' }}">
-          {{ '✓' if item.assignment_classification == 'TOOL_OF_THE_TRADE' else '' }}
-        </div>
-        <div><strong>TOOL OF THE TRADE</strong> (SM, BDM, FMM, SOOM, KAM, TSM, ADM, BDO, TSO, Channel Manager, Fleet Manager)</div>
-      </div>
-      <div class="checkbox-item">
-        <div class="checkbox-box {{ 'checked' if item.assignment_classification == 'OPERATIONS_SERVICE_UNIT' else '' }}">
-          {{ '✓' if item.assignment_classification == 'OPERATIONS_SERVICE_UNIT' else '' }}
-        </div>
-        <div><strong>OPERATIONS SERVICE UNIT</strong> (Pre-seller, Salesman, Marketing Services / Postmix Technician, Department Service Unit)</div>
-      </div>
-      <div class="checkbox-item">
-        <div class="checkbox-box {{ 'checked' if item.assignment_classification == 'EDS_UNIT' else '' }}">
-          {{ '✓' if item.assignment_classification == 'EDS_UNIT' else '' }}
-        </div>
-        <div><strong>EDS UNIT</strong> (EDS-SR, MR-EDS, TPD, Business Partner, Operator)</div>
-      </div>
+      {% endfor %}
     </div>
 
     <div class="photo-box">
