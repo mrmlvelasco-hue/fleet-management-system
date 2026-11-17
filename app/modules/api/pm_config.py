@@ -854,6 +854,37 @@ def update_pms_profile(api_user, profile_code):
     }), 200
 
 
+# ── Copy one model's PMS to another model ───────────────────────────────────
+
+@bp.route("/pms-copy", methods=["POST"])
+@api_auth_required("pmschedule.create")
+def copy_pms_to_model(api_user):
+    """Copy every active PM package of one vehicle model, with its
+    checklists, to another model under new PMS Profile codes -- see
+    maintenance_config/copy_service.py for exactly what is copied.
+
+    JSON: source_model_id, target_model_id, dry_run (default TRUE).
+    The default is the safe one, as with /pm-task-list/import: a caller
+    that forgets to say gets a preview, never a write.
+
+    Requires `pmschedule.create`, the same permission as importing a
+    task list -- both create PM packages and their checklists in bulk.
+    """
+    from app.modules.maintenance_config.copy_service import (
+        PMSCopyError, PMSCopyService)
+
+    data = request.get_json(silent=True) or {}
+    dry_run = data.get("dry_run", True) is not False
+    try:
+        result = PMSCopyService().copy_to_model(
+            source_model_id=data.get("source_model_id"),
+            target_model_id=data.get("target_model_id"),
+            dry_run=dry_run)
+    except PMSCopyError as exc:
+        return _validation(str(exc), exc.field)
+    return jsonify(result)
+
+
 # ── Export & Import ─────────────────────────────────────────────────────────
 
 @bp.route("/pm-templates/export", methods=["GET"])
@@ -939,6 +970,43 @@ def _pm_task_list_module():
     return module
 
 
+@bp.route("/pm-task-list/template", methods=["GET"])
+@api_auth_required("pmschedule.create")
+def pm_task_list_template(api_user):
+    """The fill-in workbook for Import PM Task List: the two sheets the
+    importer reads, with example rows, plus a Reference sheet listing
+    the categories and interval codes it accepts.
+
+    Guarded on `pmschedule.create`, the same permission the import
+    itself needs -- the template is only useful to someone who can
+    upload it, matching /vehicles/import/template.
+    """
+    from io import BytesIO
+
+    from flask import send_file
+
+    from app.modules.maintenance_config.task_list_template import (
+        FILE_NAME, build_pm_task_list_template)
+
+    try:
+        pm_module = _pm_task_list_module()
+        import vems_frequency_reference as freq
+    except ImportError as exc:
+        return jsonify({
+            "error": "server_misconfigured",
+            "message": f"Could not load the import script: {exc}",
+        }), 500
+
+    data = build_pm_task_list_template(
+        frequency_reference=freq.FREQUENCY_REFERENCE,
+        categories=list(pm_module.CATEGORY_TO_MTYPE),
+        excluded_categories=sorted(pm_module.EXCLUDED_CATEGORIES))
+    return send_file(
+        BytesIO(data), as_attachment=True, download_name=FILE_NAME,
+        mimetype="application/vnd.openxmlformats-officedocument"
+                 ".spreadsheetml.sheet")
+
+
 @bp.route("/pm-task-list/import", methods=["POST"])
 @api_auth_required("pmschedule.create")
 def import_pm_task_list_endpoint(api_user):
@@ -986,8 +1054,14 @@ def import_pm_task_list_endpoint(api_user):
             reset_result = pm_module.reset_pm_data()
 
     try:
+        # A Task_CD that is already an active PMS Profile is left out
+        # and reported -- unless this run replaces the whole catalog,
+        # where every existing profile is deleted first (and a PREVIEW
+        # of such a run must show what the real one will create, not
+        # "everything already exists").
         result = pm_module.import_pm_task_list(
-            io.BytesIO(file_bytes), dry_run=dry_run)
+            io.BytesIO(file_bytes), dry_run=dry_run,
+            skip_existing_profiles=not do_reset)
     except ValueError as exc:
         return jsonify({
             "error": "validation",

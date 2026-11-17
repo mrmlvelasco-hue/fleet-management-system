@@ -111,9 +111,66 @@ CATEGORY_TO_MTYPE = {
 }
 
 
-def _load_scope_details_index(wb):
-    """{(make, model, pm_cd, task_cd) lowercased: [scope line text, ...]}
-    sorted by Line_No, from the "Scope Details" sheet.
+SCOPE_SHEET_NAME = "Scope Details"
+SCOPE_SHEET_HEADERS = ["Make", "Model", "PM_CD", "Task_CD", "Line_No",
+                       "Scope_Detail"]
+
+# Task_CD values starting with this are the fill-in template's own
+# example rows. They are never imported, so a person who forgets to
+# delete them does not end up with an "EXAMPLE" PMS Profile.
+EXAMPLE_TASK_PREFIX = "EXAMPLE"
+
+# How many packages the review screen is sent. A full VEMS export runs
+# to a few thousand; the counts above the table are always complete.
+REVIEW_PACKAGE_LIMIT = 300
+
+_INSTRUCTION_SENTENCE = re.compile(r"^\s*see\s+sheet\s+scope\s+details",
+                                   re.IGNORECASE)
+
+
+def _scope_key(make, model, pm_cd, task_cd):
+    return (str(make or "").strip().lower(),
+            str(model or "").strip().lower(),
+            str(pm_cd or "").strip(), str(task_cd or "").strip())
+
+
+def _find_scope_sheet(wb):
+    """The checklist sheet, or None.
+
+    Normally it is named "Scope Details". A workbook rebuilt by hand
+    (copy one model's rows into a new file, as the Strada -> Triton
+    file was) usually leaves it as "Sheet2", and the importer used to
+    treat that as "this file has no checklist sheet" and carry on --
+    every package then got the Scope column's own instruction sentence
+    as its one checklist line. So: the sheet with that name if it has
+    the right columns, otherwise any sheet after the first that does.
+    The first sheet is always the main sheet and is never considered.
+    """
+    def _has_headers(ws):
+        header = [c.value for c in ws[1]]
+        return all(h in header for h in SCOPE_SHEET_HEADERS)
+
+    by_name = {name.strip().lower(): name for name in wb.sheetnames[1:]}
+    exact = by_name.get(SCOPE_SHEET_NAME.lower())
+    if exact is not None and _has_headers(wb[exact]):
+        return wb[exact]
+    if SCOPE_SHEET_NAME in wb.sheetnames:
+        # Present but not this sheet's expected shape -- degrade
+        # cleanly, exactly as before.
+        return None
+    for name in wb.sheetnames[1:]:
+        if _has_headers(wb[name]):
+            return wb[name]
+    return None
+
+
+def _read_scope_details(wb):
+    """`(index, labels, sheet_title)` from the checklist sheet.
+
+    index:  {(make, model, pm_cd, task_cd) lowercased: [line text, ...]}
+            sorted by Line_No.
+    labels: the same keys -> (Make, Model) as typed, for messages.
+    sheet_title: the sheet the lines came from, or None.
 
     This is the NEW file format's real checklist source: the main
     sheet's Scope column no longer contains checklist text at all --
@@ -125,32 +182,72 @@ def _load_scope_details_index(wb):
     regex, though -- the main sheet's own row ALREADY carries Make,
     Model, Task_CD and PM_CD as separate columns, so this indexes
     directly on those and the instruction sentence is never parsed at
-    all. Returns {} (empty) if the sheet doesn't exist, so a file in
+    all. Returns empty results if there is no such sheet, so a file in
     the OLDER inline-text format degrades cleanly to the previous
     behaviour rather than failing.
     """
-    if "Scope Details" not in wb.sheetnames:
-        return {}
-    ws = wb["Scope Details"]
+    ws = _find_scope_sheet(wb)
+    if ws is None:
+        return {}, {}, None
     header = [c.value for c in ws[1]]
     idx = {h: i for i, h in enumerate(header)}
-    required = ["Make", "Model", "PM_CD", "Task_CD", "Line_No", "Scope_Detail"]
-    if any(h not in idx for h in required):
-        return {}   # not this sheet's expected shape -- degrade cleanly
 
     raw = defaultdict(list)
+    labels = {}
     for row in ws.iter_rows(min_row=2, values_only=True):
         if row is None or row[idx["Scope_Detail"]] is None:
             continue
-        key = (str(row[idx["Make"]] or "").strip().lower(),
-              str(row[idx["Model"]] or "").strip().lower(),
-              str(row[idx["PM_CD"]] or "").strip(),
-              str(row[idx["Task_CD"]] or "").strip())
+        key = _scope_key(row[idx["Make"]], row[idx["Model"]],
+                         row[idx["PM_CD"]], row[idx["Task_CD"]])
         line_no = row[idx["Line_No"]] or 0
         raw[key].append((line_no, str(row[idx["Scope_Detail"]]).strip()))
+        labels.setdefault(key, (str(row[idx["Make"]] or "").strip(),
+                                str(row[idx["Model"]] or "").strip()))
 
-    return {key: [text for _n, text in sorted(lines, key=lambda t: t[0])]
-           for key, lines in raw.items()}
+    index = {key: [text for _n, text in sorted(lines, key=lambda t: t[0])]
+             for key, lines in raw.items()}
+    return index, labels, ws.title
+
+
+def _load_scope_details_index(wb):
+    """Just the index from `_read_scope_details` (kept for callers that
+    only need the join)."""
+    return _read_scope_details(wb)[0]
+
+
+def _existing_profiles():
+    """{profile_code: {"vehicle": "Brand Model", "packages": n}} for
+    every ACTIVE PMS Profile already in the catalog.
+
+    Task_CD becomes the profile code, and a profile is nothing more
+    than the packages sharing one code. Importing a Task_CD that is
+    already in use therefore does not create a second profile -- it
+    files the new packages inside the existing one. That is how a
+    Triton file carrying the Strada's Task_CD would have ended up
+    inside the Strada's profile, and how uploading the same file twice
+    doubled every package. A deactivated profile does not count: its
+    code is free to be imported again.
+    """
+    from sqlalchemy.orm import joinedload
+    from app.modules.maintenance_config.models import PMSchedule
+    rows = (PMSchedule.query
+            .filter(PMSchedule.profile_code.isnot(None),
+                    PMSchedule.is_active.is_(True))
+            .options(joinedload(PMSchedule.vehicle_brand),
+                     joinedload(PMSchedule.vehicle_model_ref))
+            .all())
+    found = {}
+    for r in rows:
+        entry = found.get(r.profile_code)
+        if entry is None:
+            brand = (r.vehicle_brand.name if r.vehicle_brand
+                     else r.vehicle_make) or ""
+            model = (r.vehicle_model_ref.name if r.vehicle_model_ref
+                     else r.vehicle_model) or ""
+            entry = found[r.profile_code] = {
+                "vehicle": f"{brand} {model}".strip(), "packages": 0}
+        entry["packages"] += 1
+    return found
 
 
 def _cumulative_km_from_work_description(work_desc: str):
@@ -223,7 +320,15 @@ def _resolve_brand_model(make: str, model: str, brand_cache: dict):
 
 
 def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
-                        limit_groups: int = None) -> dict:
+                        limit_groups: int = None,
+                        skip_existing_profiles: bool = True) -> dict:
+    """Import (or, with dry_run, only describe) a PM Task List workbook.
+
+    skip_existing_profiles: leave out any Task_CD that is already an
+    active PMS Profile (see `_existing_profiles`). Pass False only when
+    the caller is wiping the catalog first ("Replace existing data"),
+    where every existing profile is about to be deleted anyway.
+    """
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
     ws = wb[wb.sheetnames[0]]
     header_row = [c.value for c in ws[1]]
@@ -237,16 +342,32 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
                          f"{missing}. Found: {header_row}")
 
     # Real per-package checklists, when the file has this sheet (see
-    # _load_scope_details_index's docstring for why). {} for an
+    # _read_scope_details's docstring for why). Empty for an
     # older-format file, which then falls back to text-splitting the
     # Scope column itself, exactly as before.
-    scope_index = _load_scope_details_index(wb)
+    scope_index, scope_labels, scope_sheet = _read_scope_details(wb)
     has_pm_cd = "PM_CD" in idx
 
     rows = list(ws.iter_rows(min_row=2, values_only=True))
     groups = defaultdict(list)
+    example_rows = 0
+    # Every (make, model, pm_cd, task_cd) the main sheet mentions, in
+    # ANY category -- so a checklist line is only called "unmatched"
+    # when no main-sheet row asks for it at all.
+    main_keys = set()
     for r in rows:
-        groups[r[idx["Task_CD"]]].append(r)
+        task_cd = r[idx["Task_CD"]]
+        if task_cd is None or str(task_cd).strip() == "":
+            continue    # blank row, or a note typed under the data
+        if has_pm_cd:
+            main_keys.add(_scope_key(r[idx["Make"]], r[idx["Model"]],
+                                     r[idx["PM_CD"]], task_cd))
+        if str(task_cd).strip().upper().startswith(EXAMPLE_TASK_PREFIX):
+            example_rows += 1
+            continue
+        groups[task_cd].append(r)
+
+    existing = _existing_profiles() if skip_existing_profiles else {}
 
     mtype_cache, brand_cache = {}, {}
     stats = {
@@ -255,7 +376,17 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
         "scope_items_created": 0, "unrecognized_frequency_codes": set(),
         "hour_based_packages": 0, "duplicate_rows_collapsed": 0,
         "samples": [],
+        # -- added 2026-11-17, all additive --
+        "scope_sheet": scope_sheet,
+        "example_rows_ignored": example_rows,
+        "groups_skipped_existing": 0, "existing_profiles": [],
+        "packages_without_checklist": [],
+        "scope_rows_unmatched": 0, "scope_unmatched_models": [],
+        "unknown_models": [], "unknown_categories": [],
+        "packages": [], "packages_truncated": False,
     }
+    unknown_models = {}
+    unknown_categories = []
 
     group_items = list(groups.items())
     if limit_groups:
@@ -269,11 +400,26 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
             continue
         if category not in CATEGORY_TO_MTYPE:
             stats["groups_skipped_no_category"] += 1
+            label = str(category).strip() if category is not None else "(blank)"
+            if label not in unknown_categories:
+                unknown_categories.append(label)
             continue
 
         make = first[idx["Make"]]
         model = first[idx["Model"]]
         task_description = first[idx["Description"]]
+
+        owner = existing.get(str(task_cd).strip())
+        if owner is not None:
+            stats["groups_skipped_existing"] += 1
+            stats["existing_profiles"].append({
+                "task_cd": str(task_cd).strip(),
+                "make": str(make or "").strip(),
+                "model": str(model or "").strip(),
+                "existing_vehicle": owner["vehicle"],
+                "packages": owner["packages"],
+            })
+            continue
 
         # Collapse only EXACT duplicate rows (identical Scope +
         # WorkDescription + all three frequency codes) -- everything
@@ -297,9 +443,24 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
         mtype = _get_or_create_maintenance_type(mtype_code, mtype_name, mtype_cache) \
             if not dry_run else mtype_cache.setdefault(mtype_code, None)
 
-        brand_id, model_id = (None, None)
-        if not dry_run:
-            brand_id, model_id = _resolve_brand_model(make, model, brand_cache)
+        # Read-only, so it runs in a dry run too: the review screen can
+        # then say a make/model is not in the Vehicle Models master
+        # (usually a spelling difference) BEFORE anything is saved.
+        brand_id, model_id = _resolve_brand_model(make, model, brand_cache)
+        if model_id is None:
+            # Brand known, model not: fall back to the free-text
+            # make/model match for BOTH. Keeping the brand link alone
+            # (as this did before) stored a package with a brand, no
+            # model and no text -- which the due-date engine reads as
+            # "no make/model at all", i.e. a GLOBAL schedule applied to
+            # every vehicle without a more specific one.
+            brand_id = None
+        if brand_id is None:
+            unknown_models.setdefault(
+                (str(make or "").strip().lower(),
+                 str(model or "").strip().lower()),
+                {"make": str(make or "").strip(),
+                 "model": str(model or "").strip()})
 
         for seq_pos, (_sort_val, row) in enumerate(packages, start=1):
             scope_text = row[idx["Scope"]]
@@ -324,17 +485,11 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
             if not interval_km and not interval_days:
                 continue  # nothing usable to schedule on
 
+            pm_cd = row[idx["PM_CD"]] if has_pm_cd else None
             activity_texts = None
             if has_pm_cd:
-                pm_cd = row[idx["PM_CD"]]
-                join_key = (str(make or "").strip().lower(),
-                          str(model or "").strip().lower(),
-                          str(pm_cd or "").strip(), str(task_cd or "").strip())
-                activity_texts = scope_index.get(join_key)
-            if not activity_texts:
-                # Older-format file (or no join match found) -- the
-                # Scope column holds literal checklist text directly.
-                activity_texts = _split_scope_into_items(scope_text)
+                activity_texts = scope_index.get(
+                    _scope_key(make, model, pm_cd, task_cd))
             # Each package's OWN row already carries its own correct,
             # package-specific description ("...1,000 km " for the
             # first-service package, "...5,000 km " for every one
@@ -345,16 +500,46 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
             # the FIRST package's km figure in its own name/label,
             # regardless of that package's real interval.
             row_description = row[idx["Description"]] or task_description
+            if not activity_texts:
+                if scope_text and _INSTRUCTION_SENTENCE.match(str(scope_text)):
+                    # The Scope column points at the checklist sheet,
+                    # and that sheet has no lines for this package.
+                    # The sentence itself is an instruction to a human
+                    # reader, never a checklist step -- so the package
+                    # is created with no checklist and reported, rather
+                    # than given one nonsense step nobody would notice.
+                    activity_texts = []
+                    stats["packages_without_checklist"].append({
+                        "task_cd": str(task_cd).strip(),
+                        "pm_cd": str(pm_cd or "").strip(),
+                        "make": str(make or "").strip(),
+                        "model": str(model or "").strip(),
+                        "description": str(row_description or "").strip(),
+                    })
+                else:
+                    # Older-format file -- the Scope column holds
+                    # literal checklist text directly.
+                    activity_texts = _split_scope_into_items(scope_text)
+
+            package = {
+                "task_cd": task_cd, "make": make, "model": model,
+                "category": category, "sequence": seq_pos,
+                "interval_km": interval_km, "interval_days": interval_days,
+                "interval_hours": interval_hours,
+                "trigger_mode": trigger_mode,
+                "activity_count": len(activity_texts),
+                "work_description": (str(work_desc)[:80] if work_desc else ""),
+            }
             if len(stats["samples"]) < 10:
-                stats["samples"].append({
-                    "task_cd": task_cd, "make": make, "model": model,
-                    "category": category, "sequence": seq_pos,
-                    "interval_km": interval_km, "interval_days": interval_days,
-                    "interval_hours": interval_hours,
-                    "trigger_mode": trigger_mode,
-                    "activity_count": len(activity_texts),
-                    "work_description": (str(work_desc)[:80] if work_desc else ""),
+                stats["samples"].append(package)
+            if len(stats["packages"]) < REVIEW_PACKAGE_LIMIT:
+                stats["packages"].append({
+                    **package,
+                    "pm_cd": str(pm_cd or "").strip(),
+                    "description": str(row_description or "").strip(),
                 })
+            else:
+                stats["packages_truncated"] = True
 
             if not dry_run:
                 sched = PMScheduleService().create(
@@ -389,6 +574,21 @@ def import_pm_task_list(xlsx_path: str, dry_run: bool = True,
     if not dry_run:
         db.session.commit()
 
+    # Checklist lines no main-sheet row asks for. Almost always the
+    # Model (or a code) was changed on the main sheet but not on the
+    # checklist sheet -- exactly what left 21 Triton packages without a
+    # checklist in the reported file.
+    unmatched = defaultdict(int)
+    for key, lines in scope_index.items():
+        if key not in main_keys:
+            unmatched[scope_labels[key]] += len(lines)
+    stats["scope_rows_unmatched"] = sum(unmatched.values())
+    stats["scope_unmatched_models"] = [
+        {"make": make, "model": model, "rows": count}
+        for (make, model), count in sorted(unmatched.items())]
+
+    stats["unknown_models"] = list(unknown_models.values())
+    stats["unknown_categories"] = unknown_categories
     stats["unrecognized_frequency_codes"] = sorted(
         stats["unrecognized_frequency_codes"])
     return stats

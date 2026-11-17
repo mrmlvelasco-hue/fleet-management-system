@@ -195,14 +195,163 @@ class TestReset:
         # The re-import replaces it with exactly one fresh row, not two.
         assert PMSchedule.query.count() == 1
 
-    def test_without_reset_a_second_import_adds_alongside_the_first(
+    def test_without_reset_a_second_import_does_not_duplicate_the_first(
             self, client, env):
+        # Changed 2026-11-17. This used to assert 2: a second upload of
+        # the same file "added alongside the first". But Task_CD is the
+        # PMS Profile code, so "alongside" really meant every package
+        # twice inside ONE profile -- and a different model's file
+        # carrying the same Task_CD landed inside the first model's
+        # profile. A Task_CD already in use is now left out and
+        # reported; nothing is deleted without reset either way.
         content = _make_workbook_with_scope_details()
         _upload(client, _token(client, "pmimporter"), content, dry_run="false")
-        _upload(client, _token(client, "pmimporter"), content, dry_run="false")
+        status, body = _upload(
+            client, _token(client, "pmimporter"), content, dry_run="false")
 
         from app.modules.maintenance_config.models import PMSchedule
-        assert PMSchedule.query.count() == 2
+        assert status == 200
+        assert PMSchedule.query.count() == 1
+        assert body["import"]["groups_skipped_existing"] == 1
+        assert body["import"]["existing_profiles"][0]["task_cd"] == "S02-00001"
+
+    def test_a_reset_preview_does_not_report_everything_as_already_existing(
+            self, client, env):
+        # "Replace existing data" deletes the catalog before importing,
+        # so its preview must show what the real run will create.
+        content = _make_workbook_with_scope_details()
+        _upload(client, _token(client, "pmimporter"), content, dry_run="false")
+        status, body = _upload(
+            client, _token(client, "pmimporter"), content,
+            dry_run="true", reset="true")
+
+        assert status == 200
+        assert body["reset_skipped_dry_run"] is True
+        assert body["import"]["groups_skipped_existing"] == 0
+        assert body["import"]["packages_created"] == 1
+
+
+class TestResponseShape:
+    """The React screen went blank on every dry run because it rendered
+    each entry of `samples` as text, and each entry is an object. The
+    shape is asserted here so the two sides cannot drift again."""
+
+    def test_samples_and_packages_are_objects_with_named_fields(
+            self, client, env):
+        content = _make_workbook_with_scope_details()
+        _status, body = _upload(
+            client, _token(client, "pmimporter"), content, dry_run="true")
+        result = body["import"]
+        for entry in (result["samples"][0], result["packages"][0]):
+            assert isinstance(entry, dict)
+            assert entry["task_cd"] == "S02-00001"
+            assert entry["make"] == "Ford"
+            assert entry["model"] == "Escape"
+            assert entry["interval_km"] == 1000
+            assert entry["interval_days"] == 30
+            assert entry["activity_count"] == 2
+        assert result["packages"][0]["pm_cd"] == "004-001-00001"
+
+    def test_the_review_fields_are_always_present(self, client, env):
+        content = _make_workbook_with_scope_details()
+        _status, body = _upload(
+            client, _token(client, "pmimporter"), content, dry_run="true")
+        result = body["import"]
+        assert result["scope_sheet"] == "Scope Details"
+        assert result["example_rows_ignored"] == 0
+        assert result["groups_skipped_existing"] == 0
+        assert result["existing_profiles"] == []
+        assert result["packages_without_checklist"] == []
+        assert result["scope_rows_unmatched"] == 0
+        assert result["scope_unmatched_models"] == []
+        assert result["unknown_categories"] == []
+        assert result["unknown_models"] == [
+            {"make": "Ford", "model": "Escape"}]
+        assert result["packages_truncated"] is False
+
+
+def _download_template(client, token):
+    return client.get("/api/v1/pm-task-list/template",
+                      headers={"Authorization": f"Bearer {token}"})
+
+
+class TestTemplate:
+    def test_template_downloads_as_an_excel_file(self, client, env):
+        r = _download_template(client, _token(client, "pmimporter"))
+        assert r.status_code == 200
+        assert "spreadsheetml" in r.headers["Content-Type"]
+        assert "PM_Task_List_Import_Template.xlsx" in (
+            r.headers["Content-Disposition"])
+
+    def test_template_has_the_sheets_and_columns_the_importer_reads(
+            self, client, env):
+        r = _download_template(client, _token(client, "pmimporter"))
+        wb = openpyxl.load_workbook(io.BytesIO(r.data))
+        assert wb.sheetnames[:2] == ["PM Task List", "Scope Details"]
+        assert "Reference" in wb.sheetnames
+        main = [c.value for c in wb["PM Task List"][1]]
+        assert main == ["Make", "Model", "Description", "Task_CD", "PM_CD",
+                        "WorkDescription", "Scope", "KM Reading", "KMDesc",
+                        "Calendar", "CALDesc", "Hourly", "HourDesc",
+                        "PMDescription", "Planned_CD", "Planned", "Sort"]
+        scope = [c.value for c in wb["Scope Details"][1]]
+        assert scope == ["Make", "Model", "PM_CD", "Task_CD", "Line_No",
+                         "Scope_Detail"]
+
+    def test_reference_sheet_lists_the_categories_and_interval_codes(
+            self, client, env):
+        r = _download_template(client, _token(client, "pmimporter"))
+        wb = openpyxl.load_workbook(io.BytesIO(r.data))
+        cells = {str(c.value) for row in wb["Reference"].iter_rows()
+                 for c in row if c.value is not None}
+        for category in ("Vehicle Preventive Maintenance",
+                         "Tire Replacement", "Battery Replacement",
+                         "Aircon Servicing"):
+            assert category in cells
+        for code in ("5KMS", "1KM", "3MTH", "1YR", "2YRS"):
+            assert code in cells
+
+    def test_the_untouched_template_imports_nothing(self, client, env):
+        # Its example rows are there to show the format. Uploading the
+        # template without deleting them must not create an "EXAMPLE"
+        # profile.
+        token = _token(client, "pmimporter")
+        template = _download_template(client, token).data
+        status, body = _upload(client, token, template, dry_run="false")
+
+        from app.modules.maintenance_config.models import PMSchedule
+        assert status == 200
+        assert PMSchedule.query.count() == 0
+        assert body["import"]["example_rows_ignored"] == 2
+        assert body["import"]["scope_rows_unmatched"] == 0
+
+    def test_the_template_with_the_examples_replaced_imports_cleanly(
+            self, client, env):
+        # The example rows show a real, importable shape: swap the
+        # EXAMPLE Task_CD for a real one and they import with their
+        # checklists attached.
+        token = _token(client, "pmimporter")
+        wb = openpyxl.load_workbook(
+            io.BytesIO(_download_template(client, token).data))
+        for ws in (wb["PM Task List"], wb["Scope Details"]):
+            for row in ws.iter_rows(min_row=2):
+                for c in row:
+                    if isinstance(c.value, str) and c.value.startswith("EXAMPLE"):
+                        c.value = "S02-77777"
+        buf = io.BytesIO()
+        wb.save(buf)
+        status, body = _upload(client, token, buf.getvalue(), dry_run="true")
+
+        assert status == 200
+        result = body["import"]
+        assert result["packages_created"] == 2
+        assert result["packages_without_checklist"] == []
+        assert result["scope_items_created"] > 2
+        assert result["unrecognized_frequency_codes"] == []
+
+    def test_template_requires_pmschedule_create(self, client, env):
+        r = _download_template(client, _token(client, "pmoutsider"))
+        assert r.status_code == 403
 
 
 class TestPermission:
