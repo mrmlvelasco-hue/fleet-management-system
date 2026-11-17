@@ -282,6 +282,16 @@ def vehicle_import_api(api_user):
                             "message": f"Could not read the file: {exc}"}), 400
         return jsonify({"dry_run": True, **stats})
 
+    # Refused here rather than started: with a blocker in force the job
+    # would run to the end and skip every row for the same reason (the
+    # same rule /drivers/import applies).
+    from app.modules.master_data.vehicle.import_service import (
+        import_blockers)
+    blockers = import_blockers()
+    if blockers:
+        return jsonify({"error": "validation",
+                        "message": " ".join(blockers)}), 400
+
     from flask import current_app
     from app.core.import_jobs.import_job_service import ImportJobService
     from app.core.import_jobs.async_runner import start_import_job
@@ -568,6 +578,10 @@ def detail_json(v):
         # ── Identification & compliance ──────────────────────────────
         "mv_file_number": v.mv_file_number,
         "cr_number": v.cr_number,
+        # The vehicle's own OR number: typed at enrollment, and kept in
+        # step by a completed Vehicle Registration the same way
+        # cr_number is.
+        "or_number": v.or_number,
         "far_number": v.far_number,
         "lto_office": v.lto_office,
         "last_known_registration_expiry": _iso(
@@ -860,7 +874,7 @@ _WRITABLE = [
     "current_odometer", "current_engine_hours", "vehicle_body_type",
     "vehicle_usage",
     # Identification & compliance
-    "mv_file_number", "cr_number", "lto_office",
+    "mv_file_number", "cr_number", "or_number", "lto_office",
     "last_known_registration_expiry", "far_number", "mr_eds",
     # Technical
     "chassis_number", "engine_number", "transmission", "engine_type",
@@ -1061,13 +1075,61 @@ def _write_errors():
         if hasattr(vsvc, n))
 
 
+@bp.route("/vehicles/enrollment-requirements", methods=["GET"])
+@api_auth_required("vehicle.create")
+def vehicle_enrollment_requirements(api_user):
+    """Which documents the enrollment form must collect right now.
+
+    {required, documents: [{code, label, image_only, field}]} -- `field`
+    is the multipart name POST /vehicles expects that document under.
+    Empty when REQUIRE_VEHICLE_ENROLLMENT_DOCUMENTS is off. Asked by the
+    form on every open rather than built into it, so switching the
+    parameter (or editing the list) changes the form without a release.
+    """
+    from app.modules.master_data.vehicle.enrollment_documents import (
+        required_documents)
+    documents = required_documents()
+    return jsonify({"required": bool(documents), "documents": documents})
+
+
+def _enrollment_request():
+    """`(payload, documents)` from JSON or multipart.
+
+    Multipart carries the same fields as the JSON body in one `payload`
+    part (a JSON string -- so types and nulls survive exactly as they do
+    for a JSON request, instead of every value arriving as form text),
+    plus one file part per document named "doc_<CODE>". JSON stays
+    supported: with nothing required there are no files to send, and
+    with documents required a JSON request is refused by the service
+    like any other enrollment that arrives without them.
+    """
+    import json as _json
+
+    from app.modules.master_data.vehicle.enrollment_documents import (
+        FIELD_PREFIX)
+    if not (request.content_type or "").startswith("multipart/form-data"):
+        return request.get_json(silent=True) or {}, {}
+    try:
+        payload = _json.loads(request.form.get("payload") or "{}")
+    except ValueError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    documents = {name[len(FIELD_PREFIX):]: file
+                 for name, file in request.files.items()
+                 if name.startswith(FIELD_PREFIX)}
+    return payload, documents
+
+
 @bp.route("/vehicles", methods=["POST"])
 @api_auth_required("vehicle.create")
 def create_vehicle(api_user):
     from app.extensions import db
+    from app.modules.master_data.vehicle.enrollment_documents import (
+        MissingEnrollmentDocumentError)
     from app.modules.master_data.vehicle.service import VehicleService
 
-    payload = request.get_json(silent=True) or {}
+    payload, documents = _enrollment_request()
     try:
         # Inside the try: date coercion raises DateFormatError, and a
         # bad date is the caller's mistake. Leaving this outside would
@@ -1105,7 +1167,15 @@ def create_vehicle(api_user):
         # let the API create rows the web form would have rejected, and
         # free-text brands are precisely what the master list exists to
         # prevent.
-        vehicle = VehicleService().create(strict=True, **fields)
+        vehicle = VehicleService().create(
+            strict=True, documents=documents, user=api_user, **fields)
+    except MissingEnrollmentDocumentError as exc:
+        # Before the generic handler (it is an InvalidVehicleDataError):
+        # this one names EVERY offending file input, so the form can
+        # mark all of them in one round trip.
+        db.session.rollback()
+        return jsonify({"error": "validation", "message": str(exc),
+                        "fields": exc.fields}), 400
     except _write_errors() as exc:
         # The service raises before committing, but rolling back keeps
         # the session clean for anything the request does afterwards.

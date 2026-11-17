@@ -61,6 +61,37 @@ class AttachmentService:
             self._max_bytes = DEFAULT_MAX_MB * 1024 * 1024
             self._image_max_dimension = DEFAULT_IMAGE_MAX_DIMENSION_PX
 
+    def check(self, file, document_type=None) -> None:
+        """Every reason upload() would refuse this file, raised without
+        writing anything and with the file left readable from the
+        start.
+
+        For a caller that must know a file is acceptable BEFORE creating
+        the record it belongs to (vehicle enrollment creates the vehicle
+        first, because the attachment needs its id). The rules are the
+        same ones upload() applies, in the same order; upload() still
+        applies them itself.
+        """
+        if not file or not file.filename:
+            raise AttachmentError("No file provided.")
+        document_type = (document_type or "").strip() or None
+        if document_type is not None \
+                and not self.is_valid_document_type(document_type):
+            raise AttachmentError(
+                "That is not a document type this system recognises.")
+        if not _allowed(file.filename, self._allowed):
+            raise AttachmentError(
+                f"File type not allowed. Permitted: "
+                f"{', '.join(sorted(self._allowed))}")
+        content = file.read()
+        file.seek(0)
+        content = shrink_to_max_dimension(
+            content, self._image_max_dimension, file.content_type)
+        if len(content) > self._max_bytes:
+            raise AttachmentError(
+                f"File exceeds maximum size of "
+                f"{self._max_bytes // (1024*1024)} MB.")
+
     def upload(self, file, reference_table: str, reference_id: int,
                user=None, document_type=None) -> Attachment:
         """Save a file and create an Attachment row. Raises AttachmentError.

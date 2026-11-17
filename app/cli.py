@@ -588,6 +588,23 @@ def _seed_system_parameters() -> None:
         # Administration lists ROWS, so an unseeded parameter never
         # appears and the client has no way to switch it. A rule nobody
         # can see is not configurable.
+        # Vehicle enrollment documents. Unlike the driver rules below,
+        # the code's own default (no row) is OFF -- that is what every
+        # install did before this rule existed. Seeding it ON here is
+        # what makes it the client's rule: visible, and switchable for
+        # a migration. See master_data/vehicle/enrollment_documents.py.
+        ("REQUIRE_VEHICLE_ENROLLMENT_DOCUMENTS", "true", "BOOLEAN",
+         "VEHICLE",
+         "Require the documents listed in "
+         "VEHICLE_ENROLLMENT_REQUIRED_DOCUMENTS when enrolling a vehicle. "
+         "Switch OFF while importing vehicles from Excel (a file cannot "
+         "carry scans or photos), then ON again."),
+        ("VEHICLE_ENROLLMENT_REQUIRED_DOCUMENTS",
+         "CR,OR,PHOTO_FRONT,PHOTO_BACK", "STRING", "VEHICLE",
+         "Which documents a vehicle must be enrolled with: attachment "
+         "document type codes from Lookups (ATTACHMENT_DOC_TYPE), "
+         "separated by commas. Codes starting with PHOTO must be image "
+         "files."),
         ("REQUIRE_DRIVER_LICENSE", "true", "BOOLEAN", "DRIVER",
          "Require License Number, Expiry and Type when enrolling a "
          "DRIVER-type assignee. Switch OFF while migrating legacy "

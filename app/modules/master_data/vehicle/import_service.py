@@ -49,6 +49,7 @@ TEMPLATE_COLUMNS = [
     ("acquisition_cost", False, "Numbers only, e.g. 950000"),
     ("far_number", False, "Fixed Asset Register no."),
     ("cr_number", False, "Certificate of Registration no."),
+    ("or_number", False, "Official Receipt no. of the current registration."),
     ("status", False, "ACTIVE (default), IN_REPAIR, INACTIVE"),
     # ── v48: fields already on the Vehicle model, now wired into import ──
     ("engine_type", False, "e.g. 2NZ-FE, 4D56"),
@@ -147,6 +148,33 @@ def _clean(value):
     return _clean_val(value)
 
 
+def import_blockers() -> list:
+    """Reasons this install cannot import ANY vehicle row right now.
+
+    Nothing in the file can fix these, so they are reported once -- as
+    the preview's `blockers` -- rather than as the same error on every
+    row, and the commit route refuses outright while any exist. The
+    same shape as the driver importer's blockers.
+
+    Read per call: flipping the parameter has to take effect on the
+    very next upload.
+    """
+    from app.modules.master_data.vehicle.enrollment_documents import (
+        SWITCH_PARAMETER, required_documents)
+    documents = required_documents()
+    if not documents:
+        return []
+    names = ", ".join(d["label"] for d in documents)
+    return [
+        "Nothing can be imported while the System Parameter "
+        f"{SWITCH_PARAMETER} is on: every new vehicle must be enrolled "
+        f"with its documents ({names}), and an Excel file cannot carry "
+        "them. An administrator can switch it off in System "
+        "Administration > System Parameters for this import and back on "
+        "afterwards; each vehicle's documents are then added from its "
+        "Attachments."]
+
+
 def import_vehicles(file_stream, dry_run: bool = True,
                     company_id: int = None, progress_callback=None) -> dict:
     """Validate (and optionally load) a filled-in template.
@@ -196,7 +224,8 @@ def import_vehicles(file_stream, dry_run: bool = True,
     vtypes = {v.code.upper(): v.id
               for v in VehicleType.query.all() if v.code}
 
-    stats = {"total_rows": 0, "created": 0, "skipped": 0, "errors": []}
+    stats = {"total_rows": 0, "created": 0, "skipped": 0, "errors": [],
+             "blockers": import_blockers()}
     svc = VehicleService()
 
     # Found 2026-11-14: a 391-row import's preview (dry_run) reported far
@@ -332,7 +361,8 @@ def import_vehicles(file_stream, dry_run: bool = True,
         # Identifier / vendor columns: strip known placeholders (N/A, 0000000,
         # No CR ...) to NULL so the Data Quality Scorecard sees them as missing
         # rather than complete.
-        for col in ("far_number", "cr_number", "supplier", "leasing_company"):
+        for col in ("far_number", "cr_number", "or_number", "supplier",
+                    "leasing_company"):
             value = strip_placeholder(get(col))
             if value:
                 optional[col] = value

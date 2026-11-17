@@ -125,7 +125,13 @@ def _validate_business_rules(data: dict) -> None:
 class VehicleService:
     def create(self, vehicle_type_id, brand, model, year,
                branch_id=None, conduction_number=None, plate_number=None,
-               strict=False, **kwargs):
+               strict=False, documents=None, user=None, **kwargs):
+        """documents: `{document type code: uploaded file}` -- the CR,
+        OR and photos that arrive with the vehicle. Which of them are
+        REQUIRED is a System Parameter (see enrollment_documents.py);
+        any that are supplied are filed either way. user: recorded as
+        the uploader.
+        """
         if conduction_number and Vehicle.query.filter_by(
                 conduction_number=conduction_number).first():
             raise DuplicateVehicleError(
@@ -141,6 +147,18 @@ class VehicleService:
                 f"Engine number '{engine_number}' already exists.")
         _validate_business_rules(kwargs)
         brand, model = _resolve_brand_model(brand, model, strict)
+        # Enforced here rather than in the routes, for the same reason
+        # as the assignment below: every caller is funnelled, so the
+        # React form, the legacy form and the Excel importer cannot
+        # disagree about whether a vehicle may exist without its
+        # documents. Checked AFTER the vehicle's own validation (a
+        # duplicate plate is reported as a duplicate plate) and BEFORE
+        # anything is written, so a refused enrollment leaves nothing
+        # behind. Imported here: enrollment_documents imports this
+        # module's error class.
+        from app.modules.master_data.vehicle import (
+            enrollment_documents as enrollment)
+        documents = enrollment.check_documents(documents)
         # Intercepted here rather than in the routes, so EVERY caller is
         # funnelled -- the Vehicle form, the API, the importers and any
         # future one. The one-open-row invariant is enforced in the
@@ -161,6 +179,11 @@ class VehicleService:
         # vehicle's id.
         if assigned_driver_id:
             self._apply_assignment(obj.id, assigned_driver_id)
+        # After the commit too: an attachment references the vehicle's
+        # id. Every file was already checked above, so this is not
+        # expected to refuse one.
+        if documents:
+            enrollment.attach_documents(obj, documents, user=user)
         return obj
 
     def _apply_assignment(self, vehicle_id, driver_id):
