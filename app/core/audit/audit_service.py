@@ -15,7 +15,13 @@ from app.core.models.audit_log import AuditLog
 
 # user_preferences: personal display state (chart type...), not a business
 # record -- auditing it would add a row per chart click and bury history.
-_EXCLUDED_TABLES = {"audit_logs", "user_preferences"}
+# vehicle_location_logs / vehicle_last_locations: GPS telemetry, written
+# every two minutes per tracked vehicle. Each point already records who
+# reported it and when (captured_by, captured_at, received_at) and is
+# never edited, so an audit row per point would only double the writes.
+# Tracking sessions (start/stop) stay audited.
+_EXCLUDED_TABLES = {"audit_logs", "user_preferences",
+                    "vehicle_location_logs", "vehicle_last_locations"}
 _registered = False
 
 

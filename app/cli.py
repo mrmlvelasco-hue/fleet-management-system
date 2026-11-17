@@ -605,6 +605,68 @@ def _seed_system_parameters() -> None:
          "document type codes from Lookups (ATTACHMENT_DOC_TYPE), "
          "separated by commas. Codes starting with PHOTO must be image "
          "files."),
+        # Rescue Map / vehicle location. Read through
+        # vehicle_location/service.py PARAMETERS, which carries the same
+        # defaults for an install that has not run the seed.
+        ("LOCATION_TRACKING_INTERVAL_SECONDS", "120", "INTEGER",
+         "VEHICLE_LOCATION",
+         "Target seconds between automatic tracking updates. Android may "
+         "deliver them later when the phone saves battery."),
+        ("LOCATION_TRACKING_DISTANCE_M", "50", "INTEGER", "VEHICLE_LOCATION",
+         "Metres moved that trigger a tracking update before the interval "
+         "is up."),
+        ("LOCATION_STATIONARY_HEARTBEAT_SECONDS", "600", "INTEGER",
+         "VEHICLE_LOCATION",
+         "While the vehicle is not moving, send one update at most this "
+         "often (saves battery and data)."),
+        ("LOCATION_MAX_ACCURACY_M", "100", "INTEGER", "VEHICLE_LOCATION",
+         "A manual capture less accurate than this many metres asks the "
+         "user to retry."),
+        ("LOCATION_LIVE_MINUTES", "15", "INTEGER", "VEHICLE_LOCATION",
+         "A vehicle shows as Live when its latest point was captured "
+         "within this many minutes."),
+        ("LOCATION_STALE_MINUTES", "60", "INTEGER", "VEHICLE_LOCATION",
+         "Older than this many minutes, the latest point shows as Stale "
+         "(between Live and this: Last reported)."),
+        ("LOCATION_MAX_BACKDATE_HOURS", "72", "INTEGER", "VEHICLE_LOCATION",
+         "Oldest point (hours) the server accepts from a phone that was "
+         "offline."),
+        ("LOCATION_HISTORY_RETENTION_DAYS", "90", "INTEGER",
+         "VEHICLE_LOCATION",
+         "Days of location history kept by 'flask location purge'. Each "
+         "vehicle's latest point is always kept."),
+        ("LOCATION_MAP_PROVIDER", "GOOGLE", "STRING", "VEHICLE_LOCATION",
+         "Map drawn on the mobile Rescue Map: GOOGLE (Maps SDK; its API key "
+         "is set when the app is built) or TILES (the tile server in "
+         "LOCATION_MAP_TILE_URL)."),
+        ("LOCATION_MAP_TILE_URL", "", "STRING", "VEHICLE_LOCATION",
+         "Only for LOCATION_MAP_PROVIDER = TILES: tile address with {z}, {x} "
+         "and {y}, from a provider whose terms allow use in your app."),
+        ("LOCATION_MAP_ATTRIBUTION", "", "STRING", "VEHICLE_LOCATION",
+         "Only for TILES: the credit line the tile provider requires on the "
+         "map."),
+        ("LOCATION_TRACKING_START_MODE", "MANUAL", "STRING",
+         "VEHICLE_LOCATION",
+         "MANUAL: the driver taps Start Tracking. AUTO: tracking starts by "
+         "itself when the assigned driver opens the app (notification "
+         "still shown)."),
+        ("LOCATION_DRIVER_CAN_STOP_TRACKING", "true", "BOOLEAN",
+         "VEHICLE_LOCATION",
+         "Whether drivers see a Stop Tracking button. Off: only signing "
+         "out, or the phone itself, stops tracking."),
+        ("LOCATION_TRACKING_NOTICE_ENABLED", "true", "BOOLEAN",
+         "VEHICLE_LOCATION",
+         "Show the tracking notice (LOCATION_TRACKING_NOTICE_TEXT) for the "
+         "driver to accept before tracking first starts on a phone."),
+        ("LOCATION_TRACKING_NOTICE_TEXT",
+         "While tracking is on, FMS records this phone's location for the "
+         "vehicle assigned to you, about every two minutes and whenever "
+         "the vehicle moves. Fleet coordinators and authorized fleet staff "
+         "can see the reported location to support fleet operations and "
+         "rescue. A notification stays on screen the whole time tracking "
+         "is on.", "STRING", "VEHICLE_LOCATION",
+         "The tracking notice drivers accept before tracking first starts. "
+         "Edit to match the company's privacy notice."),
         ("REQUIRE_DRIVER_LICENSE", "true", "BOOLEAN", "DRIVER",
          "Require License Number, Expiry and Type when enrolling a "
          "DRIVER-type assignee. Switch OFF while migrating legacy "
@@ -1270,6 +1332,27 @@ def atd_run_expiry_check():
     from app.modules.transactions.atd.tasks import expire_overdue_atds
     changed = expire_overdue_atds()
     click.echo(f"ATD expiry scan complete. Permits expired: {changed}")
+
+
+location_cli = AppGroup("location", help="Vehicle location (Rescue Map) "
+                                       "maintenance commands.")
+
+
+@location_cli.command("purge")
+@click.option("--days", type=int, default=None,
+              help="Keep this many days instead of "
+                   "LOCATION_HISTORY_RETENTION_DAYS.")
+@click.option("--dry-run", is_flag=True,
+              help="Only count what would be deleted.")
+def location_purge(days, dry_run):
+    """Delete GPS points older than the retention period. Each vehicle's
+    latest point is always kept, so the Rescue Map can still show where
+    it was last reported. Safe to run daily from cron; idempotent."""
+    from app.modules.vehicle_location.service import VehicleLocationService
+    count = VehicleLocationService().purge(retention_days=days,
+                                           dry_run=dry_run)
+    verb = "Would delete" if dry_run else "Deleted"
+    click.echo(f"{verb} {count} location point(s).")
 
 
 report_cli = AppGroup("report", help="Scheduled report delivery commands.")
@@ -2045,6 +2128,7 @@ def register_cli(app):
     app.cli.add_command(pm_cli)
     app.cli.add_command(registration_cli)
     app.cli.add_command(atd_cli)
+    app.cli.add_command(location_cli)
     app.cli.add_command(report_cli)
     app.cli.add_command(notifications_cli)
     from app.modules.master_data.vehicle.backfill_cli import (

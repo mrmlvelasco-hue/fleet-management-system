@@ -62,6 +62,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.core import data_quality_service as _dq  # noqa: F401
     from app.modules.transactions.fuel import models as _fuel  # noqa: F401
     from app.modules.transactions.vehicle_checklist import models as _vchk  # noqa: F401
+    from app.modules.vehicle_location import models as _vloc  # noqa: F401
     from app.modules.history_migration import models as _histmig  # noqa: F401
     from app.modules.transactions.maintenance_order.auto_pr import (
         register_auto_pr)
@@ -126,6 +127,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.modules.api import checklists as _api_checklists  # noqa: F401
     from app.modules.api import vehicle_handover as _api_vehicle_handover  # noqa: F401
     from app.modules.api import my_vehicles as _api_my  # noqa: F401
+    from app.modules.api import vehicle_locations as _api_vloc  # noqa: F401
     from app.modules.api import mobile_releases as _api_rel  # noqa: F401
     from app.modules.api import comments as _api_comments  # noqa: F401
     from app.modules.api import admin_ops as _api_admin_ops  # noqa: F401
