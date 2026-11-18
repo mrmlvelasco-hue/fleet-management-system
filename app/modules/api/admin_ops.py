@@ -131,6 +131,17 @@ def deactivate_rule(api_user, rid):
 
 # ── Print templates ───────────────────────────────────────────────────────
 
+def _utc_iso(value):
+    """ISO-8601 in UTC with a Z. Stored values come back naive (UTC);
+    one just written in this session is still timezone-aware."""
+    if value is None:
+        return None
+    if value.tzinfo is not None:
+        from datetime import timezone
+        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.isoformat() + "Z"
+
+
 def _tpl_json(t, tokens=None):
     data = {
         "id": t.id,
@@ -140,6 +151,9 @@ def _tpl_json(t, tokens=None):
         "body_html": t.body_html,
         "paper_size": t.paper_size,
         "orientation": t.orientation,
+        # The editor header shows "Active template" and "Last updated".
+        "is_active": bool(getattr(t, "is_active", True)),
+        "updated_at": _utc_iso(getattr(t, "updated_at", None)),
     }
     if tokens is not None:
         data["tokens"] = tokens
