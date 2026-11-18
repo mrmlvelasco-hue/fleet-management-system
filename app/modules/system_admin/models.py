@@ -431,6 +431,12 @@ class CustomReport(db.Model, BaseModel):
     sort_key = db.Column(db.String(60), nullable=True)
     sort_dir = db.Column(db.String(4), default="asc", nullable=False)
     row_limit = db.Column(db.Integer, default=1000, nullable=False)
+    # v315: how the filters combine (AND | OR) and an optional field key
+    # to group rows by (with subtotals). Defaults keep every report
+    # saved before v315 meaning exactly what it did.
+    filter_logic = db.Column(db.String(3), default="AND",
+                             server_default="AND", nullable=False)
+    group_by = db.Column(db.String(60), nullable=True)
     # Optional default recipients for on-demand "email me this" sends.
     default_recipients = db.Column(db.Text, nullable=True)
 

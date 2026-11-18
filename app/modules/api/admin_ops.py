@@ -575,9 +575,33 @@ def run_scheduled_report(api_user, sid):
 
 
 # ── Custom reports ────────────────────────────────────────────────────────
+#
+# v315: the builder reads its field catalogue from here (only sources and
+# fields the caller may use), saves with full validation (strict), edits
+# in place (PUT -- the React screen used to POST a duplicate on every
+# edit), runs paged, exports CSV/XLSX and keeps an optional schedule.
+# Response keys from before v315 are unchanged; new ones are additions.
 
-def _cr_json(r):
+def _cr_schedule_json(report_id):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService)
+    sched = CustomReportService().schedule_for(report_id)
+    if sched is None:
+        return None
+    opts = sched.filters_dict()
     return {
+        "id": sched.id,
+        "frequency": sched.frequency,
+        "recipients": sched.recipients,
+        "format": opts.get("format", "xlsx"),
+        "next_run_at": _iso(sched.next_run_at),
+        "last_run_at": _iso(sched.last_run_at),
+        "last_run_status": sched.last_run_status,
+    }
+
+
+def _cr_json(r, with_schedule=False):
+    data = {
         "id": r.id,
         "name": r.name,
         "description": r.description,
@@ -588,7 +612,45 @@ def _cr_json(r):
         "sort_dir": r.sort_dir,
         "row_limit": r.row_limit,
         "default_recipients": r.default_recipients,
+        "filter_logic": r.filter_logic or "AND",
+        "group_by": r.group_by,
+        "updated_at": _iso(r.updated_at),
     }
+    if with_schedule:
+        data["schedule"] = _cr_schedule_json(r.id)
+    return data
+
+
+def _cr_error(exc):
+    return jsonify({"ok": False, "error": "validation",
+                    "message": str(exc)}), 400
+
+
+def _cr_payload(p):
+    return dict(
+        name=p.get("name"),
+        data_source=p.get("data_source"),
+        fields=p.get("fields") or [],
+        filters=p.get("filters") or [],
+        sort_key=p.get("sort_key"),
+        sort_dir=p.get("sort_dir") or "asc",
+        description=p.get("description"),
+        row_limit=p.get("row_limit") or 1000,
+        default_recipients=p.get("default_recipients"),
+        filter_logic=p.get("filter_logic") or "AND",
+        group_by=p.get("group_by") or None,
+    )
+
+
+def _cr_save_schedule(svc, report, p, user):
+    """Apply the payload's `schedule` block when it is present. Absent
+    means "leave the schedule alone" so older clients cannot erase it."""
+    if "schedule" not in p:
+        return
+    sched = p.get("schedule") or {}
+    svc.set_schedule(report, frequency=sched.get("frequency"),
+                     recipients=sched.get("recipients"),
+                     export_format=sched.get("format") or "csv", user=user)
 
 
 @bp.route("/admin/custom-reports", methods=["GET"])
@@ -596,23 +658,17 @@ def _cr_json(r):
 def list_custom_reports(api_user):
     from app.modules.system_admin.services.custom_report_service import (
         CustomReportService)
-    from app.core.reporting.report_builder import DATA_SOURCES
+    from app.core.reporting.report_builder import catalog
     items = CustomReportService().list()
-    sources = [{
-        "key": k,
-        "label": s.label,
-        "description": s.description,
-        "fields": [{"key": f.key, "label": f.label, "kind": f.kind}
-                   for f in s.fields.values()],
-    } for k, s in DATA_SOURCES.items()]
-    return jsonify({"items": [_cr_json(r) for r in items], "sources": sources})
-
+    meta = catalog(api_user)
+    return jsonify({"items": [_cr_json(r) for r in items], **meta})
 
 
 @bp.route("/admin/custom-reports/preview", methods=["POST"])
 @api_auth_required("customreport.manage")
 def preview_custom_report(api_user):
-    from app.core.reporting.report_builder import run_report, ReportBuilderError
+    from app.core.reporting.report_builder import (
+        ReportBuilderError, json_result, run_report)
     p = request.get_json(silent=True) or {}
     try:
         result = run_report(
@@ -621,24 +677,16 @@ def preview_custom_report(api_user):
             filters=p.get("filters") or [],
             sort_key=p.get("sort_key"),
             sort_dir=p.get("sort_dir") or "asc",
-            limit=min(int(p.get("row_limit") or 50), 50),
-            user=api_user)
-    except Exception as exc:
-        return jsonify({"ok": False, "message": str(exc)}), 400
-    rows = result.get("rows") or []
-    # normalize rows to list-of-lists of strings for the preview table
-    if rows and isinstance(rows[0], dict):
-        cols = result.get("columns") or [{"key": k} for k in rows[0].keys()]
-        keys = [c.get("key") if isinstance(c, dict) else str(c) for c in cols]
-        norm = [[("" if r.get(k) is None else str(r.get(k))) for k in keys] for r in rows]
-    else:
-        norm = [[("" if v is None else str(v)) for v in row] for row in rows]
-    return jsonify({
-        "ok": True,
-        "columns": result.get("columns") or [],
-        "rows": norm,
-        "row_count": result.get("row_count", len(norm)),
-    })
+            limit=p.get("row_limit") or 1000,
+            filter_logic=p.get("filter_logic") or "AND",
+            group_by=p.get("group_by") or None,
+            page=p.get("page") or 1,
+            per_page=p.get("per_page") or 25,
+            user=api_user, strict=True)
+    except (ReportBuilderError, ValueError, TypeError) as exc:
+        return _cr_error(exc)
+    return jsonify({"ok": True, **json_result(result)})
+
 
 @bp.route("/admin/custom-reports", methods=["POST"])
 @api_auth_required("customreport.manage")
@@ -646,21 +694,14 @@ def create_custom_report(api_user):
     from app.modules.system_admin.services.custom_report_service import (
         CustomReportService, ReportBuilderError)
     p = request.get_json(silent=True) or {}
+    svc = CustomReportService()
     try:
-        report = CustomReportService().create(
-            name=p.get("name"),
-            data_source=p.get("data_source"),
-            fields=p.get("fields") or [],
-            filters=p.get("filters") or [],
-            sort_key=p.get("sort_key"),
-            sort_dir=p.get("sort_dir") or "asc",
-            description=p.get("description"),
-            row_limit=p.get("row_limit") or 1000,
-            default_recipients=p.get("default_recipients"),
-            user=api_user)
-    except Exception as exc:
-        return jsonify({"error": "validation", "message": str(exc)}), 400
-    return jsonify(_cr_json(report)), 201
+        report = svc.create(**_cr_payload(p), user=api_user, strict=True)
+        _cr_save_schedule(svc, report, p, api_user)
+    except (ReportBuilderError, ValueError, TypeError) as exc:
+        db.session.rollback()
+        return _cr_error(exc)
+    return jsonify(_cr_json(report, with_schedule=True)), 201
 
 
 @bp.route("/admin/custom-reports/<int:rid>", methods=["GET"])
@@ -669,9 +710,29 @@ def get_custom_report(api_user, rid):
     from app.modules.system_admin.services.custom_report_service import (
         CustomReportService)
     report = CustomReportService().get_by_id(rid)
-    if report is None:
+    if report is None or not report.is_active:
         return jsonify({"error": "not_found"}), 404
-    return jsonify(_cr_json(report))
+    return jsonify(_cr_json(report, with_schedule=True))
+
+
+@bp.route("/admin/custom-reports/<int:rid>", methods=["PUT", "PATCH"])
+@api_auth_required("customreport.manage")
+def update_custom_report(api_user, rid):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService, ReportBuilderError)
+    p = request.get_json(silent=True) or {}
+    svc = CustomReportService()
+    report = svc.get_by_id(rid)
+    if report is None or not report.is_active:
+        return jsonify({"error": "not_found"}), 404
+    try:
+        report = svc.update(rid, **_cr_payload(p), user=api_user,
+                            strict=True)
+        _cr_save_schedule(svc, report, p, api_user)
+    except (ReportBuilderError, ValueError, TypeError) as exc:
+        db.session.rollback()
+        return _cr_error(exc)
+    return jsonify(_cr_json(report, with_schedule=True))
 
 
 @bp.route("/admin/custom-reports/<int:rid>/run", methods=["POST", "GET"])
@@ -679,17 +740,56 @@ def get_custom_report(api_user, rid):
 def run_custom_report(api_user, rid):
     from app.modules.system_admin.services.custom_report_service import (
         CustomReportService)
+    from app.core.reporting.report_builder import json_result
     report = CustomReportService().get_by_id(rid)
-    if report is None:
+    if report is None or not report.is_active:
         return jsonify({"error": "not_found"}), 404
+    page = request.args.get("page", type=int)
+    per_page = request.args.get("per_page", type=int)
     try:
-        result = CustomReportService().run(report, user=api_user)
+        result = CustomReportService().run(report, user=api_user, page=page,
+                                           per_page=per_page)
     except Exception as exc:
         return jsonify({"error": "validation", "message": str(exc)}), 400
-    # result typically {columns, rows} or similar
-    if isinstance(result, dict):
-        return jsonify(result)
-    return jsonify({"rows": result})
+    return jsonify({**json_result(result), "report": _cr_json(report)})
+
+
+@bp.route("/admin/custom-reports/<int:rid>/export", methods=["GET"])
+@api_auth_required("customreport.view")
+def export_custom_report(api_user, rid):
+    from io import BytesIO
+    from flask import send_file
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService, ReportBuilderError)
+    svc = CustomReportService()
+    report = svc.get_by_id(rid)
+    if report is None or not report.is_active:
+        return jsonify({"error": "not_found"}), 404
+    try:
+        filename, data, mimetype = svc.to_file(
+            report, request.args.get("format") or "xlsx", user=api_user)
+    except ReportBuilderError as exc:
+        return _cr_error(exc)
+    return send_file(BytesIO(data), as_attachment=True,
+                     download_name=filename, mimetype=mimetype)
+
+
+@bp.route("/admin/custom-reports/<int:rid>/email", methods=["POST"])
+@api_auth_required("customreport.view")
+def email_custom_report(api_user, rid):
+    from app.modules.system_admin.services.custom_report_service import (
+        CustomReportService, ReportBuilderError)
+    svc = CustomReportService()
+    report = svc.get_by_id(rid)
+    if report is None or not report.is_active:
+        return jsonify({"error": "not_found"}), 404
+    p = request.get_json(silent=True) or {}
+    try:
+        outcome = svc.email(report, recipients=p.get("recipients"),
+                            user=api_user)
+    except ReportBuilderError as exc:
+        return _cr_error(exc)
+    return jsonify({"ok": True, **outcome})
 
 
 @bp.route("/admin/custom-reports/<int:rid>/delete", methods=["POST"])
